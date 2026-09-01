@@ -1687,6 +1687,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitcoind-async-client"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42ed1d9a649ba17d17a5bba836ed68208667473ccec8478492cb83f3af28e9dc"
+dependencies = [
+ "base64 0.22.1",
+ "bitcoin",
+ "bitreq 0.3.7",
+ "corepc-types 0.13.0",
+ "hex-conservative 0.2.2",
+ "secp256k1 0.29.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2997,7 +3016,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3724,7 +3743,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tokio",
  "tower-service",
  "tracing",
@@ -4651,7 +4670,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5717,7 +5736,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5755,7 +5774,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -6297,7 +6316,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8141,7 +8160,7 @@ dependencies = [
  "argh",
  "async-trait",
  "bitcoin",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.15.0",
  "format_serde_error",
  "http 1.5.0",
  "jsonrpsee",
@@ -8671,7 +8690,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "bitcoin",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.15.0",
  "hex",
  "musig2",
  "proptest",
@@ -8853,7 +8872,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bitcoin",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.15.0",
  "hex",
  "metrics",
  "rand 0.8.7",
@@ -8997,7 +9016,7 @@ dependencies = [
  "anyhow",
  "argh",
  "bitcoin",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.15.0",
  "hex",
  "rand_core 0.6.4",
  "serde",
@@ -9277,7 +9296,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.15.0",
  "strata-asm-params",
  "strata-config",
  "strata-ol-params",
@@ -10104,7 +10123,7 @@ dependencies = [
  "bdk_bitcoind_rpc",
  "bdk_wallet",
  "bitcoin",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.15.0",
  "hex",
  "k256",
  "musig2",
@@ -10165,7 +10184,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitcoin",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.15.0",
  "corepc-node",
  "musig2",
  "rand 0.8.7",
@@ -10180,7 +10199,7 @@ source = "git+https://github.com/alpenlabs/asm?tag=v0.4.0-rc.2#7b248126e0a0d9215
 dependencies = [
  "anyhow",
  "bitcoin",
- "bitcoind-async-client",
+ "bitcoind-async-client 0.10.10",
  "corepc-node",
  "musig2",
  "strata-crypto",
@@ -10450,7 +10469,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11514,7 +11533,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
