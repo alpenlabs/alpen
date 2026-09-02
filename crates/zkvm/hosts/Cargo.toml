@@ -15,4 +15,4 @@ zkaleido-sp1-host = { workspace = true, optional = true }
 [features]
 default = []
 sp1 = ["dep:zkaleido-sp1-host", "dep:tokio"]
-sp1-builder = ["sp1", "strata-sp1-guest-builder/sp1-dev"]
+sp1-builder = ["sp1", "strata-sp1-guest-builder/build-elf"]
