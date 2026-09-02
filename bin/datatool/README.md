@@ -115,7 +115,7 @@ for each guest, which consumers can use wherever they need the corresponding
 predicate.
 
 ```bash
-cargo build -p strata-sp1-guest-builder --features sp1-dev --release
+cargo build -p strata-sp1-guest-builder --features build-elf --release
 ```
 
 The guest builder writes predicate metadata next to the guest ELFs under

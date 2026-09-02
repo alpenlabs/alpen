@@ -86,7 +86,7 @@ validate_params() {
 
 build_sp1_guest_artifacts() {
     echo "building SP1 guest artifacts (fast if unchanged)..."
-    cargo build --locked --release -p strata-sp1-guest-builder --features sp1-dev
+    cargo build --locked --release -p strata-sp1-guest-builder --features build-elf
 
     mkdir -p "${ELF_DIR}"
     cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
