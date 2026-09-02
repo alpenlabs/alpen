@@ -15,8 +15,6 @@ VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 GUESTS = (
     ("guest-checkpoint", "checkpoint"),
-    ("guest-alpen-chunk", "alpen_chunk"),
-    ("guest-alpen-acct", "alpen_acct"),
 )
 
 ARTIFACT_FILES = tuple(
