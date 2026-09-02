@@ -11,3 +11,9 @@ min-publish-age = true
 
 [registry]
 global-min-publish-age = "14 days"
+
+# Reject too-new versions even when a user-level cargo config sets "allow".
+# The CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE environment variable still
+# overrides this for one-off updates.
+[resolver]
+incompatible-publish-age = "deny"
