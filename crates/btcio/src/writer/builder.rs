@@ -1,5 +1,5 @@
 use core::result::Result::Ok;
-use std::cmp::Reverse;
+use std::{cmp::Reverse, slice};
 
 use anyhow::anyhow;
 use bitcoin::{
@@ -35,6 +35,10 @@ use super::context::WriterContext;
 use crate::writer::fees::resolve_fee_rate;
 
 pub(crate) const BITCOIN_DUST_LIMIT: u64 = 546;
+
+/// Largest serialized ECDSA signature, including its sighash byte.
+const MAX_ECDSA_SIGNATURE_SIZE: usize = 73;
+const COMPRESSED_PUBLIC_KEY_SIZE: usize = 33;
 
 /// Config for creating envelope transactions.
 #[derive(Debug, Clone)]
@@ -375,6 +379,49 @@ pub(crate) fn get_size(
     tx.vsize()
 }
 
+/// Returns whether signing this wallet output leaves the commit txid unchanged.
+pub(crate) fn is_supported_commit_utxo(utxo: &ListUnspentItem) -> bool {
+    utxo.script_pubkey.is_p2wpkh() || utxo.script_pubkey.is_p2tr()
+}
+
+fn commit_inputs(utxos: &[ListUnspentItem]) -> Vec<TxIn> {
+    utxos
+        .iter()
+        .map(|utxo| TxIn {
+            previous_output: OutPoint {
+                txid: utxo.txid,
+                vout: utxo.vout,
+            },
+            script_sig: ScriptBuf::new(),
+            witness: Witness::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+        })
+        .collect()
+}
+
+/// Estimates the signed commit vsize from the selected wallet outputs.
+pub(crate) fn signed_commit_vsize(utxos: &[ListUnspentItem], outputs: &[TxOut]) -> usize {
+    let mut inputs = commit_inputs(utxos);
+    for (input, utxo) in inputs.iter_mut().zip(utxos) {
+        if utxo.script_pubkey.is_p2wpkh() {
+            input.witness.push([0; MAX_ECDSA_SIGNATURE_SIZE]);
+            input.witness.push([0; COMPRESSED_PUBLIC_KEY_SIZE]);
+        } else if utxo.script_pubkey.is_p2tr() {
+            input.witness.push([0; SCHNORR_SIGNATURE_SIZE]);
+        } else {
+            unreachable!("commit coin selection only returns supported native SegWit outputs");
+        }
+    }
+
+    Transaction {
+        input: inputs,
+        output: outputs.to_vec(),
+        lock_time: LockTime::ZERO,
+        version: Version(2),
+    }
+    .vsize()
+}
+
 /// Choose utxos almost naively.
 pub(crate) fn choose_utxos(
     utxos: &[ListUnspentItem],
@@ -431,23 +478,26 @@ fn build_commit_transaction(
     output_value: u64,
     fee_rate: FeeRate,
 ) -> Result<(Transaction, Vec<ListUnspentItem>), EnvelopeError> {
-    // get single input single output transaction size
-    let mut size = get_size(
-        &default_txin(),
-        &[TxOut {
-            script_pubkey: recipient.script_pubkey(),
-            value: Amount::from_sat(output_value),
-        }],
-        None,
-        None,
-    );
-    let mut last_size = size;
-
     let utxos: Vec<ListUnspentItem> = utxos
         .iter()
-        .filter(|utxo| utxo.spendable && utxo.solvable && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT)
+        .filter(|utxo| {
+            utxo.spendable
+                && utxo.solvable
+                && utxo.amount.to_sat() >= BITCOIN_DUST_LIMIT
+                && is_supported_commit_utxo(utxo)
+        })
         .cloned()
         .collect();
+
+    let base_output = TxOut {
+        script_pubkey: recipient.script_pubkey(),
+        value: Amount::from_sat(output_value),
+    };
+    let Some(first_utxo) = utxos.first() else {
+        return Err(EnvelopeError::NotEnoughUtxos(output_value, 0));
+    };
+    let mut last_size =
+        signed_commit_vsize(slice::from_ref(first_utxo), slice::from_ref(&base_output));
 
     let (commit_txn, consumed_utxo) = loop {
         let fee = fee_sats_for_vsize(last_size, fee_rate)?;
@@ -460,11 +510,7 @@ fn build_commit_transaction(
 
         let (chosen_utxos, sum) = res;
 
-        let mut outputs: Vec<TxOut> = vec![];
-        outputs.push(TxOut {
-            value: Amount::from_sat(output_value),
-            script_pubkey: recipient.script_pubkey(),
-        });
+        let mut outputs = vec![base_output.clone()];
 
         let mut direct_return = false;
         if let Some(excess) = sum.checked_sub(input_total) {
@@ -479,22 +525,10 @@ fn build_commit_transaction(
             }
         }
 
-        let inputs: Vec<TxIn> = chosen_utxos
-            .iter()
-            .map(|u| TxIn {
-                previous_output: OutPoint {
-                    txid: u.txid,
-                    vout: u.vout,
-                },
-                script_sig: script::Builder::new().into_script(),
-                witness: Witness::new(),
-                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-            })
-            .collect();
+        let inputs = commit_inputs(&chosen_utxos);
+        let size = signed_commit_vsize(&chosen_utxos, &outputs);
 
-        size = get_size(&inputs, &outputs, None, None);
-
-        if size == last_size || direct_return {
+        if size == last_size || (direct_return && size < last_size) {
             let commit_txn = Transaction {
                 lock_time: LockTime::ZERO,
                 version: Version(2),
@@ -722,7 +756,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -739,7 +773,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -756,7 +790,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(10.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -956,20 +990,41 @@ mod tests {
     }
 
     #[test]
-    fn test_build_commit_transaction_rejects_insufficient_filtered_utxos() {
-        let (ctx, _, _, utxos) = get_mock_data();
-        let mut dust = utxos[2].clone();
-        dust.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+    fn test_build_commit_transaction_uses_exact_dust_limit_utxos() {
+        let (ctx, _, _, mut utxos) = get_mock_data();
+        utxos.truncate(2);
+        for utxo in &mut utxos {
+            utxo.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+        }
 
-        let res = super::build_commit_transaction(
-            vec![dust],
+        let (tx, consumed) = super::build_commit_transaction(
+            utxos,
             ctx.sequencer_address.clone(),
             ctx.sequencer_address.clone(),
-            500_000_000,
+            BITCOIN_DUST_LIMIT,
             FeeRate::from_sat_per_vb_u32(1),
-        );
+        )
+        .unwrap();
 
-        assert!(matches!(res, Err(EnvelopeError::NotEnoughUtxos(_, 0))));
+        assert_eq!(consumed.len(), 2);
+        assert!(consumed
+            .iter()
+            .all(|utxo| utxo.amount.to_sat() == BITCOIN_DUST_LIMIT));
+        assert_eq!(tx.input.len(), 2);
+    }
+
+    #[test]
+    fn commit_pricing_includes_p2wpkh_signature_and_pubkey() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let outputs = [TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: ctx.sequencer_address.script_pubkey(),
+        }];
+        let unsigned_inputs = commit_inputs(&utxos[..1]);
+        let schnorr_only_vsize = get_size(&unsigned_inputs, &outputs, None, None);
+        let p2wpkh_vsize = signed_commit_vsize(&utxos[..1], &outputs);
+
+        assert!(p2wpkh_vsize > schnorr_only_vsize);
     }
 
     #[test]

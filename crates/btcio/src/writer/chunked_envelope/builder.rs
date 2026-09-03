@@ -25,8 +25,8 @@ use strata_l1_txfmt::MagicBytes;
 
 use super::commit_op_return::build_commit_op_return;
 use crate::writer::builder::{
-    choose_utxos, fee_sats_for_vsize, get_size, sign_reveal_transaction, EnvelopeConfig,
-    EnvelopeError, BITCOIN_DUST_LIMIT,
+    choose_utxos, fee_sats_for_vsize, get_size, is_supported_commit_utxo, sign_reveal_transaction,
+    signed_commit_vsize, EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT,
 };
 
 /// Intermediate state for each reveal before tx construction.
@@ -206,7 +206,12 @@ fn build_multi_output_commit(
 ) -> Result<Transaction, EnvelopeError> {
     let spendable: Vec<ListUnspentItem> = utxos
         .into_iter()
-        .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
+        .filter(|u| {
+            u.spendable
+                && u.solvable
+                && u.amount.to_sat() >= BITCOIN_DUST_LIMIT
+                && is_supported_commit_utxo(u)
+        })
         .collect();
 
     let p2tr_outputs: Vec<TxOut> = artifacts
@@ -237,12 +242,10 @@ fn build_multi_output_commit(
         .chain(p2tr_outputs.iter().cloned())
         .collect();
 
-    let mut last_size = get_size(
-        &[make_txin(bitcoin::Txid::all_zeros(), 0)],
-        &initial_outputs,
-        None,
-        None,
-    );
+    let Some(first_utxo) = spendable.first() else {
+        return Err(EnvelopeError::NotEnoughUtxos(total_output, 0));
+    };
+    let mut last_size = signed_commit_vsize(slice::from_ref(first_utxo), &initial_outputs);
 
     loop {
         let fee = fee_sats_for_vsize(last_size, config.fee_rate)?;
@@ -269,8 +272,8 @@ fn build_multi_output_commit(
             }
         }
 
-        let size = get_size(&inputs, &outputs, None, None);
-        if size == last_size || done {
+        let size = signed_commit_vsize(&chosen, &outputs);
+        if size == last_size || (done && size < last_size) {
             return Ok(Transaction {
                 lock_time: LockTime::ZERO,
                 version: Version(2),
@@ -296,7 +299,7 @@ mod tests {
     use bitcoin::{
         opcodes::all::OP_RETURN,
         secp256k1::{rand, Keypair, Secp256k1},
-        Network, ScriptBuf, Txid,
+        Network, Txid,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 
@@ -323,7 +326,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -340,7 +343,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -431,7 +434,7 @@ mod tests {
                 .unwrap(),
             vout: 0,
             address: address.as_unchecked().clone(),
-            script_pubkey: ScriptBuf::new(),
+            script_pubkey: address.script_pubkey(),
             amount: Amount::from_sat(1_000),
             confirmations: 100,
             spendable: true,
@@ -453,6 +456,30 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_chunked_envelope_txs_uses_exact_dust_limit_utxos() {
+        let mut config = get_test_config();
+        config.fee_rate = FeeRate::from_sat_per_vb_u32(1);
+        let mut utxos = get_mock_utxos();
+        for utxo in &mut utxos {
+            utxo.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+        }
+        let chunks = vec![vec![0u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &test_keypair(),
+            utxos,
+        )
+        .unwrap();
+
+        assert_eq!(result.commit_tx.input.len(), 2);
     }
 
     #[test]
