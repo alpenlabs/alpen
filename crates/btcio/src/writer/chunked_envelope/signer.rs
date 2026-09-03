@@ -22,7 +22,7 @@ use tracing::*;
 
 use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
 use crate::writer::{
-    builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
+    builder::{is_commit_funding_utxo, EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
     fees::resolve_fee_rate,
 };
 
@@ -88,14 +88,11 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .map_err(|e| EnvelopeError::PrereqFetch(e.into()))?
             .0;
 
-        let spendable_utxo_count = utxos
-            .iter()
-            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
-            .count();
+        let spendable_utxo_count = utxos.iter().filter(|u| is_commit_funding_utxo(u)).count();
 
         let spendable_value_sats: u64 = utxos
             .iter()
-            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
+            .filter(|u| is_commit_funding_utxo(u))
             .map(|u| u.amount.to_sat())
             .sum();
 

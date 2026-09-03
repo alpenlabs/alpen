@@ -25,8 +25,8 @@ use strata_l1_txfmt::MagicBytes;
 
 use super::commit_op_return::build_commit_op_return;
 use crate::writer::builder::{
-    choose_utxos, fee_sats_for_vsize, get_size, sign_reveal_transaction, EnvelopeConfig,
-    EnvelopeError, BITCOIN_DUST_LIMIT,
+    fee_sats_for_vsize, fund_commit_transaction, get_size, sign_reveal_transaction, EnvelopeConfig,
+    EnvelopeError,
 };
 
 /// Intermediate state for each reveal before tx construction.
@@ -204,11 +204,6 @@ fn build_multi_output_commit(
     op_return_script: &ScriptBuf,
     utxos: Vec<ListUnspentItem>,
 ) -> Result<Transaction, EnvelopeError> {
-    let spendable: Vec<ListUnspentItem> = utxos
-        .into_iter()
-        .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
-        .collect();
-
     let p2tr_outputs: Vec<TxOut> = artifacts
         .iter()
         .map(|a| {
@@ -230,56 +225,15 @@ fn build_multi_output_commit(
         value: Amount::from_sat(0),
         script_pubkey: op_return_script.clone(),
     };
+    let outputs: Vec<TxOut> = iter::once(op_return_output).chain(p2tr_outputs).collect();
 
-    let total_output: u64 = artifacts.iter().map(|a| a.commit_value).sum();
-
-    let initial_outputs: Vec<TxOut> = iter::once(op_return_output.clone())
-        .chain(p2tr_outputs.iter().cloned())
-        .collect();
-
-    let mut last_size = get_size(
-        &[make_txin(bitcoin::Txid::all_zeros(), 0)],
-        &initial_outputs,
-        None,
-        None,
-    );
-
-    loop {
-        let fee = fee_sats_for_vsize(last_size, config.fee_rate)?;
-        let needed = total_output
-            .checked_add(fee)
-            .ok_or(EnvelopeError::FeeOverflow)?;
-        let (chosen, sum) = choose_utxos(&spendable, needed)?;
-
-        let inputs: Vec<TxIn> = chosen.iter().map(|u| make_txin(u.txid, u.vout)).collect();
-
-        let mut outputs: Vec<TxOut> = iter::once(op_return_output.clone())
-            .chain(p2tr_outputs.iter().cloned())
-            .collect();
-
-        let mut done = false;
-        if let Some(excess) = sum.checked_sub(needed) {
-            if excess >= BITCOIN_DUST_LIMIT {
-                outputs.push(TxOut {
-                    value: Amount::from_sat(excess),
-                    script_pubkey: config.sequencer_address.script_pubkey(),
-                });
-            } else {
-                done = true;
-            }
-        }
-
-        let size = get_size(&inputs, &outputs, None, None);
-        if size == last_size || done {
-            return Ok(Transaction {
-                lock_time: LockTime::ZERO,
-                version: Version(2),
-                input: inputs,
-                output: outputs,
-            });
-        }
-        last_size = size;
-    }
+    let (commit_tx, _) = fund_commit_transaction(
+        utxos,
+        outputs,
+        config.sequencer_address.script_pubkey(),
+        config.fee_rate,
+    )?;
+    Ok(commit_tx)
 }
 
 fn make_txin(txid: bitcoin::Txid, vout: u32) -> TxIn {
@@ -296,14 +250,17 @@ mod tests {
     use bitcoin::{
         opcodes::all::OP_RETURN,
         secp256k1::{rand, Keypair, Secp256k1},
-        Network, ScriptBuf, Txid,
+        Network, Txid,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 
     use super::*;
     use crate::{
         test_utils::test_context::get_writer_context,
-        writer::chunked_envelope::commit_op_return::COMMIT_OP_RETURN_PAYLOAD_LEN,
+        writer::{
+            builder::{signed_commit_vsize, BITCOIN_DUST_LIMIT},
+            chunked_envelope::commit_op_return::COMMIT_OP_RETURN_PAYLOAD_LEN,
+        },
     };
 
     const TEST_DA_BLOB_VERSION: u32 = 1;
@@ -323,7 +280,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -340,7 +297,7 @@ mod tests {
                     .unwrap(),
                 vout: 0,
                 address: address.as_unchecked().clone(),
-                script_pubkey: ScriptBuf::new(),
+                script_pubkey: address.script_pubkey(),
                 amount: Amount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
@@ -431,7 +388,7 @@ mod tests {
                 .unwrap(),
             vout: 0,
             address: address.as_unchecked().clone(),
-            script_pubkey: ScriptBuf::new(),
+            script_pubkey: address.script_pubkey(),
             amount: Amount::from_sat(1_000),
             confirmations: 100,
             spendable: true,
@@ -453,6 +410,84 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_chunked_envelope_txs_uses_exact_dust_limit_utxos() {
+        let mut config = get_test_config();
+        config.fee_rate = FeeRate::from_sat_per_vb_u32(1);
+        let mut utxos = get_mock_utxos();
+        for utxo in &mut utxos {
+            utxo.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+        }
+        let chunks = vec![vec![0u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &test_keypair(),
+            utxos,
+        )
+        .unwrap();
+
+        assert_eq!(result.commit_tx.input.len(), 2);
+    }
+
+    #[test]
+    fn build_chunked_envelope_txs_terminates_when_higher_fee_selects_smaller_input() {
+        let mut config = get_test_config();
+        config.fee_rate = FeeRate::from_sat_per_vb_u32(100);
+        let chunks = vec![vec![0u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+        let kp = test_keypair();
+        let mut utxos = get_mock_utxos();
+        let p2tr_address =
+            Address::p2tr(SECP256K1, kp.x_only_public_key().0, None, Network::Regtest);
+        utxos[0].script_pubkey = p2tr_address.script_pubkey();
+
+        // Funding from the large P2TR output alone fixes the commit outputs: the OP_RETURN, the
+        // reveal funding output, and change.
+        let reference = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &kp,
+            utxos[..1].to_vec(),
+        )
+        .unwrap();
+        let outputs = &reference.commit_tx.output;
+        let fixed_total: u64 = outputs[..outputs.len() - 1]
+            .iter()
+            .map(|output| output.value.to_sat())
+            .sum();
+        let p2tr_fee =
+            fee_sats_for_vsize(signed_commit_vsize(&utxos[..1], outputs), config.fee_rate).unwrap();
+        let p2wpkh_fee =
+            fee_sats_for_vsize(signed_commit_vsize(&utxos[1..], outputs), config.fee_rate).unwrap();
+        // Priced as the P2TR spend, the P2WPKH output funds the commit with change. Priced as the
+        // larger P2WPKH spend, it no longer does, and selection moves to the P2TR output.
+        utxos[1].amount = Amount::from_sat(fixed_total + p2tr_fee + BITCOIN_DUST_LIMIT);
+        assert!(utxos[1].amount.to_sat() < fixed_total + p2wpkh_fee);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            &chunks,
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &kp,
+            utxos.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(result.commit_tx.input.len(), 1);
+        assert_eq!(
+            result.commit_tx.input[0].previous_output.txid,
+            utxos[0].txid
+        );
     }
 
     #[test]
