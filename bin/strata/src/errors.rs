@@ -28,6 +28,9 @@ pub(crate) enum InitError {
     #[error("missing OL params path in arguments")]
     MissingOLParams,
 
+    #[error("inconsistent ASM and OL parameters: {0}")]
+    InconsistentNetworkParams(String),
+
     #[error("invalid datadir path: {0:?}")]
     InvalidDatadirPath(path::PathBuf),
 

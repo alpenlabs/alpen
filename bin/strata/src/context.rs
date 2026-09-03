@@ -21,10 +21,11 @@ use strata_config::{ProverBackend, ProverConfig};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
+use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
 #[cfg(feature = "prover")]
 use strata_predicate::{PredicateKey, PredicateTypeId};
-use strata_primitives::{L1BlockCommitment, OLBlockCommitment};
+use strata_primitives::{L1BlockCommitment, OLBlockCommitment, OLBlockId};
 #[cfg(feature = "prover")]
 use strata_proofimpl_predicate_keys::Sp1Groth16PredicateKey;
 #[cfg(feature = "prover")]
@@ -82,12 +83,7 @@ pub(crate) fn init_node_context(
     // Load OL params
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
     let ol_params = load_ol_params(ol_params_path)?;
-
-    // TODO(STR-3971): cross-validate the ASM and OL params before booting. The ASM
-    // bridge deposit denomination and the OL withdrawal denomination are one network
-    // value, but the two files are loaded independently here, so a mismatched pair
-    // (hand-edited or from separate datatool runs) starts a node whose deposits
-    // cannot be withdrawn. Only datatool enforces this today, at generation time.
+    validate_shared_network_params(&asm_params, &ol_params)?;
 
     // Init storage
     let storage = init_storage(&config, handle.clone())?;
@@ -399,6 +395,144 @@ fn load_ol_params(path: &Path) -> Result<OLParams, InitError> {
     let ol_params =
         serde_json::from_str::<OLParams>(&json).map_err(|err| SerdeError::new(json, err))?;
     Ok(ol_params)
+}
+
+/// Ensures the independently loaded ASM and OL parameter files describe one network.
+///
+/// The ASM locks deposits at its bridge denomination, while the OL validates withdrawal
+/// amounts against its bridge parameters. The genesis L1 block similarly anchors both
+/// state machines. A mismatch in either value would make a node follow an inconsistent
+/// network, so reject it before initializing storage or network clients.
+fn validate_shared_network_params(
+    asm_params: &AsmParams,
+    ol_params: &OLParams,
+) -> Result<(), InitError> {
+    let asm_network_params = SharedNetworkParams::from_asm(asm_params)?;
+    let ol_network_params = SharedNetworkParams::from_ol(ol_params)?;
+
+    if asm_network_params != ol_network_params {
+        return Err(InitError::InconsistentNetworkParams(format!(
+            "shared network parameters differ: ASM={asm_network_params:?}, OL={ol_network_params:?}"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Network parameters that must remain the same across the ASM and OL.
+#[derive(Debug, PartialEq, Eq)]
+struct SharedNetworkParams {
+    bridge_denomination: u64,
+    genesis_l1_block: L1BlockCommitment,
+    genesis_ol_blkid: OLBlockId,
+}
+
+impl SharedNetworkParams {
+    /// Extracts the network parameters shared by the ASM and OL.
+    fn from_asm(asm_params: &AsmParams) -> Result<Self, InitError> {
+        let bridge = asm_params.bridge_config().ok_or_else(|| {
+            InitError::InconsistentNetworkParams(
+                "ASM params are missing the Bridge subprotocol".to_string(),
+            )
+        })?;
+        let checkpoint = asm_params.checkpoint_config().ok_or_else(|| {
+            InitError::InconsistentNetworkParams(
+                "ASM params are missing the Checkpoint subprotocol".to_string(),
+            )
+        })?;
+
+        Ok(Self {
+            bridge_denomination: bridge.denomination.to_sat(),
+            genesis_l1_block: asm_params.anchor.block,
+            genesis_ol_blkid: checkpoint.genesis_ol_blkid,
+        })
+    }
+
+    /// Extracts the network parameters shared by the ASM and OL.
+    fn from_ol(ol_params: &OLParams) -> Result<Self, InitError> {
+        let genesis_artifacts = build_genesis_artifacts(ol_params).map_err(|error| {
+            InitError::InconsistentNetworkParams(format!(
+                "failed to derive OL genesis block ID: {error}"
+            ))
+        })?;
+
+        Ok(Self {
+            bridge_denomination: ol_params.bridge_params().denomination(),
+            genesis_l1_block: ol_params.last_l1_block,
+            genesis_ol_blkid: *genesis_artifacts.commitment.blkid(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod shared_network_params_tests {
+    use strata_identifiers::Buf32;
+
+    use super::*;
+
+    #[test]
+    fn shared_network_params_match() {
+        let asm_network_params = SharedNetworkParams {
+            bridge_denomination: 100_000_000,
+            genesis_l1_block: L1BlockCommitment::default(),
+            genesis_ol_blkid: OLBlockId::null(),
+        };
+        let ol_network_params = SharedNetworkParams {
+            bridge_denomination: 100_000_000,
+            genesis_l1_block: L1BlockCommitment::default(),
+            genesis_ol_blkid: OLBlockId::null(),
+        };
+
+        assert_eq!(asm_network_params, ol_network_params);
+    }
+
+    #[test]
+    fn shared_network_params_reject_denomination_mismatch() {
+        let asm_network_params = SharedNetworkParams {
+            bridge_denomination: 100_000_000,
+            genesis_l1_block: L1BlockCommitment::default(),
+            genesis_ol_blkid: OLBlockId::null(),
+        };
+        let ol_network_params = SharedNetworkParams {
+            bridge_denomination: 200_000_000,
+            genesis_l1_block: L1BlockCommitment::default(),
+            genesis_ol_blkid: OLBlockId::null(),
+        };
+
+        assert_ne!(asm_network_params, ol_network_params);
+    }
+
+    #[test]
+    fn shared_network_params_reject_genesis_l1_block_mismatch() {
+        let asm_network_params = SharedNetworkParams {
+            bridge_denomination: 100_000_000,
+            genesis_l1_block: L1BlockCommitment::default(),
+            genesis_ol_blkid: OLBlockId::null(),
+        };
+        let ol_network_params = SharedNetworkParams {
+            bridge_denomination: 100_000_000,
+            genesis_l1_block: L1BlockCommitment::new(1, Default::default()),
+            genesis_ol_blkid: OLBlockId::null(),
+        };
+
+        assert_ne!(asm_network_params, ol_network_params);
+    }
+
+    #[test]
+    fn shared_network_params_reject_genesis_ol_block_id_mismatch() {
+        let asm_network_params = SharedNetworkParams {
+            bridge_denomination: 100_000_000,
+            genesis_l1_block: L1BlockCommitment::default(),
+            genesis_ol_blkid: OLBlockId::null(),
+        };
+        let ol_network_params = SharedNetworkParams {
+            bridge_denomination: 100_000_000,
+            genesis_l1_block: L1BlockCommitment::default(),
+            genesis_ol_blkid: OLBlockId::from(Buf32::from([1; 32])),
+        };
+
+        assert_ne!(asm_network_params, ol_network_params);
+    }
 }
 
 /// Bitcoin client initialization
