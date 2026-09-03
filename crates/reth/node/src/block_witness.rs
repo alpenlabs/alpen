@@ -154,14 +154,14 @@ where
 /// change (a `BALANCE`, which loads no code, or a plain call into unchanged code) needs no
 /// pre-state entry, so gating on the transition set keeps unrelated bytecode out of the witness and
 /// avoids a parent-state read per accessed account.
-fn collect_accessed_codes<DB, SP>(
+fn collect_accessed_codes<DB, R>(
     executed_state: &State<DB>,
-    state_provider: &SP,
+    state_provider: &R,
     record_codes: Vec<Bytes>,
 ) -> eyre::Result<Vec<Vec<u8>>>
 where
     DB: Database,
-    SP: BytecodeReader,
+    R: BytecodeReader,
 {
     let mut codes_by_hash: BTreeMap<B256, Bytes> = record_codes
         .into_iter()
