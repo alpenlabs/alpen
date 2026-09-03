@@ -188,6 +188,7 @@ pub fn apply_update_unconditionally<P: SnarkAccountProgram>(
 #[cfg(test)]
 mod tests {
     use rkyv::{rancor::Error as RkyvError, util::AlignedVec};
+    use ssz::Encode as _;
     use ssz_derive::{Decode, Encode};
     use strata_acct_types::*;
     use strata_codec::impl_type_flat_struct;
@@ -196,7 +197,7 @@ mod tests {
     use super::*;
     use crate::{
         UpdateLedgerInfo,
-        private_input::Coinput,
+        private_input::{Coinput, PrivateInput},
         traits::{IAcctMsg, IExtraData, IInnerState},
     };
 
@@ -350,6 +351,32 @@ mod tests {
         let new_state_root =
             expected_post_value.map(|v| TestState { value: v }.compute_state_root());
         UpdateManifest::new(new_state_root, extra_data, msg_entries)
+    }
+
+    #[test]
+    fn rejects_private_pre_state_that_differs_from_public_claim() {
+        let recorded_state = TestState { value: 1 };
+        let forged_state = TestState { value: 2 };
+        let recorded_root = recorded_state.compute_state_root();
+        let pub_params = UpdateProofPubParams::new(
+            Seqno::zero(),
+            ProofState::new(recorded_root, 0),
+            ProofState::new(recorded_root, 0),
+            Vec::new(),
+            LedgerRefs::new_empty(),
+            UpdateOutputs::new_empty(),
+            Vec::new(),
+        );
+        let private_input = PrivateInput::new(pub_params, forged_state.as_ssz_bytes(), Vec::new());
+        let private_input_bytes =
+            rkyv::to_bytes::<RkyvError>(&private_input).expect("rkyv encode private input");
+        // SAFETY: `private_input_bytes` was produced from `PrivateInput` above.
+        let archived_private_input =
+            unsafe { rkyv::access_unchecked::<ArchivedPrivateInput>(&private_input_bytes) };
+
+        let result = verify_and_process_update(&TestProgram, archived_private_input, ());
+
+        assert!(matches!(result, Err(ProgramError::MismatchedPreState)));
     }
 
     #[test]
