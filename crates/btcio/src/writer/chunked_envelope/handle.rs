@@ -37,7 +37,10 @@ use super::{
     signer::{sign_chunked_envelope, SignedChunkedEnvelope},
 };
 use crate::{
-    broadcaster::{is_benign_minus25_message, L1BroadcastHandle},
+    broadcaster::{
+        is_benign_minus25_message, is_max_fee_rate_exceeded_message,
+        send_raw_transaction_with_max_fee_rate, L1BroadcastHandle,
+    },
     rpc_error::{is_retryable_client_error, is_retryable_envelope_error, retryable_reason},
     tx_attempt::attempt_parts,
     tx_entry::L1TxEntryExt,
@@ -168,6 +171,7 @@ pub fn create_chunked_envelope_task(
     let ctx = Arc::new(ChunkedWriterContext::new(
         btcio_params,
         config,
+        broadcast_handle.max_fee_rate(),
         sequencer_address,
         sequencer_keypair,
         bitcoin_client,
@@ -295,6 +299,7 @@ fn format_tx_status(txid: L1TxId, status: &L1TxStatus) -> String {
 enum CommitPublishResult {
     Published,
     InvalidInputs,
+    AboveMaxFeeRate(String),
     Deferred(String),
 }
 
@@ -528,15 +533,20 @@ async fn reconcile_active_entries(
 async fn publish_commit_immediately<R: Broadcaster>(
     client: &R,
     commit_tx_entry: &L1TxEntry,
+    max_fee_rate: FeeRate,
 ) -> anyhow::Result<CommitPublishResult> {
     let tx = commit_tx_entry.try_to_tx()?;
     let txid = tx.compute_txid();
     debug!(%txid, vsize = tx.vsize(), "broadcasting chunked envelope commit");
 
-    match client.send_raw_transaction(&tx, None).await {
+    match send_raw_transaction_with_max_fee_rate(client, &tx, max_fee_rate).await {
         Ok(_) => {
             info!(%txid, "chunked envelope commit accepted by bitcoind");
             Ok(CommitPublishResult::Published)
+        }
+        Err(ClientError::Server(-25, msg)) if is_max_fee_rate_exceeded_message(&msg) => {
+            warn!(%txid, %msg, max_fee_rate_sat_vb = max_fee_rate.to_sat_per_vb_ceil(), "commit broadcast blocked by fee guardrail");
+            Ok(CommitPublishResult::AboveMaxFeeRate(msg))
         }
         Err(ClientError::Server(-25, msg)) => {
             // Bitcoind reuses -25 (RPC_VERIFY_ERROR) for both benign
@@ -599,7 +609,13 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
         "persisted signed chunked envelope before commit broadcast"
     );
 
-    match publish_commit_immediately(ctx.client.as_ref(), &commit_tx_entry).await? {
+    match publish_commit_immediately(
+        ctx.client.as_ref(),
+        &commit_tx_entry,
+        broadcast_handle.max_fee_rate(),
+    )
+    .await?
+    {
         CommitPublishResult::Published => {
             commit_tx_entry.status = L1TxStatus::Published;
             broadcast_handle
@@ -639,6 +655,21 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
                 envelope_idx,
                 commit_txid = ?entry.commit_txid,
                 "chunked envelope commit has invalid inputs; entry needs resign"
+            );
+        }
+        CommitPublishResult::AboveMaxFeeRate(reason) => {
+            commit_tx_entry.status = L1TxStatus::InvalidInputs;
+            broadcast_handle
+                .put_tx_entry_by_idx(commit_broadcast_idx, commit_tx_entry)
+                .await?;
+            entry.status = ChunkedEnvelopeStatus::NeedsResign;
+            ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
+                .await?;
+            warn!(
+                envelope_idx,
+                commit_txid = ?entry.commit_txid,
+                %reason,
+                "chunked envelope commit exceeds fee guardrail; entry needs resign"
             );
         }
         CommitPublishResult::Deferred(reason) => {
@@ -713,6 +744,9 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
             }
             Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
                 warn!(idx, %need, %have, "waiting for sufficient utxos");
+            }
+            Err(err) if err.is_blocked_by_fee_guardrail() => {
+                warn!(idx, %err, "waiting for a transaction fee rate within the broadcast guardrail");
             }
             Err(err) if is_retryable_envelope_error(&err) => {
                 let reason = retryable_reason(&err);
@@ -1461,9 +1495,13 @@ mod tests {
             .with_send_raw_transaction_mode(SendRawTransactionMode::ConnectionError);
         let commit_tx_entry = L1TxEntry::from_tx(&make_test_tx());
 
-        let result = publish_commit_immediately(&client, &commit_tx_entry)
-            .await
-            .unwrap();
+        let result = publish_commit_immediately(
+            &client,
+            &commit_tx_entry,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+        )
+        .await
+        .unwrap();
 
         assert!(matches!(
             result,
@@ -1477,11 +1515,52 @@ mod tests {
             .with_send_raw_transaction_mode(SendRawTransactionMode::BitcoindWarmup);
         let commit_tx_entry = L1TxEntry::from_tx(&make_test_tx());
 
-        let result = publish_commit_immediately(&client, &commit_tx_entry)
+        let result = publish_commit_immediately(
+            &client,
+            &commit_tx_entry,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(result, CommitPublishResult::Deferred(_)));
+    }
+
+    #[tokio::test]
+    async fn test_publish_commit_immediately_passes_fee_guardrail() {
+        let client = TestBitcoinClient::new(0);
+        let commit_tx_entry = L1TxEntry::from_tx(&make_test_tx());
+        let max_fee_rate = FeeRate::from_sat_per_vb(321).unwrap();
+
+        let result = publish_commit_immediately(&client, &commit_tx_entry, max_fee_rate)
             .await
             .unwrap();
 
-        assert!(matches!(result, CommitPublishResult::Deferred(_)));
+        assert_eq!(result, CommitPublishResult::Published);
+        let calls = client.send_raw_transaction_options();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].as_ref().unwrap().max_fee_rate, Some(max_fee_rate));
+    }
+
+    #[tokio::test]
+    async fn test_publish_commit_immediately_rebuilds_fee_guardrail_rejection() {
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::MaxFeeRateExceeded);
+        let commit_tx_entry = L1TxEntry::from_tx(&make_test_tx());
+
+        let result = publish_commit_immediately(
+            &client,
+            &commit_tx_entry,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            CommitPublishResult::AboveMaxFeeRate(reason)
+                if is_max_fee_rate_exceeded_message(&reason)
+        ));
     }
 
     #[tokio::test]

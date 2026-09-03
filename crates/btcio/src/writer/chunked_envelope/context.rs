@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bitcoin::{key::Keypair, Address};
+use bitcoin::{key::Keypair, Address, FeeRate};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
 
@@ -19,6 +19,9 @@ pub(crate) struct ChunkedWriterContext<R: Reader + Signer + Wallet> {
     /// Btcio specific configuration.
     pub config: Arc<WriterConfig>,
 
+    /// Maximum fee rate accepted for initial transaction construction and broadcast.
+    pub max_fee_rate: FeeRate,
+
     /// Sequencer's address to watch utxos for and spend change amount to.
     pub sequencer_address: Address,
 
@@ -36,6 +39,7 @@ impl<R: Reader + Signer + Wallet> ChunkedWriterContext<R> {
     pub(crate) fn new(
         btcio_params: BtcioParams,
         config: Arc<WriterConfig>,
+        max_fee_rate: FeeRate,
         sequencer_address: Address,
         sequencer_keypair: Keypair,
         client: Arc<R>,
@@ -44,6 +48,7 @@ impl<R: Reader + Signer + Wallet> ChunkedWriterContext<R> {
         Self {
             btcio_params,
             config,
+            max_fee_rate,
             sequencer_address,
             sequencer_keypair,
             client,

@@ -14,8 +14,9 @@ use tracing::*;
 
 use super::{
     builder::{
-        attach_reveal_signature, build_and_sign_envelope_txs, build_envelope_txs, EnvelopeData,
-        EnvelopeError,
+        attach_reveal_signature, build_and_sign_envelope_txs, build_envelope_txs,
+        effective_fee_rate, ensure_built_fee_rate_within_max, rebind_single_reveal,
+        sign_commit_with_fee_guardrail, EnvelopeData, EnvelopeError,
     },
     context::{EnvelopeSigningMode, WriterContext},
 };
@@ -62,14 +63,26 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 
         let commit_txid = envelope.commit_tx.compute_txid();
         debug!(%commit_txid, "Signing commit transaction with wallet");
-        let signed_commit = ctx
-            .client
-            .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
-            .await
-            .map_err(EnvelopeError::SignRawTransaction)?
-            .tx;
+        let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
+            ctx.client.as_ref(),
+            envelope.commit_tx,
+            envelope.commit_fee,
+            envelope.fee_rate,
+            ctx.max_fee_rate,
+        )
+        .await?;
         envelope.commit_tx = signed_commit;
+        envelope.commit_fee = commit_fee;
+        if envelope.commit_tx.compute_txid() != commit_txid {
+            rebind_single_reveal(&mut envelope)?;
+        }
+        ensure_built_fee_rate_within_max(
+            &envelope.commit_tx,
+            envelope.commit_fee,
+            ctx.max_fee_rate,
+        )?;
 
+        let commit_txid = envelope.commit_tx.compute_txid();
         info!(%commit_txid, sighash = %envelope.sighash, "envelope built, commit signed");
         Ok(envelope)
     }
@@ -96,6 +109,18 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
 
     async {
         let envelope = build_and_sign_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
+        ensure_built_fee_rate_within_max(
+            &envelope.commit_tx,
+            envelope.commit_fee,
+            ctx.max_fee_rate,
+        )?;
+        ensure_built_fee_rate_within_max(
+            &envelope.reveal_tx,
+            envelope.reveal_fee,
+            ctx.max_fee_rate,
+        )?;
+        let commit_fee_rate = effective_fee_rate(&envelope.commit_tx, envelope.commit_fee)?;
+        let reveal_fee_rate = effective_fee_rate(&envelope.reveal_tx, envelope.reveal_fee)?;
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         broadcast_handle
@@ -103,7 +128,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
                 to_raw_buf32(cid),
                 L1TxEntry::from_tx_with_fee(
                     &envelope.commit_tx,
-                    envelope.fee_rate,
+                    commit_fee_rate,
                     envelope.commit_fee,
                 ),
             )
@@ -113,7 +138,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
             broadcast_handle,
             TxNodeKind::SingleEnvelopeCommit { payload_idx },
             &envelope.commit_tx,
-            envelope.fee_rate,
+            commit_fee_rate,
             envelope.commit_fee,
         )
         .await?;
@@ -124,7 +149,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
                 to_raw_buf32(rid),
                 L1TxEntry::from_tx_with_fee(
                     &envelope.reveal_tx,
-                    envelope.fee_rate,
+                    reveal_fee_rate,
                     envelope.reveal_fee,
                 ),
             )
@@ -166,6 +191,11 @@ pub(crate) async fn complete_reveal_and_broadcast(
             signature,
         )
         .map_err(EnvelopeError::Other)?;
+        let max_fee_rate = broadcast_handle.max_fee_rate();
+        ensure_built_fee_rate_within_max(&envelope.commit_tx, envelope.commit_fee, max_fee_rate)?;
+        ensure_built_fee_rate_within_max(&reveal_tx, envelope.reveal_fee, max_fee_rate)?;
+        let commit_fee_rate = effective_fee_rate(&envelope.commit_tx, envelope.commit_fee)?;
+        let reveal_fee_rate = effective_fee_rate(&reveal_tx, envelope.reveal_fee)?;
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         put_tx_entry_if_missing(
@@ -173,14 +203,14 @@ pub(crate) async fn complete_reveal_and_broadcast(
             cid,
             &envelope.commit_tx,
             envelope.commit_fee,
-            envelope,
+            commit_fee_rate,
         )
         .await?;
         put_tx_node(
             broadcast_handle,
             TxNodeKind::SingleEnvelopeCommit { payload_idx },
             &envelope.commit_tx,
-            envelope.fee_rate,
+            commit_fee_rate,
             envelope.commit_fee,
         )
         .await?;
@@ -193,7 +223,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
             broadcast_handle,
             TxNodeKind::SingleEnvelopeReveal { payload_idx },
             &reveal_tx,
-            envelope.fee_rate,
+            reveal_fee_rate,
             envelope.reveal_fee,
         )
         .await?;
@@ -202,7 +232,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
             rid,
             &reveal_tx,
             envelope.reveal_fee,
-            envelope,
+            reveal_fee_rate,
         )
         .await?;
 
@@ -408,7 +438,7 @@ async fn put_tx_entry_if_missing(
     txid: L1TxId,
     tx: &Transaction,
     fee: Amount,
-    envelope: &EnvelopeData,
+    fee_rate: FeeRate,
 ) -> Result<(), EnvelopeError> {
     if broadcast_handle
         .get_tx_entry_by_id_async(to_raw_buf32(txid))
@@ -422,7 +452,7 @@ async fn put_tx_entry_if_missing(
     broadcast_handle
         .put_tx_entry(
             to_raw_buf32(txid),
-            L1TxEntry::from_tx_with_fee(tx, envelope.fee_rate, fee),
+            L1TxEntry::from_tx_with_fee(tx, fee_rate, fee),
         )
         .await
         .map_err(|e| EnvelopeError::Other(e.into()))?;
@@ -626,8 +656,12 @@ mod test {
             .unwrap()
             .expect("reveal entry must exist");
 
-        assert!(commit_entry.rbf.is_some());
-        assert!(reveal_entry.rbf.is_some());
+        for stored_entry in [&commit_entry, &reveal_entry] {
+            let tx = stored_entry.try_to_tx().unwrap();
+            let rbf = stored_entry.rbf.expect("RBF metadata must exist");
+            let effective_rate = effective_fee_rate(&tx, Amount::from_sat(rbf.fee_sats)).unwrap();
+            assert_eq!(rbf.fee_rate_sat_vb, effective_rate.to_sat_per_vb_ceil());
+        }
         assert!(bcast_handle
             .get_tx_node(TxNodeId::from_kind(&TxNodeKind::SingleEnvelopeCommit {
                 payload_idx: 7

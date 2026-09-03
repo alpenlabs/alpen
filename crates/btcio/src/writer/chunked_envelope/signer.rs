@@ -20,11 +20,18 @@ use strata_db_types::{
 };
 use tracing::*;
 
-use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
+use super::{
+    builder::{build_chunked_envelope_txs, rebuild_chunked_reveals},
+    context::ChunkedWriterContext,
+};
 use crate::{
     tx_entry::L1TxEntryExt,
     writer::{
-        builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
+        builder::{
+            effective_fee_rate, ensure_built_fee_rate_within_max,
+            ensure_initial_fee_rate_within_max, sign_commit_with_fee_guardrail, EnvelopeConfig,
+            EnvelopeError, BITCOIN_DUST_LIMIT,
+        },
         fees::resolve_fee_rate,
     },
 };
@@ -107,6 +114,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
             .await
             .map_err(EnvelopeError::PrereqFetch)?;
+        ensure_initial_fee_rate_within_max(fee_rate, ctx.max_fee_rate)?;
 
         debug!(
             envelope_idx,
@@ -128,7 +136,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             None,
         );
 
-        let built = build_chunked_envelope_txs(
+        let mut built = build_chunked_envelope_txs(
             &env_config,
             entry.chunk_data(),
             &entry.magic_bytes,
@@ -138,12 +146,33 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         )?;
 
         // Sign commit via bitcoind wallet RPC.
-        let signed_commit = ctx
-            .client
-            .sign_raw_transaction_with_wallet(&built.commit_tx, None)
-            .await
-            .map_err(EnvelopeError::SignRawTransaction)?
-            .tx;
+        let unsigned_commit_txid = built.commit_tx.compute_txid();
+        let (signed_commit, commit_fee) = sign_commit_with_fee_guardrail(
+            ctx.client.as_ref(),
+            built.commit_tx,
+            built.commit_fee,
+            fee_rate,
+            ctx.max_fee_rate,
+        )
+        .await?;
+        built.commit_fee = commit_fee;
+        if signed_commit.compute_txid() != unsigned_commit_txid {
+            built.reveal_txs = rebuild_chunked_reveals(
+                &env_config,
+                entry.chunk_data(),
+                &ctx.sequencer_keypair,
+                &signed_commit,
+            )?;
+        }
+        ensure_built_fee_rate_within_max(&signed_commit, built.commit_fee, ctx.max_fee_rate)?;
+        let commit_fee_rate = effective_fee_rate(&signed_commit, built.commit_fee)?;
+        for reveal_tx in &built.reveal_txs {
+            let commit_output =
+                &signed_commit.output[reveal_tx.input[0].previous_output.vout as usize];
+            let reveal_output_total = reveal_tx.output.iter().map(|output| output.value).sum();
+            let reveal_fee = commit_output.value - reveal_output_total;
+            ensure_built_fee_rate_within_max(reveal_tx, reveal_fee, ctx.max_fee_rate)?;
+        }
         let commit_txid = to_l1_txid(signed_commit.compute_txid());
         let commit_wtxid = to_l1_wtxid(signed_commit.compute_wtxid());
 
@@ -179,7 +208,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         updated.reveals = reveals;
         updated.status = ChunkedEnvelopeStatus::Unpublished;
         let commit_tx_entry =
-            L1TxEntry::from_tx_with_fee(&signed_commit, fee_rate, built.commit_fee);
+            L1TxEntry::from_tx_with_fee(&signed_commit, commit_fee_rate, built.commit_fee);
 
         Ok(SignedChunkedEnvelope {
             entry: updated,

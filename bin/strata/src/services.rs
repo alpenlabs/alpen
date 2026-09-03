@@ -99,6 +99,7 @@ mod sequencer_services {
                     nodectx.asm_params(),
                     nodectx.config().btcio.l1_reorg_safe_depth,
                 ),
+                nodectx.config().btcio.broadcaster.max_fee_rate(),
             )
             .with_broadcast_poll_interval_ms(nodectx.config().btcio.broadcaster.poll_interval_ms)
             .launch(nodectx.executor().as_ref())
@@ -137,6 +138,7 @@ mod sequencer_services {
             let ctx = WriterContext::new(
                 btcio_params,
                 config.clone(),
+                nodectx.config().btcio.broadcaster.max_fee_rate(),
                 sequencer_address,
                 nodectx.bitcoin_client().clone(),
                 nodectx.status_channel().as_ref().clone(),

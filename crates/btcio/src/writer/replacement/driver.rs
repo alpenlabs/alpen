@@ -30,8 +30,8 @@ use strata_storage::ops::{chunked_envelope::ChunkedEnvelopeOps, writer::Envelope
 use tracing::*;
 
 use super::build::{
-    build_chunked_reveal_replacement, build_pending_single_reveal_replacement,
-    build_wallet_commit_replacement, chunked_commit_change_index, ensure_reveal_signable,
+    build_chunked_commit_replacement, build_chunked_reveal_replacement,
+    build_pending_single_reveal_replacement, chunked_commit_change_index, ensure_reveal_signable,
     extract_reveal_pubkey, rebuild_reveal_for_replaced_commit,
     validate_chunked_commit_replacement_layout, ReplacementError,
 };
@@ -670,7 +670,7 @@ where
                 .await
             }
             TxNodeKind::ChunkedEnvelopeCommit { .. } => {
-                replace_wallet_commit(
+                replace_chunked_commit(
                     client,
                     writer_config,
                     broadcast_handle,
@@ -696,7 +696,7 @@ where
     }
 }
 
-async fn replace_wallet_commit<C>(
+async fn replace_chunked_commit<C>(
     client: &C,
     writer_config: &WriterConfig,
     broadcast_handle: &L1BroadcastHandle,
@@ -708,24 +708,22 @@ async fn replace_wallet_commit<C>(
 where
     C: Signer,
 {
+    let TxNodeKind::ChunkedEnvelopeCommit { envelope_idx } = record.kind else {
+        bail!("chunked commit replacement received a non-chunked tx-node");
+    };
+
     // Claim the envelope before checking anything. The durable guard below is a read, and the
     // writes that follow it are not in the same transaction, so without exclusion a reveal can be
     // enqueued in the gap and the replacement would orphan it. The claim is released on drop.
-    let _commit_claim = match record.kind {
-        TxNodeKind::ChunkedEnvelopeCommit { envelope_idx } => {
-            let Some(claim) = context.commit_phase.try_claim(envelope_idx) else {
-                debug!(
-                    envelope_idx,
-                    "commit replacement skipped: reveal enqueueing is in flight"
-                );
-                return Ok(());
-            };
-            Some(claim)
-        }
-        _ => None,
+    let Some(_commit_claim) = context.commit_phase.try_claim(envelope_idx) else {
+        debug!(
+            envelope_idx,
+            "commit replacement skipped: reveal enqueueing is in flight"
+        );
+        return Ok(());
     };
 
-    if !commit_replacement_allowed(&record, broadcast_handle, context).await? {
+    if !chunked_reveals_not_handed_to_broadcaster(envelope_idx, broadcast_handle, context).await? {
         debug!(node_id = ?record.node_id, kind = ?record.kind, "commit replacement skipped after dependent reveal activity");
         return Ok(());
     }
@@ -742,39 +740,31 @@ where
     // Tell Core which output to recycle rather than letting it guess. Its own change detection
     // skips anything in the wallet's address book, which is where the sequencer address lives, so
     // an unguided bump would add inputs and be refused every time.
-    let chunked_envelope_idx = match record.kind {
-        TxNodeKind::ChunkedEnvelopeCommit { envelope_idx } => Some(envelope_idx),
-        _ => None,
+    let Some(chunked_ops) = context.chunked_ops.as_ref() else {
+        bail!("chunked commit replacement requires chunked envelope context");
     };
-    let original_change_index = if let Some(envelope_idx) = chunked_envelope_idx {
-        let Some(chunked_ops) = context.chunked_ops.as_ref() else {
-            bail!("chunked commit replacement requires chunked envelope context");
-        };
-        let Some(envelope_entry) = chunked_ops
-            .get_chunked_envelope_entry_async(envelope_idx)
-            .await?
-        else {
-            bail!("chunked envelope {envelope_idx} missing");
-        };
-        // Replacing the commit re-points every reveal at the new commit output and re-signs it,
-        // while each reveal keeps its original tapscript. Under a rotated sequencer key those
-        // signatures could never satisfy those scripts, and the refusal only surfaces at broadcast,
-        // by which point the original commit is already `Replaced` and the envelope has nothing
-        // live left. Refuse before anything is written; the writer rebuilds under the new key, and
-        // that fresh initial attempt clears the terminal error.
-        if let Err(error) = chunked_reveals_signable(context, &envelope_entry) {
-            warn!(envelope_idx, %error, "sequencer key rotated since the envelope was built; refusing to bump its commit");
-            mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
-            return Ok(());
-        }
-        chunked_commit_change_index(&original_commit_tx, envelope_entry.reveals.len())
-    } else {
-        None
+    let Some(envelope_entry) = chunked_ops
+        .get_chunked_envelope_entry_async(envelope_idx)
+        .await?
+    else {
+        bail!("chunked envelope {envelope_idx} missing");
     };
+    // Replacing the commit re-points every reveal at the new commit output and re-signs it, while
+    // each reveal keeps its original tapscript. Under a rotated sequencer key those signatures
+    // could never satisfy those scripts, and the refusal only surfaces at broadcast, by which
+    // point the original commit is already `Replaced` and the envelope has nothing live left.
+    // Refuse before anything is written; the writer rebuilds under the new key, and that fresh
+    // initial attempt clears the terminal error.
+    if let Err(error) = chunked_reveals_signable(context, &envelope_entry) {
+        warn!(envelope_idx, %error, "sequencer key rotated since the envelope was built; refusing to bump its commit");
+        mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
+        return Ok(());
+    }
+    let original_change_index =
+        chunked_commit_change_index(&original_commit_tx, envelope_entry.reveals.len());
 
-    let replacement = match build_wallet_commit_replacement(
+    let replacement = match build_chunked_commit_replacement(
         client,
-        &record.kind,
         &original_commit_tx,
         record.active_txid,
         target_fee_rate,
@@ -816,28 +806,22 @@ where
     }
 
     let replacement_tx = replacement.try_to_tx()?;
-    let is_chunked_commit = matches!(record.kind, TxNodeKind::ChunkedEnvelopeCommit { .. });
 
     // Validate before writing anything: an incompatible layout must not leave partial state.
-    if is_chunked_commit {
-        // A storage or decode failure here propagates: it is our own state that is broken, and
-        // silently retrying would rebuild and re-sign a PSBT every poll while hiding the fault.
-        match validate_chunked_commit_layout(
-            context,
-            &record,
-            &active_entry_after_build,
-            &replacement_tx,
-        )
-        .await?
-        {
-            CommitLayoutCheck::Ok => {}
-            CommitLayoutCheck::IncompatibleCandidate(error) => {
-                // A different candidate (different fee rate, different change handling) may well
-                // be compatible, so discard this one rather than disabling the chain permanently.
-                warn!(node_id = ?record.node_id, %error, "discarding replacement commit whose layout is incompatible with the envelope");
-                return Ok(());
-            }
-        }
+    // A storage or decode failure here propagates: it is our own state that is broken, and
+    // silently retrying would rebuild and re-sign a PSBT every poll while hiding the fault.
+    let layout_check = validate_chunked_commit_layout(
+        context,
+        &record,
+        &active_entry_after_build,
+        &replacement_tx,
+    )
+    .await?;
+    if let CommitLayoutCheck::IncompatibleCandidate(error) = layout_check {
+        // A different candidate (different fee rate, different change handling) may well be
+        // compatible, so discard this one rather than disabling the chain permanently.
+        warn!(node_id = ?record.node_id, %error, "discarding replacement commit whose layout is incompatible with the envelope");
+        return Ok(());
     }
 
     // Write order across the three trees:
@@ -876,15 +860,13 @@ where
     record.append_replacement(replacement);
     broadcast_handle.put_tx_node(record.clone()).await?;
 
-    if is_chunked_commit {
-        // Deliberately not terminal. Terminal records are skipped by every later poll, so a
-        // transient storage failure here would strand the envelope permanently. Propagating
-        // instead surfaces the fault and retries on the next poll, and until the refresh lands the
-        // writer refuses to enqueue reveals built against the superseded commit.
-        update_chunked_commit_replacement_metadata(context, &record, &replacement_tx)
-            .await
-            .context("refreshing chunked envelope metadata after commit replacement")?;
-    }
+    // Deliberately not terminal. Terminal records are skipped by every later poll, so a transient
+    // storage failure here would strand the envelope permanently. Propagating instead surfaces the
+    // fault and retries on the next poll, and until the refresh lands the writer refuses to enqueue
+    // reveals built against the superseded commit.
+    update_chunked_commit_replacement_metadata(context, &record, &replacement_tx)
+        .await
+        .context("refreshing chunked envelope metadata after commit replacement")?;
 
     Ok(())
 }
@@ -1450,34 +1432,6 @@ async fn put_tx_node_if_active_unchanged(
     Ok(())
 }
 
-/// Reports whether a commit transaction may still be fee bumped.
-///
-/// Replacing a commit changes its txid, which invalidates every reveal that spends one of its
-/// outputs. So a commit is only replaceable while the envelope is still in the commit-only phase.
-/// This check is deliberately fail-closed: anything it cannot positively confirm as "no reveal has
-/// been handed to the broadcaster" blocks the replacement.
-async fn commit_replacement_allowed(
-    record: &TxNodeRecord,
-    broadcast_handle: &L1BroadcastHandle,
-    context: &ReplacementContext,
-) -> anyhow::Result<bool> {
-    match record.kind {
-        TxNodeKind::SingleEnvelopeCommit { payload_idx } => {
-            reveal_node_not_handed_to_broadcaster(
-                TxNodeId::from_kind(&TxNodeKind::SingleEnvelopeReveal { payload_idx }),
-                broadcast_handle,
-            )
-            .await
-        }
-        TxNodeKind::ChunkedEnvelopeCommit { envelope_idx } => {
-            chunked_reveals_not_handed_to_broadcaster(envelope_idx, broadcast_handle, context).await
-        }
-        TxNodeKind::SingleEnvelopeReveal { .. } | TxNodeKind::ChunkedEnvelopeReveal { .. } => {
-            Ok(true)
-        }
-    }
-}
-
 /// Reports whether no reveal of `envelope_idx` has reached the broadcaster yet.
 ///
 /// Two independent sources are consulted so the answer does not depend on the order in which the
@@ -1538,24 +1492,6 @@ async fn chunked_reveals_not_handed_to_broadcaster(
     }
 
     Ok(true)
-}
-
-/// Reports whether this reveal has not yet been handed to the broadcaster.
-///
-/// "Handed over" means a broadcast row exists, not that the row says `Published`. An `Unpublished`
-/// row is already queued and the broadcaster can publish it on any tick, so a commit replacement
-/// that reads it as safe would race the publication and orphan the reveal.
-async fn reveal_node_not_handed_to_broadcaster(
-    node_id: TxNodeId,
-    broadcast_handle: &L1BroadcastHandle,
-) -> anyhow::Result<bool> {
-    let Some(reveal_node) = broadcast_handle.get_tx_node(node_id).await? else {
-        return Ok(true);
-    };
-    Ok(broadcast_handle
-        .get_active_tx_entry_by_id_async(to_raw_buf32(reveal_node.active_txid))
-        .await?
-        .is_none())
 }
 
 fn to_raw_buf32(txid: L1TxId) -> Buf32 {
@@ -1694,19 +1630,6 @@ mod tests {
         FeeRate::from_sat_per_vb(2).expect("test: valid fee rate")
     }
 
-    fn commit_record() -> TxNodeRecord {
-        let attempt = TxAttempt::active(
-            attempt_parts(&tx_with_output(10_000), fee_rate(), Amount::from_sat(500)),
-            0,
-        );
-        TxNodeRecord::new(
-            TxNodeKind::ChunkedEnvelopeCommit {
-                envelope_idx: ENVELOPE_IDX,
-            },
-            attempt,
-        )
-    }
-
     /// Builds an envelope row carrying one reveal, returning the row and the reveal tx.
     fn envelope_entry_with_reveal() -> (ChunkedEnvelopeEntry, Transaction) {
         let reveal_tx = tx_with_output(900);
@@ -1726,7 +1649,7 @@ mod tests {
     /// transaction. The latch is what makes the pair safe: while the writer is enqueueing reveals
     /// for an envelope, a commit replacement for it must not even begin.
     #[tokio::test(flavor = "multi_thread")]
-    async fn commit_replacement_is_refused_while_reveal_enqueue_holds_the_envelope() {
+    async fn chunked_commit_replacement_is_refused_while_reveal_enqueue_holds_the_envelope() {
         let bcast = get_broadcast_handle();
         let (entry, _reveal_tx) = envelope_entry_with_reveal();
         let mut context = context_with(Some(entry)).await;
@@ -1735,7 +1658,7 @@ mod tests {
 
         // Nothing has been enqueued yet, so the durable guard alone would allow the replacement.
         assert!(
-            commit_replacement_allowed(&commit_record(), &bcast, &context)
+            chunked_reveals_not_handed_to_broadcaster(ENVELOPE_IDX, &bcast, &context)
                 .await
                 .unwrap()
         );
@@ -1852,7 +1775,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn commit_replacement_allowed_before_any_reveal_is_enqueued() {
+    async fn chunked_commit_replacement_allowed_before_any_reveal_is_enqueued() {
         let bcast = get_broadcast_handle();
         let (entry, _reveal_tx) = envelope_entry_with_reveal();
         let context = context_with(Some(entry)).await;
@@ -1860,7 +1783,7 @@ mod tests {
         // The envelope row lists a reveal, but nothing has been handed to the broadcaster and no
         // reveal tx-node exists: the envelope is still in the commit-only phase.
         assert!(
-            commit_replacement_allowed(&commit_record(), &bcast, &context)
+            chunked_reveals_not_handed_to_broadcaster(ENVELOPE_IDX, &bcast, &context)
                 .await
                 .unwrap()
         );
@@ -1869,7 +1792,7 @@ mod tests {
     /// Regression: a crash between inserting a reveal's broadcast entry and writing its tx-node
     /// record must not let the commit be replaced, which would orphan the published reveal.
     #[tokio::test(flavor = "multi_thread")]
-    async fn commit_replacement_blocked_when_reveal_entry_exists_without_tx_node() {
+    async fn chunked_commit_replacement_blocked_when_reveal_entry_exists_without_tx_node() {
         let bcast = get_broadcast_handle();
         let (entry, reveal_tx) = envelope_entry_with_reveal();
         let context = context_with(Some(entry)).await;
@@ -1883,14 +1806,14 @@ mod tests {
             .expect("test: reveal entry persists");
 
         assert!(
-            !commit_replacement_allowed(&commit_record(), &bcast, &context)
+            !chunked_reveals_not_handed_to_broadcaster(ENVELOPE_IDX, &bcast, &context)
                 .await
                 .unwrap()
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn commit_replacement_blocked_when_reveal_tx_node_exists() {
+    async fn chunked_commit_replacement_blocked_when_reveal_tx_node_exists() {
         let bcast = get_broadcast_handle();
         let (entry, reveal_tx) = envelope_entry_with_reveal();
         let context = context_with(Some(entry)).await;
@@ -1911,7 +1834,7 @@ mod tests {
             .expect("test: reveal node persists");
 
         assert!(
-            !commit_replacement_allowed(&commit_record(), &bcast, &context)
+            !chunked_reveals_not_handed_to_broadcaster(ENVELOPE_IDX, &bcast, &context)
                 .await
                 .unwrap()
         );
@@ -1922,7 +1845,7 @@ mod tests {
     /// exists to catch. Pin the last index of a multi-reveal envelope, which is the one a
     /// half-open/inclusive slip drops.
     #[tokio::test(flavor = "multi_thread")]
-    async fn commit_replacement_blocked_by_a_tx_node_at_the_last_reveal_index() {
+    async fn chunked_commit_replacement_blocked_by_a_tx_node_at_the_last_reveal_index() {
         let bcast = get_broadcast_handle();
         let (mut entry, reveal_tx) = envelope_entry_with_reveal();
         // Three reveals, so the last index is 2.
@@ -1952,7 +1875,7 @@ mod tests {
             .expect("test: reveal node persists");
 
         assert!(
-            !commit_replacement_allowed(&commit_record(), &bcast, &context)
+            !chunked_reveals_not_handed_to_broadcaster(ENVELOPE_IDX, &bcast, &context)
                 .await
                 .unwrap()
         );
@@ -1961,23 +1884,23 @@ mod tests {
     /// Without the envelope row there is no way to enumerate the reveals a replacement would
     /// orphan, so the guard must refuse rather than assume the commit-only phase.
     #[tokio::test(flavor = "multi_thread")]
-    async fn commit_replacement_blocked_when_envelope_row_is_missing() {
+    async fn chunked_commit_replacement_blocked_when_envelope_row_is_missing() {
         let bcast = get_broadcast_handle();
         let context = context_with(None).await;
 
         assert!(
-            !commit_replacement_allowed(&commit_record(), &bcast, &context)
+            !chunked_reveals_not_handed_to_broadcaster(ENVELOPE_IDX, &bcast, &context)
                 .await
                 .unwrap()
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn commit_replacement_blocked_without_chunked_ops() {
+    async fn chunked_commit_replacement_blocked_without_chunked_ops() {
         let bcast = get_broadcast_handle();
 
-        assert!(!commit_replacement_allowed(
-            &commit_record(),
+        assert!(!chunked_reveals_not_handed_to_broadcaster(
+            ENVELOPE_IDX,
             &bcast,
             &ReplacementContext::default()
         )
@@ -2502,26 +2425,5 @@ mod tests {
         assert!(!pending_attempt_is_orphaned(&context, &record)
             .await
             .expect("test: orphan check runs"));
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn reveal_kinds_are_always_replaceable() {
-        let bcast = get_broadcast_handle();
-        let reveal_record = TxNodeRecord::new(
-            TxNodeKind::ChunkedEnvelopeReveal {
-                envelope_idx: ENVELOPE_IDX,
-                reveal_idx: 0,
-            },
-            TxAttempt::active(
-                attempt_parts(&tx_with_output(900), fee_rate(), Amount::from_sat(100)),
-                0,
-            ),
-        );
-
-        assert!(
-            commit_replacement_allowed(&reveal_record, &bcast, &ReplacementContext::default())
-                .await
-                .unwrap()
-        );
     }
 }

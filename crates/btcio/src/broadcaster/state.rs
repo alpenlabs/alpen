@@ -179,6 +179,7 @@ where
 mod test {
     use std::{iter::once, sync::Arc};
 
+    use bitcoin::FeeRate;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{backend::DatabaseBackend, common::L1TxId, l1_broadcast::L1TxStatus};
     use strata_l1_txfmt::MagicBytes;
@@ -210,7 +211,11 @@ mod test {
         ops: Arc<BroadcastDbOps>,
         client: TestBitcoinClient,
     ) -> BroadcasterIo<TestBitcoinClient> {
-        BroadcasterIo::new(Arc::new(client), ops)
+        BroadcasterIo::new(
+            Arc::new(client),
+            ops,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+        )
     }
 
     async fn populate_broadcast_db(ops: Arc<BroadcastDbOps>) -> Vec<(u64, L1TxEntry)> {

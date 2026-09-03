@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     str::FromStr,
     sync::{Arc, Mutex},
 };
@@ -14,7 +14,7 @@ use bitcoin::{
     taproot::{ControlBlock, LeafVersion, TaprootMerkleBranch},
     transaction::Version,
     Address, Amount, Block, BlockHash, FeeRate, Network, Psbt, ScriptBuf, SignedAmount,
-    TapNodeHash, Transaction, TxOut, Txid, Work, XOnlyPublicKey,
+    TapNodeHash, Transaction, TxOut, Txid, Witness, Work, XOnlyPublicKey,
 };
 use bitcoind_async_client::{
     corepc_types::{
@@ -58,6 +58,8 @@ pub struct TestBitcoinClient {
     pub included_height: u64,
     /// Behavior for `send_raw_transaction`.
     pub send_raw_transaction_mode: SendRawTransactionMode,
+    /// Options received by `send_raw_transaction`.
+    pub send_raw_transaction_options: Arc<Mutex<Vec<Option<BroadcastOptions>>>>,
     /// Value returned by the mock wallet UTXO.
     pub utxo_amount_sats: u64,
     /// Fee estimate, in sat/vB, returned from `estimate_smart_fee`.
@@ -68,6 +70,12 @@ pub struct TestBitcoinClient {
     pub wallet_process_psbt_result: Arc<Mutex<WalletProcessPsbt>>,
     /// PSBT strings received by `wallet_process_psbt`.
     pub wallet_process_psbt_calls: Arc<Mutex<Vec<String>>>,
+    /// Optional witness signature size used when echo-signing raw transactions.
+    pub sign_raw_transaction_witness_size: Option<usize>,
+    /// Witness signature sizes used by consecutive raw-transaction signing calls.
+    pub sign_raw_transaction_witness_sizes: Arc<Mutex<VecDeque<usize>>>,
+    /// Transactions received by `sign_raw_transaction_with_wallet`.
+    pub sign_raw_transaction_calls: Arc<Mutex<Vec<Transaction>>>,
 }
 
 /// Configures how [`TestBitcoinClient`] responds to `send_raw_transaction`.
@@ -75,6 +83,7 @@ pub struct TestBitcoinClient {
 pub enum SendRawTransactionMode {
     Success,
     AlreadyInMempool,
+    MaxFeeRateExceeded,
     MissingOrInvalidInput,
     InvalidParameter,
     HttpInternalServerError,
@@ -90,17 +99,25 @@ impl TestBitcoinClient {
             // Use arbitrary value, make configurable as necessary
             included_height: 100,
             send_raw_transaction_mode: SendRawTransactionMode::Success,
+            send_raw_transaction_options: Arc::new(Mutex::new(Vec::new())),
             utxo_amount_sats: 10_000_000_000,
             estimate_smart_fee_result: 3,
             estimate_smart_fee_targets: Arc::new(Mutex::new(Vec::new())),
             wallet_process_psbt_result: Arc::new(Mutex::new(default_wallet_process_psbt_result())),
             wallet_process_psbt_calls: Arc::new(Mutex::new(Vec::new())),
+            sign_raw_transaction_witness_size: None,
+            sign_raw_transaction_witness_sizes: Arc::new(Mutex::new(VecDeque::new())),
+            sign_raw_transaction_calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn with_send_raw_transaction_mode(mut self, mode: SendRawTransactionMode) -> Self {
         self.send_raw_transaction_mode = mode;
         self
+    }
+
+    pub fn send_raw_transaction_options(&self) -> Vec<Option<BroadcastOptions>> {
+        self.send_raw_transaction_options.lock().unwrap().clone()
     }
 
     pub fn with_utxo_amount_sats(mut self, sats: u64) -> Self {
@@ -131,6 +148,26 @@ impl TestBitcoinClient {
 
     pub fn wallet_process_psbt_calls(&self) -> Vec<String> {
         self.wallet_process_psbt_calls.lock().unwrap().clone()
+    }
+
+    pub fn with_sign_raw_transaction_witness_size(mut self, witness_size: usize) -> Self {
+        self.sign_raw_transaction_witness_size = Some(witness_size);
+        self
+    }
+
+    pub fn with_sign_raw_transaction_witness_sizes(self, witness_sizes: Vec<usize>) -> Self {
+        *self
+            .sign_raw_transaction_witness_sizes
+            .lock()
+            .expect("test: sign_raw_transaction_witness_sizes lock") = witness_sizes.into();
+        self
+    }
+
+    pub fn sign_raw_transaction_calls(&self) -> Vec<Transaction> {
+        self.sign_raw_transaction_calls
+            .lock()
+            .expect("test: sign_raw_transaction_calls lock")
+            .clone()
     }
 }
 
@@ -332,13 +369,21 @@ impl Broadcaster for TestBitcoinClient {
     async fn send_raw_transaction(
         &self,
         _tx: &Transaction,
-        _options: Option<BroadcastOptions>,
+        options: Option<BroadcastOptions>,
     ) -> ClientResult<Txid> {
+        self.send_raw_transaction_options
+            .lock()
+            .unwrap()
+            .push(options);
         match self.send_raw_transaction_mode {
             SendRawTransactionMode::Success => Ok(Txid::from_slice(&[1u8; 32]).unwrap()),
             SendRawTransactionMode::AlreadyInMempool => Err(ClientError::Server(
                 -25,
                 "txn-already-in-mempool".to_string(),
+            )),
+            SendRawTransactionMode::MaxFeeRateExceeded => Err(ClientError::Server(
+                -25,
+                "Fee exceeds maximum configured by user (e.g. -maxtxfee, maxfeerate)".to_string(),
             )),
             SendRawTransactionMode::MissingOrInvalidInput => Err(ClientError::Server(
                 -26,
@@ -555,10 +600,30 @@ impl Wallet for TestBitcoinClient {
 impl Signer for TestBitcoinClient {
     async fn sign_raw_transaction_with_wallet(
         &self,
-        _tx: &Transaction,
+        tx: &Transaction,
         _prev_outputs: Option<Vec<PreviousTransactionOutput>>,
     ) -> ClientResult<SignRawTransaction> {
-        let signed_tx: Transaction = consensus::encode::deserialize_hex(SOME_TX).unwrap();
+        self.sign_raw_transaction_calls
+            .lock()
+            .expect("test: sign_raw_transaction_calls lock")
+            .push(tx.clone());
+        let witness_size = self
+            .sign_raw_transaction_witness_sizes
+            .lock()
+            .expect("test: sign_raw_transaction_witness_sizes lock")
+            .pop_front()
+            .or(self.sign_raw_transaction_witness_size);
+        let signed_tx = if let Some(witness_size) = witness_size {
+            let mut signed_tx = tx.clone();
+            for input in &mut signed_tx.input {
+                input.witness = Witness::new();
+                input.witness.push(vec![0; witness_size]);
+                input.witness.push([0; 33]);
+            }
+            signed_tx
+        } else {
+            consensus::encode::deserialize_hex(SOME_TX).unwrap()
+        };
         Ok(SignRawTransaction {
             tx: signed_tx,
             complete: true,
@@ -691,7 +756,7 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
 pub(crate) mod test_context {
     use std::sync::Arc;
 
-    use bitcoin::{secp256k1::SecretKey, Address, Network};
+    use bitcoin::{secp256k1::SecretKey, Address, FeeRate, Network};
     use strata_config::btcio::{FeeBumpingConfig, FeePolicy, L1FeePolicyConfig, WriterConfig};
     use strata_l1_txfmt::MagicBytes;
     use strata_status::StatusChannel;
@@ -725,8 +790,15 @@ pub(crate) mod test_context {
         );
         let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
         let (pubkey, _) = sk.x_only_public_key(super::SECP256K1);
-        let ctx = WriterContext::new(btcio_params, cfg, addr, client, status_channel)
-            .with_envelope_pubkey(&pubkey.serialize());
+        let ctx = WriterContext::new(
+            btcio_params,
+            cfg,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+            addr,
+            client,
+            status_channel,
+        )
+        .with_envelope_pubkey(&pubkey.serialize());
         Arc::new(ctx)
     }
 
@@ -756,6 +828,7 @@ pub(crate) mod test_context {
         let ctx = WriterContext::new(
             base.btcio_params,
             config,
+            base.max_fee_rate,
             base.sequencer_address.clone(),
             client,
             base.status_channel.clone(),
