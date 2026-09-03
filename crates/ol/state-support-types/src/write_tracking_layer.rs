@@ -10,7 +10,7 @@ use strata_acct_types::{
 };
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ol_state_types::*;
-use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
+use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLAccountStateV1, WriteBatch};
 
 /// Helper trait for computing the state root after hypothetically applying a
 /// write batch, without requiring `Clone` on the state itself.
@@ -21,10 +21,8 @@ pub trait IComputeStateRootWithWrites: IStateAccessor {
     /// current state.
     fn compute_state_root_with_writes<'b>(
         &'b self,
-        writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
-    ) -> StateResult<Buf32>
-    where
-        Self::AccountState: 'b;
+        writes: impl Iterator<Item = &'b WriteBatch>,
+    ) -> StateResult<Buf32>;
 }
 
 /// A write-tracking state accessor that wraps a base state.
@@ -33,13 +31,12 @@ pub trait IComputeStateRootWithWrites: IStateAccessor {
 /// All writes are recorded in the write batch.
 pub struct WriteTrackingState<'base, S: IStateAccessor> {
     base: &'base S,
-    batch: WriteBatch<S::AccountState>,
+    batch: WriteBatch,
 }
 
 impl<S: IStateAccessor> fmt::Debug for WriteTrackingState<'_, S>
 where
     S: fmt::Debug,
-    S::AccountState: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WriteTrackingState")
@@ -54,7 +51,7 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
     ///
     /// The global and epochal state are cloned from the base into the write batch,
     /// since they're small and always modified during block execution.
-    pub fn new(base: &'base S, batch: WriteBatch<S::AccountState>) -> Self {
+    pub fn new(base: &'base S, batch: WriteBatch) -> Self {
         Self { base, batch }
     }
 
@@ -67,20 +64,19 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
     }
 
     /// Returns a reference to the underlying write batch.
-    pub fn batch(&self) -> &WriteBatch<S::AccountState> {
+    pub fn batch(&self) -> &WriteBatch {
         &self.batch
     }
 
     /// Consumes this wrapper and returns the write batch.
-    pub fn into_batch(self) -> WriteBatch<S::AccountState> {
+    pub fn into_batch(self) -> WriteBatch {
         self.batch
     }
 }
 
-impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessor
-    for WriteTrackingState<'base, S>
+impl<'base, S> IStateAccessor for WriteTrackingState<'base, S>
 where
-    S::AccountState: Clone + IAccountState + IAccountStateMut,
+    S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
 {
     type AccountState = S::AccountState;
 
@@ -226,18 +222,14 @@ where
     }
 }
 
-impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IComputeStateRootWithWrites
-    for WriteTrackingState<'base, S>
+impl<'base, S> IComputeStateRootWithWrites for WriteTrackingState<'base, S>
 where
-    S::AccountState: Clone + IAccountState + IAccountStateMut,
+    S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
 {
     fn compute_state_root_with_writes<'b>(
         &'b self,
-        writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
-    ) -> StateResult<Buf32>
-    where
-        Self::AccountState: 'b,
-    {
+        writes: impl Iterator<Item = &'b WriteBatch>,
+    ) -> StateResult<Buf32> {
         // Our own batch is older than anything layered on top of us, so it goes
         // first.
         self.base
@@ -245,12 +237,11 @@ where
     }
 }
 
-impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessorMut
-    for WriteTrackingState<'base, S>
+impl<'base, S> IStateAccessorMut for WriteTrackingState<'base, S>
 where
+    S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
     // FIXME(STR-3229): make this actually wrap the account state type so it
     // doesn't have to be mut on its own
-    S::AccountState: IAccountStateMut,
 {
     type AccountStateMut = S::AccountState; // Same type as AccountState for this layer
 

@@ -10,9 +10,7 @@ use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
 use strata_identifiers::{Epoch, Hash, OLBlockCommitment};
 use strata_ol_mmr_index::OLMmrIndexError;
 use strata_ol_params::{BridgeParams, OLParams};
-use strata_ol_state_types_v1::{
-    OLAccountStateV1, OLStateV1, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH,
-};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH};
 use strata_storage::{test_runtime_handle, MmrIndexManager};
 
 use super::{
@@ -265,7 +263,7 @@ fn make_target_state_with_l1_records(records: &[L1BlockRecord]) -> OLStateV1 {
         append_l1_block_rec_to_mmr(&mut l1_block_refs_mmr, record);
     }
 
-    let mut batch = WriteBatch::<OLAccountStateV1>::default();
+    let mut batch = WriteBatch::default();
     batch.epochal_writes_mut().l1_block_refs_mmr = Some(l1_block_refs_mmr);
     state
         .apply_write_batch(batch)

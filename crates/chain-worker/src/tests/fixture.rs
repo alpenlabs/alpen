@@ -25,7 +25,7 @@ use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
 use strata_ol_state_types::IStateAccessor;
-use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf_v1::{
     BlockComponents, execute_block_batch_predrain,
     test_utils::{
@@ -407,7 +407,7 @@ fn run_block_sync(
     }
 
     let (tracking_state, indexer_writes) = indexer_state.into_parts();
-    let write_batch: WriteBatch<OLAccountStateV1> = tracking_state.into_batch();
+    let write_batch: WriteBatch = tracking_state.into_batch();
 
     let mut new_state = pre_epoch_state.clone();
     new_state

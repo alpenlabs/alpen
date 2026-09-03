@@ -34,7 +34,7 @@ use strata_ol_state_support_types::{
 use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
 };
-use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf_v1::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
@@ -541,7 +541,7 @@ pub(crate) fn apply_checkpoint_epoch(
         .collect();
 
     let (tracking_state, mut indexer_writes) = indexer_state.into_parts();
-    let write_batch: WriteBatch<OLAccountStateV1> = tracking_state.into_batch();
+    let write_batch: WriteBatch = tracking_state.into_batch();
 
     // Apply the batch onto the base state to get the reconstructed state.
     let mut new_state = base_state;
@@ -898,7 +898,7 @@ fn run_stf_verification(
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
     bridge_params: BridgeParams,
-) -> WorkerResult<(WriteBatch<OLAccountStateV1>, IndexerWrites, Vec<OLLog>)> {
+) -> WorkerResult<(WriteBatch, IndexerWrites, Vec<OLLog>)> {
     // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
     let tracking_state = WriteTrackingState::new_empty(parent_state);
     let mut indexer_state = IndexerState::new(tracking_state);
@@ -913,7 +913,7 @@ fn run_stf_verification(
 
     // Extract outputs
     let (tracking_state, indexer_writes) = indexer_state.into_parts();
-    let write_batch: WriteBatch<OLAccountStateV1> = tracking_state.into_batch();
+    let write_batch: WriteBatch = tracking_state.into_batch();
 
     Ok((write_batch, indexer_writes, logs))
 }
@@ -956,9 +956,7 @@ mod tests {
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
     use strata_ol_state_support_types::IndexerWrites;
-    use strata_ol_state_types_v1::{
-        OLAccountStateV1, WriteBatch, test_utils::create_test_genesis_state,
-    };
+    use strata_ol_state_types_v1::{WriteBatch, test_utils::create_test_genesis_state};
 
     use super::*;
     use crate::OLBlockExecutionOutput;
@@ -977,7 +975,7 @@ mod tests {
         let mut new_state = create_test_genesis_state();
         let expected_height = L1Height::from(1234u32);
         let expected_blkid = L1BlockId::from(Buf32::from([7u8; 32]));
-        let mut setup_batch: WriteBatch<OLAccountStateV1> = WriteBatch::default();
+        let mut setup_batch: WriteBatch = WriteBatch::default();
         setup_batch.epochal_writes_mut().last_l1_height = Some(expected_height);
         setup_batch.epochal_writes_mut().last_l1_blkid = Some(expected_blkid);
         new_state
@@ -986,7 +984,7 @@ mod tests {
 
         // Terminal block's write batch carries no `last_l1_*` update — this is
         // the case that previously panicked.
-        let terminal_batch: WriteBatch<OLAccountStateV1> = WriteBatch::default();
+        let terminal_batch: WriteBatch = WriteBatch::default();
         assert!(terminal_batch.epochal_writes().last_l1_height.is_none());
         assert!(terminal_batch.epochal_writes().last_l1_blkid.is_none());
 

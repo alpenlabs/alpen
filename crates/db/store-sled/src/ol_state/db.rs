@@ -1,7 +1,7 @@
 use strata_db_types::DbResult;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 
 use super::schemas::{OLStateSchema, OLWriteBatchSchema};
 use crate::define_sled_database;
@@ -43,11 +43,7 @@ impl OLStateDatabase for OLStateDBSled {
         Ok(())
     }
 
-    fn put_ol_write_batch(
-        &self,
-        commitment: OLBlockCommitment,
-        wb: WriteBatch<OLAccountStateV1>,
-    ) -> DbResult<()> {
+    fn put_ol_write_batch(&self, commitment: OLBlockCommitment, wb: WriteBatch) -> DbResult<()> {
         self.config
             .with_retry((&self.write_batch_tree,), |(wb_tree,)| {
                 wb_tree.insert(&commitment, &wb)?;
@@ -56,10 +52,7 @@ impl OLStateDatabase for OLStateDBSled {
         Ok(())
     }
 
-    fn get_ol_write_batch(
-        &self,
-        commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
+    fn get_ol_write_batch(&self, commitment: OLBlockCommitment) -> DbResult<Option<WriteBatch>> {
         self.write_batch_tree
             .get(&commitment)
             .map_err(conv_sled_err)

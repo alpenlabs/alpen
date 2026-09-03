@@ -104,20 +104,20 @@ impl OLStateV1 {
     /// This function failing probably indicates the write batch was not
     /// intended for the state we're trying to apply it to, or some bug with how
     /// we're constructing write batches.
-    pub fn check_write_batch_safe(&self, batch: &WriteBatch<OLAccountStateV1>) -> StateResult<()> {
+    pub fn check_write_batch_safe(&self, batch: &WriteBatch) -> StateResult<()> {
         // Check serial ordering.
         let mut next_serial = self.global.get_next_avail_serial();
         for (serial, id) in batch.ledger().iter_new_accounts() {
-            let state = batch
+            let write = batch
                 .ledger()
-                .get_account(id)
+                .get_account_write(id)
                 .expect("state: batch with dangling serial entry");
 
             // Check that the entry is consistent.
-            if state.serial() != serial {
+            if write.serial() != serial {
                 return Err(StateError::AcctSerialInconsistent {
                     id: *id,
-                    in_acct: state.serial(),
+                    in_acct: write.serial(),
                     in_table: serial,
                 });
             }
@@ -140,17 +140,20 @@ impl OLStateV1 {
         }
 
         // Now check that all existing accounts really exist.
-        for (id, state) in batch.ledger().iter_accounts() {
-            // At this point we know that if the serial is greater than the
-            // current highest serial then it doesn't exist yet, which we've
-            // already checked for.
-            if state.serial() >= self.global.get_next_avail_serial() {
+        for (id, write) in batch.ledger().iter_account_writes() {
+            if batch.ledger().new_accounts().contains(id) {
                 continue;
             }
 
-            // Now make sure it exists.
-            if self.ledger.get_account_state(id).is_none() {
-                return Err(StateError::AccountSanityCheckFail(*id));
+            let existing = self
+                .ledger
+                .get_account_state(id)
+                .ok_or(StateError::AccountSanityCheckFail(*id))?;
+            if write.serial() != existing.serial() {
+                return Err(StateError::InapplicableAcctWrite {
+                    in_state: existing.serial(),
+                    in_write: write.serial(),
+                });
             }
         }
 
@@ -176,7 +179,7 @@ impl OLStateV1 {
     /// with the modifications from the batch.
     ///
     /// If this returns an error then the state is left unmodified.
-    pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountStateV1>) -> StateResult<()> {
+    pub fn apply_write_batch(&mut self, batch: WriteBatch) -> StateResult<()> {
         // Safety check first so we can use `.expect`.
         self.check_write_batch_safe(&batch)?;
         let (global_writes, epochal_writes, intraepoch_writes, ledger) = batch.into_parts();
@@ -186,9 +189,9 @@ impl OLStateV1 {
 
         // Create new accounts and update the serial counter.
         let mut num_new_accounts = 0usize;
-        for (account_id, account_state) in new_accounts {
+        for (account_id, write) in new_accounts {
             self.ledger
-                .create_account(account_id, account_state)
+                .create_account(account_id, write.into_state())
                 .expect("state: failed to create account");
             num_new_accounts += 1;
         }
@@ -200,12 +203,14 @@ impl OLStateV1 {
         }
 
         // Update existing accounts.
-        for (account_id, account_state) in updated_accounts {
+        for (account_id, write) in updated_accounts {
             let existing = self
                 .ledger
                 .get_account_state_mut(&account_id)
                 .expect("state: missing expected account");
-            *existing = account_state;
+            existing
+                .apply_write(write)
+                .expect("state: write batch failed safety check");
         }
 
         // Apply global state writes.
@@ -436,6 +441,65 @@ mod tests {
         assert_eq!(
             account.balance(),
             BitcoinAmount::try_from(2000).expect("amount must not exceed the Bitcoin money supply")
+        );
+    }
+
+    #[test]
+    fn test_apply_batch_rejects_mismatched_update_atomically() {
+        let mut state = create_test_genesis_state();
+        let existing_id = test_account_id(1);
+        let new_id = test_account_id(2);
+        let existing_serial = state.next_account_serial();
+        state
+            .create_new_account(
+                existing_id,
+                existing_serial,
+                NewAccountData::new_snark(
+                    BitcoinAmount::try_from(1_000)
+                        .expect("amount must not exceed the Bitcoin money supply"),
+                    PredicateKey::always_accept(),
+                    [0u8; 32].into(),
+                ),
+            )
+            .unwrap();
+
+        let mut batch = WriteBatch::default();
+        let new_serial = state.next_account_serial();
+        batch.ledger_mut().create_account_from_data(
+            new_id,
+            NewAccountData::new_snark(
+                BitcoinAmount::try_from(3_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                PredicateKey::always_accept(),
+                [2u8; 32].into(),
+            ),
+            new_serial,
+        );
+        batch.ledger_mut().update_account(
+            existing_id,
+            OLAccountStateV1::new(
+                new_serial,
+                BitcoinAmount::try_from(5_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                OLAccountTypeStateV1::Snark(OLSnarkAccountStateV1::new_fresh(
+                    PredicateKey::always_accept(),
+                    [1u8; 32].into(),
+                )),
+            ),
+        );
+
+        let error = state.apply_write_batch(batch).unwrap_err();
+
+        assert!(matches!(
+            error,
+            StateError::InapplicableAcctWrite { in_state, in_write }
+                if in_state == existing_serial && in_write == new_serial
+        ));
+        assert!(state.get_account_state(&new_id).is_none());
+        assert_eq!(
+            state.get_account_state(&existing_id).unwrap().balance(),
+            BitcoinAmount::try_from(1_000)
+                .expect("amount must not exceed the Bitcoin money supply")
         );
     }
 

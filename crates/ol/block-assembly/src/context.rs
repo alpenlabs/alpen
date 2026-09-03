@@ -14,8 +14,8 @@ use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
-use strata_ol_state_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_state_types_v1::IStateBatchApplicable;
+use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1};
 use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
@@ -23,22 +23,11 @@ use tracing::debug;
 
 use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
 
-/// Account state capabilities required by block assembly.
-pub trait BlockAssemblyAccountState:
-    Clone + IAccountState + IAccountStateMut + Send + Sync
-{
-}
-
-impl<T> BlockAssemblyAccountState for T where
-    T: Clone + IAccountState + IAccountStateMut + Send + Sync
-{
-}
-
 /// State capabilities required by block assembly.
 pub trait BlockAssemblyStateAccess:
     IComputeStateRootWithWrites
     + IStateBatchApplicable
-    + IStateAccessorMut<AccountState: BlockAssemblyAccountState>
+    + IStateAccessorMut<AccountState = OLAccountStateV1>
     + Clone
     + Send
     + Sync
@@ -48,7 +37,7 @@ pub trait BlockAssemblyStateAccess:
 impl<T> BlockAssemblyStateAccess for T where
     T: IComputeStateRootWithWrites
         + IStateBatchApplicable
-        + IStateAccessorMut<AccountState: BlockAssemblyAccountState>
+        + IStateAccessorMut<AccountState = OLAccountStateV1>
         + Clone
         + Send
         + Sync

@@ -7,7 +7,7 @@ use futures::TryFutureExt;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_db_types::DbResult;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use tokio::runtime::Handle;
 
 use crate::cache::CacheTable;
@@ -23,7 +23,7 @@ const DEFAULT_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(64).expect("64 is
 pub struct OLStateManager {
     ops: OLStateOps,
     state_cache: CacheTable<OLBlockCommitment, Option<Arc<OLStateV1>>>,
-    wb_cache: CacheTable<OLBlockCommitment, Option<WriteBatch<OLAccountStateV1>>>,
+    wb_cache: CacheTable<OLBlockCommitment, Option<WriteBatch>>,
 }
 
 impl OLStateManager {
@@ -131,7 +131,7 @@ impl OLStateManager {
     pub async fn put_write_batch_async(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<OLAccountStateV1>,
+        wb: WriteBatch,
     ) -> DbResult<()> {
         self.ops
             .put_ol_write_batch_async(commitment, wb.clone())
@@ -144,7 +144,7 @@ impl OLStateManager {
     pub fn put_write_batch_blocking(
         &self,
         commitment: OLBlockCommitment,
-        wb: WriteBatch<OLAccountStateV1>,
+        wb: WriteBatch,
     ) -> DbResult<()> {
         self.ops
             .put_ol_write_batch_blocking(commitment, wb.clone())?;
@@ -156,7 +156,7 @@ impl OLStateManager {
     pub async fn get_write_batch_async(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
+    ) -> DbResult<Option<WriteBatch>> {
         self.wb_cache
             .get_or_fetch(&commitment, || {
                 self.ops.get_ol_write_batch_fut(commitment).recv()
@@ -168,7 +168,7 @@ impl OLStateManager {
     pub fn get_write_batch_blocking(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
+    ) -> DbResult<Option<WriteBatch>> {
         self.wb_cache.get_or_fetch_blocking(&commitment, || {
             self.ops.get_ol_write_batch_blocking(commitment)
         })
@@ -199,7 +199,7 @@ mod tests {
     use strata_identifiers::test_utils::ol_block_commitment_strategy;
     use strata_identifiers::OLBlockCommitment;
     use strata_ol_state_types_v1::test_utils::ol_state_strategy;
-    use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+    use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
     use tokio::runtime::Runtime;
 
     use super::*;
@@ -278,7 +278,7 @@ mod tests {
 
     fn proptest_put_and_get_write_batch_blocking(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountStateV1>::default();
+        let wb = WriteBatch::default();
         manager
             .put_write_batch_blocking(commitment, wb)
             .expect("test: put");
@@ -290,7 +290,7 @@ mod tests {
 
     fn proptest_delete_write_batch_blocking(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountStateV1>::default();
+        let wb = WriteBatch::default();
         manager
             .put_write_batch_blocking(commitment, wb)
             .expect("test: put");
@@ -378,7 +378,7 @@ mod tests {
 
     async fn proptest_put_and_get_write_batch_async(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountStateV1>::default();
+        let wb = WriteBatch::default();
         manager
             .put_write_batch_async(commitment, wb)
             .await
@@ -392,7 +392,7 @@ mod tests {
 
     async fn proptest_delete_write_batch_async(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountStateV1>::default();
+        let wb = WriteBatch::default();
         manager
             .put_write_batch_async(commitment, wb)
             .await

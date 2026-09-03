@@ -11,9 +11,7 @@ use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ol_chain_types_v1::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
-use strata_ol_state_types::{
-    AccProofCheck, IAccountState, ISnarkAccountState, IStateAccessor, TxProofIndexer, *,
-};
+use strata_ol_state_types::{AccProofCheck, ISnarkAccountState, IStateAccessor, TxProofIndexer, *};
 use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
 use strata_ol_stf_v1::*;
 use strata_ol_tx_types_v1::*;
@@ -36,13 +34,13 @@ use crate::{
 };
 
 /// Output from processing transactions during block assembly.
-struct ProcessTransactionsOutput<S: IStateAccessor> {
+struct ProcessTransactionsOutput {
     /// Transactions that passed validation and execution
     successful_txs: Vec<OLTransactionV1>,
     /// Transactions that failed during block assembly.
     failed_txs: Vec<FailedMempoolTx>,
     /// Accumulated write batch after processing all transactions.
-    accumulated_batch: WriteBatch<S::AccountState>,
+    accumulated_batch: WriteBatch,
     /// Accumulated da data after processing all transactions.
     accumulated_da: AccumulatedDaData,
     /// Non-cadence limits requesting an epoch seal, if any.
@@ -50,8 +48,8 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
 }
 
 /// Inputs consumed while finalizing a block template.
-struct BuildBlockTemplateInput<A> {
-    accumulated_batch: WriteBatch<A>,
+struct BuildBlockTemplateInput {
+    accumulated_batch: WriteBatch,
     output_buffer: ExecOutputBuffer,
     successful_txs: Vec<OLTransactionV1>,
     is_terminal: bool,
@@ -194,7 +192,6 @@ where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
     C::State: BlockAssemblyStateAccess,
     E: EpochSealingPolicy,
-    <<C::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let max_txs_per_block = sequencer_config.max_txs_per_block;
 
@@ -293,7 +290,6 @@ pub(crate) async fn construct_block<C, E>(
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator,
     E: EpochSealingPolicy,
-    <<C::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     // Extract parent commitment from config.
     // Null parent means genesis - but genesis is built via `init_ol_genesis`, not block assembly.
@@ -560,10 +556,7 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
     parent_state: &S,
     block_context: &BlockContext<'_>,
     accumulated_da: AccumulatedDaData,
-) -> (WriteBatch<S::AccountState>, AccumulatedDaData)
-where
-    <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
-{
+) -> (WriteBatch, AccumulatedDaData) {
     let (accumulator, logs) = accumulated_da.into_parts();
     let write_state = WriteTrackingState::new_empty(parent_state);
     let mut da_state = DaAccumulatingState::new_with_accumulator(write_state, accumulator);
@@ -603,17 +596,16 @@ fn process_transactions<P, E, S>(
     block_context: &BlockContext<'_>,
     output_buffer: &ExecOutputBuffer,
     parent_state: &S,
-    accumulated_batch: WriteBatch<S::AccountState>,
+    accumulated_batch: WriteBatch,
     mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
     accumulated_da: AccumulatedDaData,
     epoch_cumulative_manifest_count: u32,
     bridge_params: BridgeParams,
-) -> ProcessTransactionsOutput<S>
+) -> ProcessTransactionsOutput
 where
     P: AccumulatorProofGenerator,
     E: EpochSealingPolicy,
     S: BlockAssemblyStateAccess,
-    <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
@@ -802,7 +794,7 @@ fn build_block_template<S>(
     config: &BlockGenerationConfig,
     block_context: &BlockContext<'_>,
     parent_state: &Arc<S>,
-    input: BuildBlockTemplateInput<S::AccountState>,
+    input: BuildBlockTemplateInput,
 ) -> BlockAssemblyResult<(FullBlockTemplate, S)>
 where
     S: BlockAssemblyStateAccess,
@@ -1018,7 +1010,7 @@ mod tests {
     use crate::test_utils::*;
     use crate::{FixedSlotSealing, LimitAwareSealing};
 
-    type OlWriteBatch = WriteBatch<<MemoryStateBaseLayer as IStateAccessor>::AccountState>;
+    type OLWriteBatch = WriteBatch;
 
     const SEALING_MANIFEST_CAP: L1Height = MAX_SEALING_MANIFEST_COUNT as L1Height;
 
@@ -2796,7 +2788,7 @@ mod tests {
         Arc<MemoryStateBaseLayer>,
         OLBlockHeaderV1,
         BlockInfo,
-        OlWriteBatch,
+        OLWriteBatch,
         ExecOutputBuffer,
     ) {
         let parent_state = env
@@ -2985,7 +2977,7 @@ mod tests {
         account_id: AccountId,
         seeded_log_count: usize,
         mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
-    ) -> ProcessTransactionsOutput<MemoryStateBaseLayer> {
+    ) -> ProcessTransactionsOutput {
         const CHECKPOINT_TEST_TIMESTAMP: u64 = 1_000_003;
         const CHECKPOINT_TEST_SLOT_OFFSET: u64 = 3;
 

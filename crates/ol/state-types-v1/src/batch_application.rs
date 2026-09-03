@@ -17,5 +17,5 @@ pub trait IStateBatchApplicable: IStateAccessor {
     /// with the modifications from the batch.
     ///
     /// If this returns an error then the state is left unmodified.
-    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> StateResult<()>;
+    fn apply_write_batch(&mut self, batch: WriteBatch) -> StateResult<()>;
 }

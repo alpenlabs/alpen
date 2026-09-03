@@ -123,9 +123,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
     fn fetch_write_batch(
         &self,
         _commitment: OLBlockCommitment,
-    ) -> WorkerResult<
-        Option<strata_ol_state_types_v1::WriteBatch<strata_ol_state_types_v1::OLAccountStateV1>>,
-    > {
+    ) -> WorkerResult<Option<strata_ol_state_types_v1::WriteBatch>> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 

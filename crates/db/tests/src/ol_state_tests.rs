@@ -1,8 +1,12 @@
 //! OL state database tests using proptest strategies.
 
+use proptest::strategy::{Strategy, ValueTree};
+use proptest::test_runner::TestRunner;
 use strata_db_types::ol_state::OLStateDatabase;
+use strata_identifiers::test_utils::{account_id_strategy, account_serial_strategy};
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::test_utils::ol_snark_account_state_strategy;
+use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1, WriteBatch};
 
 // =============================================================================
 // Proptest-based test functions
@@ -77,7 +81,50 @@ pub fn proptest_delete_toplevel_ol_state(
 }
 
 pub fn proptest_put_and_get_write_batch(db: &impl OLStateDatabase, commitment: OLBlockCommitment) {
-    let wb = WriteBatch::<OLAccountStateV1>::default();
+    let mut runner = TestRunner::deterministic();
+    let created_id = account_id_strategy()
+        .new_tree(&mut runner)
+        .expect("generate created account ID")
+        .current();
+    let updated_id = loop {
+        let id = account_id_strategy()
+            .new_tree(&mut runner)
+            .expect("generate updated account ID")
+            .current();
+        if id != created_id {
+            break id;
+        }
+    };
+    let created_serial = account_serial_strategy()
+        .new_tree(&mut runner)
+        .expect("generate created account serial")
+        .current();
+    let updated_serial = account_serial_strategy()
+        .new_tree(&mut runner)
+        .expect("generate updated account serial")
+        .current();
+    let created_snark_state = ol_snark_account_state_strategy()
+        .new_tree(&mut runner)
+        .expect("generate created snark account state")
+        .current();
+    let mut wb = WriteBatch::default();
+    wb.ledger_mut().create_account_raw(
+        created_id,
+        OLAccountStateV1::new(
+            created_serial,
+            Default::default(),
+            OLAccountTypeStateV1::Snark(created_snark_state),
+        ),
+        created_serial,
+    );
+    wb.ledger_mut().update_account(
+        updated_id,
+        OLAccountStateV1::new(
+            updated_serial,
+            Default::default(),
+            OLAccountTypeStateV1::Empty,
+        ),
+    );
     db.put_ol_write_batch(commitment, wb.clone())
         .expect("test: put write batch");
     let retrieved_wb = db
@@ -88,10 +135,19 @@ pub fn proptest_put_and_get_write_batch(db: &impl OLStateDatabase, commitment: O
         retrieved_wb.global_writes().cur_slot,
         wb.global_writes().cur_slot,
     );
+    assert_eq!(
+        retrieved_wb.ledger().get_account(&created_id),
+        wb.ledger().get_account(&created_id),
+    );
+    assert_eq!(
+        retrieved_wb.ledger().get_account(&updated_id),
+        wb.ledger().get_account(&updated_id),
+    );
+    assert_eq!(retrieved_wb.ledger().new_accounts(), &[created_id]);
 }
 
 pub fn proptest_delete_write_batch(db: &impl OLStateDatabase, commitment: OLBlockCommitment) {
-    let wb = WriteBatch::<OLAccountStateV1>::default();
+    let wb = WriteBatch::default();
     db.put_ol_write_batch(commitment, wb)
         .expect("test: put write batch");
     db.del_ol_write_batch(commitment)

@@ -523,6 +523,7 @@ struct TestAccountState {
 
 impl IAccountState for TestAccountState {
     type SnarkAccountState = TestSnarkState;
+    type Write = Self;
 
     fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self {
         let balance = new_acct_data.initial_balance();
@@ -542,6 +543,11 @@ impl IAccountState for TestAccountState {
             ty,
             snark,
         }
+    }
+
+    fn apply_write(&mut self, write: Self::Write) -> StateResult<()> {
+        *self = write;
+        Ok(())
     }
 
     fn serial(&self) -> AccountSerial {

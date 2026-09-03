@@ -27,7 +27,7 @@ use strata_ol_chain_types_v1::{
 };
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::SnarkAcctStateUpdate;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
@@ -154,10 +154,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(state_opt.map(|arc| (*arc).clone()))
     }
 
-    fn fetch_write_batch(
-        &self,
-        commitment: OLBlockCommitment,
-    ) -> WorkerResult<Option<WriteBatch<OLAccountStateV1>>> {
+    fn fetch_write_batch(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<WriteBatch>> {
         Ok(self.ol_state_mgr.get_write_batch_blocking(commitment)?)
     }
 

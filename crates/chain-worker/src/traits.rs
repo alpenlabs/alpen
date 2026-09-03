@@ -5,7 +5,7 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 
 use crate::{OLBlockExecutionOutput, WorkerResult};
@@ -42,10 +42,7 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>>;
 
     /// Fetches the write batch for a given block commitment.
-    fn fetch_write_batch(
-        &self,
-        commitment: OLBlockCommitment,
-    ) -> WorkerResult<Option<WriteBatch<OLAccountStateV1>>>;
+    fn fetch_write_batch(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<WriteBatch>>;
 
     // =========================================================================
     // Output storage

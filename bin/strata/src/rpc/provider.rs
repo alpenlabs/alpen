@@ -17,7 +17,7 @@ use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
@@ -101,7 +101,7 @@ impl OLRpcProvider for NodeRpcProvider {
     async fn get_ol_write_batch(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<WriteBatch<OLAccountStateV1>>> {
+    ) -> DbResult<Option<WriteBatch>> {
         self.storage
             .ol_state()
             .get_write_batch_async(commitment)

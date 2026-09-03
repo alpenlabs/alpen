@@ -421,7 +421,7 @@ mod tests {
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
     use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::{OLAccountStateV1, OLStateV1, WriteBatch};
+    use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 
     use super::*;
 
@@ -509,7 +509,7 @@ mod tests {
         let block_to_delete_id = block_to_delete.header().compute_blkid();
         let commitment = OLBlockCommitment::new(1, block_to_delete_id);
         db.ol_state_db()
-            .put_ol_write_batch(commitment, WriteBatch::<OLAccountStateV1>::default())
+            .put_ol_write_batch(commitment, WriteBatch::default())
             .expect("seed write batch");
 
         let err = delete_ol_block(db.as_ref(), delete_args(block_to_delete_id))

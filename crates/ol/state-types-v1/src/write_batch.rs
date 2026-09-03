@@ -2,14 +2,48 @@
 
 use std::collections::BTreeMap;
 
-use ssz::{Decode, Encode};
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_utils::CodecSsz;
 use strata_identifiers::{EpochCommitment, L1BlockId, L1Height, Slot};
 use strata_ol_state_types::{IAccountState, NewAccountData, PendingAsmLog};
 
-use crate::SerialMap;
+use crate::{OLAccountStateV1, SerialMap};
+
+/// A write to a single ledger account.
+///
+/// Currently the only supported write is a full replacement of the account
+/// state; finer-grained writes can be added later. This is NOT a DA type, so
+/// DA considerations do not apply.
+#[derive(Clone, Debug)]
+pub struct AccountStateWrite(OLAccountStateV1);
+
+impl AccountStateWrite {
+    /// Creates an account state write.
+    pub fn new(state: OLAccountStateV1) -> Self {
+        Self(state)
+    }
+
+    /// Returns the replacement account state.
+    pub fn state(&self) -> &OLAccountStateV1 {
+        &self.0
+    }
+
+    /// Returns the replacement account state mutably.
+    pub fn state_mut(&mut self) -> &mut OLAccountStateV1 {
+        &mut self.0
+    }
+
+    /// Consumes the write and returns the replacement account state.
+    pub fn into_state(self) -> OLAccountStateV1 {
+        self.0
+    }
+
+    /// Returns the account serial.
+    pub fn serial(&self) -> AccountSerial {
+        self.0.serial()
+    }
+}
 
 /// Tracked writes to the global state.
 #[derive(Clone, Debug, Default)]
@@ -59,26 +93,15 @@ pub struct EpochalStateWrites {
 ///
 /// This tracks all modifications made during block execution so they can be
 /// applied atomically or discarded.
-#[derive(Clone, Debug)]
-pub struct WriteBatch<A> {
+#[derive(Clone, Debug, Default)]
+pub struct WriteBatch {
     pub(crate) global_writes: GlobalStateWrites,
     pub(crate) epochal_writes: EpochalStateWrites,
     pub(crate) intraepoch_writes: IntraepochStateWrites,
-    pub(crate) ledger: LedgerWriteBatch<A>,
+    pub(crate) ledger: LedgerWriteBatch,
 }
 
-impl<A> Default for WriteBatch<A> {
-    fn default() -> Self {
-        Self {
-            global_writes: GlobalStateWrites::default(),
-            epochal_writes: EpochalStateWrites::default(),
-            intraepoch_writes: IntraepochStateWrites::default(),
-            ledger: LedgerWriteBatch::new(),
-        }
-    }
-}
-
-impl<A> WriteBatch<A> {
+impl WriteBatch {
     /// Returns a reference to the global state writes.
     pub fn global_writes(&self) -> &GlobalStateWrites {
         &self.global_writes
@@ -110,12 +133,12 @@ impl<A> WriteBatch<A> {
     }
 
     /// Returns a reference to the ledger write batch.
-    pub fn ledger(&self) -> &LedgerWriteBatch<A> {
+    pub fn ledger(&self) -> &LedgerWriteBatch {
         &self.ledger
     }
 
     /// Returns a mutable reference to the ledger write batch.
-    pub fn ledger_mut(&mut self) -> &mut LedgerWriteBatch<A> {
+    pub fn ledger_mut(&mut self) -> &mut LedgerWriteBatch {
         &mut self.ledger
     }
 
@@ -126,7 +149,7 @@ impl<A> WriteBatch<A> {
         GlobalStateWrites,
         EpochalStateWrites,
         IntraepochStateWrites,
-        LedgerWriteBatch<A>,
+        LedgerWriteBatch,
     ) {
         (
             self.global_writes,
@@ -138,33 +161,36 @@ impl<A> WriteBatch<A> {
 }
 
 /// Tracks writes to the ledger accounts table.
-#[derive(Clone, Debug)]
-pub struct LedgerWriteBatch<A> {
+#[derive(Clone, Debug, Default)]
+pub struct LedgerWriteBatch {
     /// Tracks the state of new and updated accounts.
-    account_writes: BTreeMap<AccountId, A>,
+    account_writes: BTreeMap<AccountId, AccountStateWrite>,
 
     /// Maps serial -> account ID for newly created accounts (contiguous serials).
     serial_to_id: SerialMap,
 }
 
-impl<A> LedgerWriteBatch<A> {
+impl LedgerWriteBatch {
     /// Creates a new empty ledger write batch.
     pub fn new() -> Self {
         Self::default()
     }
-}
-
-impl<A: IAccountState> LedgerWriteBatch<A> {
-    /// Tracks creating a new account with the given pre-built state and assigned serial.
+    /// Records a full-replacement write for a new account with the assigned serial.
     ///
     /// The serial should be obtained from `IStateAccessor::next_account_serial()`.
-    pub fn create_account_raw(&mut self, id: AccountId, state: A, serial: AccountSerial) {
+    pub fn create_account_raw(
+        &mut self,
+        id: AccountId,
+        state: OLAccountStateV1,
+        serial: AccountSerial,
+    ) {
         #[cfg(debug_assertions)]
         if self.account_writes.contains_key(&id) {
             panic!("state/wb: creating new account at addr that already exists (addr {id})");
         }
 
-        self.account_writes.insert(id, state);
+        self.account_writes
+            .insert(id, AccountStateWrite::new(state));
         let inserted = self.serial_to_id.insert_next(serial, id);
         debug_assert!(
             inserted,
@@ -181,23 +207,30 @@ impl<A: IAccountState> LedgerWriteBatch<A> {
         new_acct_data: NewAccountData,
         serial: AccountSerial,
     ) {
-        let state = A::new_with_serial(new_acct_data, serial);
+        let state = OLAccountStateV1::new_with_serial(new_acct_data, serial);
         self.create_account_raw(id, state, serial);
     }
 
-    /// Tracks an update to an existing account.
-    pub fn update_account(&mut self, id: AccountId, state: A) {
-        self.account_writes.insert(id, state);
+    /// Records a full-replacement write for an existing account.
+    pub fn update_account(&mut self, id: AccountId, state: OLAccountStateV1) {
+        self.account_writes
+            .insert(id, AccountStateWrite::new(state));
     }
 
     /// Gets a written account state, if it exists in the batch.
-    pub fn get_account(&self, id: &AccountId) -> Option<&A> {
-        self.account_writes.get(id)
+    pub fn get_account(&self, id: &AccountId) -> Option<&OLAccountStateV1> {
+        self.account_writes.get(id).map(AccountStateWrite::state)
     }
 
     /// Gets a mutable reference to a written account state, if it exists.
-    pub fn get_account_mut(&mut self, id: &AccountId) -> Option<&mut A> {
-        self.account_writes.get_mut(id)
+    pub fn get_account_mut(&mut self, id: &AccountId) -> Option<&mut OLAccountStateV1> {
+        self.account_writes
+            .get_mut(id)
+            .map(AccountStateWrite::state_mut)
+    }
+
+    pub(crate) fn get_account_write(&self, id: &AccountId) -> Option<&AccountStateWrite> {
+        self.account_writes.get(id)
     }
 
     /// Checks if an account exists in the write batch.
@@ -221,16 +254,30 @@ impl<A: IAccountState> LedgerWriteBatch<A> {
     }
 
     /// Returns an iterator over all written accounts.
-    pub fn iter_accounts(&self) -> impl Iterator<Item = (&AccountId, &A)> {
+    pub fn iter_accounts(&self) -> impl Iterator<Item = (&AccountId, &OLAccountStateV1)> {
+        self.account_writes
+            .iter()
+            .map(|(id, write)| (id, write.state()))
+    }
+
+    pub(crate) fn iter_account_writes(
+        &self,
+    ) -> impl Iterator<Item = (&AccountId, &AccountStateWrite)> {
         self.account_writes.iter()
     }
 
     /// Consumes the batch, separating new accounts from updated accounts.
     ///
     /// Returns a tuple of:
-    /// - Iterator over (AccountId, A) for newly created accounts (in serial order)
+    /// - Vector of ([`AccountId`], [`AccountStateWrite`]) for newly created accounts
+    ///   (in serial order)
     /// - BTreeMap of remaining account updates (existing accounts only)
-    pub fn into_new_and_updated(mut self) -> (Vec<(AccountId, A)>, BTreeMap<AccountId, A>) {
+    pub fn into_new_and_updated(
+        mut self,
+    ) -> (
+        Vec<(AccountId, AccountStateWrite)>,
+        BTreeMap<AccountId, AccountStateWrite>,
+    ) {
         let new_account_ids = self.serial_to_id.ids().to_vec();
         let mut new_accounts = Vec::with_capacity(new_account_ids.len());
 
@@ -243,15 +290,6 @@ impl<A: IAccountState> LedgerWriteBatch<A> {
         }
 
         (new_accounts, self.account_writes)
-    }
-}
-
-impl<A> Default for LedgerWriteBatch<A> {
-    fn default() -> Self {
-        Self {
-            account_writes: BTreeMap::new(),
-            serial_to_id: SerialMap::new(),
-        }
     }
 }
 
@@ -320,7 +358,18 @@ impl Codec for EpochalStateWrites {
     }
 }
 
-impl<A: Encode + Decode + Clone> Codec for WriteBatch<A> {
+impl Codec for AccountStateWrite {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        CodecSsz::new(self.0.clone()).encode(enc)
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let state = CodecSsz::<OLAccountStateV1>::decode(dec)?.into_inner();
+        Ok(Self::new(state))
+    }
+}
+
+impl Codec for WriteBatch {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.global_writes.encode(enc)?;
         self.epochal_writes.encode(enc)?;
@@ -344,15 +393,14 @@ impl<A: Encode + Decode + Clone> Codec for WriteBatch<A> {
 }
 
 // Codec implementation for LedgerWriteBatch
-// Uses CodecSsz shim for SSZ types (AccountId, A)
-// and Codec for non-SSZ types (SerialMap)
-impl<A: Encode + Decode + Clone> Codec for LedgerWriteBatch<A> {
+// Uses CodecSsz shim for AccountId and Codec for account writes and SerialMap.
+impl Codec for LedgerWriteBatch {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         // Encode account_writes as a map: length, then (key, value) pairs
         (self.account_writes.len() as u64).encode(enc)?;
-        for (id, state) in &self.account_writes {
+        for (id, write) in &self.account_writes {
             CodecSsz::new(*id).encode(enc)?;
-            CodecSsz::new(state.clone()).encode(enc)?;
+            write.encode(enc)?;
         }
         self.serial_to_id.encode(enc)?;
         Ok(())
@@ -363,13 +411,38 @@ impl<A: Encode + Decode + Clone> Codec for LedgerWriteBatch<A> {
         let mut account_writes = BTreeMap::new();
         for _ in 0..len {
             let id = CodecSsz::<AccountId>::decode(dec)?.into_inner();
-            let state = CodecSsz::<A>::decode(dec)?.into_inner();
-            account_writes.insert(id, state);
+            let write = AccountStateWrite::decode(dec)?;
+            account_writes.insert(id, write);
         }
         let serial_to_id = SerialMap::decode(dec)?;
         Ok(Self {
             account_writes,
             serial_to_id,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_codec::encode_to_vec;
+
+    use super::*;
+    use crate::OLAccountTypeStateV1;
+
+    #[test]
+    fn account_write_encoding_matches_bare_state_ssz_encoding() {
+        let state = OLAccountStateV1::new(
+            AccountSerial::from(7u32),
+            BitcoinAmount::try_from(1_000u64)
+                .expect("amount must not exceed the Bitcoin money supply"),
+            OLAccountTypeStateV1::Empty,
+        );
+        let write = AccountStateWrite::new(state.clone());
+
+        let write_bytes = encode_to_vec(&write).expect("encode account state write");
+        let state_bytes =
+            encode_to_vec(&CodecSsz::new(state)).expect("encode account state through SSZ shim");
+
+        assert_eq!(write_bytes, state_bytes);
     }
 }

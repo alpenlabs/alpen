@@ -66,6 +66,14 @@ pub enum StateError {
         in_table: AccountSerial,
     },
 
+    #[error(
+        "write not applicable to account state (state serial {in_state}, write serial {in_write})"
+    )]
+    InapplicableAcctWrite {
+        in_state: AccountSerial,
+        in_write: AccountSerial,
+    },
+
     #[error("inconsistent next serial ordering (cur {cur}, new {new})")]
     NextSerialSequence {
         cur: AccountSerial,
