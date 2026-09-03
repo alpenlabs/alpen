@@ -63,6 +63,7 @@ pub(crate) fn is_retryable_envelope_error(err: &EnvelopeError) -> bool {
         | EnvelopeError::FeeOverflow
         | EnvelopeError::ResolvedFeeRateAboveMax { .. }
         | EnvelopeError::BuiltFeeRateAboveMax { .. }
+        | EnvelopeError::CommitFeeBoundsNotSatisfied { .. }
         | EnvelopeError::NotEnoughUtxos(_, _)
         | EnvelopeError::MissingEnvelopePubkey
         | EnvelopeError::P2trChangeAddressUnsupported
