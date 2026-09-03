@@ -9261,6 +9261,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-gchain-executor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "strata-gchain-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-gchain-types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+]
+
+[[package]]
 name = "strata-identifiers"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0-rc.2#4e9dedf044e84e78cb3d2c9fbce262777735de09"
@@ -9549,6 +9566,21 @@ dependencies = [
  "strata-predicate",
  "strata-snark-acct-types",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "strata-ol-gchain-impl"
+version = "0.1.0"
+dependencies = [
+ "strata-checkpoint-types",
+ "strata-gchain-types",
+ "strata-identifiers",
+ "strata-ol-chain-types-v1",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-ol-state-types-v1",
+ "strata-ol-stf-v1",
+ "strata-ol-tx-types-v1",
 ]
 
 [[package]]

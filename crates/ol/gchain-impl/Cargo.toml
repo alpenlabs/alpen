@@ -1,0 +1,18 @@
+[package]
+name = "strata-ol-gchain-impl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-checkpoint-types.workspace = true
+strata-gchain-types.workspace = true
+strata-identifiers.workspace = true
+strata-ol-chain-types-v1.workspace = true
+strata-ol-state-support-types.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-state-types-v1.workspace = true
+strata-ol-stf-v1.workspace = true
+strata-ol-tx-types-v1.workspace = true
+
+[lints]
+workspace = true
