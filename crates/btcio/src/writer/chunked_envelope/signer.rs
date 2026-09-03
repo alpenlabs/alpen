@@ -32,7 +32,7 @@ use crate::{
             ensure_initial_fee_rate_within_max, sign_commit_with_fee_guardrail, EnvelopeConfig,
             EnvelopeError, BITCOIN_DUST_LIMIT,
         },
-        fees::resolve_fee_rate,
+        resolve_fee_rate,
     },
 };
 
@@ -111,9 +111,9 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .map(|u| u.amount.to_sat())
             .sum();
 
-        let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
+        let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.l1_fee_policy_config())
             .await
-            .map_err(EnvelopeError::PrereqFetch)?;
+            .map_err(|err| EnvelopeError::PrereqFetch(err.into()))?;
         ensure_initial_fee_rate_within_max(fee_rate, ctx.max_fee_rate)?;
 
         debug!(

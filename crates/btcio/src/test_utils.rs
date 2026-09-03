@@ -62,8 +62,8 @@ pub struct TestBitcoinClient {
     pub send_raw_transaction_options: Arc<Mutex<Vec<Option<BroadcastOptions>>>>,
     /// Value returned by the mock wallet UTXO.
     pub utxo_amount_sats: u64,
-    /// Fee estimate, in sat/vB, returned from `estimate_smart_fee`.
-    pub estimate_smart_fee_result: u32,
+    /// Result returned from `estimate_smart_fee`.
+    pub estimate_smart_fee_result: ClientResult<EstimateSmartFee>,
     /// Confirmation targets received by `estimate_smart_fee`.
     pub estimate_smart_fee_targets: Arc<Mutex<Vec<u16>>>,
     /// Result returned from `wallet_process_psbt`.
@@ -101,7 +101,11 @@ impl TestBitcoinClient {
             send_raw_transaction_mode: SendRawTransactionMode::Success,
             send_raw_transaction_options: Arc::new(Mutex::new(Vec::new())),
             utxo_amount_sats: 10_000_000_000,
-            estimate_smart_fee_result: 3,
+            estimate_smart_fee_result: Ok(EstimateSmartFee {
+                fee_rate: Some(FeeRate::from_sat_per_vb_u32(3)),
+                errors: None,
+                blocks: 1,
+            }),
             estimate_smart_fee_targets: Arc::new(Mutex::new(Vec::new())),
             wallet_process_psbt_result: Arc::new(Mutex::new(default_wallet_process_psbt_result())),
             wallet_process_psbt_calls: Arc::new(Mutex::new(Vec::new())),
@@ -126,7 +130,25 @@ impl TestBitcoinClient {
     }
 
     pub fn with_estimate_smart_fee_result(mut self, fee_rate_sat_vb: u32) -> Self {
-        self.estimate_smart_fee_result = fee_rate_sat_vb;
+        self.estimate_smart_fee_result = Ok(EstimateSmartFee {
+            fee_rate: Some(FeeRate::from_sat_per_vb_u32(fee_rate_sat_vb)),
+            errors: None,
+            blocks: 1,
+        });
+        self
+    }
+
+    pub fn with_estimate_smart_fee_error(mut self, error: ClientError) -> Self {
+        self.estimate_smart_fee_result = Err(error);
+        self
+    }
+
+    pub fn with_unavailable_smart_fee_estimate(mut self, errors: Option<Vec<String>>) -> Self {
+        self.estimate_smart_fee_result = Ok(EstimateSmartFee {
+            fee_rate: None,
+            errors,
+            blocks: 1,
+        });
         self
     }
 
@@ -213,11 +235,7 @@ impl Reader for TestBitcoinClient {
             .lock()
             .expect("test: estimate_smart_fee_targets lock")
             .push(conf_target);
-        Ok(EstimateSmartFee {
-            fee_rate: Some(FeeRate::from_sat_per_vb_u32(self.estimate_smart_fee_result)),
-            errors: None,
-            blocks: 1,
-        })
+        self.estimate_smart_fee_result.clone()
     }
 
     async fn get_block_header(&self, _hash: &BlockHash) -> ClientResult<Header> {
