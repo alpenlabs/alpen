@@ -42,15 +42,14 @@ static SHARED_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 #[derive(Debug, Error)]
 pub enum FeeRateError {
     /// The configured mempool explorer URL is invalid.
-    #[error("invalid mempool explorer configuration `{base_url}`")]
+    #[error("invalid mempool explorer configuration")]
     InvalidExplorerConfiguration {
-        base_url: String,
         #[source]
         source: ParseError,
     },
 
     /// A mempool explorer request failed or returned an invalid response.
-    #[error("invalid response from mempool explorer endpoint `{endpoint}`")]
+    #[error("invalid response from mempool explorer endpoint `{endpoint}`: {source}")]
     InvalidExplorerResponse {
         endpoint: &'static str,
         #[source]
@@ -118,11 +117,8 @@ struct MempoolExplorerClient {
 impl MempoolExplorerClient {
     /// Creates a new client from a base URL string (e.g. `https://mempool.space/signet`).
     fn new(base_url: &str) -> Result<Self, FeeRateError> {
-        let mut url =
-            Url::parse(base_url).map_err(|source| FeeRateError::InvalidExplorerConfiguration {
-                base_url: base_url.to_string(),
-                source,
-            })?;
+        let mut url = Url::parse(base_url)
+            .map_err(|source| FeeRateError::InvalidExplorerConfiguration { source })?;
 
         if !url.path().ends_with('/') {
             let path = format!("{}/", url.path());
@@ -140,12 +136,10 @@ impl MempoolExplorerClient {
         &self,
         path: &'static str,
     ) -> Result<MempoolRecommendedFees, FeeRateError> {
-        let url = self.base_url.join(path).map_err(|source| {
-            FeeRateError::InvalidExplorerConfiguration {
-                base_url: self.base_url.to_string(),
-                source,
-            }
-        })?;
+        let url = self
+            .base_url
+            .join(path)
+            .map_err(|source| FeeRateError::InvalidExplorerConfiguration { source })?;
 
         SHARED_HTTP_CLIENT
             .get(url)
@@ -153,18 +147,18 @@ impl MempoolExplorerClient {
             .await
             .map_err(|source| FeeRateError::InvalidExplorerResponse {
                 endpoint: path,
-                source,
+                source: source.without_url(),
             })?
             .error_for_status()
             .map_err(|source| FeeRateError::InvalidExplorerResponse {
                 endpoint: path,
-                source,
+                source: source.without_url(),
             })?
             .json::<MempoolRecommendedFees>()
             .await
             .map_err(|source| FeeRateError::InvalidExplorerResponse {
                 endpoint: path,
-                source,
+                source: source.without_url(),
             })
     }
 
@@ -218,7 +212,6 @@ async fn resolve_mempool_fee_rate<R: Reader>(
         Ok(fees) => fees.select(mempool_fee_policy),
         Err(err) => {
             warn!(
-                %base_url,
                 %err,
                 fallback_conf_target,
                 "mempool fee lookup failed, falling back to bitcoind's estimatesmartfee"
@@ -363,23 +356,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mempool_explorer_response_error_preserves_source() {
+    async fn test_mempool_explorer_response_error_strips_url_from_source_chain() {
+        const SECRET: &str = "secret-bearing-password";
+
         let server = spawn_single_response_server("500 Internal Server Error", "").await;
-        let explorer = MempoolExplorerClient::new(&server).expect("url should parse");
+        let credential_bearing_url =
+            server.replacen("http://", &format!("http://user:{SECRET}@"), 1);
+        let explorer =
+            MempoolExplorerClient::new(&credential_bearing_url).expect("url should parse");
 
         let err = explorer
             .fetch_fee_estimates("api/v1/fees/precise")
             .await
             .expect_err("HTTP error should be returned");
 
-        assert!(err.source().is_some());
         assert!(matches!(
-            err,
+            &err,
             FeeRateError::InvalidExplorerResponse {
                 endpoint: "api/v1/fees/precise",
-                ..
-            }
+                source,
+            } if source.url().is_none()
         ));
+
+        let mut error_chain = Some(&err as &(dyn Error + 'static));
+        while let Some(error) = error_chain {
+            assert!(!error.to_string().contains(SECRET));
+            assert!(!format!("{error:?}").contains(SECRET));
+            error_chain = error.source();
+        }
     }
 
     #[tokio::test]
@@ -484,18 +488,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
+        const SECRET: &str = "malformed-secret";
+
         let client = TestBitcoinClient::new(1);
-        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, "not a url".to_string());
+        let config = mempool_fee_config(
+            MempoolExplorerFeePolicy::Fastest,
+            format!("https://user:{SECRET}@[::1"),
+        );
 
         let err = resolve_fee_rate(&client, &config)
             .await
             .expect_err("invalid mempool_base_url should error");
 
         assert!(err.source().is_some());
+        assert!(!err.to_string().contains(SECRET));
+        assert!(!format!("{err:?}").contains(SECRET));
         assert!(matches!(
             err,
-            FeeRateError::InvalidExplorerConfiguration { base_url, .. }
-                if base_url == "not a url"
+            FeeRateError::InvalidExplorerConfiguration { .. }
         ));
     }
 
