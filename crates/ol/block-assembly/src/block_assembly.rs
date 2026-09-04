@@ -2776,10 +2776,11 @@ mod tests {
     /// budget triggers a soft-break: the tx is not included, not marked invalid,
     /// and remains available for future blocks.
     ///
-    /// Note: with `TxEffects::MAX_MESSAGES = 255` and `MAX_LOGS_PER_BLOCK = 4096`,
-    /// a single tx can never overflow the per-tx log buffer on its own. So we
-    /// pre-fill the block output buffer to near capacity and verify that even a
-    /// small tx triggers the soft-break when it would push past the limit.
+    /// Note: `TxEffects::MAX_MESSAGES` and `MAX_LOGS_PER_BLOCK` are both 65,536,
+    /// and a tx emits one log of its own on top of its message logs, so a single
+    /// maximal tx now sits one log over the cap. Pre-filling the block output
+    /// buffer keeps this test cheap either way: a small tx triggers the same
+    /// soft-break without having to build a 65k-message tx.
     async fn build_process_transactions_preamble(
         env: &TestEnv,
         timestamp: u64,

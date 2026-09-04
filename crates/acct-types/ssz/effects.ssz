@@ -1,7 +1,9 @@
 import messages
 
-MAX_TRANSFERS = 255
-MAX_MESSAGES = 255
+### Matches the `UpdateOutputs` caps in `snark-acct-types`. Converting
+### between the two must never drop entries, so the bounds have to agree.
+MAX_TRANSFERS = 1 << 16
+MAX_MESSAGES = 1 << 16
 
 ### Direct external effects that a transaction can cause.
 ###
