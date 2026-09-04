@@ -3,7 +3,9 @@
 
 use std::{
     collections::HashMap,
-    fmt, slice,
+    fmt,
+    num::NonZeroUsize,
+    slice,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -12,7 +14,10 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use tokio::{sync::oneshot, task::spawn_blocking};
+use tokio::{
+    sync::{oneshot, OwnedSemaphorePermit, Semaphore, TryAcquireError},
+    task::spawn_blocking,
+};
 use tracing::{error, info, info_span, warn, Instrument};
 use zkaleido::ZkVmHost;
 #[cfg(feature = "remote")]
@@ -33,6 +38,24 @@ use crate::{
 /// drains and removes the entry when the task reaches a terminal state.
 type WatcherMap<T> = HashMap<Vec<u8>, Vec<oneshot::Sender<TaskResult<T>>>>;
 
+/// Cloneable proof-submission budget shared by one or more provers.
+#[derive(Clone, Debug)]
+pub struct ConcurrencyBudget(Arc<Semaphore>);
+
+impl ConcurrencyBudget {
+    pub fn new(max: NonZeroUsize) -> Self {
+        Self(Arc::new(Semaphore::new(max.get())))
+    }
+
+    fn try_acquire(&self) -> Option<OwnedSemaphorePermit> {
+        match self.0.clone().try_acquire_owned() {
+            Ok(permit) => Some(permit),
+            Err(TryAcquireError::NoPermits) => None,
+            Err(TryAcquireError::Closed) => unreachable!("proof budget is never closed"),
+        }
+    }
+}
+
 /// Single-proof-type prover.
 ///
 /// Generic over `H` (spec) only. The zkVM host type is erased inside
@@ -44,6 +67,8 @@ pub struct Prover<H: ProofSpec> {
     task_store: Arc<dyn TaskStore>,
     receipt_store: Option<Arc<dyn ReceiptStore>>,
     receipt_hook: Option<Arc<dyn ReceiptHook<H>>>,
+    concurrency_budget: Option<ConcurrencyBudget>,
+    dispatch_lock: Mutex<()>,
     /// Oneshot senders for notifying waiters when tasks reach terminal states.
     watchers: Arc<Mutex<WatcherMap<H::Task>>>,
     /// Whether we've run recovery on startup.
@@ -70,23 +95,17 @@ impl<H: ProofSpec> fmt::Debug for Prover<H> {
 // ============================================================================
 
 impl<H: ProofSpec> Prover<H> {
-    /// Register a task and spawn background proving. Idempotent.
+    /// Register a task and start proving if shared capacity is available.
+    /// Idempotent; capacity-limited tasks remain durably `Pending` for `tick`.
     pub async fn submit(self: &Arc<Self>, task: H::Task) -> ProverResult<()> {
         let key: Vec<u8> = task.clone().into();
 
-        // Idempotent: if already in store, skip.
-        if self.task_store.get(&key)?.is_some() {
-            return Ok(());
+        if self.task_store.get(&key)?.is_none() {
+            self.task_store
+                .insert(TaskRecord::new(key.clone(), TaskStatus::Pending))?;
         }
 
-        self.task_store
-            .insert(TaskRecord::new(key.clone(), TaskStatus::Pending))?;
-
-        let prover = Arc::clone(self);
-        tokio::spawn(async move {
-            prover.run_task(task, key).await;
-        });
-
+        self.try_start_task(task, key).await?;
         Ok(())
     }
 
@@ -191,34 +210,40 @@ impl<H: ProofSpec> Prover<H> {
             .ok_or_else(|| ProverError::TaskNotFound(format!("{task}")))
     }
 
-    /// Scan for retriable tasks and re-spawn them. Called by PaaS on tick.
+    /// Scan durable pending/retriable tasks and start only while capacity exists.
     pub async fn tick(self: &Arc<Self>) {
         if !self.recovered.swap(true, Ordering::SeqCst) {
             self.recover().await;
         }
 
-        let retriable = match self.task_store.list_retriable(now_secs()) {
+        let mut runnable = match self.task_store.list_unfinished() {
             Ok(v) => v,
+            Err(e) => {
+                warn!(%e, "failed to list pending tasks");
+                return;
+            }
+        };
+        runnable.retain(|record| matches!(record.status(), TaskStatus::Pending));
+        match self.task_store.list_retriable(now_secs()) {
+            Ok(mut retriable) => runnable.append(&mut retriable),
             Err(e) => {
                 warn!(%e, "failed to list retriable tasks");
                 return;
             }
-        };
-        for record in retriable {
+        }
+
+        for record in runnable {
             let key = record.key().to_vec();
             if let Some(task) = decode_task_key::<H>(&key) {
-                let prover = Arc::clone(self);
-                tokio::spawn(async move {
-                    prover.run_task(task, key).await;
-                });
+                if let Err(e) = self.try_start_task(task, key).await {
+                    warn!(%e, "failed to start proof task");
+                }
             }
         }
     }
 
-    /// Re-spawn every unfinished task on startup — anything not yet terminal
-    /// (Pending or Proving). Before this change we only re-picked in-progress
-    /// work, so a crash between `submit`'s db insert and the spawn would
-    /// leave a task stuck in Pending forever.
+    /// Normalize tasks left `Proving` by a crashed process. The normal tick
+    /// scan then restarts them under the shared concurrency budget.
     ///
     /// A task found in `Proving` is one whose previous attempt died
     /// abnormally — the process was killed (OOM, SIGKILL, panic) before any
@@ -278,6 +303,7 @@ impl<H: ProofSpec> Prover<H> {
                     retry_count = new_count,
                     "task died mid-Proving; counting as transient failure"
                 );
+                let _ = self.task_store.set_retry_after(&key, now_secs());
                 let _ = self.task_store.update_status(
                     &key,
                     TaskStatus::TransientFailure {
@@ -285,52 +311,58 @@ impl<H: ProofSpec> Prover<H> {
                         error: "process died mid-Proving".to_string(),
                     },
                 );
-                // Fall through to spawn — `run_task` will snapshot the bumped
-                // count from the now-TransientFailure record.
             }
 
-            let prover = Arc::clone(self);
-            tokio::spawn(async move {
-                prover.run_task(task, key).await;
-            });
+            // Pending and re-armed rows are picked up below by the normal
+            // tick scan, which applies the shared concurrency budget.
         }
     }
 
-    /// Read the persisted retry counter for a task.
-    ///
-    /// Used at the top of [`Self::run_task`] before status is overwritten to
-    /// `Proving`, and by [`Self::recover`] to compute the post-crash bump.
-    /// Returns 0 for `Pending` or absent records.
-    fn read_retry_count(&self, key: &[u8]) -> u32 {
+    async fn try_start_task(self: &Arc<Self>, task: H::Task, key: Vec<u8>) -> ProverResult<bool> {
+        if !self.spec.is_ready(&task).await? {
+            return Ok(false);
+        }
+
+        let _dispatch = self.dispatch_lock.lock();
+        let Some(record) = self.task_store.get(&key)? else {
+            return Ok(false);
+        };
+        let retry_count = match record.status() {
+            TaskStatus::Pending => 0,
+            TaskStatus::TransientFailure { retry_count, .. }
+                if record.retry_after_secs().is_some_and(|at| at <= now_secs()) =>
+            {
+                *retry_count
+            }
+            _ => return Ok(false),
+        };
+        let permit = match &self.concurrency_budget {
+            Some(budget) => match budget.try_acquire() {
+                Some(permit) => Some(permit),
+                None => return Ok(false),
+            },
+            None => None,
+        };
+
         self.task_store
-            .get(key)
-            .ok()
-            .flatten()
-            .map_or(0, |r| match r.status() {
-                TaskStatus::Proving { retry_count }
-                | TaskStatus::TransientFailure { retry_count, .. } => *retry_count,
-                _ => 0,
-            })
+            .update_status(&key, TaskStatus::Proving { retry_count })?;
+        let prover = Arc::clone(self);
+        tokio::spawn(async move {
+            prover.run_task(task, key, retry_count, permit).await;
+        });
+        Ok(true)
     }
 
-    async fn run_task(&self, task: H::Task, key: Vec<u8>) {
+    async fn run_task(
+        &self,
+        task: H::Task,
+        key: Vec<u8>,
+        prior_retry_count: u32,
+        permit: Option<OwnedSemaphorePermit>,
+    ) {
         let span = info_span!("prove", task = %task);
 
         async {
-            // Snapshot the retry counter from the persisted record BEFORE
-            // flipping status to `Proving`. `schedule_retry` cannot read it
-            // from the store after the overwrite below, and `recover` needs
-            // the count to survive a mid-Proving crash, so persist it inside
-            // the `Proving` status itself.
-            let prior_retry_count = self.read_retry_count(&key);
-
-            let _ = self.task_store.update_status(
-                &key,
-                TaskStatus::Proving {
-                    retry_count: prior_retry_count,
-                },
-            );
-
             // 1. Fetch input
             let input = match self.spec.fetch_input(&task).await {
                 Ok(input) => input,
@@ -351,9 +383,18 @@ impl<H: ProofSpec> Prover<H> {
                 .and_then(|r| r.metadata().map(|m| m.to_vec()));
             let store = self.task_store.clone();
             let persist_key = key.clone();
-            let ctx = ProveContext::new(saved_metadata, move |data| {
-                let _ = store.set_metadata(&persist_key, data);
-            });
+            let ctx = ProveContext::new(
+                saved_metadata,
+                move |data| {
+                    if let Err(e) = store.set_metadata(&persist_key, data) {
+                        warn!(
+                            %e,
+                            "failed to persist remote proof ID; continuing without crash-recovery metadata"
+                        );
+                    }
+                },
+                permit,
+            );
 
             let strategy = self.strategy.clone();
             let prove_result = spawn_blocking(move || strategy.prove(&input, ctx)).await;
@@ -514,6 +555,7 @@ pub struct ProverBuilder<H: ProofSpec> {
     task_store: Option<Arc<dyn TaskStore>>,
     receipt_store: Option<Arc<dyn ReceiptStore>>,
     receipt_hook: Option<Arc<dyn ReceiptHook<H>>>,
+    concurrency_budget: Option<ConcurrencyBudget>,
     retry: Option<RetryConfig>,
 }
 
@@ -524,6 +566,7 @@ impl<H: ProofSpec> ProverBuilder<H> {
             task_store: None,
             receipt_store: None,
             receipt_hook: None,
+            concurrency_budget: None,
             retry: None,
         }
     }
@@ -542,6 +585,12 @@ impl<H: ProofSpec> ProverBuilder<H> {
     /// Opt-in domain hook called after receipt storage.
     pub fn receipt_hook(mut self, hook: impl ReceiptHook<H> + 'static) -> Self {
         self.receipt_hook = Some(Arc::new(hook));
+        self
+    }
+
+    /// Limit concurrent proof preparation and remote submission.
+    pub fn concurrency_budget(mut self, budget: ConcurrencyBudget) -> Self {
+        self.concurrency_budget = Some(budget);
         self
     }
 
@@ -585,6 +634,8 @@ impl<H: ProofSpec> ProverBuilder<H> {
                 .unwrap_or_else(|| Arc::new(InMemoryTaskStore::new())),
             receipt_store: self.receipt_store,
             receipt_hook: self.receipt_hook,
+            concurrency_budget: self.concurrency_budget,
+            dispatch_lock: Mutex::new(()),
             watchers: Arc::new(Mutex::new(HashMap::new())),
             recovered: AtomicBool::new(false),
         }
@@ -594,5 +645,43 @@ impl<H: ProofSpec> ProverBuilder<H> {
 impl<H: ProofSpec> fmt::Debug for ProverBuilder<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverBuilder").finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proving_context_can_release_submission_capacity_early() {
+        let budget = ConcurrencyBudget::new(NonZeroUsize::new(1).unwrap());
+        let permit = budget.try_acquire().unwrap();
+        let mut context = ProveContext::new(None, |_| {}, Some(permit));
+
+        assert!(budget.try_acquire().is_none());
+        context.release_submission_permit();
+        assert!(budget.try_acquire().is_some());
+    }
+
+    #[cfg(feature = "remote")]
+    #[test]
+    fn metadata_persistence_does_not_release_submission_capacity() {
+        let budget = ConcurrencyBudget::new(NonZeroUsize::new(1).unwrap());
+        let permit = budget.try_acquire().unwrap();
+        let persisted = Arc::new(AtomicBool::new(false));
+        let persisted_in_callback = persisted.clone();
+        let mut context = ProveContext::new(
+            None,
+            move |_| {
+                persisted_in_callback.store(true, Ordering::SeqCst);
+            },
+            Some(permit),
+        );
+
+        context.persist(vec![1]);
+        assert!(persisted.load(Ordering::SeqCst));
+        assert!(budget.try_acquire().is_none());
+        context.release_submission_permit();
+        assert!(budget.try_acquire().is_some());
     }
 }
