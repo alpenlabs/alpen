@@ -58,8 +58,10 @@ pub(super) async fn process_unfinalized_entries(
             }
             let mut new_txentry = txentry.clone();
             new_txentry.status = status;
-            io.put_tx_entry_by_idx(idx, new_txentry.clone()).await?;
-            processed.updated.push(IndexedEntry::new(idx, new_txentry));
+            let stored_txentry = io.put_tx_entry_by_idx(idx, new_txentry).await?;
+            processed
+                .updated
+                .push(IndexedEntry::new(idx, stored_txentry));
         }
     }
 
@@ -718,9 +720,16 @@ mod test {
             Ok(self.entries.get(&idx).cloned())
         }
 
-        async fn put_tx_entry_by_idx(&self, _idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
-            self.persisted_statuses.lock().unwrap().push(entry.status);
-            Ok(())
+        async fn put_tx_entry_by_idx(
+            &self,
+            _idx: u64,
+            entry: L1TxEntry,
+        ) -> BroadcasterResult<L1TxEntry> {
+            self.persisted_statuses
+                .lock()
+                .unwrap()
+                .push(entry.status.clone());
+            Ok(entry)
         }
 
         async fn try_mark_tx_entry_submitting(&self, _idx: u64) -> BroadcasterResult<bool> {

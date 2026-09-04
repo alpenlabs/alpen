@@ -62,12 +62,14 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         idx: u64,
     ) -> impl Future<Output = BroadcasterResult<Option<L1TxEntry>>> + Send;
 
-    /// Persists `entry` at the existing broadcast index `idx`.
+    /// Persists `entry` at the existing broadcast index `idx` and returns the stored row.
+    ///
+    /// The returned row can differ when a concurrent durable transition won first.
     fn put_tx_entry_by_idx(
         &self,
         idx: u64,
         entry: L1TxEntry,
-    ) -> impl Future<Output = BroadcasterResult<()>> + Send;
+    ) -> impl Future<Output = BroadcasterResult<L1TxEntry>> + Send;
 
     /// Atomically claims the entry at `idx` for submission to Bitcoin.
     fn try_mark_tx_entry_submitting(
@@ -313,9 +315,12 @@ where
         Ok(self.ops.get_tx_entry_async(idx).await?)
     }
 
-    async fn put_tx_entry_by_idx(&self, idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
-        self.ops.put_tx_entry_by_idx_async(idx, entry).await?;
-        Ok(())
+    async fn put_tx_entry_by_idx(
+        &self,
+        idx: u64,
+        entry: L1TxEntry,
+    ) -> BroadcasterResult<L1TxEntry> {
+        Ok(self.ops.put_tx_entry_by_idx_async(idx, entry).await?)
     }
 
     async fn try_mark_tx_entry_submitting(&self, idx: u64) -> BroadcasterResult<bool> {

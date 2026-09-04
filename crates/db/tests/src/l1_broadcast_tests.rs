@@ -312,12 +312,10 @@ pub fn test_put_tx_entry_by_idx_refuses_to_unreplace(db: &impl L1BroadcastDataba
     // A stale writer tries to move it back to Published.
     let mut stale = txentry;
     stale.status = L1TxStatus::Published;
-    db.put_tx_entry_by_idx(idx, stale).unwrap();
+    let stored = db.put_tx_entry_by_idx(idx, stale).unwrap();
 
-    assert!(matches!(
-        db.get_tx_entry(idx).unwrap().unwrap().status,
-        L1TxStatus::Replaced { .. }
-    ));
+    assert!(matches!(stored.status, L1TxStatus::Replaced { .. }));
+    assert_eq!(db.get_tx_entry(idx).unwrap().unwrap(), stored);
 }
 
 /// A later replacement in the same chain must still be recordable.

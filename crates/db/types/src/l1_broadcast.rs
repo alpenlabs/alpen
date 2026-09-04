@@ -249,8 +249,12 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
         reveal: (Buf32, L1TxEntry),
     ) -> DbResult<Option<(u64, u64)>>;
 
-    /// Updates an existing txentry
-    fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()>;
+    /// Updates an existing transaction entry and returns the authoritative stored row.
+    ///
+    /// A concurrent replacement makes [`L1TxStatus::Replaced`] terminal for the transaction ID,
+    /// so an attempted stale write returns that existing row instead of overwriting it. Returning
+    /// the stored value keeps callers' in-memory state aligned with the durable transition.
+    fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<L1TxEntry>;
 
     /// Atomically claims an entry for submission to Bitcoin.
     ///

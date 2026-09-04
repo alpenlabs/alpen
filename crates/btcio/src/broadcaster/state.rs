@@ -524,5 +524,9 @@ mod test {
             ops.get_tx_entry_async(idx).await.unwrap().unwrap().status,
             L1TxStatus::Replaced { .. }
         ));
+        assert!(
+            service_state.inner.unfinalized_entries.is_empty(),
+            "the authoritative stored row must also evict the stale in-memory entry"
+        );
     }
 }

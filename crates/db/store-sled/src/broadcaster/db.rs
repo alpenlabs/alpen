@@ -143,7 +143,7 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
             })
     }
 
-    fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()> {
+    fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<L1TxEntry> {
         let Some(txid) = self.tx_id_tree.get(&idx).map_err(conv_sled_err)? else {
             return Err(DbError::Other(format!(
                 "Entry does not exist for idx {idx:?}"
@@ -153,7 +153,8 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
         // Read and write in one retried transaction. The fee bumper can mark an entry
         // `Replaced` concurrently, and a non-atomic read-then-write here would resurrect the
         // superseded transaction with whatever status the caller last observed.
-        self.config
+        let stored = self
+            .config
             .with_retry((&self.tx_tree, &self.tx_id_tree), |(txtree, _)| {
                 let Some(existing) = txtree.get(&txid)? else {
                     return Err(ConflictableTransactionError::Abort(TSledError::abort(
@@ -172,13 +173,13 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
                 if matches!(existing.status, L1TxStatus::Replaced { .. })
                     && !matches!(txentry.status, L1TxStatus::Replaced { .. })
                 {
-                    return Ok(());
+                    return Ok(existing);
                 }
                 txtree.insert(&txid, &txentry)?;
-                Ok(())
+                Ok(txentry.clone())
             })?;
 
-        Ok(())
+        Ok(stored)
     }
 
     fn try_mark_tx_entry_submitting(&self, idx: u64) -> DbResult<bool> {
