@@ -39,6 +39,7 @@ class AlpenClientEnvParams:
     da_magic_bytes: bytes = b"ALPN"
     l1_reorg_safe_depth: int = 2
     batch_sealing_block_count: int = 10
+    max_concurrent_proof_submissions: int = 2
     dev_track_latest_epoch: bool = False
     beneficiary_address: str | None = None
 
@@ -164,6 +165,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             ee_params_path=ee_params_path,
             da_config=da_config,
             batch_sealing_block_count=envparams.batch_sealing_block_count,
+            max_concurrent_proof_submissions=envparams.max_concurrent_proof_submissions,
             dev_track_latest_epoch=envparams.dev_track_latest_epoch,
             beneficiary_address=envparams.beneficiary_address,
         )

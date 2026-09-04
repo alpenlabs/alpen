@@ -70,6 +70,7 @@ class AlpenClientFactory(flexitest.Factory):
         ol_submit_token: str | None = None,
         da_config: EeDaConfig | None = None,
         batch_sealing_block_count: int = 100,
+        max_concurrent_proof_submissions: int = 2,
         dev_track_latest_epoch: bool = False,
         bridge_denomination: int = 100_000_000,
         max_withdrawal_amount: int | None = 1_000_000_000,
@@ -140,6 +141,7 @@ class AlpenClientFactory(flexitest.Factory):
             "--p2p-secret-key", str(p2p_secret_key_file),
             "--custom-chain", custom_chain,
             "--batch-sealing-block-count", str(batch_sealing_block_count),
+            "--max-concurrent-proof-submissions", str(max_concurrent_proof_submissions),
             "-vvvv",
             # Functional tests don't ship the SP1 guest ELFs, so run the
             # EE chunk + acct provers on the zkaleido NativeHost.
