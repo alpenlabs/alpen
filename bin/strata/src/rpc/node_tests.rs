@@ -613,7 +613,7 @@ fn genesis_ol_state() -> OLStateV1 {
             last_l1_block: test_l1_commitment(),
             ..Default::default()
         },
-        OLRuntimeParams::default(),
+        OLRuntimeParams::test_default(),
     );
     OLStateV1::from_genesis_params(&params).expect("genesis state")
 }

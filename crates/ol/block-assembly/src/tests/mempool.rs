@@ -58,7 +58,7 @@ async fn test_state_provider_failure_propagates() {
         mempool,
         FailingStateProvider,
         0,
-        OLRuntimeParams::default(),
+        OLRuntimeParams::test_default(),
     );
     let config = BlockGenerationConfig::new(OLBlockCommitment::new(
         1,

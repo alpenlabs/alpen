@@ -196,7 +196,7 @@ fn test_verify_block_mid_failure_returns_txexec() {
         &header,
         Some(parent_block.header()),
         &body,
-        &OLRuntimeParams::default(),
+        &OLRuntimeParams::test_default(),
     );
 
     match result {

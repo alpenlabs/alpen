@@ -17,7 +17,7 @@ const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
 
 /// Creates a genesis OLStateV1 using minimal empty parameters.
 pub fn create_test_genesis_state() -> OLStateV1 {
-    let params = OLParams::default();
+    let params = OLParams::test_default();
     OLStateV1::from_genesis_params(&params).expect("valid params")
 }
 

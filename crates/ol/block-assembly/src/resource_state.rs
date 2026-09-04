@@ -387,7 +387,7 @@ mod tests {
         let err = rebuild_epoch_resource_state_upto(
             target_commitment,
             2,
-            OLRuntimeParams::default(),
+            OLRuntimeParams::test_default(),
             env.ctx(),
         )
         .await

@@ -676,7 +676,7 @@ mod tests {
             .replace_canonical_suffix_from_blocking(1, vec![*tip_commitment.blkid()])
             .expect("store canonical tip");
 
-        let output = ensure_ol_genesis(&storage, &OLParams::default())
+        let output = ensure_ol_genesis(&storage, &OLParams::test_default())
             .expect("header-only tip should satisfy OL genesis check");
         assert_eq!(output.tip_blk, tip_commitment);
         assert_eq!(output.epoch, 1);

@@ -150,7 +150,7 @@ mod tests {
     fn test_statements_success() {
         let input = prepare_input();
 
-        let claim = CheckpointProgram::execute(&input, OLRuntimeParams::default()).unwrap();
+        let claim = CheckpointProgram::execute(&input, OLRuntimeParams::test_default()).unwrap();
 
         assert_eq!(
             *claim.l2_range().start().blkid(),
@@ -185,7 +185,7 @@ mod tests {
         input.da_state_diff_bytes = vec![1, 2, 3, 4];
 
         let panic_res =
-            catch_unwind(|| CheckpointProgram::execute(&input, OLRuntimeParams::default()));
+            catch_unwind(|| CheckpointProgram::execute(&input, OLRuntimeParams::test_default()));
         assert!(
             panic_res.is_err(),
             "invalid DA payload encoding must panic in statement verification"
@@ -211,7 +211,7 @@ mod tests {
             encode_to_vec(&OLDaPayloadV1::new(bad_da_diff)).expect("encode bad DA payload");
 
         let panic_res =
-            catch_unwind(|| CheckpointProgram::execute(&input, OLRuntimeParams::default()));
+            catch_unwind(|| CheckpointProgram::execute(&input, OLRuntimeParams::test_default()));
         assert!(
             panic_res.is_err(),
             "mismatched DA witness must panic in statement verification"

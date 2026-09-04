@@ -55,7 +55,7 @@ struct OrderEnforcingContext {
 
 impl ChainWorkerContext for OrderEnforcingContext {
     fn runtime_params(&self) -> OLRuntimeParams {
-        OLRuntimeParams::default()
+        OLRuntimeParams::test_default()
     }
 
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
@@ -224,7 +224,7 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         merged_epochs: Mutex::new(Vec::new()),
     };
 
-    exec_block(&ctx, OLRuntimeParams::default(), &terminal_commitment)
+    exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
         .expect("single-block epoch executes");
 
     let summaries = ctx.stored_summaries.lock().unwrap();

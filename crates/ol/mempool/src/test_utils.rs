@@ -185,7 +185,7 @@ pub(crate) fn with_max_slot(tx: OLTransactionV1, max_slot: Option<Slot>) -> OLTr
 
 /// Creates a genesis OLStateV1 using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> OLStateV1 {
-    let params = OLParams::default();
+    let params = OLParams::test_default();
     OLStateV1::from_genesis_params(&params).expect("valid params")
 }
 

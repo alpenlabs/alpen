@@ -64,7 +64,7 @@ struct MockChainWorkerContext {
 impl MockChainWorkerContext {
     fn new() -> Self {
         Self {
-            runtime_params: OLRuntimeParams::default(),
+            runtime_params: OLRuntimeParams::test_default(),
             checkpoint_payloads: HashMap::new(),
             epoch_summaries: HashMap::new(),
             ol_states: HashMap::new(),

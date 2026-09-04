@@ -139,7 +139,7 @@ pub fn make_proof(variant: u8) -> Vec<u8> {
 
 /// Builds a genesis state layer using minimal empty parameters.
 pub fn make_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::default();
+    let params = OLParams::test_default();
     let state = OLStateV1::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
@@ -488,7 +488,7 @@ pub fn execute_block(
         state,
         block_context,
         components,
-        &OLRuntimeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
 }
 
@@ -505,7 +505,7 @@ pub fn execute_block_with_outputs(
         state,
         block_context,
         components,
-        &OLRuntimeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
 }
 
@@ -595,7 +595,7 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
         header,
         parent_header.as_ref(),
         body,
-        &OLRuntimeParams::default(),
+        &OLRuntimeParams::test_default(),
     );
     assert!(
         result.is_ok(),
@@ -617,7 +617,7 @@ pub fn assert_verification_fails_with(
         header,
         parent_header.as_ref(),
         body,
-        &OLRuntimeParams::default(),
+        &OLRuntimeParams::test_default(),
     );
     assert!(
         result.is_err(),

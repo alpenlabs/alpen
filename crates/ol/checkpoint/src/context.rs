@@ -452,6 +452,7 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, OLBlockId};
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
+    use strata_ol_params::OLRuntimeParams;
     use strata_storage::create_node_storage;
 
     use super::{CheckpointWorkerContext, CheckpointWorkerContextImpl};
@@ -483,7 +484,7 @@ mod tests {
             .put_terminal_header_blocking(*commitment.blkid(), header.clone())
             .expect("store terminal header");
 
-        let context = CheckpointWorkerContextImpl::new(storage, Default::default());
+        let context = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
         assert_eq!(
             context
                 .get_block_header(&commitment)

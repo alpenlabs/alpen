@@ -103,7 +103,7 @@ fn bridge_withdrawal_log_overflow_returns_clean_error() {
         .expect("filling logs to the cap should succeed");
 
     let block_info = BlockInfo::new(1, 1, 1);
-    let runtime_params = OLRuntimeParams::default();
+    let runtime_params = OLRuntimeParams::test_default();
     let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let err = account_processing::process_message(
@@ -151,7 +151,7 @@ fn apply_tx_effects_defuses_remaining_on_midloop_error() {
     );
 
     let outputs = ExecOutputBuffer::new_empty();
-    let runtime_params = OLRuntimeParams::default();
+    let runtime_params = OLRuntimeParams::test_default();
     let context = BasicExecContext::new(BlockInfo::new(1, 0, 0), &outputs, &runtime_params);
 
     let err = transaction_processing::apply_tx_effects(&mut state, source, &effects, &context)

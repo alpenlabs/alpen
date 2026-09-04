@@ -14,7 +14,7 @@ use crate::memory_state_layer::MemoryStateBaseLayer;
 
 /// Creates a genesis OLStateV1 using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> OLStateV1 {
-    let params = OLParams::default();
+    let params = OLParams::test_default();
     OLStateV1::from_genesis_params(&params).expect("valid params")
 }
 
@@ -30,7 +30,7 @@ pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
             },
             ..Default::default()
         },
-        OLRuntimeParams::default(),
+        OLRuntimeParams::test_default(),
     );
     let state = OLStateV1::from_genesis_params(&params)
         .expect("failed to create OLStateV1 from genesis params");

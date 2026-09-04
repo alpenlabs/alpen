@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn test_checkpoint_native_execution() {
         let input = prepare_checkpoint_input();
-        let output = CheckpointProgram::execute(&input, OLRuntimeParams::default()).unwrap();
+        let output = CheckpointProgram::execute(&input, OLRuntimeParams::test_default()).unwrap();
         dbg!(output);
     }
 }

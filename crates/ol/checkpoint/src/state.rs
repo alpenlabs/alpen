@@ -277,7 +277,7 @@ mod tests {
             stub_ol_logs: Vec<OLLog>,
         ) -> Self {
             Self {
-                inner: CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::default()),
+                inner: CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default()),
                 stub_state_diff,
                 stub_ol_logs,
             }
@@ -367,7 +367,7 @@ mod tests {
     fn initialize_cursor(
         storage: Arc<strata_storage::NodeStorage>,
     ) -> OLCheckpointServiceState<CheckpointWorkerContextImpl> {
-        let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::default());
+        let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
         let mut state = OLCheckpointServiceState::new(ctx);
         state.initialize();
         state
@@ -547,7 +547,7 @@ mod tests {
                     .expect("put checkpoint");
             }
 
-            let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::default());
+            let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
             let mut state = OLCheckpointServiceState::new(ctx);
             state.initialize();
 
@@ -745,7 +745,7 @@ mod tests {
             .expect("insert summary");
 
         let ctx =
-            CheckpointWorkerContextImpl::new(Arc::clone(&storage), OLRuntimeParams::default());
+            CheckpointWorkerContextImpl::new(Arc::clone(&storage), OLRuntimeParams::test_default());
         let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
 
         // The sidecar must carry the withdrawal-intent log, and it must decode

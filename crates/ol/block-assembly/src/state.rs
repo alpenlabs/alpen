@@ -481,7 +481,7 @@ mod tests {
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let state = BlockasmServiceState::new(
-            Arc::new(OLParams::default()),
+            Arc::new(OLParams::test_default()),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
             PredicateKey::always_accept(),

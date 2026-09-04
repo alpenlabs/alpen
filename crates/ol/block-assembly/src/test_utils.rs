@@ -66,7 +66,7 @@ use strata_storage::{NodeStorage, create_node_storage};
 
 /// Creates a genesis OLStateV1 using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::default();
+    let params = OLParams::test_default();
     let state = OLStateV1::from_genesis_params(&params).expect("valid params");
     MemoryStateBaseLayer::new(state)
 }
@@ -168,7 +168,7 @@ pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyCon
         (),
         (),
         TEST_L1_REORG_SAFE_DEPTH,
-        OLRuntimeParams::default(),
+        OLRuntimeParams::test_default(),
     )
 }
 
@@ -663,7 +663,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_v1::OLBlockHe
         &mut temp_state,
         genesis_context,
         genesis_components,
-        &OLRuntimeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
     .unwrap();
     genesis_output.completed_block().header().clone()
@@ -1383,7 +1383,7 @@ impl TestStorageFixtureBuilder {
                     &mut state,
                     block_context,
                     components,
-                    &OLRuntimeParams::default(),
+                    &OLRuntimeParams::test_default(),
                 )
                 .expect("Genesis block execution should succeed");
 
@@ -1554,7 +1554,7 @@ pub(crate) fn create_test_block_assembly_context(
         mempool_provider.clone(),
         state_provider,
         l1_reorg_safe_depth,
-        OLRuntimeParams::default(),
+        OLRuntimeParams::test_default(),
     );
     (ctx, mempool_provider)
 }

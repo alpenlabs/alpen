@@ -35,7 +35,6 @@ pub struct OLGenesisParams {
 /// These fields affect OL STF execution and therefore must be bound to proof
 /// artifacts when the STF runs inside a zkVM guest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-#[cfg_attr(any(test, feature = "test-defaults"), derive(Default))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLRuntimeParams {
     /// Withdrawal denomination and optional cap.
@@ -45,6 +44,11 @@ pub struct OLRuntimeParams {
 impl OLRuntimeParams {
     pub fn new(bridge_params: BridgeParams) -> Self {
         Self { bridge_params }
+    }
+
+    #[cfg(any(test, feature = "test-defaults"))]
+    pub fn test_default() -> Self {
+        Self::new(BridgeParams::default())
     }
 
     pub fn bridge_params(&self) -> &BridgeParams {
@@ -67,7 +71,6 @@ impl OLRuntimeParams {
 /// This type separates genesis-only inputs from runtime parameters that are
 /// needed when executing the OL STF.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(any(test, feature = "test-defaults"), derive(Default))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Params used to construct OL genesis state.
@@ -81,6 +84,11 @@ impl OLParams {
     /// Creates an [`OLParams`] from split genesis and runtime params.
     pub fn new(genesis: OLGenesisParams, runtime: OLRuntimeParams) -> Self {
         Self { genesis, runtime }
+    }
+
+    #[cfg(any(test, feature = "test-defaults"))]
+    pub fn test_default() -> Self {
+        Self::new(OLGenesisParams::default(), OLRuntimeParams::test_default())
     }
 
     /// Creates an [`OLParams`] with empty accounts and default header params.
@@ -141,7 +149,7 @@ mod tests {
     use super::*;
 
     fn sample_params() -> OLParams {
-        OLParams::new(OLGenesisParams::default(), OLRuntimeParams::default())
+        OLParams::new(OLGenesisParams::default(), OLRuntimeParams::test_default())
     }
 
     #[test]

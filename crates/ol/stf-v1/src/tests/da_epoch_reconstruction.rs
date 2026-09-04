@@ -341,7 +341,7 @@ fn reconstruct_epoch(
         &mut da,
         blocks,
         genesis.header(),
-        &OLRuntimeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
     .expect("execute_block_batch_predrain");
     let da_blob = da
@@ -362,7 +362,7 @@ fn reconstruct_epoch(
         .to_vec();
 
     let mut reconstructed = pre_epoch_state.clone();
-    let runtime_params = OLRuntimeParams::default();
+    let runtime_params = OLRuntimeParams::test_default();
     apply_da_epoch::<_, OLDaSchemeV1>(
         &mut reconstructed,
         &epoch_info,

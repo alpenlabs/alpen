@@ -44,7 +44,7 @@ fn limbo_message_to_nonexistent_account() {
 
     let block_info = BlockInfo::new(1, 0, 0);
     let outputs = ExecOutputBuffer::new_empty();
-    let runtime_params = OLRuntimeParams::default();
+    let runtime_params = OLRuntimeParams::test_default();
     let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let value = BitcoinAmount::try_from(2_500_000)
@@ -81,7 +81,7 @@ fn limbo_transfer_to_nonexistent_account() {
 
     let block_info = BlockInfo::new(1, 0, 0);
     let outputs = ExecOutputBuffer::new_empty();
-    let runtime_params = OLRuntimeParams::default();
+    let runtime_params = OLRuntimeParams::test_default();
     let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let value = BitcoinAmount::try_from(4_000_000)

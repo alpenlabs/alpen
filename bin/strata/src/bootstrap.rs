@@ -302,7 +302,7 @@ mod tests {
                     last_l1_block: genesis_l1,
                     ..Default::default()
                 },
-                OLRuntimeParams::default(),
+                OLRuntimeParams::test_default(),
             );
             let genesis =
                 init_ol_genesis(&genesis_params, &storage).expect("initialize OL genesis");

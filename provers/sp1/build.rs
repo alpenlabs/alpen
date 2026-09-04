@@ -129,7 +129,7 @@ fn write_checkpoint_runtime_params() -> [u8; 32] {
         None if cfg!(all(feature = "build-elf", not(debug_assertions))) => {
             panic!("{CHECKPOINT_RUNTIME_PARAMS_PATH} must be set to build checkpoint guest ELFs")
         }
-        None => OLRuntimeParams::default(),
+        None => OLRuntimeParams::test_default(),
     };
 
     let runtime_params_ssz = runtime_params.as_ssz_bytes();

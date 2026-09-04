@@ -2855,7 +2855,7 @@ mod tests {
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
             0,
-            &OLRuntimeParams::default(),
+            &OLRuntimeParams::test_default(),
         );
 
         assert!(
@@ -2914,7 +2914,7 @@ mod tests {
             vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
             AccumulatedDaData::new_empty(),
             0,
-            &OLRuntimeParams::default(),
+            &OLRuntimeParams::test_default(),
         );
 
         assert_eq!(
@@ -2961,7 +2961,7 @@ mod tests {
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
             0,
-            &OLRuntimeParams::default(),
+            &OLRuntimeParams::test_default(),
         );
 
         assert!(
@@ -3003,7 +3003,7 @@ mod tests {
             mempool_txs,
             seeded_da,
             0,
-            &OLRuntimeParams::default(),
+            &OLRuntimeParams::test_default(),
         )
     }
 

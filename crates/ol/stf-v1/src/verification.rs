@@ -510,7 +510,7 @@ mod tests {
         OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
             .expect("state-changing epoch diff should apply");
         let output = ExecOutputBuffer::new_empty();
-        let runtime_params = OLRuntimeParams::default();
+        let runtime_params = OLRuntimeParams::test_default();
         let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output, &runtime_params);
         manifest_processing::process_block_manifests(&mut expected_state, manifests.manifests())
             .expect("manifest buffering should succeed");
@@ -629,7 +629,7 @@ mod tests {
         let exp = EpochExecExpectations {
             epoch_post_state_root: Buf32::from([9u8; 32]),
         };
-        let runtime_params = OLRuntimeParams::default();
+        let runtime_params = OLRuntimeParams::test_default();
 
         let res = verify_epoch_with_diff::<_, OLDaSchemeV1>(
             &mut state,
@@ -668,7 +668,7 @@ mod tests {
         let exp = EpochExecExpectations {
             epoch_post_state_root: expected_post_root,
         };
-        let runtime_params = OLRuntimeParams::default();
+        let runtime_params = OLRuntimeParams::test_default();
 
         verify_epoch_with_diff::<_, OLDaSchemeV1>(
             &mut state,
