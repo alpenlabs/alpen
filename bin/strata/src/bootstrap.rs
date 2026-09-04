@@ -258,7 +258,7 @@ mod tests {
         Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId, RBuf32,
     };
     use strata_l1_txfmt::MagicBytes;
-    use strata_ol_params::OLParams;
+    use strata_ol_params::{OLGenesisParams, OLParams, OLRuntimeParams};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
     use strata_predicate::PredicateKey;
@@ -297,8 +297,13 @@ mod tests {
             )
             .expect("create test storage");
             let genesis_l1 = l1_commitment(0);
-            let mut genesis_params = OLParams::default();
-            genesis_params.genesis.last_l1_block = genesis_l1;
+            let genesis_params = OLParams::new(
+                OLGenesisParams {
+                    last_l1_block: genesis_l1,
+                    ..Default::default()
+                },
+                OLRuntimeParams::default(),
+            );
             let genesis =
                 init_ol_genesis(&genesis_params, &storage).expect("initialize OL genesis");
             let genesis_block = storage

@@ -24,7 +24,7 @@ use strata_db_types::{
 use strata_identifiers::*;
 use strata_ol_chain_types_v1::*;
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
-use strata_ol_params::OLParams;
+use strata_ol_params::{OLGenesisParams, OLParams, OLRuntimeParams};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::*;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
@@ -608,8 +608,13 @@ fn make_block_with_gam_tx(
 }
 
 fn genesis_ol_state() -> OLStateV1 {
-    let mut params = OLParams::default();
-    params.genesis.last_l1_block = test_l1_commitment();
+    let params = OLParams::new(
+        OLGenesisParams {
+            last_l1_block: test_l1_commitment(),
+            ..Default::default()
+        },
+        OLRuntimeParams::default(),
+    );
     OLStateV1::from_genesis_params(&params).expect("genesis state")
 }
 

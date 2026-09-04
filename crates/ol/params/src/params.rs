@@ -39,10 +39,14 @@ pub struct OLGenesisParams {
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLRuntimeParams {
     /// Withdrawal denomination and optional cap.
-    pub bridge_params: BridgeParams,
+    bridge_params: BridgeParams,
 }
 
 impl OLRuntimeParams {
+    pub fn new(bridge_params: BridgeParams) -> Self {
+        Self { bridge_params }
+    }
+
     pub fn bridge_params(&self) -> &BridgeParams {
         &self.bridge_params
     }
@@ -67,27 +71,27 @@ impl OLRuntimeParams {
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLParams {
     /// Params used to construct OL genesis state.
-    pub genesis: OLGenesisParams,
+    genesis: OLGenesisParams,
 
     /// Params used while executing the OL STF.
-    pub runtime: OLRuntimeParams,
+    runtime: OLRuntimeParams,
 }
 
 impl OLParams {
     /// Creates an [`OLParams`] from split genesis and runtime params.
-    pub fn from_parts(genesis: OLGenesisParams, runtime: OLRuntimeParams) -> Self {
+    pub fn new(genesis: OLGenesisParams, runtime: OLRuntimeParams) -> Self {
         Self { genesis, runtime }
     }
 
     /// Creates an [`OLParams`] with empty accounts and default header params.
     pub fn new_empty(last_l1_block: L1BlockCommitment, bridge_params: BridgeParams) -> Self {
-        Self::from_parts(
+        Self::new(
             OLGenesisParams {
                 header: GenesisHeaderParams::default(),
                 accounts: BTreeMap::new(),
                 last_l1_block,
             },
-            OLRuntimeParams { bridge_params },
+            OLRuntimeParams::new(bridge_params),
         )
     }
 
@@ -123,7 +127,7 @@ impl OLParams {
     ///
     /// The genesis header's epoch, slot, and parent block ID are treated as a
     /// checkpointed epoch, serving as the initial verified commitment.
-    pub fn checkpointed_epoch(&self) -> EpochCommitment {
+    pub fn derive_genesis_epoch_commitment(&self) -> EpochCommitment {
         EpochCommitment::new(
             self.genesis.header.epoch,
             self.genesis.header.slot,
@@ -137,14 +141,13 @@ mod tests {
     use super::*;
 
     fn sample_params() -> OLParams {
-        OLParams::from_parts(OLGenesisParams::default(), OLRuntimeParams::default())
+        OLParams::new(OLGenesisParams::default(), OLRuntimeParams::default())
     }
 
     #[test]
     fn split_params_use_nested_json_shape() {
         let params = sample_params();
-        let rebuilt =
-            OLParams::from_parts(params.genesis_params().clone(), params.runtime_params());
+        let rebuilt = OLParams::new(params.genesis_params().clone(), params.runtime_params());
         let json = serde_json::to_value(&rebuilt).expect("serialization failed");
 
         assert!(json.get("genesis").is_some());

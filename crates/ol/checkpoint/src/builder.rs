@@ -50,7 +50,7 @@ impl OLCheckpointBuilder {
 
     /// Set the bridge denomination and withdrawal policy.
     pub fn with_bridge_params(mut self, bridge_params: BridgeParams) -> Self {
-        self.runtime_params = Some(OLRuntimeParams { bridge_params });
+        self.runtime_params = Some(OLRuntimeParams::new(bridge_params));
         self
     }
 
