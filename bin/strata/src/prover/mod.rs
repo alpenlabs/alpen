@@ -6,6 +6,7 @@
 //! Gated behind the `prover` feature flag and activated when a `[prover]`
 //! section is present in the config.
 
+pub(crate) mod artifacts;
 mod errors;
 mod receipt_hook;
 mod spec;

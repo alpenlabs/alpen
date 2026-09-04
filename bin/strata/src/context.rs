@@ -33,13 +33,14 @@ use strata_proofimpl_predicate_keys::Sp1Groth16PredicateKey;
 use strata_proofimpl_predicate_keys::{NativeCheckpointPredicateKey, validate_predicate_key};
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
-#[cfg(all(feature = "prover", feature = "sp1"))]
-use strata_zkvm_hosts::sp1::{checkpoint_host, checkpoint_runtime_params_manifest_path};
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
-#[cfg(all(feature = "prover", feature = "sp1"))]
-use crate::prover::checkpoint_sp1_host_config;
+#[cfg(feature = "prover")]
+use crate::prover::artifacts::{
+    CheckpointArtifactError, checkpoint_program_id_for_backend,
+    validate_checkpoint_artifacts_for_backend,
+};
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
 /// Load config early for logging initialization
@@ -313,8 +314,10 @@ fn validate_checkpoint_predicate_key(
             validate_predicate_key(checkpoint_predicate, &NativeCheckpointPredicateKey)
         }
         ProverBackend::Sp1 => {
-            let program_id = checkpoint_sp1_program_id(prover_config, handle)?;
-            validate_checkpoint_runtime_params_manifest(runtime_params, &program_id)?;
+            let program_id = checkpoint_program_id_for_backend(prover_config, handle)
+                .map_err(invalid_checkpoint_artifact_config)?;
+            validate_checkpoint_artifacts_for_backend(prover_config, runtime_params, &program_id)
+                .map_err(invalid_checkpoint_artifact_config)?;
             let provider = Sp1Groth16PredicateKey::new(program_id);
             validate_predicate_key(checkpoint_predicate, &provider)
         }
@@ -327,113 +330,10 @@ fn validate_checkpoint_predicate_key(
     })
 }
 
-#[cfg(all(feature = "prover", feature = "sp1"))]
-fn checkpoint_sp1_program_id(
-    prover_config: &ProverConfig,
-    handle: &Handle,
-) -> Result<[u8; 32], InitError> {
-    use zkaleido::ZkVmExecutor;
-
-    let sp1_config = checkpoint_sp1_host_config(prover_config);
-    let host = handle.block_on(checkpoint_host(sp1_config));
-    Ok(host.program_id().0)
-}
-
-#[cfg(all(feature = "prover", feature = "sp1"))]
-fn validate_checkpoint_runtime_params_manifest(
-    runtime_params: OLRuntimeParams,
-    program_id: &[u8; 32],
-) -> Result<(), InitError> {
-    let manifest_path = checkpoint_runtime_params_manifest_path();
-    let manifest = read_runtime_params_manifest(&manifest_path)?;
-
-    ensure_runtime_params_manifest_matches(
-        runtime_params_hash(runtime_params),
-        hex::encode(program_id),
-        &manifest,
-    )
-}
-
-#[cfg(all(feature = "prover", feature = "sp1"))]
-fn runtime_params_hash(runtime_params: OLRuntimeParams) -> String {
-    runtime_params.hash_hex()
-}
-
-#[cfg(all(feature = "prover", feature = "sp1"))]
-fn read_runtime_params_manifest(manifest_path: &Path) -> Result<(String, String), InitError> {
-    let manifest = fs::read_to_string(manifest_path).map_err(|e| {
-        InitError::InvalidProverConfig(format!(
-            "failed to read checkpoint runtime params manifest from {}: {e}",
-            manifest_path.display()
-        ))
-    })?;
-    let manifest: serde_json::Value = serde_json::from_str(&manifest).map_err(|e| {
-        InitError::InvalidProverConfig(format!(
-            "failed to parse checkpoint runtime params manifest from {}: {e}",
-            manifest_path.display()
-        ))
-    })?;
-
-    let runtime_params_hash = manifest
-        .get("runtime_params_hash")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            InitError::InvalidProverConfig(format!(
-                "checkpoint runtime params manifest from {} is missing runtime_params_hash",
-                manifest_path.display()
-            ))
-        })?;
-    let program_id = manifest
-        .get("program_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            InitError::InvalidProverConfig(format!(
-                "checkpoint runtime params manifest from {} is missing program_id",
-                manifest_path.display()
-            ))
-        })?;
-
-    Ok((runtime_params_hash.to_owned(), program_id.to_owned()))
-}
-
-#[cfg(all(feature = "prover", feature = "sp1"))]
-fn ensure_runtime_params_manifest_matches(
-    expected_hash: String,
-    expected_program_id: String,
-    manifest: &(String, String),
-) -> Result<(), InitError> {
-    let (artifact_hash, artifact_program_id) = manifest;
-    if artifact_hash != &expected_hash {
-        return Err(InitError::InvalidProverConfig(format!(
-            "checkpoint runtime params hash mismatch: loaded ol-params.json runtime hash \
-             {expected_hash}, but SP1 artifact manifest contains {artifact_hash}",
-        )));
-    }
-    if artifact_program_id != expected_program_id.as_str() {
-        return Err(InitError::InvalidProverConfig(format!(
-            "checkpoint runtime params manifest program ID mismatch: loaded SP1 artifact \
-             has program ID {expected_program_id}, but manifest contains {artifact_program_id}",
-        )));
-    }
-
-    Ok(())
-}
-
-#[cfg(all(feature = "prover", not(feature = "sp1")))]
-fn validate_checkpoint_runtime_params_manifest(
-    _runtime_params: OLRuntimeParams,
-    _program_id: &[u8; 32],
-) -> Result<(), InitError> {
-    Ok(())
-}
-
-#[cfg(all(feature = "prover", not(feature = "sp1")))]
-fn checkpoint_sp1_program_id(
-    _prover_config: &ProverConfig,
-    _handle: &Handle,
-) -> Result<[u8; 32], InitError> {
-    Err(InitError::InvalidProverConfig(
-        "config.prover.backend=sp1 requires building `strata` with the `sp1` feature".to_string(),
+#[cfg(feature = "prover")]
+fn invalid_checkpoint_artifact_config(error: CheckpointArtifactError) -> InitError {
+    InitError::InvalidProverConfig(format!(
+        "invalid checkpoint prover artifact configuration: {error}"
     ))
 }
 
@@ -949,35 +849,5 @@ mod tests {
         let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
 
         assert!(err.to_string().contains("predicate key mismatch"));
-    }
-
-    #[cfg(all(feature = "prover", feature = "sp1"))]
-    #[test]
-    fn rejects_mismatched_runtime_params_hash() {
-        let manifest = ("actual".to_owned(), "program-id".to_owned());
-        let err = super::ensure_runtime_params_manifest_matches(
-            "expected".to_owned(),
-            "program-id".to_owned(),
-            &manifest,
-        )
-        .unwrap_err();
-
-        assert!(matches!(err, InitError::InvalidProverConfig(_)));
-        assert!(err.to_string().contains("runtime params hash mismatch"));
-    }
-
-    #[cfg(all(feature = "prover", feature = "sp1"))]
-    #[test]
-    fn rejects_mismatched_runtime_params_manifest_program_id() {
-        let manifest = ("runtime-params".to_owned(), "actual".to_owned());
-        let err = super::ensure_runtime_params_manifest_matches(
-            "runtime-params".to_owned(),
-            "expected".to_owned(),
-            &manifest,
-        )
-        .unwrap_err();
-
-        assert!(matches!(err, InitError::InvalidProverConfig(_)));
-        assert!(err.to_string().contains("program ID mismatch"));
     }
 }
