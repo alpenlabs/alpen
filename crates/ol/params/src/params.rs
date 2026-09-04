@@ -19,15 +19,29 @@ use crate::{BridgeParams, GenesisHeaderParams, GenesisSnarkAccountData};
 pub struct OLGenesisParams {
     /// Header parameters for the parent of the genesis block.
     #[serde(default)]
-    pub header: GenesisHeaderParams,
+    header: GenesisHeaderParams,
 
     /// Genesis accounts keyed by account ID.
     #[serde(default)]
-    pub accounts: BTreeMap<AccountId, GenesisSnarkAccountData>,
+    accounts: BTreeMap<AccountId, GenesisSnarkAccountData>,
 
     /// Last L1 block known at genesis time, treated as the initial verified L1 tip.
     #[serde(default)]
-    pub last_l1_block: L1BlockCommitment,
+    last_l1_block: L1BlockCommitment,
+}
+
+impl OLGenesisParams {
+    pub fn header(&self) -> &GenesisHeaderParams {
+        &self.header
+    }
+
+    pub fn accounts(&self) -> &BTreeMap<AccountId, GenesisSnarkAccountData> {
+        &self.accounts
+    }
+
+    pub fn last_l1_block(&self) -> L1BlockCommitment {
+        self.last_l1_block
+    }
 }
 
 /// OL runtime parameters.
@@ -59,11 +73,6 @@ impl OLRuntimeParams {
     pub fn hash(&self) -> [u8; 32] {
         Sha256::digest(self.as_ssz_bytes()).into()
     }
-
-    /// Computes the hex-encoded hash of the runtime params.
-    pub fn hash_hex(&self) -> String {
-        hex::encode(self.hash())
-    }
 }
 
 /// Top-level OL params file.
@@ -81,26 +90,18 @@ pub struct OLParams {
 }
 
 impl OLParams {
-    /// Creates an [`OLParams`] from split genesis and runtime params.
-    pub fn new(genesis: OLGenesisParams, runtime: OLRuntimeParams) -> Self {
+    /// Starts building [`OLParams`] with explicit runtime params.
+    pub fn builder(runtime: OLRuntimeParams) -> OLParamsBuilder {
+        OLParamsBuilder::new(runtime)
+    }
+
+    fn new(genesis: OLGenesisParams, runtime: OLRuntimeParams) -> Self {
         Self { genesis, runtime }
     }
 
     #[cfg(any(test, feature = "test-defaults"))]
     pub fn test_default() -> Self {
-        Self::new(OLGenesisParams::default(), OLRuntimeParams::test_default())
-    }
-
-    /// Creates an [`OLParams`] with empty accounts and default header params.
-    pub fn new_empty(last_l1_block: L1BlockCommitment, bridge_params: BridgeParams) -> Self {
-        Self::new(
-            OLGenesisParams {
-                header: GenesisHeaderParams::default(),
-                accounts: BTreeMap::new(),
-                last_l1_block,
-            },
-            OLRuntimeParams::new(bridge_params),
-        )
+        Self::builder(OLRuntimeParams::test_default()).build()
     }
 
     /// Extracts the genesis-only portion of these params.
@@ -115,15 +116,6 @@ impl OLParams {
 
     pub fn bridge_params(&self) -> &BridgeParams {
         self.runtime.bridge_params()
-    }
-
-    /// Inserts an account into the OL genesis account set.
-    pub fn insert_genesis_account(
-        &mut self,
-        account_id: AccountId,
-        account: GenesisSnarkAccountData,
-    ) -> Option<GenesisSnarkAccountData> {
-        self.genesis.accounts.insert(account_id, account)
     }
 
     /// Returns the L1 block commitment used as OL genesis anchor.
@@ -144,19 +136,56 @@ impl OLParams {
     }
 }
 
+/// Builder for assembling immutable [`OLParams`].
+#[derive(Clone, Debug)]
+pub struct OLParamsBuilder {
+    genesis: OLGenesisParams,
+    runtime: OLRuntimeParams,
+}
+
+impl OLParamsBuilder {
+    pub fn new(runtime: OLRuntimeParams) -> Self {
+        Self {
+            genesis: OLGenesisParams::default(),
+            runtime,
+        }
+    }
+
+    pub fn genesis_header(mut self, header: GenesisHeaderParams) -> Self {
+        self.genesis.header = header;
+        self
+    }
+
+    pub fn genesis_l1_block(mut self, last_l1_block: L1BlockCommitment) -> Self {
+        self.genesis.last_l1_block = last_l1_block;
+        self
+    }
+
+    pub fn genesis_accounts(
+        mut self,
+        accounts: BTreeMap<AccountId, GenesisSnarkAccountData>,
+    ) -> Self {
+        self.genesis.accounts = accounts;
+        self
+    }
+
+    pub fn build(self) -> OLParams {
+        OLParams::new(self.genesis, self.runtime)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn sample_params() -> OLParams {
-        OLParams::new(OLGenesisParams::default(), OLRuntimeParams::test_default())
+        OLParams::test_default()
     }
 
     #[test]
     fn split_params_use_nested_json_shape() {
         let params = sample_params();
-        let rebuilt = OLParams::new(params.genesis_params().clone(), params.runtime_params());
-        let json = serde_json::to_value(&rebuilt).expect("serialization failed");
+        let json = serde_json::to_value(&params).expect("serialization failed");
 
         assert!(json.get("genesis").is_some());
         assert!(json.get("runtime").is_some());

@@ -11,5 +11,5 @@ mod params;
 
 pub use account::GenesisSnarkAccountData;
 pub use header::GenesisHeaderParams;
-pub use params::{OLGenesisParams, OLParams, OLRuntimeParams};
+pub use params::{OLGenesisParams, OLParams, OLParamsBuilder, OLRuntimeParams};
 pub use strata_bridge_params::BridgeParams;

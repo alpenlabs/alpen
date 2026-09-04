@@ -32,7 +32,7 @@ impl OLStateV1 {
         let mut ledger = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create initial snark accounts.
-        for (id, acct_params) in &genesis_params.accounts {
+        for (id, acct_params) in genesis_params.accounts() {
             // Claim the serial.
             let serial = next_serial;
             next_serial = next_serial.incr();
@@ -54,10 +54,10 @@ impl OLStateV1 {
 
         let total_ledger_funds = ledger.calculate_total_funds()?;
 
-        let global = GlobalStateV1::new(genesis_params.header.slot, next_serial);
+        let global = GlobalStateV1::new(genesis_params.header().slot, next_serial);
         let epoch = EpochalStateV1::new(
             total_ledger_funds,
-            genesis_params.header.epoch,
+            genesis_params.header().epoch,
             params.genesis_l1_block(),
             checkpointed_epoch,
             l1_block_refs_mmr,

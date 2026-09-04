@@ -3,7 +3,7 @@
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_asm_manifest_types::AsmLogEntry;
 use strata_identifiers::{AccountSerial, Epoch, L1Height, Slot};
-use strata_ol_params::{GenesisHeaderParams, OLGenesisParams, OLParams, OLRuntimeParams};
+use strata_ol_params::{GenesisHeaderParams, OLParams, OLRuntimeParams};
 use strata_ol_state_types::{
     ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, PendingAsmLog,
 };
@@ -21,17 +21,13 @@ pub(crate) fn create_test_genesis_state() -> OLStateV1 {
 /// Creates a [`MemoryStateBaseLayer`] whose genesis header is at the given
 /// epoch and slot.
 pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
-    let params = OLParams::new(
-        OLGenesisParams {
-            header: GenesisHeaderParams {
-                slot,
-                epoch,
-                ..Default::default()
-            },
+    let params = OLParams::builder(OLRuntimeParams::test_default())
+        .genesis_header(GenesisHeaderParams {
+            slot,
+            epoch,
             ..Default::default()
-        },
-        OLRuntimeParams::test_default(),
-    );
+        })
+        .build();
     let state = OLStateV1::from_genesis_params(&params)
         .expect("failed to create OLStateV1 from genesis params");
     MemoryStateBaseLayer::new(state)

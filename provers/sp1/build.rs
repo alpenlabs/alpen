@@ -167,7 +167,7 @@ fn write_checkpoint_artifact_manifest(program_id: [u8; 32], runtime_params_hash:
 fn read_checkpoint_runtime_params(path: &Path) -> OLRuntimeParams {
     println!("cargo:rerun-if-changed={}", path.display());
 
-    let json = fs::read_to_string(&path).unwrap_or_else(|err| {
+    let json = fs::read_to_string(path).unwrap_or_else(|err| {
         panic!(
             "failed to read {CHECKPOINT_RUNTIME_PARAMS_PATH} from {}: {err}",
             path.display()
