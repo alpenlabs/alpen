@@ -31,7 +31,7 @@ fn attempt_parts(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> TxAttemptP
 fn tx_entry_with_fee(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> L1TxEntry {
     L1TxEntry::from_raw_parts(
         serialize(tx),
-        L1TxStatus::Unpublished,
+        L1TxStatus::Queued,
         Some(L1TxRbfInfo {
             fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
             fee_sats: fee.to_sat(),
@@ -74,6 +74,68 @@ pub fn test_put_tx_existing_entry(db: &impl L1BroadcastDatabase) {
     assert_eq!(result.unwrap(), None);
     assert_eq!(db.get_next_tx_idx().unwrap(), idx + 1);
     assert_eq!(db.get_tx_entry(idx).unwrap(), Some(txentry));
+}
+
+pub fn test_put_tx_entry_pair(db: &impl L1BroadcastDatabase) {
+    let txs = get_test_bitcoin_txs();
+    let pair = |tx: &Transaction| {
+        (
+            tx.compute_txid().as_raw_hash().to_byte_array().into(),
+            tx_entry(tx),
+        )
+    };
+    let (commit_idx, reveal_idx) = db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!((commit_idx, reveal_idx), (0, 1));
+    assert!(db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .is_none());
+    assert!(db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[2])).is_err());
+    for idx in [commit_idx, reveal_idx] {
+        let mut entry = db.get_tx_entry(idx).unwrap().unwrap();
+        entry.status = L1TxStatus::Abandoned;
+        db.put_tx_entry_by_idx(idx, entry).unwrap();
+    }
+    assert_eq!(
+        db.put_tx_entry_pair(pair(&txs[0]), pair(&txs[1])).unwrap(),
+        Some((commit_idx, reveal_idx))
+    );
+    assert!([commit_idx, reveal_idx].into_iter().all(|idx| db
+        .get_tx_entry(idx)
+        .unwrap()
+        .unwrap()
+        .status
+        == L1TxStatus::Queued));
+
+    let mut invalid = db.get_tx_entry(commit_idx).unwrap().unwrap();
+    invalid.status = L1TxStatus::InvalidInputs;
+    db.put_tx_entry_by_idx(commit_idx, invalid.clone()).unwrap();
+    assert!(db
+        .put_tx_entry_pair(pair(&txs[0]), pair(&txs[1]))
+        .unwrap()
+        .is_none());
+    assert_eq!(db.get_tx_entry(commit_idx).unwrap(), Some(invalid));
+
+    let mut invalid_reveal = db.get_tx_entry(reveal_idx).unwrap().unwrap();
+    invalid_reveal.status = L1TxStatus::InvalidInputs;
+    db.put_tx_entry_by_idx(reveal_idx, invalid_reveal).unwrap();
+    let mut resigned = [txs[0].clone(), txs[1].clone()];
+    resigned[0].input[0].witness.push([1]);
+    resigned[1].input[0].witness.push([2]);
+    assert_eq!(
+        db.put_tx_entry_pair(pair(&resigned[0]), pair(&resigned[1]))
+            .unwrap(),
+        Some((commit_idx, reveal_idx))
+    );
+    assert_eq!(
+        db.get_tx_entry(commit_idx).unwrap(),
+        Some(tx_entry(&resigned[0]))
+    );
+    assert_eq!(db.get_next_tx_idx().unwrap(), 2);
 }
 
 pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
@@ -250,12 +312,10 @@ pub fn test_put_tx_entry_by_idx_refuses_to_unreplace(db: &impl L1BroadcastDataba
     // A stale writer tries to move it back to Published.
     let mut stale = txentry;
     stale.status = L1TxStatus::Published;
-    db.put_tx_entry_by_idx(idx, stale).unwrap();
+    let stored = db.put_tx_entry_by_idx(idx, stale).unwrap();
 
-    assert!(matches!(
-        db.get_tx_entry(idx).unwrap().unwrap().status,
-        L1TxStatus::Replaced { .. }
-    ));
+    assert!(matches!(stored.status, L1TxStatus::Replaced { .. }));
+    assert_eq!(db.get_tx_entry(idx).unwrap().unwrap(), stored);
 }
 
 /// A later replacement in the same chain must still be recordable.
@@ -279,6 +339,68 @@ pub fn test_put_tx_entry_by_idx_allows_rereplacement(db: &impl L1BroadcastDataba
         db.get_tx_entry(idx).unwrap().unwrap().status,
         L1TxStatus::Replaced {
             by: L1TxId::from([10u8; 32])
+        }
+    );
+}
+
+/// Snapshot-based write-back must preserve every concurrent transition, not only replacement.
+pub fn test_compare_and_put_tx_entry_by_idx_rejects_stale_snapshot(db: &impl L1BroadcastDatabase) {
+    let (txid, original) = generate_l1_tx_entry();
+    let idx = db.put_tx_entry(txid, original.clone()).unwrap().unwrap();
+
+    let mut abandoned = original.clone();
+    abandoned.status = L1TxStatus::Abandoned;
+    db.put_tx_entry_by_idx(idx, abandoned.clone()).unwrap();
+
+    let mut stale_update = original.clone();
+    stale_update.status = L1TxStatus::Published;
+    let stored = db
+        .compare_and_put_tx_entry_by_idx(idx, original, stale_update)
+        .unwrap();
+
+    assert_eq!(stored, abandoned);
+    assert_eq!(db.get_tx_entry(idx).unwrap().unwrap(), abandoned);
+}
+
+/// Claiming submission is an idempotent durable transition for an eligible entry.
+pub fn test_try_mark_tx_entry_submitting_claims_eligible_entry(db: &impl L1BroadcastDatabase) {
+    for (tx, status) in get_test_bitcoin_txs().iter().zip([
+        L1TxStatus::Queued,
+        L1TxStatus::Unpublished,
+        L1TxStatus::Submitting,
+    ]) {
+        let txid = tx.compute_txid().as_raw_hash().to_byte_array().into();
+        let mut entry = tx_entry(tx);
+        entry.status = status;
+        let idx = db.put_tx_entry(txid, entry).unwrap().unwrap();
+
+        assert!(db.try_mark_tx_entry_submitting(idx).unwrap());
+        assert_eq!(
+            db.get_tx_entry(idx).unwrap().unwrap().status,
+            L1TxStatus::Submitting
+        );
+        assert!(db.try_mark_tx_entry_submitting(idx).unwrap());
+    }
+}
+
+/// A replacement that commits first prevents the superseded attempt from claiming submission.
+pub fn test_try_mark_tx_entry_submitting_refuses_replaced(db: &impl L1BroadcastDatabase) {
+    let txns = get_test_bitcoin_txs();
+    let original_txid: Buf32 = txns[0].compute_txid().as_raw_hash().to_byte_array().into();
+    let replacement_txid: Buf32 = txns[1].compute_txid().as_raw_hash().to_byte_array().into();
+    let idx = db
+        .put_tx_entry(original_txid, tx_entry(&txns[0]))
+        .unwrap()
+        .unwrap();
+    db.put_replacement_tx_entry(original_txid, replacement_txid, tx_entry(&txns[1]))
+        .unwrap()
+        .expect("replacement wins the race");
+
+    assert!(!db.try_mark_tx_entry_submitting(idx).unwrap());
+    assert_eq!(
+        db.get_tx_entry(idx).unwrap().unwrap().status,
+        L1TxStatus::Replaced {
+            by: L1TxId::from(replacement_txid.0)
         }
     );
 }
@@ -508,7 +630,7 @@ pub fn test_adopt_confirmed_ancestor_refuses_an_unlinked_pair(db: &impl L1Broadc
     );
     assert_eq!(
         db.get_tx_entry_by_id(loser_txid).unwrap().unwrap().status,
-        L1TxStatus::Unpublished
+        L1TxStatus::Queued
     );
 }
 
@@ -771,6 +893,12 @@ macro_rules! l1_broadcast_db_tests {
         }
 
         #[test]
+        fn test_put_tx_entry_pair() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_put_tx_entry_pair(&db);
+        }
+
+        #[test]
         fn test_update_tx_entry() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_update_tx_entry(&db);
@@ -896,6 +1024,28 @@ macro_rules! l1_broadcast_db_tests {
         fn test_put_tx_entry_by_idx_allows_rereplacement() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_put_tx_entry_by_idx_allows_rereplacement(&db);
+        }
+
+        #[test]
+        fn test_compare_and_put_tx_entry_by_idx_rejects_stale_snapshot() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_compare_and_put_tx_entry_by_idx_rejects_stale_snapshot(
+                &db,
+            );
+        }
+
+        #[test]
+        fn test_try_mark_tx_entry_submitting_claims_eligible_entry() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_try_mark_tx_entry_submitting_claims_eligible_entry(
+                &db,
+            );
+        }
+
+        #[test]
+        fn test_try_mark_tx_entry_submitting_refuses_replaced() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_try_mark_tx_entry_submitting_refuses_replaced(&db);
         }
 
         #[test]
