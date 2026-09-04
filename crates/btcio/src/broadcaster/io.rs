@@ -62,12 +62,13 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         idx: u64,
     ) -> impl Future<Output = BroadcasterResult<Option<L1TxEntry>>> + Send;
 
-    /// Persists `entry` at the existing broadcast index `idx` and returns the stored row.
+    /// Persists `entry` if the row still equals `expected` and returns the stored row.
     ///
-    /// The returned row can differ when a concurrent durable transition won first.
-    fn put_tx_entry_by_idx(
+    /// The returned row differs from `entry` when a concurrent durable transition won first.
+    fn compare_and_put_tx_entry_by_idx(
         &self,
         idx: u64,
+        expected: L1TxEntry,
         entry: L1TxEntry,
     ) -> impl Future<Output = BroadcasterResult<L1TxEntry>> + Send;
 
@@ -315,12 +316,16 @@ where
         Ok(self.ops.get_tx_entry_async(idx).await?)
     }
 
-    async fn put_tx_entry_by_idx(
+    async fn compare_and_put_tx_entry_by_idx(
         &self,
         idx: u64,
+        expected: L1TxEntry,
         entry: L1TxEntry,
     ) -> BroadcasterResult<L1TxEntry> {
-        Ok(self.ops.put_tx_entry_by_idx_async(idx, entry).await?)
+        Ok(self
+            .ops
+            .compare_and_put_tx_entry_by_idx_async(idx, expected, entry)
+            .await?)
     }
 
     async fn try_mark_tx_entry_submitting(&self, idx: u64) -> BroadcasterResult<bool> {

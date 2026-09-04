@@ -343,6 +343,25 @@ pub fn test_put_tx_entry_by_idx_allows_rereplacement(db: &impl L1BroadcastDataba
     );
 }
 
+/// Snapshot-based write-back must preserve every concurrent transition, not only replacement.
+pub fn test_compare_and_put_tx_entry_by_idx_rejects_stale_snapshot(db: &impl L1BroadcastDatabase) {
+    let (txid, original) = generate_l1_tx_entry();
+    let idx = db.put_tx_entry(txid, original.clone()).unwrap().unwrap();
+
+    let mut abandoned = original.clone();
+    abandoned.status = L1TxStatus::Abandoned;
+    db.put_tx_entry_by_idx(idx, abandoned.clone()).unwrap();
+
+    let mut stale_update = original.clone();
+    stale_update.status = L1TxStatus::Published;
+    let stored = db
+        .compare_and_put_tx_entry_by_idx(idx, original, stale_update)
+        .unwrap();
+
+    assert_eq!(stored, abandoned);
+    assert_eq!(db.get_tx_entry(idx).unwrap().unwrap(), abandoned);
+}
+
 /// Claiming submission is an idempotent durable transition for an eligible entry.
 pub fn test_try_mark_tx_entry_submitting_claims_eligible_entry(db: &impl L1BroadcastDatabase) {
     for (tx, status) in get_test_bitcoin_txs().iter().zip([
@@ -1005,6 +1024,14 @@ macro_rules! l1_broadcast_db_tests {
         fn test_put_tx_entry_by_idx_allows_rereplacement() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_put_tx_entry_by_idx_allows_rereplacement(&db);
+        }
+
+        #[test]
+        fn test_compare_and_put_tx_entry_by_idx_rejects_stale_snapshot() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_compare_and_put_tx_entry_by_idx_rejects_stale_snapshot(
+                &db,
+            );
         }
 
         #[test]

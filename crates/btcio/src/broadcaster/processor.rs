@@ -20,7 +20,7 @@ use crate::{tx_entry::L1TxEntryExt, BtcioParams};
 /// Result of one processing pass over the unfinalized set.
 #[derive(Debug, Default)]
 pub(super) struct ProcessingPassResult {
-    /// Indexed entries whose status changed and must be written back.
+    /// Entries that remain trackable after the pass, carrying their authoritative stored state.
     pub updated: Vec<IndexedEntry>,
 
     /// Whether the in-memory set has to be rebuilt from the full index range.
@@ -58,7 +58,9 @@ pub(super) async fn process_unfinalized_entries(
             }
             let mut new_txentry = txentry.clone();
             new_txentry.status = status;
-            let stored_txentry = io.put_tx_entry_by_idx(idx, new_txentry).await?;
+            let stored_txentry = io
+                .compare_and_put_tx_entry_by_idx(idx, txentry.clone(), new_txentry)
+                .await?;
             processed
                 .updated
                 .push(IndexedEntry::new(idx, stored_txentry));
@@ -720,9 +722,10 @@ mod test {
             Ok(self.entries.get(&idx).cloned())
         }
 
-        async fn put_tx_entry_by_idx(
+        async fn compare_and_put_tx_entry_by_idx(
             &self,
             _idx: u64,
+            _expected: L1TxEntry,
             entry: L1TxEntry,
         ) -> BroadcasterResult<L1TxEntry> {
             self.persisted_statuses

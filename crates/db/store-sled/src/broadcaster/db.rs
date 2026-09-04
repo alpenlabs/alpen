@@ -182,6 +182,43 @@ impl L1BroadcastDatabase for L1BroadcastDBSled {
         Ok(stored)
     }
 
+    fn compare_and_put_tx_entry_by_idx(
+        &self,
+        idx: u64,
+        expected: L1TxEntry,
+        txentry: L1TxEntry,
+    ) -> DbResult<L1TxEntry> {
+        let Some(txid) = self.tx_id_tree.get(&idx).map_err(conv_sled_err)? else {
+            return Err(DbError::Other(format!(
+                "Entry does not exist for idx {idx:?}"
+            )));
+        };
+
+        self.config
+            .with_retry((&self.tx_tree, &self.tx_id_tree), |(txtree, _)| {
+                let Some(existing) = txtree.get(&txid)? else {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::Other(format!("Entry does not exist for txid at idx {idx:?}")),
+                    )));
+                };
+                if existing != expected {
+                    return Ok(existing);
+                }
+                if existing == txentry {
+                    return Ok(existing);
+                }
+                if existing.tx_raw() != txentry.tx_raw() {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::Other(format!(
+                            "tx entry at idx {idx:?} cannot be updated with a different transaction"
+                        )),
+                    )));
+                }
+                txtree.insert(&txid, &txentry)?;
+                Ok(txentry.clone())
+            })
+    }
+
     fn try_mark_tx_entry_submitting(&self, idx: u64) -> DbResult<bool> {
         self.config
             .with_retry((&self.tx_tree, &self.tx_id_tree), |(txtree, txidtree)| {

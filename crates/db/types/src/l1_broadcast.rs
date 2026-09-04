@@ -256,6 +256,18 @@ pub trait L1BroadcastDatabase: Send + Sync + 'static {
     /// the stored value keeps callers' in-memory state aligned with the durable transition.
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<L1TxEntry>;
 
+    /// Updates an entry only if its authoritative row still equals `expected`.
+    ///
+    /// Returns the authoritative stored row whether the update applied or a concurrent transition
+    /// won first. This is the write-back boundary for processing based on an earlier snapshot: no
+    /// stale status or metadata may overwrite a newer durable state.
+    fn compare_and_put_tx_entry_by_idx(
+        &self,
+        idx: u64,
+        expected: L1TxEntry,
+        txentry: L1TxEntry,
+    ) -> DbResult<L1TxEntry>;
+
     /// Atomically claims an entry for submission to Bitcoin.
     ///
     /// The transition applies to [`L1TxStatus::Queued`], [`L1TxStatus::Unpublished`], and
