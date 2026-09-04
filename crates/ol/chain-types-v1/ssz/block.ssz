@@ -4,7 +4,7 @@ import strata_ol_tx_types_v1
 import block_flags
 
 MAX_TXS_PER_BLOCK = 1 << 16
-MAX_LOGS_PER_BLOCK = 1 << 12
+MAX_LOGS_PER_BLOCK = 1 << 16
 MAX_SEALING_MANIFEST_COUNT = 2048
 
 ### OL Block header without signature.
