@@ -228,6 +228,8 @@ GEOF
                 ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
                 --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}"
             echo "generated ${OL_PARAMS}"
+        else
+            echo "warning: reusing existing ${OL_PARAMS}; ensure this was expected" >&2
         fi
     fi
 
@@ -242,9 +244,9 @@ GEOF
         OPERATOR_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genoppubkey -f "${OPERATOR_KEY}")
         SEQ_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
 
-        : "${CHECKPOINT_PREDICATE_FILE:?CHECKPOINT_PREDICATE_FILE is required when generating asm-params.json}"
-        : "${SAFE_HARBOUR_ADDRESS:?SAFE_HARBOUR_ADDRESS is required when generating asm-params.json: provide a P2TR BOSD descriptor for the bridge emergency sweep address}"
         if [ ! -f "${ASM_PARAMS}" ]; then
+            : "${CHECKPOINT_PREDICATE_FILE:?CHECKPOINT_PREDICATE_FILE is required when generating asm-params.json}"
+            : "${SAFE_HARBOUR_ADDRESS:?SAFE_HARBOUR_ADDRESS is required when generating asm-params.json: provide a P2TR BOSD descriptor for the bridge emergency sweep address}"
             "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
                 gen-asm-params \
                 -o "${ASM_PARAMS}" \
@@ -257,6 +259,8 @@ GEOF
                 --safe-harbour-address "${SAFE_HARBOUR_ADDRESS}" \
                 --checkpoint-predicate-file "${CHECKPOINT_PREDICATE_FILE}"
             echo "generated ${ASM_PARAMS}"
+        else
+            echo "warning: reusing existing ${ASM_PARAMS}; ensure this was expected" >&2
         fi
 
         echo "sequencer pubkey: ${SEQ_PK}"
