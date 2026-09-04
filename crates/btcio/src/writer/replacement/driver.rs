@@ -548,12 +548,16 @@ where
         .await?;
     }
 
-    // A finalized transaction never leaves the chain again, so the node needs no further
-    // bumping: retire it from the active set. `Confirmed` deliberately does not retire — it
-    // regresses to `Published` on reorg (see `confirmation_status`), and a node retired early
-    // would never be bumped again. The txid guard keeps a concurrent writer rebuild, which
-    // installs a fresh attempt under a new txid, out of the retirement.
-    if matches!(active_entry.status, L1TxStatus::Finalized { .. }) {
+    // A finalized transaction never leaves the chain again, and an abandoned transaction was
+    // deliberately forbidden from reaching it, so neither node needs further bumping. Retire
+    // both from the active set. `Confirmed` deliberately does not retire — it regresses to
+    // `Published` on reorg (see `confirmation_status`), and a node retired early would never be
+    // bumped again. The txid guard keeps a concurrent writer rebuild, which installs a fresh
+    // attempt under a new txid, out of the retirement.
+    if matches!(
+        active_entry.status,
+        L1TxStatus::Finalized { .. } | L1TxStatus::Abandoned
+    ) {
         broadcast_handle
             .retire_tx_node(record.node_id, record.active_txid)
             .await?;
@@ -2189,9 +2193,8 @@ mod tests {
         );
     }
 
-    /// Finality is the only broadcast status that retires a node from the active scan:
-    /// `Confirmed` still regresses to `Published` on reorg, and a node retired early would never
-    /// be fee bumped again.
+    /// Finality retires a node from the active scan, while `Confirmed` stays active because it can
+    /// regress to `Published` on reorg.
     #[tokio::test(flavor = "multi_thread")]
     async fn finalized_entry_retires_node_from_active_set_but_confirmed_does_not() {
         let bcast = get_broadcast_handle();
@@ -2269,6 +2272,56 @@ mod tests {
             .expect("test: active set is readable")
             .is_empty());
         // The record itself survives for the watchers' crash-recovery point lookups.
+        assert!(bcast
+            .get_tx_node(node_id)
+            .await
+            .expect("test: node is readable")
+            .is_some());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn abandoned_entry_retires_node_from_active_set() {
+        let bcast = get_broadcast_handle();
+        let tx = tx_with_output(1_000);
+        let txid = L1TxId::from(tx.compute_txid().to_byte_array());
+
+        let mut entry = L1TxEntry::from_tx_with_fee(&tx, fee_rate(), Amount::from_sat(100));
+        entry.status = L1TxStatus::Abandoned;
+        bcast
+            .put_tx_entry(to_raw_buf32(txid), entry)
+            .await
+            .expect("test: abandoned entry persists");
+
+        let record = TxNodeRecord::new(
+            TxNodeKind::SingleEnvelopeCommit { payload_idx: 1 },
+            TxAttempt::active(attempt_parts(&tx, fee_rate(), Amount::from_sat(100)), 0),
+        );
+        let node_id = record.node_id;
+        bcast
+            .put_tx_node(record.clone())
+            .await
+            .expect("test: node persists");
+
+        process_record(
+            &TestBitcoinClient::new(1),
+            &WriterConfig::default(),
+            &bcast,
+            ReplacementPolicyInputs {
+                current_l1_tip: 10,
+                estimate_fee_rate: fee_rate(),
+                incremental_relay_fee_rate: fee_rate(),
+            },
+            record,
+            &ReplacementContext::default(),
+        )
+        .await
+        .expect("test: pass over an abandoned entry runs");
+
+        assert!(bcast
+            .get_active_tx_nodes()
+            .await
+            .expect("test: active set is readable")
+            .is_empty());
         assert!(bcast
             .get_tx_node(node_id)
             .await
