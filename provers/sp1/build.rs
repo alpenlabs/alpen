@@ -123,9 +123,9 @@ pub const {program_name_upper}_VK_HASH_STR: &str = "{vk_hash_str}";
     });
 }
 
-fn write_checkpoint_runtime_params() -> String {
+fn write_checkpoint_runtime_params() -> [u8; 32] {
     let runtime_params = match env::var_os(CHECKPOINT_RUNTIME_PARAMS_PATH) {
-        Some(path) => read_checkpoint_runtime_params(PathBuf::from(path)),
+        Some(path) => read_checkpoint_runtime_params(Path::new(&path)),
         None if cfg!(all(feature = "build-elf", not(debug_assertions))) => {
             panic!("{CHECKPOINT_RUNTIME_PARAMS_PATH} must be set to build checkpoint guest ELFs")
         }
@@ -143,14 +143,14 @@ fn write_checkpoint_runtime_params() -> String {
     fs::write(&out_path, content)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", out_path.display()));
 
-    runtime_params.hash_hex()
+    runtime_params.hash()
 }
 
-fn write_checkpoint_artifact_manifest(program_id: [u8; 32], runtime_params_hash: String) {
+fn write_checkpoint_artifact_manifest(program_id: [u8; 32], runtime_params_hash: [u8; 32]) {
     let manifest = serde_json::json!({
         "schema": 1,
         "program_id": hex::encode(program_id),
-        "runtime_params_hash": runtime_params_hash,
+        "runtime_params_hash": hex::encode(runtime_params_hash),
     });
 
     let cache_dir = Path::new(CHECKPOINT).join("cache");
@@ -164,7 +164,7 @@ fn write_checkpoint_artifact_manifest(program_id: [u8; 32], runtime_params_hash:
     .unwrap_or_else(|e| panic!("Failed to write {}: {e}", manifest_path.display()));
 }
 
-fn read_checkpoint_runtime_params(path: PathBuf) -> OLRuntimeParams {
+fn read_checkpoint_runtime_params(path: &Path) -> OLRuntimeParams {
     println!("cargo:rerun-if-changed={}", path.display());
 
     let json = fs::read_to_string(&path).unwrap_or_else(|err| {
