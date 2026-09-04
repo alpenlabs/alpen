@@ -397,7 +397,7 @@ where
                     rebuild_epoch_resource_state_upto(
                         parent_blkid,
                         cur_epoch,
-                        *self.ol_params().bridge_params(),
+                        self.ol_params().runtime_params(),
                         self.context(),
                     )
                     .await
@@ -481,7 +481,7 @@ mod tests {
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let state = BlockasmServiceState::new(
-            Arc::new(OLParams::default()),
+            Arc::new(OLParams::test_default()),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
             PredicateKey::always_accept(),
@@ -918,7 +918,6 @@ mod tests {
             env.sequencer_config(),
             config,
             EpochResourceState::new_empty(),
-            *state.ol_params().bridge_params(),
         )
         .await
         .expect("child block generation should succeed");

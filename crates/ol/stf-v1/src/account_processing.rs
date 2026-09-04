@@ -184,11 +184,7 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     };
 
     // 2. Validate the withdrawal amount against params.
-    let Some(bridge_params) = context.bridge_params() else {
-        warn!(%sender, %amt_raw, "limboing withdrawal without bridge params sent to bridge gateway acct");
-        handle_misplaced_funds(state, payload.into_coin())?;
-        return Ok(());
-    };
+    let bridge_params = context.bridge_params();
 
     if !bridge_params.validate_withdrawal_amount(amt_raw) {
         warn!(%sender, %amt_raw, "limboing bad amount sent to bridge gateway acct");

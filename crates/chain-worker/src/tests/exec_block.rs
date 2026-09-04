@@ -12,13 +12,13 @@ use std::{collections::HashMap, sync::Mutex};
 use strata_acct_types::BitcoinAmount;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
     Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId, SubjectId,
 };
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_ol_stf_v1::test_utils::{
     EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
@@ -54,6 +54,10 @@ struct OrderEnforcingContext {
 }
 
 impl ChainWorkerContext for OrderEnforcingContext {
+    fn runtime_params(&self) -> OLRuntimeParams {
+        OLRuntimeParams::test_default()
+    }
+
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
         Ok(self.blocks.get(blkid).cloned())
     }
@@ -220,7 +224,7 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         merged_epochs: Mutex::new(Vec::new()),
     };
 
-    exec_block(&ctx, BridgeParams::default(), &terminal_commitment)
+    exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
         .expect("single-block epoch executes");
 
     let summaries = ctx.stored_summaries.lock().unwrap();

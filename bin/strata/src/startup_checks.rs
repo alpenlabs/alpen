@@ -736,7 +736,7 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
     if has_client_state {
         let l1_anchor_check = ctx.executor().handle().block_on(verify_l1_anchor_block(
             ctx.bitcoin_client().as_ref(),
-            ctx.ol_params().last_l1_block,
+            ctx.ol_params().genesis_l1_block(),
         ))?;
         if let StartupBitcoinCheck::Deferred { reason } = l1_anchor_check {
             warn!(%reason, "startup: deferring L1 anchor block check");
@@ -794,7 +794,7 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, L1BlockId};
-    use strata_ol_params::OLParams;
+    use strata_ol_params::{OLParams, OLRuntimeParams};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::IStateAccessorMut;
     use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
@@ -1051,15 +1051,15 @@ mod tests {
         let storage = create_node_storage(db, strata_storage::test_runtime_handle())
             .expect("test: create node storage");
         let genesis_l1_block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
-        let params = OLParams::new_empty(
-            genesis_l1_block,
-            strata_ol_params::BridgeParams::new_with_descriptor_limit(
-                100_000_000,
-                Some(1_000_000_000),
-                81,
-            )
-            .expect("valid bridge params"),
-        );
+        let bridge_params = strata_ol_params::BridgeParams::new_with_descriptor_limit(
+            100_000_000,
+            Some(1_000_000_000),
+            81,
+        )
+        .expect("valid bridge params");
+        let params = OLParams::builder(OLRuntimeParams::new(bridge_params))
+            .genesis_l1_block(genesis_l1_block)
+            .build();
         let genesis_commitment = init_ol_genesis(&params, &storage).expect("test: init ol genesis");
         (storage, genesis_commitment)
     }

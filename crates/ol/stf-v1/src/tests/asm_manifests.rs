@@ -5,7 +5,6 @@ use strata_asm_checkpoint_types::CheckpointTip;
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::constants::AsmLogTypeId;
 use strata_asm_logs::{CheckpointTipUpdate, DepositLog};
-use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
     Buf32, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, SubjectId, SubjectIdBytes,
@@ -14,6 +13,7 @@ use strata_msg_fmt::MAX_TYPE;
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_v1::MAX_SEALING_MANIFEST_COUNT;
 use strata_ol_da_types_v1::OLDaPayloadV1;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
@@ -237,7 +237,7 @@ fn test_deposit_terminal_drain_has_no_logs_or_predrain_effects() {
         &mut predrain_state,
         &[to_ol_block(output.completed_block())],
         &parent_header,
-        BridgeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
     .expect("pre-drain checkpoint replay should succeed");
     assert_eq!(
@@ -356,7 +356,8 @@ fn test_oversized_deposit_amount_returns_clean_error() {
 
     let outputs = ExecOutputBuffer::new_empty();
     let block_info = BlockInfo::new(1, 1, 1);
-    let context = BasicExecContext::new(block_info, &outputs);
+    let runtime_params = OLRuntimeParams::test_default();
+    let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let err = process_epoch_terminal(&mut state, &context)
         .expect_err("an oversized deposit amount should error, not panic");

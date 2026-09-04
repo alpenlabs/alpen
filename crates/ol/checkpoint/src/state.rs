@@ -214,7 +214,6 @@ mod tests {
         checkpoint_sidecar_strategy, create_test_checkpoint_payload,
     };
     use strata_asm_checkpoint_types::{CheckpointPayload, CheckpointTip};
-    use strata_bridge_params::BridgeParams;
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::test_utils::{
@@ -227,6 +226,7 @@ mod tests {
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog, OLTxSegmentV1,
         SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData,
     };
+    use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IAccountState, IStateAccessor};
     use strata_ol_state_types_v1::OLStateV1;
@@ -277,7 +277,7 @@ mod tests {
             stub_ol_logs: Vec<OLLog>,
         ) -> Self {
             Self {
-                inner: CheckpointWorkerContextImpl::new(storage, BridgeParams::default()),
+                inner: CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default()),
                 stub_state_diff,
                 stub_ol_logs,
             }
@@ -367,7 +367,7 @@ mod tests {
     fn initialize_cursor(
         storage: Arc<strata_storage::NodeStorage>,
     ) -> OLCheckpointServiceState<CheckpointWorkerContextImpl> {
-        let ctx = CheckpointWorkerContextImpl::new(storage, BridgeParams::default());
+        let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
         let mut state = OLCheckpointServiceState::new(ctx);
         state.initialize();
         state
@@ -547,7 +547,7 @@ mod tests {
                     .expect("put checkpoint");
             }
 
-            let ctx = CheckpointWorkerContextImpl::new(storage, BridgeParams::default());
+            let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
             let mut state = OLCheckpointServiceState::new(ctx);
             state.initialize();
 
@@ -744,7 +744,8 @@ mod tests {
             .insert_epoch_summary_blocking(summary)
             .expect("insert summary");
 
-        let ctx = CheckpointWorkerContextImpl::new(Arc::clone(&storage), BridgeParams::default());
+        let ctx =
+            CheckpointWorkerContextImpl::new(Arc::clone(&storage), OLRuntimeParams::test_default());
         let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
 
         // The sidecar must carry the withdrawal-intent log, and it must decode

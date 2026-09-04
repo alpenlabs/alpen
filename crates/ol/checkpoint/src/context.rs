@@ -4,10 +4,10 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf_v1::execute_block_batch_predrain;
@@ -147,7 +147,7 @@ pub struct ProverConfig {
 /// for the prover to deliver them. Without it, returns empty proofs.
 pub(crate) struct CheckpointWorkerContextImpl {
     storage: Arc<NodeStorage>,
-    bridge_params: BridgeParams,
+    runtime_params: OLRuntimeParams,
     /// When present, a prover is running and `get_proof` waits for proofs.
     /// When absent, `get_proof` returns empty immediately.
     prover: Option<ProverConfig>,
@@ -157,10 +157,10 @@ impl CheckpointWorkerContextImpl {
     /// Creates a new context without a prover.
     ///
     /// `get_proof` always returns empty bytes.
-    pub(crate) fn new(storage: Arc<NodeStorage>, bridge_params: BridgeParams) -> Self {
+    pub(crate) fn new(storage: Arc<NodeStorage>, runtime_params: OLRuntimeParams) -> Self {
         Self {
             storage,
-            bridge_params,
+            runtime_params,
             prover: None,
         }
     }
@@ -168,12 +168,12 @@ impl CheckpointWorkerContextImpl {
     /// Creates a new context with an integrated prover.
     pub(crate) fn with_prover(
         storage: Arc<NodeStorage>,
-        bridge_params: BridgeParams,
+        runtime_params: OLRuntimeParams,
         prover: ProverConfig,
     ) -> Self {
         Self {
             storage,
-            bridge_params,
+            runtime_params,
             prover: Some(prover),
         }
     }
@@ -324,7 +324,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         summary: &EpochSummary,
     ) -> anyhow::Result<(StateDiffRaw, Vec<OLLog>)> {
         let (statediff, logs, terminal_header) =
-            replay_epoch_and_compute_da(self, summary, self.bridge_params)?;
+            replay_epoch_and_compute_da(self, summary, &self.runtime_params)?;
         assert_terminal_commitment_matches(&terminal_header, summary.terminal())?;
         Ok((statediff, logs))
     }
@@ -359,7 +359,7 @@ fn assert_terminal_commitment_matches(
 fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
     summary: &EpochSummary,
-    bridge_params: BridgeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeaderV1)> {
     let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
 
@@ -379,7 +379,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
         &mut da_state,
         &epoch_blocks,
         &prev_terminal_header,
-        bridge_params,
+        runtime_params,
     )
     .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
 
@@ -452,6 +452,7 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, OLBlockId};
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
+    use strata_ol_params::OLRuntimeParams;
     use strata_storage::create_node_storage;
 
     use super::{CheckpointWorkerContext, CheckpointWorkerContextImpl};
@@ -483,7 +484,7 @@ mod tests {
             .put_terminal_header_blocking(*commitment.blkid(), header.clone())
             .expect("store terminal header");
 
-        let context = CheckpointWorkerContextImpl::new(storage, Default::default());
+        let context = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
         assert_eq!(
             context
                 .get_block_header(&commitment)

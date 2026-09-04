@@ -10,6 +10,7 @@
 //! abort with `coin: accidentally destroyed value` rather than fail an assert.
 
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayloadData, TxEffects};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::{Coin, IStateAccessorMut, StateError};
 
 use crate::context::{BasicExecContext, BlockInfo};
@@ -77,8 +78,8 @@ fn limbo_overflow_returns_clean_error() {
 /// defuses the payload on the `emit_typed_log` error instead of dropping it live.
 #[test]
 fn bridge_withdrawal_log_overflow_returns_clean_error() {
-    use strata_bridge_params::BridgeParams;
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_ol_params::OLRuntimeParams;
 
     let mut state = make_genesis_state();
     let sender = make_account_id(TEST_SNARK_ACCOUNT_ID);
@@ -102,8 +103,8 @@ fn bridge_withdrawal_log_overflow_returns_clean_error() {
         .expect("filling logs to the cap should succeed");
 
     let block_info = BlockInfo::new(1, 1, 1);
-    let context =
-        BasicExecContext::new(block_info, &outputs).with_bridge_params(BridgeParams::default());
+    let runtime_params = OLRuntimeParams::test_default();
+    let context = BasicExecContext::new(block_info, &outputs, &runtime_params);
 
     let err = account_processing::process_message(
         &mut state,
@@ -150,7 +151,8 @@ fn apply_tx_effects_defuses_remaining_on_midloop_error() {
     );
 
     let outputs = ExecOutputBuffer::new_empty();
-    let context = BasicExecContext::new(BlockInfo::new(1, 0, 0), &outputs);
+    let runtime_params = OLRuntimeParams::test_default();
+    let context = BasicExecContext::new(BlockInfo::new(1, 0, 0), &outputs, &runtime_params);
 
     let err = transaction_processing::apply_tx_effects(&mut state, source, &effects, &context)
         .expect_err("a mid-loop limbo overflow should error, not panic");

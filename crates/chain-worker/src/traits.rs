@@ -5,6 +5,7 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 
@@ -16,6 +17,9 @@ use crate::{OLBlockExecutionOutput, WorkerResult};
 /// tested with mock implementations. All methods should be blocking operations
 /// as the worker runs on a dedicated thread pool.
 pub trait ChainWorkerContext: Send + Sync + 'static {
+    /// Returns the runtime parameters used for OL STF execution.
+    fn runtime_params(&self) -> OLRuntimeParams;
+
     // =========================================================================
     // Block access
     // =========================================================================

@@ -12,6 +12,7 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_mempool::MempoolTxInvalidReason;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
@@ -73,6 +74,9 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
         start_height: L1Height,
         max_count: u32,
     ) -> BlockAssemblyResult<Vec<AsmManifest>>;
+
+    /// Returns the runtime params used for OL STF execution.
+    fn runtime_params(&self) -> OLRuntimeParams;
 }
 
 /// Generates MMR proofs needed during block assembly.
@@ -114,6 +118,7 @@ pub struct BlockAssemblyContext<M, S> {
     mempool_provider: M,
     state_provider: S,
     l1_reorg_safe_depth: u32,
+    runtime_params: OLRuntimeParams,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
@@ -121,6 +126,7 @@ impl<M, S> Debug for BlockAssemblyContext<M, S> {
         f.debug_struct("BlockAssemblyContext")
             .field("storage", &"<NodeStorage>")
             .field("l1_reorg_safe_depth", &self.l1_reorg_safe_depth)
+            .field("runtime_params", &self.runtime_params)
             .finish_non_exhaustive()
     }
 }
@@ -132,12 +138,14 @@ impl<M, S> BlockAssemblyContext<M, S> {
         mempool_provider: M,
         state_provider: S,
         l1_reorg_safe_depth: u32,
+        runtime_params: OLRuntimeParams,
     ) -> Self {
         Self {
             storage,
             mempool_provider,
             state_provider,
             l1_reorg_safe_depth,
+            runtime_params,
         }
     }
 }
@@ -232,6 +240,10 @@ where
         }
 
         Ok(manifests)
+    }
+
+    fn runtime_params(&self) -> OLRuntimeParams {
+        self.runtime_params
     }
 }
 

@@ -6,6 +6,7 @@
 //! Gated behind the `prover` feature flag and activated when a `[prover]`
 //! section is present in the config.
 
+pub(crate) mod artifacts;
 mod errors;
 mod receipt_hook;
 mod spec;
@@ -85,8 +86,8 @@ pub(crate) fn start_prover_service(
     // Build the spec + hook. The backend choice is fixed here at build
     // time rather than being part of task identity — the new paas erases
     // the host type inside the prove strategy.
-    let bridge_params = *runctx.ol_params().bridge_params();
-    let spec = CheckpointSpec::new(storage.clone(), bridge_params);
+    let runtime_params = runctx.ol_params().runtime_params();
+    let spec = CheckpointSpec::new(storage.clone(), runtime_params);
     let hook = CheckpointReceiptHook::new(proof_db.clone(), proof_notify);
 
     // Task store: the node's `ProverTaskDbManager` implements
@@ -100,7 +101,7 @@ pub(crate) fn start_prover_service(
             .task_store(task_store)
             .receipt_hook(hook)
             .retry(RetryConfig::default())
-            .native(CheckpointProgram::native_host()),
+            .native(CheckpointProgram::native_host(runtime_params)),
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
             use strata_zkvm_hosts::sp1::checkpoint_host;

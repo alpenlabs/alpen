@@ -164,7 +164,6 @@ where
         state.sequencer_config(),
         config,
         resource_state_before_block,
-        *state.ol_params().bridge_params(),
     )
     .await?;
 
@@ -324,7 +323,7 @@ mod tests {
         let mempool = env.mempool_arc();
 
         let state = BlockasmServiceState::new(
-            Arc::new(OLParams::default()),
+            Arc::new(OLParams::test_default()),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
             sequencer_predicate,

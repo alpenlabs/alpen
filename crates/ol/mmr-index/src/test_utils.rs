@@ -2,7 +2,7 @@ use strata_acct_types::{BitcoinAmount, MessageEntry, Mmr64, MsgPayload, StrataHa
 use strata_db_types::MmrId;
 use strata_identifiers::{AccountId, Buf32, Hash, L1BlockCommitment, L1BlockId};
 use strata_merkle::{Mmr, MmrState};
-use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams};
+use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams, OLRuntimeParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{IAccountStateMut, ISnarkAccountStateMut};
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
@@ -11,11 +11,10 @@ use strata_predicate::PredicateKey;
 use crate::{MmrIndexEntry, resolve_ol_mmr_target};
 
 pub(crate) fn build_genesis_target_state() -> OLStateV1 {
-    OLStateV1::from_genesis_params(&OLParams::new_empty(
-        L1BlockCommitment::default(),
-        BridgeParams::default(),
-    ))
-    .expect("valid genesis params")
+    let params = OLParams::builder(OLRuntimeParams::new(BridgeParams::default()))
+        .genesis_l1_block(L1BlockCommitment::default())
+        .build();
+    OLStateV1::from_genesis_params(&params).expect("valid genesis params")
 }
 
 pub(crate) fn build_target_state_with_empty_l1_block_refs_mmr() -> OLStateV1 {
@@ -39,18 +38,20 @@ pub(crate) fn build_snark_inbox_message(seed: u8) -> MessageEntry {
 }
 
 pub(crate) fn build_target_state_with_snark_account(account_id: AccountId) -> OLStateV1 {
-    let mut params = OLParams::new_empty(
-        L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero())),
-        BridgeParams::default(),
-    );
-    params.accounts.insert(
+    let accounts = [(
         account_id,
         GenesisSnarkAccountData {
             predicate: PredicateKey::always_accept(),
             inner_state: Hash::zero(),
             balance: BitcoinAmount::default(),
         },
-    );
+    )]
+    .into_iter()
+    .collect();
+    let params = OLParams::builder(OLRuntimeParams::new(BridgeParams::default()))
+        .genesis_l1_block(L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero())))
+        .genesis_accounts(accounts)
+        .build();
 
     OLStateV1::from_genesis_params(&params).expect("valid genesis params")
 }

@@ -388,7 +388,7 @@ mod tests {
         let fixture = epoch_fixture(1, 10, 1);
         insert_fixture(&storage, &fixture, true);
 
-        let stored_state = OLStateV1::from_genesis_params(&OLParams::default())
+        let stored_state = OLStateV1::from_genesis_params(&OLParams::test_default())
             .expect("create stored terminal state");
         let stored_state_root = MemoryStateBaseLayer::new(stored_state.clone())
             .compute_state_root()

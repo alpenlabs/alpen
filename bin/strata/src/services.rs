@@ -364,7 +364,7 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
             ),
             ReaderValidation::new(
                 nodectx.config().bitcoind.network,
-                nodectx.ol_params().last_l1_block,
+                nodectx.ol_params().genesis_l1_block(),
             ),
             nodectx.status_channel().as_ref().clone(),
             Arc::new(AsmBlockSubmitter::new(asm_handle)),

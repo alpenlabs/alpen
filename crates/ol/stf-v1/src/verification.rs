@@ -4,7 +4,6 @@
 //! assembly as they perform all of the block validation checks including
 //! outputs (corresponding with headers/checkpoints/etc).
 
-use strata_bridge_params::BridgeParams;
 use strata_identifiers::Buf32;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_v1::{
@@ -12,6 +11,7 @@ use strata_ol_chain_types_v1::{
     OLLog, OLTxSegmentV1,
 };
 use strata_ol_da_common::DaScheme;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::*;
 use tracing::error;
 
@@ -113,12 +113,12 @@ pub fn verify_block<S: IStateAccessorMut>(
     header: &OLBlockHeaderV1,
     parent_header: Option<&OLBlockHeaderV1>,
     body: &OLBlockBodyV1,
-    bridge_params: BridgeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
-    let mut logs = verify_block_predrain(state, header, parent_header, body, bridge_params)?;
-    logs.extend(apply_epoch_terminal(state, header, body)?);
+    let mut logs = verify_block_predrain(state, header, parent_header, body, runtime_params)?;
+    logs.extend(apply_epoch_terminal(state, header, body, runtime_params)?);
 
     // Verify logs size.
     let max = MAX_LOGS_PER_BLOCK as usize;
@@ -157,7 +157,7 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
     header: &OLBlockHeaderV1,
     parent_header: Option<&OLBlockHeaderV1>,
     body: &OLBlockBodyV1,
-    bridge_params: BridgeParams,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header)?;
@@ -179,8 +179,7 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
 
     // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
-    let basic_ctx =
-        BasicExecContext::new(block_info, &output_buffer).with_bridge_params(bridge_params);
+    let basic_ctx = BasicExecContext::new(block_info, &output_buffer, runtime_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header);
     if let Some(tx_segment) = body.tx_segment() {
         transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;
@@ -220,12 +219,13 @@ pub fn apply_epoch_terminal<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeaderV1,
     body: &OLBlockBodyV1,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
     let block_info = BlockInfo::from_header(header);
 
     let output_buffer = ExecOutputBuffer::new_empty();
-    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
+    let basic_ctx = BasicExecContext::new(block_info, &output_buffer, runtime_params);
 
     // If this is the epoch terminal, drain the buffered ASM logs, reset
     // intraepoch state, advance the epoch, then check the header state root.
@@ -372,8 +372,9 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     diff: D::Diff,
     manifests: &[AsmManifest],
     exp: &EpochExecExpectations,
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<()> {
-    apply_da_epoch::<S, D>(state, epoch_info, diff, manifests)?;
+    apply_da_epoch::<S, D>(state, epoch_info, diff, manifests, runtime_params)?;
 
     let final_state_root = state.compute_state_root()?;
     if final_state_root != exp.epoch_post_state_root {
@@ -402,6 +403,7 @@ pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     epoch_info: &EpochInfo,
     diff: D::Diff,
     manifests: &[AsmManifest],
+    runtime_params: &OLRuntimeParams,
 ) -> ExecResult<()> {
     let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
     chain_processing::process_epoch_initial(state, &init_ctx)?;
@@ -421,7 +423,7 @@ pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     // intraepoch/MMR/epochal state and the deferred drain effects, which the
     // DA diff does not carry.
     let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
-    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output, runtime_params);
     manifest_processing::process_block_manifests(state, manifests)?;
     manifest_processing::process_epoch_terminal(state, &term_ctx)?;
     output.verify_logs_within_block_limit()?;
@@ -508,7 +510,8 @@ mod tests {
         OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
             .expect("state-changing epoch diff should apply");
         let output = ExecOutputBuffer::new_empty();
-        let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+        let runtime_params = OLRuntimeParams::test_default();
+        let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output, &runtime_params);
         manifest_processing::process_block_manifests(&mut expected_state, manifests.manifests())
             .expect("manifest buffering should succeed");
         manifest_processing::process_epoch_terminal(&mut expected_state, &term_ctx)
@@ -626,6 +629,7 @@ mod tests {
         let exp = EpochExecExpectations {
             epoch_post_state_root: Buf32::from([9u8; 32]),
         };
+        let runtime_params = OLRuntimeParams::test_default();
 
         let res = verify_epoch_with_diff::<_, OLDaSchemeV1>(
             &mut state,
@@ -633,6 +637,7 @@ mod tests {
             diff,
             manifests.manifests(),
             &exp,
+            &runtime_params,
         );
         assert!(matches!(
             res.expect_err("mismatched final root should fail epoch verification"),
@@ -663,6 +668,7 @@ mod tests {
         let exp = EpochExecExpectations {
             epoch_post_state_root: expected_post_root,
         };
+        let runtime_params = OLRuntimeParams::test_default();
 
         verify_epoch_with_diff::<_, OLDaSchemeV1>(
             &mut state,
@@ -670,6 +676,7 @@ mod tests {
             OLDaPayloadV1::new(state_diff),
             manifests.manifests(),
             &exp,
+            &runtime_params,
         )
         .expect("matching post-epoch root should verify");
     }
