@@ -49,6 +49,8 @@ use crate::{
 /// A [`ChainWorkerContext`] backed by in-memory maps for the four reads
 /// [`apply_checkpoint_epoch`] performs. All other methods are unreachable.
 struct MockChainWorkerContext {
+    /// Runtime params used by checkpoint-sync reconstruction.
+    runtime_params: OLRuntimeParams,
     /// Checkpoint payloads keyed by epoch commitment.
     checkpoint_payloads: HashMap<EpochCommitment, CheckpointPayload>,
     /// Epoch summaries keyed by epoch index.
@@ -62,6 +64,7 @@ struct MockChainWorkerContext {
 impl MockChainWorkerContext {
     fn new() -> Self {
         Self {
+            runtime_params: OLRuntimeParams::default(),
             checkpoint_payloads: HashMap::new(),
             epoch_summaries: HashMap::new(),
             ol_states: HashMap::new(),
@@ -72,7 +75,7 @@ impl MockChainWorkerContext {
 
 impl ChainWorkerContext for MockChainWorkerContext {
     fn runtime_params(&self) -> OLRuntimeParams {
-        OLRuntimeParams::default()
+        self.runtime_params
     }
 
     fn fetch_checkpoint_payload(
