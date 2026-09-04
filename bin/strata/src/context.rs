@@ -38,8 +38,7 @@ use tracing::{info, warn};
 
 #[cfg(feature = "prover")]
 use crate::prover::artifacts::{
-    CheckpointArtifactError, checkpoint_program_id_for_backend,
-    validate_checkpoint_artifacts_for_backend,
+    CheckpointArtifactError, checkpoint_sp1_program_id, validate_checkpoint_sp1_artifacts,
 };
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
@@ -314,9 +313,9 @@ fn validate_checkpoint_predicate_key(
             validate_predicate_key(checkpoint_predicate, &NativeCheckpointPredicateKey)
         }
         ProverBackend::Sp1 => {
-            let program_id = checkpoint_program_id_for_backend(prover_config, handle)
+            let program_id = checkpoint_sp1_program_id(prover_config, handle)
                 .map_err(invalid_checkpoint_artifact_config)?;
-            validate_checkpoint_artifacts_for_backend(prover_config, runtime_params, &program_id)
+            validate_checkpoint_sp1_artifacts(runtime_params, &program_id)
                 .map_err(invalid_checkpoint_artifact_config)?;
             let provider = Sp1Groth16PredicateKey::new(program_id);
             validate_predicate_key(checkpoint_predicate, &provider)
