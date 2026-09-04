@@ -15,7 +15,8 @@ use strata_db_types::{
 };
 use strata_identifiers::{Buf32, Epoch, EpochCommitment};
 use strata_ol_sequencer::{
-    CheckpointContextResult, CheckpointPublishContext, CheckpointReconcileContext,
+    CheckpointContextError, CheckpointContextResult, CheckpointPublishContext,
+    CheckpointReconcileContext,
 };
 use strata_storage::NodeStorage;
 use tracing::debug;
@@ -45,22 +46,9 @@ impl CheckpointPublishContext for NodeCheckpointContext {
     }
 
     async fn get_safe_checkpoint_epoch(&self) -> CheckpointContextResult<Option<Epoch>> {
-        let Some((block, state)) = self
-            .storage
-            .client_state()
-            .fetch_most_recent_state_async()
-            .await?
-        else {
-            return Ok(None);
+        let Some((_, state)) = self.storage.fetch_canonical_client_state_async().await? else {
+            return Err(CheckpointContextError::CanonicalStateUnavailable { state: "client" });
         };
-        let canonical = self
-            .storage
-            .l1()
-            .get_canonical_blockid_at_height_async(block.height())
-            .await?;
-        if canonical != Some(*block.blkid()) {
-            return Ok(None);
-        }
         Ok(state
             .get_declared_final_epoch()
             .map(|commitment| commitment.epoch()))

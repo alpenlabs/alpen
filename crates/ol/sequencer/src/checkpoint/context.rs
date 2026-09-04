@@ -14,6 +14,9 @@ pub enum CheckpointContextError {
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+
+    #[error("canonical {state} state is unavailable")]
+    CanonicalStateUnavailable { state: &'static str },
 }
 
 /// Result returned by checkpoint context operations.
@@ -26,6 +29,10 @@ pub trait CheckpointPublishContext: Send + Sync + 'static {
     async fn get_accepted_checkpoint_epoch(&self) -> CheckpointContextResult<Option<Epoch>>;
 
     /// Returns the latest reorg-safe checkpoint epoch.
+    ///
+    /// [`None`] means canonical client state is available but declares no finalized epoch.
+    /// Unavailable canonical state returns [`CheckpointContextError::CanonicalStateUnavailable`]
+    /// so callers fail closed rather than treating missing evidence as permission to publish.
     async fn get_safe_checkpoint_epoch(&self) -> CheckpointContextResult<Option<Epoch>>;
 
     /// Returns the next broadcaster index.
