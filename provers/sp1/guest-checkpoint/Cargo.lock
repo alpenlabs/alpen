@@ -2076,6 +2076,7 @@ name = "strata-ol-params"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "sha2",
  "ssz",
  "ssz_derive",
  "strata-bridge-params",
