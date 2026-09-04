@@ -49,13 +49,13 @@ async fn persist_envelope_pair(
     payload: &BundledPayloadEntry,
     envelope: &EnvelopeData,
     reveal: &Transaction,
-    commit_fee_rate: FeeRate,
-    reveal_fee_rate: FeeRate,
     reveal_fee_bumping: RevealFeeBumping,
     ops: &EnvelopeDataOps,
     broadcaster: &L1BroadcastHandle,
 ) -> Result<(), EnvelopeError> {
     let commit = &envelope.commit_tx;
+    let commit_fee_rate = effective_fee_rate(commit, envelope.commit_fee)?;
+    let reveal_fee_rate = effective_fee_rate(reveal, envelope.reveal_fee)?;
     let cid = to_l1_txid(commit.compute_txid());
     let rid = to_l1_txid(reveal.compute_txid());
     let mut linked = payload.clone();
@@ -185,16 +185,11 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
             envelope.reveal_fee,
             ctx.max_fee_rate,
         )?;
-        let commit_fee_rate = effective_fee_rate(&envelope.commit_tx, envelope.commit_fee)?;
-        let reveal_fee_rate = effective_fee_rate(&envelope.reveal_tx, envelope.reveal_fee)?;
-
         persist_envelope_pair(
             payload_idx,
             payloadentry,
             &envelope,
             &envelope.reveal_tx,
-            commit_fee_rate,
-            reveal_fee_rate,
             RevealFeeBumping::Disabled,
             ops,
             broadcast_handle,
@@ -239,16 +234,11 @@ pub(crate) async fn complete_reveal_and_broadcast(
         let max_fee_rate = broadcast_handle.max_fee_rate();
         ensure_built_fee_rate_within_max(&envelope.commit_tx, envelope.commit_fee, max_fee_rate)?;
         ensure_built_fee_rate_within_max(&reveal_tx, envelope.reveal_fee, max_fee_rate)?;
-        let commit_fee_rate = effective_fee_rate(&envelope.commit_tx, envelope.commit_fee)?;
-        let reveal_fee_rate = effective_fee_rate(&reveal_tx, envelope.reveal_fee)?;
-
         persist_envelope_pair(
             payload_idx,
             payloadentry,
             envelope,
             &reveal_tx,
-            commit_fee_rate,
-            reveal_fee_rate,
             RevealFeeBumping::Enabled,
             ops,
             broadcast_handle,
