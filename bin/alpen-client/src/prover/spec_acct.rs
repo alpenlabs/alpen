@@ -166,6 +166,25 @@ impl ProofSpec for AcctSpec {
     type Task = BatchTask;
     type Program = EeAcctProgram;
 
+    async fn is_ready(&self, task: &Self::Task) -> ProverResult<bool> {
+        let Some(chunk_ids) = self
+            .chunk_storage
+            .get_batch_chunks(task.0)
+            .await
+            .map_err(|e| PaasError::Storage(format!("get_batch_chunks({}): {e}", task.0)))?
+        else {
+            return Ok(false);
+        };
+
+        for chunk_id in chunk_ids {
+            let key: Vec<u8> = ChunkTask(chunk_id).into();
+            if self.chunk_receipts.get(&key)?.is_none() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     async fn fetch_input(&self, task: &Self::Task) -> ProverResult<EeAcctProofInput> {
         let batch_id = task.0;
 

@@ -24,6 +24,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use tokio::sync::OwnedSemaphorePermit;
 use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram};
 
 use crate::{
@@ -93,6 +94,12 @@ pub trait ProofSpec: Send + Sync + 'static {
 
     /// The zkaleido program to execute. Input must be `Send` for `spawn_blocking`.
     type Program: ZkVmProgram<Input: Send + Sync> + Send + Sync + 'static;
+
+    /// Whether this task's prerequisites are ready. Returning `false` keeps
+    /// the task durable without consuming capacity or retry budget.
+    async fn is_ready(&self, _task: &Self::Task) -> ProverResult<bool> {
+        Ok(true)
+    }
 
     /// Fetch the proof input for a task.
     ///
@@ -214,6 +221,7 @@ pub trait ReceiptHook<H: ProofSpec>: Send + Sync + 'static {
 pub(crate) struct ProveContext {
     /// Metadata from a prior run (e.g. serialized remote ProofId).
     pub(crate) saved: Option<Vec<u8>>,
+    submission_permit: Option<OwnedSemaphorePermit>,
     #[cfg(feature = "remote")]
     persist_fn: Option<Box<dyn FnOnce(Vec<u8>) + Send>>,
 }
@@ -222,6 +230,7 @@ impl fmt::Debug for ProveContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProveContext")
             .field("saved", &self.saved.as_ref().map(|s| s.len()))
+            .field("has_submission_permit", &self.submission_permit.is_some())
             .finish()
     }
 }
@@ -230,12 +239,19 @@ impl ProveContext {
     pub(crate) fn new(
         saved: Option<Vec<u8>>,
         _persist: impl FnOnce(Vec<u8>) + Send + 'static,
+        submission_permit: Option<OwnedSemaphorePermit>,
     ) -> Self {
         Self {
             saved,
+            submission_permit,
             #[cfg(feature = "remote")]
             persist_fn: Some(Box::new(_persist)),
         }
+    }
+
+    /// Release capacity once local preparation and remote submission finish.
+    pub(crate) fn release_submission_permit(&mut self) {
+        self.submission_permit.take();
     }
 
     /// Persist metadata for crash recovery. Call this right after obtaining
