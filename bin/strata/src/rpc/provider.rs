@@ -19,7 +19,7 @@ use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_ol_tx_types_v1::OLTransactionV1;
-use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
+use strata_primitives::{L1BlockId, OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
 use strata_storage::NodeStorage;
 
@@ -194,6 +194,16 @@ impl OLRpcProvider for NodeRpcProvider {
         self.storage
             .l1()
             .get_block_manifest_at_height_async(height)
+            .await
+    }
+
+    async fn get_canonical_l1_blockid_at_height(
+        &self,
+        height: L1Height,
+    ) -> DbResult<Option<L1BlockId>> {
+        self.storage
+            .l1()
+            .get_canonical_blockid_at_height_async(height)
             .await
     }
 
