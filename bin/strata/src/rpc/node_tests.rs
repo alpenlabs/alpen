@@ -1159,6 +1159,82 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
 }
 
 #[tokio::test]
+async fn checkpoint_info_returns_pending_when_observation_block_is_orphaned() {
+    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let observed_height = 505;
+    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
+    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
+    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+
+    let prev_summary = EpochSummary::new(
+        1,
+        prev_terminal,
+        L2BlockCommitment::new(0, fixed_ol_block_id(0x11)),
+        L1BlockCommitment::new(500, fixed_l1_block_id(0x30)),
+        fixed_buf32(0x40),
+    );
+    let cur_summary = EpochSummary::new(
+        2,
+        terminal,
+        prev_terminal,
+        L1BlockCommitment::new(510, fixed_l1_block_id(0x31)),
+        fixed_buf32(0x41),
+    );
+
+    let prev_commitment = prev_summary.get_epoch_commitment();
+    let cur_commitment = cur_summary.get_epoch_commitment();
+    let orphaned_blkid = fixed_l1_block_id(0x50);
+    let canonical_blkid = fixed_l1_block_id(0x51);
+    let l1_ref = CheckpointL1Ref::new(
+        L1BlockCommitment::new(observed_height, orphaned_blkid),
+        RBuf32::from(fixed_buf32(0xAA).0),
+        RBuf32::from(fixed_buf32(0xBB).0),
+    );
+
+    let tip = OLBlockCommitment::new(120, fixed_ol_block_id(0x77));
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            3,
+            false,
+            prev_commitment,
+            cur_commitment,
+            prev_commitment,
+        ))
+        .with_l1_tip_height(510)
+        .with_epoch_commitment(1, prev_commitment)
+        .with_epoch_commitment(2, cur_commitment)
+        .with_epoch_summary(prev_summary)
+        .with_epoch_summary(cur_summary)
+        .with_manifest(
+            AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
+                .expect("test manifest should be valid"),
+        )
+        .with_manifest(
+            AsmManifest::new(
+                observed_height,
+                canonical_blkid,
+                WtxidsRoot::default(),
+                vec![],
+            )
+            .expect("test manifest should be valid"),
+        )
+        .with_checkpoint_l1_ref(cur_commitment, l1_ref);
+    let rpc = make_rpc(with_blocks(provider, &epoch_blocks));
+
+    let info = rpc
+        .get_checkpoint_info(2)
+        .await
+        .expect("checkpoint info")
+        .expect("checkpoint should exist");
+
+    assert!(matches!(
+        info.confirmation_status,
+        RpcCheckpointConfStatus::Pending
+    ));
+}
+
+#[tokio::test]
 async fn checkpoint_info_returns_pending_when_observation_missing() {
     let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
     let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
