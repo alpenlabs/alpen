@@ -7,7 +7,35 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [features]
-default = ["sequencer", "sp1"]
+default = ["sequencer", "sp1", "jemalloc"]
+
+# Use jemalloc as the global allocator (unix only; falls back to the system
+# allocator elsewhere). On by default, matching reth's own binary: reth's
+# workload — long-lived node with a tokio worker pool, a large blocking pool
+# driving DB, and short-lived multi-megabyte allocations for block
+# re-execution and trie multiproofs — fragments glibc's per-thread arenas
+# badly, and glibc never returns that memory to the OS. The result reads as
+# an unbounded leak in RSS.
+jemalloc = ["reth-cli-util/jemalloc"]
+
+# jemalloc with heap profiling compiled in. Profiling is compiled out of the
+# plain `jemalloc` build, so collecting a heap profile needs this feature and a
+# redeploy. Run with:
+#
+#   _RJEM_MALLOC_CONF=prof:true,prof_active:true,lg_prof_sample:19,\
+#   lg_prof_interval:30,prof_prefix:/app/data/jeprof
+#
+# then `jeprof --text --show_bytes alpen-client /app/data/jeprof.*.heap`.
+#
+# Two details that otherwise produce no output and no error. The variable must
+# carry the `_RJEM_` prefix: tikv-jemallocator builds jemalloc with prefixed
+# symbols, and a plain `MALLOC_CONF` is ignored silently. And `prof:true` only
+# starts sampling — a dump trigger is required, since `prof_prefix` just names
+# the files. `lg_prof_interval:30` dumps every 1 GiB allocated (lower it and the
+# file count explodes); `prof_gdump:true` dumps on each new virtual-memory
+# high-water; `prof_final:true` dumps once at exit, which a node never reaches.
+jemalloc-prof = ["reth-cli-util/jemalloc-prof"]
+
 sequencer = [
   "dep:alpen-ee-da-provider",
   "dep:alpen-ee-da-runtime",

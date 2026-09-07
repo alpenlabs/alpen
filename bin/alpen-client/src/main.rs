@@ -1,5 +1,18 @@
 //! Reth node for the Alpen codebase.
 //!
+//! # Allocator
+//!
+//! The global allocator is jemalloc (via the `jemalloc` feature, on by
+//! default), the same choice reth's own binary makes. This is not a
+//! micro-optimization: the node runs a tokio worker pool alongside a large
+//! blocking pool that drives sled, block re-execution in the accessed-state
+//! exex, and trie multiproof construction for chunk witnesses. Those are
+//! short-lived multi-megabyte allocations spread over many threads, which is
+//! precisely the pattern glibc's malloc handles worst — it spins up an arena
+//! per thread (up to `8 * ncpu`), fragments each of them, and never returns
+//! the freed pages to the OS. RSS then climbs monotonically for the life of
+//! the process with nothing in the logs to show for it.
+//!
 //! # Logging
 //!
 //! Alpen (non-reth) logs carry a `component = "alpen"` field so they can be
@@ -9,6 +22,13 @@
 //! target at INFO or a more verbose level to get the tags: lowering it (e.g.
 //! `RUST_LOG=alpen_client=warn`) or capping the compile-time level below info
 //! (`tracing/release_max_level_*`) disables the spans and silently drops the tag.
+
+#[expect(
+    clippy::absolute_paths,
+    reason = "the allocator is declared ahead of the module tree, before any `use` items"
+)]
+#[global_allocator]
+static ALLOC: reth_cli_util::allocator::Allocator = reth_cli_util::allocator::new_allocator();
 
 mod dummy_ol_client;
 #[cfg(feature = "sequencer")]
