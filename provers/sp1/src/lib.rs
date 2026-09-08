@@ -2,10 +2,11 @@ use std::{io::Error, path::Path};
 
 include!(concat!(env!("OUT_DIR"), "/methods.rs"));
 
-/// Exports ELF files to the specified directory.
+/// Exports guest artifact files to the specified directory.
 ///
 /// Creates the output directory if it doesn't exist and copies all `.elf` files
-/// from guest program directories into it.
+/// plus their artifact manifests from guest program directories into
+/// it.
 ///
 /// # Arguments
 ///
@@ -28,7 +29,7 @@ pub fn export_elf<P: AsRef<Path>>(elf_path: P) -> Result<(), Error> {
     Ok(())
 }
 
-/// Migrates guest program ELF to the destination.
+/// Migrates guest program artifacts to the destination.
 fn migrate_guest_program(source: &Path, destination: &Path) -> Result<(), Error> {
     if source.is_dir()
         && source
@@ -40,21 +41,16 @@ fn migrate_guest_program(source: &Path, destination: &Path) -> Result<(), Error>
         if cache_dir.is_dir() {
             for file in fs::read_dir(&cache_dir)? {
                 let file_path = file?.path();
-                migrate_elf(&file_path, destination)?;
+                copy_artifact(&file_path, destination)?;
             }
         }
     }
     Ok(())
 }
 
-/// Migrates a single ELF file to the destination directory.
-fn migrate_elf(source_file: &Path, destination_dir: &Path) -> Result<(), Error> {
-    if source_file.is_file()
-        && source_file
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("elf"))
-    {
+/// Copies a guest artifact file to the destination directory.
+fn copy_artifact(source_file: &Path, destination_dir: &Path) -> Result<(), Error> {
+    if source_file.is_file() && is_artifact(source_file) {
         let file_name = source_file
             .file_name()
             .ok_or_else(|| Error::other("Invalid file name"))?;
@@ -62,4 +58,14 @@ fn migrate_elf(source_file: &Path, destination_dir: &Path) -> Result<(), Error> 
         fs::copy(source_file, &destination_file)?;
     }
     Ok(())
+}
+
+fn is_artifact(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("elf"))
+        || path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(".artifact-manifest.json"))
 }

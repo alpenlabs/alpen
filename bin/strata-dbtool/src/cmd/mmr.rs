@@ -681,7 +681,7 @@ mod tests {
     use super::*;
 
     fn genesis_target_state() -> OLStateV1 {
-        OLStateV1::from_genesis_params(&OLParams::default()).expect("valid genesis params")
+        OLStateV1::from_genesis_params(&OLParams::test_default()).expect("valid genesis params")
     }
 
     fn l1_block_record(seed: u8) -> L1BlockRecord {

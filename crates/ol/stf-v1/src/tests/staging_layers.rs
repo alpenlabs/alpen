@@ -6,8 +6,8 @@
 use std::collections::BTreeSet;
 
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
-use strata_bridge_params::BridgeParams;
 use strata_ol_chain_types_v1::OLTxSegmentV1;
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
 use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut, NewAccountData,
@@ -51,7 +51,9 @@ fn test_process_single_tx_stages_sau_writes() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::test_default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 
@@ -176,7 +178,9 @@ fn test_process_single_tx_reads_prior_staged_writes() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::test_default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 
@@ -270,7 +274,9 @@ fn test_process_single_tx_loop_can_restore_failed_tx_batch() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::test_default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 
@@ -381,7 +387,9 @@ fn test_process_tx_segment_reads_staged_writes_between_txs() {
         .build(snark_acct_id, make_state_root(3), make_proof(2));
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::test_default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
     let tx_segment = OLTxSegmentV1::new(vec![tx1, tx2]).expect("tx segment should fit");
@@ -516,7 +524,9 @@ fn test_multi_effect_sau_coalesces_staged_account_writes() {
     });
 
     let output = ExecOutputBuffer::new_empty();
-    let basic_context = BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output);
+    let runtime_params = OLRuntimeParams::test_default();
+    let basic_context =
+        BasicExecContext::new(BlockInfo::new(1_001_000, 1, 1), &output, &runtime_params);
     let tx_context = TxExecContext::new(&basic_context, Some(fixture.parent_header()));
     let mut tracking = WriteTrackingState::new_empty(&base_state);
 
@@ -633,7 +643,7 @@ fn test_assembly_and_verify_write_tracking_reach_same_state() {
         block.header(),
         Some(&genesis_header),
         block.body(),
-        BridgeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
     .expect("assembled block should verify through staging layers");
 
@@ -699,7 +709,7 @@ fn test_verify_block_tracks_snark_inbox_writes() {
         block.header(),
         Some(&genesis_header),
         block.body(),
-        BridgeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
     .expect("GAM block should verify");
 
@@ -744,7 +754,7 @@ fn test_verify_block_through_write_tracking_stack() {
             genesis.header(),
             None,
             genesis.body(),
-            BridgeParams::default(),
+            &OLRuntimeParams::test_default(),
         )
         .expect("Genesis verification through write-tracking stack should succeed");
     }
@@ -760,7 +770,7 @@ fn test_verify_block_through_write_tracking_stack() {
             genesis.header(),
             None,
             genesis.body(),
-            BridgeParams::default(),
+            &OLRuntimeParams::test_default(),
         )
         .expect("Genesis verification should succeed");
 
@@ -780,7 +790,7 @@ fn test_verify_block_through_write_tracking_stack() {
             block1.header(),
             Some(genesis.header()),
             block1.body(),
-            BridgeParams::default(),
+            &OLRuntimeParams::test_default(),
         )
         .expect("Block 1 verification through write-tracking stack should succeed");
     }
@@ -819,7 +829,7 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_empty(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block(&mut indexer, block.header(), parent_header.as_ref(), block.body(), BridgeParams::default()).unwrap_or_else(
+        verify_block(&mut indexer, block.header(), parent_header.as_ref(), block.body(), &OLRuntimeParams::test_default()).unwrap_or_else(
             |e| {
                 panic!(
                     "Block {} (slot {}, terminal={}) verification through write-tracking stack failed: {:?}",

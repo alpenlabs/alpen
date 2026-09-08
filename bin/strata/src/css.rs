@@ -256,7 +256,7 @@ pub(crate) fn start(
 mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId};
-    use strata_ol_params::{BridgeParams, OLParams};
+    use strata_ol_params::{BridgeParams, OLParams, OLRuntimeParams};
     use strata_ol_state_types_v1::WriteBatch;
     use strata_primitives::{L1BlockCommitment, OLBlockId};
     use strata_storage::create_node_storage;
@@ -273,7 +273,9 @@ mod tests {
     fn setup_storage_with_genesis() -> (NodeStorage, OLBlockCommitment) {
         let storage = setup_storage();
         let genesis_l1_block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
-        let params = OLParams::new_empty(genesis_l1_block, BridgeParams::default());
+        let params = OLParams::builder(OLRuntimeParams::new(BridgeParams::default()))
+            .genesis_l1_block(genesis_l1_block)
+            .build();
         let genesis_commitment = init_ol_genesis(&params, &storage).expect("test: init genesis");
         (storage, genesis_commitment)
     }

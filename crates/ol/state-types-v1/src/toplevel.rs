@@ -11,7 +11,8 @@ use crate::{MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeStateV1, OLSnarkAccountStateV1
 impl OLStateV1 {
     /// Creates initial OL state from genesis parameters.
     pub fn from_genesis_params(params: &OLParams) -> StateResult<Self> {
-        let checkpointed_epoch = params.checkpointed_epoch();
+        let checkpointed_epoch = params.derive_genesis_epoch_commitment();
+        let genesis_params = params.genesis_params();
 
         // Prefill the manifests MMR with a sentinel leaf for every L1 block up
         // to and including `genesis_l1_height`, so that subsequent appends for
@@ -23,7 +24,7 @@ impl OLStateV1 {
         // sentinel value does not matter for correctness — no real proof
         // references an L1 block at or before genesis — as long as the OL
         // state and the DB-side ASM MMR agree on it.
-        let prefill_count = params.last_l1_block.height() as u64 + 1;
+        let prefill_count = params.genesis_l1_block().height() as u64 + 1;
         let l1_block_refs_mmr =
             <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
 
@@ -31,7 +32,7 @@ impl OLStateV1 {
         let mut ledger = TsnlLedgerAccountsTableV1::new_empty();
 
         // Create initial snark accounts.
-        for (id, acct_params) in &params.accounts {
+        for (id, acct_params) in genesis_params.accounts() {
             // Claim the serial.
             let serial = next_serial;
             next_serial = next_serial.incr();
@@ -53,11 +54,11 @@ impl OLStateV1 {
 
         let total_ledger_funds = ledger.calculate_total_funds()?;
 
-        let global = GlobalStateV1::new(params.header.slot, next_serial);
+        let global = GlobalStateV1::new(genesis_params.header().slot, next_serial);
         let epoch = EpochalStateV1::new(
             total_ledger_funds,
-            params.header.epoch,
-            params.last_l1_block,
+            genesis_params.header().epoch,
+            params.genesis_l1_block(),
             checkpointed_epoch,
             l1_block_refs_mmr,
         );

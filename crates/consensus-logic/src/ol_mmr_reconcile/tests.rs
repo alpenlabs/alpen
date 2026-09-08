@@ -9,7 +9,7 @@ use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
 use strata_identifiers::{Epoch, Hash, OLBlockCommitment};
 use strata_ol_mmr_index::OLMmrIndexError;
-use strata_ol_params::{BridgeParams, OLParams};
+use strata_ol_params::{BridgeParams, OLParams, OLRuntimeParams};
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch, MMR_SENTINEL_DUMMY_LEAF_HASH};
 use strata_storage::{test_runtime_handle, MmrIndexManager};
 
@@ -252,12 +252,13 @@ fn make_l1_block_record(seed: u8) -> L1BlockRecord {
 }
 
 fn make_target_state_with_l1_records(records: &[L1BlockRecord]) -> OLStateV1 {
-    let mut state = OLStateV1::from_genesis_params(&OLParams::new_empty(
-        make_l1_block_commitment(0, 0),
+    let bridge_params =
         BridgeParams::new_with_descriptor_limit(100_000_000, Some(1_000_000_000), 81)
-            .expect("valid bridge params"),
-    ))
-    .expect("valid genesis params");
+            .expect("valid bridge params");
+    let params = OLParams::builder(OLRuntimeParams::new(bridge_params))
+        .genesis_l1_block(make_l1_block_commitment(0, 0))
+        .build();
+    let mut state = OLStateV1::from_genesis_params(&params).expect("valid genesis params");
     let mut l1_block_refs_mmr = state.epoch_state().l1_block_refs_mmr().clone();
     for record in records {
         append_l1_block_rec_to_mmr(&mut l1_block_refs_mmr, record);

@@ -10,7 +10,6 @@ ssz_types = { workspace = true, optional = true }
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
-strata-bridge-params.workspace = true
 strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-merkle.workspace = true
@@ -19,7 +18,7 @@ strata-ol-bridge-types.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-da-common.workspace = true
 strata-ol-msg-types.workspace = true
-strata-ol-params = { workspace = true, optional = true }
+strata-ol-params.workspace = true
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
@@ -47,8 +46,6 @@ workspace = true
 test-utils = [
   "dep:ssz_primitives",
   "dep:ssz_types",
-  "dep:strata-ol-params",
   "dep:strata-ol-state-support-types",
-  "strata-bridge-params/test-defaults",
   "strata-ol-params/test-defaults",
 ]

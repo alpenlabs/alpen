@@ -11,10 +11,10 @@ ssz.workspace = true
 ssz_primitives.workspace = true
 strata-asm-checkpoint-types.workspace = true
 strata-asm-manifest-types.workspace = true
-strata-bridge-params.workspace = true
 strata-crypto.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-da-types-v1.workspace = true
+strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
@@ -27,7 +27,6 @@ strata-predicate.workspace = true
 zkaleido-native-adapter.workspace = true
 
 [dev-dependencies]
-strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-codec.workspace = true
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true

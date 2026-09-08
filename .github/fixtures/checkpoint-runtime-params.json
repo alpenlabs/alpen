@@ -1,0 +1,7 @@
+{
+  "bridge_params": {
+    "denomination": 100000000,
+    "max_withdrawal_amount": 1000000000,
+    "max_withdrawal_descriptor_len": 81
+  }
+}

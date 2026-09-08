@@ -7,6 +7,8 @@ set -euo pipefail
 # Usage:
 #   ./init-network.sh <datatool_path>
 #   ./init-network.sh --sequencer <datatool_path>
+#   ./init-network.sh --sequencer --base-only <datatool_path>
+#   ./init-network.sh --sequencer --asm-only <datatool_path> --checkpoint-predicate-file <path>
 #   ./init-network.sh --fullnode <datatool_path> --params-dir <path>
 #   BITCOIN_NETWORK=signet GENESIS_L1_HEIGHT=200000 ./init-network.sh <datatool_path>
 #
@@ -23,9 +25,11 @@ GENESIS_L1_HEIGHT="${GENESIS_L1_HEIGHT:-0}"
 BITCOIND_RPC_URL="${BITCOIND_RPC_URL:-${BITCOIND_RPC_URL:-}}"
 BITCOIND_RPC_USER="${BITCOIND_RPC_USER:-${BITCOIND_RPC_USER:-}}"
 BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:-${BITCOIND_RPC_PASSWORD:-}}"
-SAFE_HARBOUR_ADDRESS="${SAFE_HARBOUR_ADDRESS:?SAFE_HARBOUR_ADDRESS is required: provide a P2TR BOSD descriptor for the bridge emergency sweep address}"
+SAFE_HARBOUR_ADDRESS="${SAFE_HARBOUR_ADDRESS:-}"
+CHECKPOINT_PREDICATE_FILE="${CHECKPOINT_PREDICATE_FILE:-}"
 
 MODE="sequencer"
+PHASE="all"
 PARAMS_DIR=""
 DATATOOL_PATH=""
 
@@ -39,19 +43,42 @@ while [ $# -gt 0 ]; do
             MODE="fullnode"
             shift
             ;;
+        --base-only)
+            if [ "${PHASE}" != "all" ]; then
+                echo "error: --base-only and --asm-only are mutually exclusive" >&2
+                exit 1
+            fi
+            PHASE="base"
+            shift
+            ;;
+        --asm-only)
+            if [ "${PHASE}" != "all" ]; then
+                echo "error: --base-only and --asm-only are mutually exclusive" >&2
+                exit 1
+            fi
+            PHASE="asm"
+            shift
+            ;;
         --params-dir)
             PARAMS_DIR="$2"
             shift 2
             ;;
+        --checkpoint-predicate-file)
+            CHECKPOINT_PREDICATE_FILE="$2"
+            shift 2
+            ;;
         --help|-h)
-            echo "Usage: $0 [--sequencer|--fullnode] <datatool_path> [--params-dir <dir>]"
+            echo "Usage: $0 [--sequencer|--fullnode] [--base-only|--asm-only] <datatool_path> [options]"
             echo ""
             echo "Modes:"
-            echo "  --sequencer  Generate all keys and params (default)"
+            echo "  --sequencer  Generate sequencer keys and params (default)"
             echo "  --fullnode   Validate and copy params from --params-dir"
             echo ""
             echo "Options:"
+            echo "  --base-only   In sequencer mode, generate keys, L1 anchor, and OL params only"
+            echo "  --asm-only    In sequencer mode, generate ASM params from existing base artifacts"
             echo "  --params-dir <dir>  Directory with existing params (required for --fullnode)"
+            echo "  --checkpoint-predicate-file <path>  ASM checkpoint predicate metadata"
             echo ""
             echo "Environment:"
             echo "  BITCOIN_NETWORK       regtest (default) or signet"
@@ -60,7 +87,6 @@ while [ $# -gt 0 ]; do
             echo "  BITCOIND_RPC_USER      Bitcoin RPC username"
             echo "  BITCOIND_RPC_PASSWORD  Bitcoin RPC password"
             echo "  GENESIS_ACCOUNTS       path to the genesis snark accounts JSON from alpen-ee"
-            echo "  CHECKPOINT_PREDICATE_FILE path to ASM checkpoint predicate metadata"
             echo "  BRIDGE_DENOMINATION_SATS           bridge denomination in satoshis"
             echo "  MAX_WITHDRAWAL_AMOUNT_SATS         optional maximum withdrawal amount in satoshis"
             echo "  MAX_WITHDRAWAL_DESCRIPTOR_LEN      maximum withdrawal BOSD descriptor length"
@@ -98,6 +124,11 @@ if [ "${MODE}" = "fullnode" ] && [ -z "${PARAMS_DIR}" ]; then
     exit 1
 fi
 
+if [ "${MODE}" = "fullnode" ] && [ "${PHASE}" != "all" ]; then
+    echo "error: --base-only and --asm-only are only valid in sequencer mode" >&2
+    exit 1
+fi
+
 if [ -n "${PARAMS_DIR}" ] && [ ! -d "${PARAMS_DIR}" ]; then
     echo "error: params directory not found: ${PARAMS_DIR}" >&2
     exit 1
@@ -129,46 +160,47 @@ if [ "${MODE}" = "sequencer" ]; then
     echo "mode: sequencer"
 
     SEQ_ROOT_KEY="${OUTPUT_DIR}/sequencer.key"
-    if [ ! -f "${SEQ_ROOT_KEY}" ]; then
-        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genxpriv "${SEQ_ROOT_KEY}"
-        echo "generated ${SEQ_ROOT_KEY}"
-    fi
-
     OPERATOR_KEY="${OUTPUT_DIR}/operator.key"
-    if [ ! -f "${OPERATOR_KEY}" ]; then
-        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genxpriv "${OPERATOR_KEY}"
-        echo "generated ${OPERATOR_KEY}"
-    fi
-    OPERATOR_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genoppubkey -f "${OPERATOR_KEY}")
-
-    SEQ_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
-
     L1_ANCHOR="${OUTPUT_DIR}/l1-anchor.json"
-    if [ ! -f "${L1_ANCHOR}" ]; then
-        if [ -n "${BITCOIND_RPC_URL}" ] && [ -n "${BITCOIND_RPC_USER}" ] && [ -n "${BITCOIND_RPC_PASSWORD}" ]; then
-            # Fetch real L1 anchor from Bitcoin node — produces correct values for
-            # all fields (next_target, epoch_start_timestamp, network).
-            echo "fetching genesis L1 anchor from ${BITCOIND_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
-            "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
-                --bitcoin-rpc-url "${BITCOIND_RPC_URL}" \
-                --bitcoin-rpc-user "${BITCOIND_RPC_USER}" \
-                --bitcoin-rpc-password "${BITCOIND_RPC_PASSWORD}" \
-                gen-l1-anchor \
-                -g "${GENESIS_L1_HEIGHT}" \
-                -o "${L1_ANCHOR}"
-            echo "generated ${L1_ANCHOR} (from Bitcoin RPC)"
-        else
-            # No RPC available — write a placeholder L1 anchor from network-specific
-            # genesis block values. The node consumes the anchor as-is (no runtime
-            # patching), so this is only correct for regtest at height 0 (the regtest
-            # genesis block); any non-zero genesis height needs BITCOIN_RPC_* for a
-            # correct blkid and next_target.
-            if [ "${GENESIS_L1_HEIGHT}" != "0" ]; then
-                echo "warning: generating placeholder L1 anchor at height ${GENESIS_L1_HEIGHT} without Bitcoin RPC;" >&2
-                echo "         blkid and next_target will not match the real chain." >&2
-                echo "         Set BITCOIND_RPC_URL, BITCOIND_RPC_USER, BITCOIND_RPC_PASSWORD for correct values." >&2
-            fi
-            cat > "${L1_ANCHOR}" <<GEOF
+    OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
+    ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
+
+    if [ "${PHASE}" != "asm" ]; then
+        if [ ! -f "${SEQ_ROOT_KEY}" ]; then
+            "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genxpriv "${SEQ_ROOT_KEY}"
+            echo "generated ${SEQ_ROOT_KEY}"
+        fi
+
+        if [ ! -f "${OPERATOR_KEY}" ]; then
+            "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genxpriv "${OPERATOR_KEY}"
+            echo "generated ${OPERATOR_KEY}"
+        fi
+
+        if [ ! -f "${L1_ANCHOR}" ]; then
+            if [ -n "${BITCOIND_RPC_URL}" ] && [ -n "${BITCOIND_RPC_USER}" ] && [ -n "${BITCOIND_RPC_PASSWORD}" ]; then
+                # Fetch real L1 anchor from Bitcoin node — produces correct values for
+                # all fields (next_target, epoch_start_timestamp, network).
+                echo "fetching genesis L1 anchor from ${BITCOIND_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
+                "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+                    --bitcoin-rpc-url "${BITCOIND_RPC_URL}" \
+                    --bitcoin-rpc-user "${BITCOIND_RPC_USER}" \
+                    --bitcoin-rpc-password "${BITCOIND_RPC_PASSWORD}" \
+                    gen-l1-anchor \
+                    -g "${GENESIS_L1_HEIGHT}" \
+                    -o "${L1_ANCHOR}"
+                echo "generated ${L1_ANCHOR} (from Bitcoin RPC)"
+            else
+                # No RPC available — write a placeholder L1 anchor from network-specific
+                # genesis block values. The node consumes the anchor as-is (no runtime
+                # patching), so this is only correct for regtest at height 0 (the regtest
+                # genesis block); any non-zero genesis height needs BITCOIN_RPC_* for a
+                # correct blkid and next_target.
+                if [ "${GENESIS_L1_HEIGHT}" != "0" ]; then
+                    echo "warning: generating placeholder L1 anchor at height ${GENESIS_L1_HEIGHT} without Bitcoin RPC;" >&2
+                    echo "         blkid and next_target will not match the real chain." >&2
+                    echo "         Set BITCOIND_RPC_URL, BITCOIND_RPC_USER, BITCOIND_RPC_PASSWORD for correct values." >&2
+                fi
+                cat > "${L1_ANCHOR}" <<GEOF
 {
   "block": {
     "height": ${GENESIS_L1_HEIGHT},
@@ -179,45 +211,62 @@ if [ "${MODE}" = "sequencer" ]; then
   "network": "${BITCOIN_NETWORK}"
 }
 GEOF
-            echo "generated ${L1_ANCHOR} (placeholder)"
+                echo "generated ${L1_ANCHOR} (placeholder)"
+            fi
+        fi
+
+        if [ ! -f "${OL_PARAMS}" ]; then
+            : "${BRIDGE_DENOMINATION_SATS:?BRIDGE_DENOMINATION_SATS is required when generating ol-params.json}"
+            : "${MAX_WITHDRAWAL_DESCRIPTOR_LEN:?MAX_WITHDRAWAL_DESCRIPTOR_LEN is required}"
+            "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+                gen-ol-params \
+                -o "${OL_PARAMS}" \
+                -g "${GENESIS_L1_HEIGHT}" \
+                --l1-anchor-file "${L1_ANCHOR}" \
+                --genesis-accounts "${GENESIS_ACCOUNTS}" \
+                --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
+                ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
+                --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}"
+            echo "generated ${OL_PARAMS}"
+        else
+            echo "warning: reusing existing ${OL_PARAMS}; ensure this was expected" >&2
         fi
     fi
 
-    OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
-    if [ ! -f "${OL_PARAMS}" ]; then
-        : "${BRIDGE_DENOMINATION_SATS:?BRIDGE_DENOMINATION_SATS is required when generating ol-params.json}"
-        : "${MAX_WITHDRAWAL_DESCRIPTOR_LEN:?MAX_WITHDRAWAL_DESCRIPTOR_LEN is required}"
-        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
-            gen-ol-params \
-            -o "${OL_PARAMS}" \
-            -g "${GENESIS_L1_HEIGHT}" \
-            --l1-anchor-file "${L1_ANCHOR}" \
-            --genesis-accounts "${GENESIS_ACCOUNTS}" \
-            --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
-            ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
-            --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}"
-        echo "generated ${OL_PARAMS}"
-    fi
+    if [ "${PHASE}" != "base" ]; then
+        for f in "${SEQ_ROOT_KEY}" "${OPERATOR_KEY}" "${L1_ANCHOR}" "${OL_PARAMS}"; do
+            if [ ! -f "${f}" ]; then
+                echo "error: missing required base artifact for ASM params: ${f}" >&2
+                exit 1
+            fi
+        done
 
-    ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
-    if [ ! -f "${ASM_PARAMS}" ]; then
-        : "${CHECKPOINT_PREDICATE_FILE:?CHECKPOINT_PREDICATE_FILE is required when generating asm-params.json}"
-        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
-            gen-asm-params \
-            -o "${ASM_PARAMS}" \
-            -n ALPN \
-            -s "${SEQ_PK}" \
-            -b "${OPERATOR_PK}" \
-            -g "${GENESIS_L1_HEIGHT}" \
-            --l1-anchor-file "${L1_ANCHOR}" \
-            --ol-params "${OL_PARAMS}" \
-            --safe-harbour-address "${SAFE_HARBOUR_ADDRESS}" \
-            --checkpoint-predicate-file "${CHECKPOINT_PREDICATE_FILE}"
-        echo "generated ${ASM_PARAMS}"
+        OPERATOR_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genoppubkey -f "${OPERATOR_KEY}")
+        SEQ_PK=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
+
+        if [ ! -f "${ASM_PARAMS}" ]; then
+            : "${CHECKPOINT_PREDICATE_FILE:?CHECKPOINT_PREDICATE_FILE is required when generating asm-params.json}"
+            : "${SAFE_HARBOUR_ADDRESS:?SAFE_HARBOUR_ADDRESS is required when generating asm-params.json: provide a P2TR BOSD descriptor for the bridge emergency sweep address}"
+            "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+                gen-asm-params \
+                -o "${ASM_PARAMS}" \
+                -n ALPN \
+                -s "${SEQ_PK}" \
+                -b "${OPERATOR_PK}" \
+                -g "${GENESIS_L1_HEIGHT}" \
+                --l1-anchor-file "${L1_ANCHOR}" \
+                --ol-params "${OL_PARAMS}" \
+                --safe-harbour-address "${SAFE_HARBOUR_ADDRESS}" \
+                --checkpoint-predicate-file "${CHECKPOINT_PREDICATE_FILE}"
+            echo "generated ${ASM_PARAMS}"
+        else
+            echo "warning: reusing existing ${ASM_PARAMS}; ensure this was expected" >&2
+        fi
+
+        echo "sequencer pubkey: ${SEQ_PK}"
     fi
 
     echo "network: ${BITCOIN_NETWORK}"
-    echo "sequencer pubkey: ${SEQ_PK}"
 
 elif [ "${MODE}" = "fullnode" ]; then
     echo "mode: fullnode"

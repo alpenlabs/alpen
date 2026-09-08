@@ -23,6 +23,8 @@ use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
 #[cfg(feature = "prover")]
+use strata_ol_params::OLRuntimeParams;
+#[cfg(feature = "prover")]
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{L1BlockCommitment, OLBlockCommitment};
 #[cfg(feature = "prover")]
@@ -31,13 +33,13 @@ use strata_proofimpl_predicate_keys::Sp1Groth16PredicateKey;
 use strata_proofimpl_predicate_keys::{NativeCheckpointPredicateKey, validate_predicate_key};
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
-#[cfg(all(feature = "prover", feature = "sp1"))]
-use strata_zkvm_hosts::sp1::checkpoint_host;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
-#[cfg(all(feature = "prover", feature = "sp1"))]
-use crate::prover::checkpoint_sp1_host_config;
+#[cfg(feature = "prover")]
+use crate::prover::artifacts::{
+    CheckpointArtifactError, checkpoint_sp1_program_id, validate_checkpoint_sp1_artifacts,
+};
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
 /// Load config early for logging initialization
@@ -68,11 +70,6 @@ pub(crate) fn init_node_context(
         .ok_or(InitError::MissingAsmParams)?;
     let asm_params = load_asm_params(asm_params_path)?;
 
-    // When the integrated prover is enabled, validate that its backend matches the
-    // checkpoint predicate the runtime ASM will enforce.
-    #[cfg(feature = "prover")]
-    validate_integrated_prover_compatibility(&config, &asm_params, &handle)?;
-
     let blockasm_config = config
         .sequencer
         .as_ref()
@@ -82,6 +79,17 @@ pub(crate) fn init_node_context(
     // Load OL params
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
     let ol_params = load_ol_params(ol_params_path)?;
+
+    // When the integrated prover is enabled, validate that its backend matches the
+    // checkpoint predicate the runtime ASM will enforce and, for external SP1
+    // ELFs, that the mounted guest artifact was built with these runtime params.
+    #[cfg(feature = "prover")]
+    validate_integrated_prover_compatibility(
+        &config,
+        &asm_params,
+        ol_params.runtime_params(),
+        &handle,
+    )?;
 
     // TODO(STR-3971): cross-validate the ASM and OL params before booting. The ASM
     // bridge deposit denomination and the OL withdrawal denomination are one network
@@ -208,6 +216,7 @@ fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
 fn validate_integrated_prover_compatibility(
     config: &Config,
     asm_params: &AsmParams,
+    runtime_params: OLRuntimeParams,
     handle: &Handle,
 ) -> Result<(), InitError> {
     let checkpoint_predicate = checkpoint_predicate_from_asm_params(asm_params)?;
@@ -236,7 +245,7 @@ fn validate_integrated_prover_compatibility(
         )));
     }
 
-    validate_checkpoint_predicate_key_for_backend(checkpoint_predicate, prover_config, handle)?;
+    validate_checkpoint_predicate_key(checkpoint_predicate, prover_config, runtime_params, handle)?;
 
     Ok(())
 }
@@ -293,9 +302,10 @@ fn expected_backend_for_checkpoint_predicate(
 }
 
 #[cfg(feature = "prover")]
-fn validate_checkpoint_predicate_key_for_backend(
+fn validate_checkpoint_predicate_key(
     checkpoint_predicate: &PredicateKey,
     prover_config: &ProverConfig,
+    runtime_params: OLRuntimeParams,
     handle: &Handle,
 ) -> Result<(), InitError> {
     match prover_config.backend {
@@ -303,7 +313,11 @@ fn validate_checkpoint_predicate_key_for_backend(
             validate_predicate_key(checkpoint_predicate, &NativeCheckpointPredicateKey)
         }
         ProverBackend::Sp1 => {
-            let provider = checkpoint_sp1_predicate_key_provider(prover_config, handle)?;
+            let program_id = checkpoint_sp1_program_id(prover_config, handle)
+                .map_err(invalid_checkpoint_artifact_config)?;
+            validate_checkpoint_sp1_artifacts(runtime_params, &program_id)
+                .map_err(invalid_checkpoint_artifact_config)?;
+            let provider = Sp1Groth16PredicateKey::new(program_id);
             validate_predicate_key(checkpoint_predicate, &provider)
         }
     }
@@ -315,25 +329,10 @@ fn validate_checkpoint_predicate_key_for_backend(
     })
 }
 
-#[cfg(all(feature = "prover", feature = "sp1"))]
-fn checkpoint_sp1_predicate_key_provider(
-    prover_config: &ProverConfig,
-    handle: &Handle,
-) -> Result<Sp1Groth16PredicateKey, InitError> {
-    use zkaleido::ZkVmExecutor;
-
-    let sp1_config = checkpoint_sp1_host_config(prover_config);
-    let host = handle.block_on(checkpoint_host(sp1_config));
-    Ok(Sp1Groth16PredicateKey::new(host.program_id().0))
-}
-
-#[cfg(all(feature = "prover", not(feature = "sp1")))]
-fn checkpoint_sp1_predicate_key_provider(
-    _prover_config: &ProverConfig,
-    _handle: &Handle,
-) -> Result<Sp1Groth16PredicateKey, InitError> {
-    Err(InitError::InvalidProverConfig(
-        "config.prover.backend=sp1 requires building `strata` with the `sp1` feature".to_string(),
+#[cfg(feature = "prover")]
+fn invalid_checkpoint_artifact_config(error: CheckpointArtifactError) -> InitError {
+    InitError::InvalidProverConfig(format!(
+        "invalid checkpoint prover artifact configuration: {error}"
     ))
 }
 
@@ -490,7 +489,7 @@ fn ensure_client_state_genesis(
         None => {
             // Create and insert init client state into db.
             let init_state = ClientState::default();
-            let l1blk = ol_params.last_l1_block;
+            let l1blk = ol_params.genesis_l1_block();
             let update = ClientUpdateOutput::new_state(init_state.clone());
             csman.put_update_blocking(&l1blk, update.clone())?;
             Ok((l1blk, update.state().clone()))
@@ -676,7 +675,7 @@ mod tests {
             .replace_canonical_suffix_from_blocking(1, vec![*tip_commitment.blkid()])
             .expect("store canonical tip");
 
-        let output = ensure_ol_genesis(&storage, &OLParams::default())
+        let output = ensure_ol_genesis(&storage, &OLParams::test_default())
             .expect("header-only tip should satisfy OL genesis check");
         assert_eq!(output.tip_blk, tip_commitment);
         assert_eq!(output.epoch, 1);

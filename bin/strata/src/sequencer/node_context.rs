@@ -261,7 +261,7 @@ mod tests {
         let executor = task_manager.create_executor();
         let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
         let blockasm = BlockasmBuilder::new(
-            Arc::new(OLParams::default()),
+            Arc::new(OLParams::test_default()),
             Arc::new(BlockAssemblyConfig::new(Duration::from_millis(1_000))),
             storage,
             Arc::new(MockMempoolProvider::new()),

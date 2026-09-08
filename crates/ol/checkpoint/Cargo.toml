@@ -15,6 +15,7 @@ strata-checkpoint-types.workspace = true
 strata-identifiers.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types-v1.workspace = true
+strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types-v1.workspace = true
 strata-ol-stf-v1.workspace = true

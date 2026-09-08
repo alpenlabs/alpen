@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds strata-datatool (and optionally SP1 guest artifacts), waits for
-# bitcoin, validates params, and runs init-network.sh to generate keys + params.
+# Builds strata-datatool, generates local network artifacts, and optionally
+# builds SP1 guest artifacts.
 #
 # Called by `just docker-seq-up` before starting the compose stack.
 # Reads configuration from .env in the docker/ directory.
@@ -86,13 +86,21 @@ validate_params() {
 
 build_sp1_guest_artifacts() {
     echo "building SP1 guest artifacts (fast if unchanged)..."
-    cargo build --locked --release -p strata-sp1-guest-builder --features build-elf
+    CHECKPOINT_RUNTIME_PARAMS_PATH="${OUTPUT_DIR}/ol-params.json" \
+        cargo build --locked --release -p strata-sp1-guest-builder --features build-elf
 
     mkdir -p "${ELF_DIR}"
     cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
+    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.artifact-manifest.json "${ELF_DIR}/"
     cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.predicate "${PREDICATE_DIR}/"
     echo "exported SP1 ELFs to ${ELF_DIR}/"
+    echo "exported SP1 artifact manifests to ${ELF_DIR}/"
     echo "exported SP1 predicates to ${PREDICATE_DIR}/"
+}
+
+prepare_sp1_checkpoint_predicate() {
+    build_sp1_guest_artifacts
+    CHECKPOINT_PREDICATE_FILE="${PREDICATE_DIR}/guest-checkpoint.predicate"
 }
 
 prepare_checkpoint_predicate() {
@@ -105,8 +113,7 @@ prepare_checkpoint_predicate() {
             echo "using dev-empty checkpoint predicate at ${CHECKPOINT_PREDICATE_FILE}"
             ;;
         sp1-groth16)
-            build_sp1_guest_artifacts
-            CHECKPOINT_PREDICATE_FILE="${PREDICATE_DIR}/guest-checkpoint.predicate"
+            prepare_sp1_checkpoint_predicate
             ;;
         bip340-schnorr-test)
             CHECKPOINT_PREDICATE_FILE="${REPO_ROOT}/functional-tests/fixtures/predicates/checkpoint-bip340-schnorr-test.predicate"
@@ -125,14 +132,23 @@ echo "building strata-datatool (fast if unchanged)..."
 cd "${REPO_ROOT}"
 cargo build --locked --release --bin strata-datatool
 
-prepare_checkpoint_predicate
-
-# ---- Wait for bitcoin, validate params, generate ----
+# ---- Wait for bitcoin, validate params, generate base network artifacts ----
 
 wait_for_bitcoin
 validate_params
 
 export OUTPUT_DIR
-export CHECKPOINT_PREDICATE_FILE
 
-"${SCRIPT_DIR}/init-network.sh" --sequencer "${DATATOOL_BIN}"
+"${SCRIPT_DIR}/init-network.sh" --sequencer --base-only "${DATATOOL_BIN}"
+
+prepare_checkpoint_predicate
+
+# ---- Generate ASM params with the selected checkpoint predicate ----
+
+rm -f "${OUTPUT_DIR}/asm-params.json"
+
+"${SCRIPT_DIR}/init-network.sh" \
+    --sequencer \
+    --asm-only \
+    --checkpoint-predicate-file "${CHECKPOINT_PREDICATE_FILE}" \
+    "${DATATOOL_BIN}"

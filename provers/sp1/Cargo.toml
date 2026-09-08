@@ -11,10 +11,13 @@ bincode.workspace = true
 cargo_metadata = "0.19.1"
 cfg-if.workspace = true
 hex.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 sp1-helper.workspace = true
 sp1-sdk = { workspace = true, features = ["blocking"] }
 sp1-verifier.workspace = true
+ssz.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
 zkaleido-sp1-groth16-verifier.workspace = true
 
 [features]

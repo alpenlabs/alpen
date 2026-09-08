@@ -29,7 +29,7 @@ pub(crate) fn init_ol_genesis(
 
     prefill_l1_block_refs_mmr_blocking(
         storage.mmr_index(),
-        ol_params.last_l1_block.height() as u64,
+        ol_params.genesis_l1_block().height() as u64,
     )?;
 
     // Seed epoch-0 indexing with all genesis accounts as created accounts.

@@ -4,11 +4,11 @@
 
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::AsmManifest;
-use strata_bridge_params::BridgeParams;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
 
@@ -101,12 +101,14 @@ fn assert_epoch_root_round_trip(
     );
     let mut verify_state = pre_epoch_state.clone();
     let exp = EpochExecExpectations::new(expected_root);
+    let runtime_params = OLRuntimeParams::test_default();
     let result = verify_epoch_with_diff::<_, OLDaSchemeV1>(
         &mut verify_state,
         &epoch_info,
         payload,
         &manifests,
         &exp,
+        &runtime_params,
     );
 
     let actual_root = verify_state
@@ -167,7 +169,7 @@ fn rebuild_da_blob(
         &mut da,
         blocks,
         prev_terminal_header,
-        BridgeParams::default(),
+        &OLRuntimeParams::test_default(),
     )
     .expect("execute_block_batch_predrain");
     da.take_completed_epoch_da_blob()

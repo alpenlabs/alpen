@@ -33,6 +33,7 @@ use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlo
 use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog as ChainOLLog,
 };
+use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_state_types_v1::OLStateV1;
@@ -48,6 +49,8 @@ use crate::{
 /// A [`ChainWorkerContext`] backed by in-memory maps for the four reads
 /// [`apply_checkpoint_epoch`] performs. All other methods are unreachable.
 struct MockChainWorkerContext {
+    /// Runtime params used by checkpoint-sync reconstruction.
+    runtime_params: OLRuntimeParams,
     /// Checkpoint payloads keyed by epoch commitment.
     checkpoint_payloads: HashMap<EpochCommitment, CheckpointPayload>,
     /// Epoch summaries keyed by epoch index.
@@ -61,6 +64,7 @@ struct MockChainWorkerContext {
 impl MockChainWorkerContext {
     fn new() -> Self {
         Self {
+            runtime_params: OLRuntimeParams::test_default(),
             checkpoint_payloads: HashMap::new(),
             epoch_summaries: HashMap::new(),
             ol_states: HashMap::new(),
@@ -70,6 +74,10 @@ impl MockChainWorkerContext {
 }
 
 impl ChainWorkerContext for MockChainWorkerContext {
+    fn runtime_params(&self) -> OLRuntimeParams {
+        self.runtime_params
+    }
+
     fn fetch_checkpoint_payload(
         &self,
         epoch: &EpochCommitment,

@@ -26,7 +26,7 @@ impl OLMmrReconcileCtx for StrataMmrReconcileCtx<'_> {
     async fn prefill_l1_block_refs_mmr(&self) -> DbResult<()> {
         prefill_l1_block_refs_mmr(
             self.storage.mmr_index(),
-            self.ol_params.last_l1_block.height() as u64,
+            self.ol_params.genesis_l1_block().height() as u64,
         )
         .await
     }

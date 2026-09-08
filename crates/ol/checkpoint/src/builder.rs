@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use strata_bridge_params::BridgeParams;
 use strata_node_context::NodeContext;
+use strata_ol_params::OLRuntimeParams;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{ServiceBuilder, SyncAsyncInput, TokioWatchInput};
 use strata_storage::NodeStorage;
@@ -24,7 +25,7 @@ use crate::state::OLCheckpointServiceState;
 /// Builder for constructing and launching an OL checkpoint service.
 pub struct OLCheckpointBuilder {
     storage: Option<Arc<NodeStorage>>,
-    bridge_params: Option<BridgeParams>,
+    runtime_params: Option<OLRuntimeParams>,
     epoch_summary_rx: Option<watch::Receiver<Option<EpochCommitment>>>,
     prover: Option<ProverConfig>,
 }
@@ -34,7 +35,7 @@ impl OLCheckpointBuilder {
     pub fn new() -> Self {
         Self {
             storage: None,
-            bridge_params: None,
+            runtime_params: None,
             epoch_summary_rx: None,
             prover: None,
         }
@@ -43,13 +44,13 @@ impl OLCheckpointBuilder {
     /// Set storage and withdrawal params from [`NodeContext`].
     pub fn with_node_context(mut self, nodectx: &NodeContext) -> Self {
         self.storage = Some(nodectx.storage().clone());
-        self.bridge_params = Some(*nodectx.ol_params().bridge_params());
+        self.runtime_params = Some(nodectx.ol_params().runtime_params());
         self
     }
 
     /// Set the bridge denomination and withdrawal policy.
     pub fn with_bridge_params(mut self, bridge_params: BridgeParams) -> Self {
-        self.bridge_params = Some(bridge_params);
+        self.runtime_params = Some(OLRuntimeParams::new(bridge_params));
         self
     }
 
@@ -80,9 +81,9 @@ impl OLCheckpointBuilder {
         let epoch_summary_rx = self
             .epoch_summary_rx
             .context("missing required dependency: epoch_summary_rx")?;
-        let bridge_params = self
-            .bridge_params
-            .context("missing required dependency: bridge_params")?;
+        let runtime_params = self
+            .runtime_params
+            .context("missing required dependency: runtime_params")?;
 
         let runtime_handle = executor.handle().clone();
         let input = TokioWatchInput::from_receiver(epoch_summary_rx);
@@ -90,9 +91,9 @@ impl OLCheckpointBuilder {
 
         let ctx = match self.prover {
             Some(prover) => {
-                CheckpointWorkerContextImpl::with_prover(storage, bridge_params, prover)
+                CheckpointWorkerContextImpl::with_prover(storage, runtime_params, prover)
             }
-            None => CheckpointWorkerContextImpl::new(storage, bridge_params),
+            None => CheckpointWorkerContextImpl::new(storage, runtime_params),
         };
         let state = OLCheckpointServiceState::new(ctx);
         let builder = ServiceBuilder::<OLCheckpointService<CheckpointWorkerContextImpl>, _>::new()

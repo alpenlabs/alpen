@@ -383,7 +383,7 @@ mod tests {
     use super::*;
 
     fn genesis_target_state() -> OLStateV1 {
-        OLStateV1::from_genesis_params(&OLParams::default()).expect("valid genesis params")
+        OLStateV1::from_genesis_params(&OLParams::test_default()).expect("valid genesis params")
     }
 
     fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlockV1 {

@@ -662,6 +662,8 @@ dependencies = [
 name = "guest-sp1-checkpoint"
 version = "0.1.0"
 dependencies = [
+ "ssz",
+ "strata-ol-params",
  "strata-proofimpl-checkpoint",
  "zkaleido-sp1-guest-env",
 ]
@@ -2074,6 +2076,9 @@ name = "strata-ol-params"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "sha2",
+ "ssz",
+ "ssz_derive",
  "strata-bridge-params",
  "strata-btc-types",
  "strata-identifiers",
@@ -2141,7 +2146,6 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-bridge-params",
  "strata-codec",
  "strata-identifiers",
  "strata-merkle",
@@ -2150,6 +2154,7 @@ dependencies = [
  "strata-ol-chain-types-v1",
  "strata-ol-da-common",
  "strata-ol-msg-types",
+ "strata-ol-params",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-tx-types-v1",
@@ -2206,10 +2211,10 @@ dependencies = [
  "ssz_primitives",
  "strata-asm-checkpoint-types",
  "strata-asm-manifest-types",
- "strata-bridge-params",
  "strata-crypto",
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
+ "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",

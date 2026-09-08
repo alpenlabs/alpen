@@ -6,6 +6,8 @@ version = "0.1.0"
 [workspace]
 
 [dependencies]
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
+strata-ol-params = { path = "../../../crates/ol/params" }
 strata-proofimpl-checkpoint = { path = "../../../crates/proof-impl/checkpoint" }
 zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3.0" }
 

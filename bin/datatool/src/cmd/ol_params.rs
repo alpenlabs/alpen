@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 
 use anyhow::anyhow;
 use strata_identifiers::AccountId;
-use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams};
+use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams, OLRuntimeParams};
 
 use crate::{
     args::{CmdContext, SubcOlParams},
@@ -30,11 +30,15 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
         cmd.max_withdrawal_amount_sats,
         cmd.max_withdrawal_descriptor_len,
     )?;
-    let mut ol_params = OLParams::new_empty(anchor.block, bridge_params);
-
-    if let Some(path) = cmd.genesis_accounts.as_deref() {
-        ol_params.accounts.extend(read_genesis_accounts(path)?);
-    }
+    let accounts = if let Some(path) = cmd.genesis_accounts.as_deref() {
+        read_genesis_accounts(path)?
+    } else {
+        BTreeMap::new()
+    };
+    let ol_params = OLParams::builder(OLRuntimeParams::new(bridge_params))
+        .genesis_l1_block(anchor.block)
+        .genesis_accounts(accounts)
+        .build();
 
     let params_buf = serde_json::to_string_pretty(&ol_params)?;
 
