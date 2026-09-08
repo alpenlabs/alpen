@@ -2,6 +2,10 @@ import messages
 
 ### Matches the `UpdateOutputs` caps in `snark-acct-types`. Converting
 ### between the two must never drop entries, so the bounds have to agree.
+###
+### TODO(STR-4402): `MAX_MESSAGES` is not reconciled with the OL block log cap
+### or the per-checkpoint log budget. A tx at this cap emits one log more than
+### `MAX_LOGS_PER_BLOCK` allows.
 MAX_TRANSFERS = 1 << 16
 MAX_MESSAGES = 1 << 16
 

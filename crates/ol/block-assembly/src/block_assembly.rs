@@ -698,6 +698,13 @@ where
 
                 match verdict.checkpoint_size_action() {
                     EpochSealingLimitAction::RejectCandidate => {
+                        // TODO(STR-4402): this breaks out of the loop without
+                        // marking the tx failed, so a tx too big for any
+                        // checkpoint budget stays in the mempool and is
+                        // re-offered at the same priority position every block,
+                        // blocking every tx behind it. Tell "does not fit the
+                        // remaining budget" apart from "cannot fit any budget"
+                        // and report the latter as invalid.
                         debug!(
                             da_diff_size,
                             ?tentative,

@@ -4,6 +4,12 @@ import strata_ol_tx_types_v1
 import block_flags
 
 MAX_TXS_PER_BLOCK = 1 << 16
+### TODO(STR-4402): reconcile this with the per-tx effects cap and the
+### per-checkpoint log budget. A tx carrying the full `TxEffects::MAX_MESSAGES`
+### emits one account-update log on top of one log per message, so it lands one
+### log over this cap and can never be included. This cap is also 4x
+### `MAX_OL_LOGS_PER_CHECKPOINT`, so a large update never fits a checkpoint and
+### stalls block assembly.
 MAX_LOGS_PER_BLOCK = 1 << 16
 MAX_SEALING_MANIFEST_COUNT = 2048
 
