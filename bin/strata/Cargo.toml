@@ -125,6 +125,7 @@ strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
+strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }
 
 [lints]

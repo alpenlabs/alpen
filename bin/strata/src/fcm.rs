@@ -307,3 +307,6 @@ pub(crate) fn start(
         nodectx.executor().clone(),
     ))
 }
+
+#[cfg(test)]
+mod tests;

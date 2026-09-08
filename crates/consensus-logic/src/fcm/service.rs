@@ -2715,6 +2715,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn missing_tracker_parent_defers_without_invalidating_child() {
+        let (genesis, mut state) = execute_test_genesis();
+        let parent = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let child = execute_test_block(&mut state, &parent.block, 1_002, 2);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        for block in [&parent, &child] {
+            seed_executed_block(fixture.ctx.storage(), block, BlockStatus::Unchecked);
+        }
+        fixture
+            .ctx
+            .storage()
+            .set_block_high_watermark(child.commitment());
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(child.blkid()), &mut fcm)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            fixture.ctx.get_block_status(child.blkid()).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+        assert_eq!(
+            fixture.ctx.storage().block_high_watermark(),
+            Some(child.commitment())
+        );
+        assert!(!fcm.chain_tracker().is_seen_block(&child.blkid()));
+        assert_eq!(fcm.pending_block_count(), 1);
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(parent.blkid()), &mut fcm)
+            .await
+            .unwrap();
+        retry_pending_blocks(&mut fcm, true).await;
+
+        assert_eq!(fcm.cur_best_block(), child.commitment());
+        assert_eq!(fcm.pending_block_count(), 0);
+        assert_eq!(
+            fixture.ctx.get_block_status(child.blkid()).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+        assert_eq!(
+            fixture.ctx.storage().block_high_watermark(),
+            Some(child.commitment())
+        );
+        assert_eq!(
+            fixture.ctx.executed_blocks(),
+            vec![child.commitment(), parent.commitment(), child.commitment()]
+        );
+    }
+
+    #[tokio::test]
     async fn durable_refill_retries_overflow_without_restart() {
         let (genesis, _) = execute_test_genesis();
         let fixture = FcmTestFixture::new(&genesis, &[]);
