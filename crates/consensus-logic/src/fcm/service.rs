@@ -22,9 +22,12 @@ use tracing::{debug, error, info, trace, warn};
 
 use super::state::init_fcm_service_state;
 use crate::{
-    errors::Error,
+    errors::{ChainTipError, Error},
     fcm::{
-        context::{BlockExecutionOutcome, FcmContext, FcmStorage},
+        context::{
+            BlockExecutionOutcome, BlockValidationOutcome, ExecutionDeferral, FcmContext,
+            FcmStorage,
+        },
         input::FcmEvent,
         pending::{RETRY_BATCH_SIZE, STATUS_SCAN_SIZE},
         state::FcmServiceState,
@@ -115,10 +118,19 @@ impl<C: FcmContext> AsyncService for FcmService<C> {
 
         let replay_candidate_count = startup_replay_candidates.len();
         for blkid in startup_replay_candidates {
-            let msg = ForkChoiceMessage::NewBlock(blkid);
-            process_fc_message(&msg, state)
-                .await
-                .with_context(|| format!("failed to replay startup OL block {blkid}"))?;
+            match state.ctx().get_ol_block(blkid).await {
+                Ok(Some(block)) => state.discover_pending_block(&block),
+                Ok(None) => warn!(%blkid, "startup replay block data is unavailable"),
+                Err(error) => warn!(%blkid, %error, "failed to load startup replay block"),
+            }
+        }
+        loop {
+            let pending_before_retry = state.pending_block_count();
+            retry_pending_blocks(state, true).await;
+            let pending_after_retry = state.pending_block_count();
+            if pending_after_retry == 0 || pending_after_retry >= pending_before_retry {
+                break;
+            }
         }
 
         debug!(
@@ -228,7 +240,7 @@ async fn process_fc_message<C: FcmContext>(
     Ok(())
 }
 
-/// Recovers durable unchecked blocks and retries a bounded, fair batch.
+/// Recovers durable replayable blocks and retries a bounded, fair batch.
 async fn retry_pending_blocks<C: FcmContext>(state: &mut FcmServiceState<C>, progress: bool) {
     match state
         .ctx()
@@ -238,7 +250,9 @@ async fn retry_pending_blocks<C: FcmContext>(state: &mut FcmServiceState<C>, pro
         Ok(rows) => {
             state.set_pending_scan_cursor(rows.last().map(|(id, _)| *id));
             for (id, status) in rows {
-                if status != BlockStatus::Unchecked {
+                let should_discover = status == BlockStatus::Unchecked
+                    || (status == BlockStatus::Valid && !state.chain_tracker().is_seen_block(&id));
+                if !should_discover {
                     continue;
                 }
                 match state.ctx().get_ol_block(id).await {
@@ -257,22 +271,78 @@ async fn retry_pending_blocks<C: FcmContext>(state: &mut FcmServiceState<C>, pro
     }
     let candidates = state.due_pending_blocks(progress, RETRY_BATCH_SIZE);
     for (slot, id) in candidates {
-        match state.ctx().get_block_status(id).await {
-            Ok(Some(BlockStatus::Unchecked)) => {}
-            Ok(_) => {
-                state.remove_pending_block(slot, id);
-                continue;
-            }
-            Err(err) => {
-                state.record_pending_storage_failure(slot, id);
-                warn!(%id, %err, "failed to read pending block status");
-                continue;
-            }
-        }
-        counter!("strata_fcm_pending_retried_total").increment(1);
-        if let Err(err) = process_fc_message(&ForkChoiceMessage::NewBlock(id), state).await {
+        if let Err(err) = retry_pending_block(state, slot, id).await {
             state.record_pending_storage_failure(slot, id);
             warn!(%id, %err, "failed to retry pending block");
+        }
+    }
+}
+
+async fn retry_pending_block<C: FcmContext>(
+    state: &mut FcmServiceState<C>,
+    slot: Slot,
+    id: OLBlockId,
+) -> anyhow::Result<()> {
+    let status = match state.ctx().get_block_status(id).await {
+        Ok(Some(status @ (BlockStatus::Unchecked | BlockStatus::Valid))) => status,
+        Ok(None | Some(BlockStatus::Invalid)) => {
+            state.remove_pending_block(slot, id);
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
+
+    counter!("strata_fcm_pending_retried_total").increment(1);
+    match status {
+        BlockStatus::Unchecked => process_fc_message(&ForkChoiceMessage::NewBlock(id), state).await,
+        BlockStatus::Valid if !state.chain_tracker().is_seen_block(&id) => {
+            retry_stored_valid_block(state, id).await
+        }
+        BlockStatus::Valid | BlockStatus::Invalid => {
+            state.remove_pending_block(slot, id);
+            Ok(())
+        }
+    }
+}
+
+async fn retry_stored_valid_block<C: FcmContext>(
+    state: &mut FcmServiceState<C>,
+    id: OLBlockId,
+) -> anyhow::Result<()> {
+    let block = state
+        .ctx()
+        .get_ol_block(id)
+        .await?
+        .ok_or(Error::MissingOLBlock(id))?;
+    let commitment = block.header().compute_block_commitment();
+
+    match state.ctx().validate_block_inputs(commitment).await? {
+        BlockValidationOutcome::Authenticated => {
+            anyhow::ensure!(
+                state
+                    .ctx()
+                    .set_block_status(id, BlockStatus::Unchecked)
+                    .await?,
+                "stored valid block {id} disappeared before authentication replay"
+            );
+            process_fc_message(&ForkChoiceMessage::NewBlock(id), state).await
+        }
+        BlockValidationOutcome::Deferred(reason) => {
+            state.defer_block(&block, reason);
+            debug!(%id, ?reason, "deferring stored block authentication");
+            Ok(())
+        }
+        BlockValidationOutcome::Rejected(error) => {
+            warn!(%id, %error, "rejecting stored block with invalid inputs");
+            state.remove_pending_block(block.header().slot(), id);
+            set_block_status_and_clear_invalid_high_watermark(
+                state,
+                &block,
+                commitment,
+                BlockStatus::Invalid,
+            )
+            .await?;
+            Ok(())
         }
     }
 }
@@ -542,11 +612,20 @@ async fn handle_new_block<C: FcmContext>(
     // should switch to it as a potential head.  This returns if we
     // created a new tip instead of advancing an existing tip.
     let cur_tip = *fcm_state.cur_best_block().blkid();
-    let new_tip = fcm_state.chain_tracker_mut().attach_block(
+    let new_tip = match fcm_state.chain_tracker_mut().attach_block(
         bundle.header().slot(),
         *blkid,
         *bundle.header().parent_blkid(),
-    )?;
+    ) {
+        Ok(new_tip) => new_tip,
+        Err(ChainTipError::AttachMissingParent(_, parent_blkid)) => {
+            debug!(%blkid, %parent_blkid, "deferring block whose parent is not attached");
+            return Ok(BlockExecutionOutcome::Deferred(
+                ExecutionDeferral::Dependency,
+            ));
+        }
+        Err(error) => return Err(error.into()),
+    };
 
     if new_tip {
         debug!(?blkid, "created new branching tip");
@@ -902,7 +981,9 @@ mod tests {
     use super::*;
     use crate::{
         fcm::{
-            context::{ChainController, CsmStatusReader, FcmStartupReconciler},
+            context::{
+                BlockValidationOutcome, ChainController, CsmStatusReader, FcmStartupReconciler,
+            },
             state::{reconcile_canonical_blocks_index, FcmInnerState},
             ExecutionDeferral,
         },
@@ -1039,6 +1120,9 @@ mod tests {
         last_confirmed_epoch: Option<EpochCommitment>,
         executed_blocks: Mutex<Vec<OLBlockCommitment>>,
         execution_outcomes: Mutex<HashMap<OLBlockId, BlockExecutionOutcome>>,
+        validated_blocks: Mutex<Vec<OLBlockCommitment>>,
+        validation_deferrals: Mutex<HashMap<OLBlockId, ExecutionDeferral>>,
+        validation_failures: Mutex<BTreeSet<OLBlockId>>,
         safe_tip_updates: Mutex<Vec<OLBlockCommitment>>,
         finalized_epochs: Mutex<Vec<EpochCommitment>>,
         published_statuses: Mutex<Vec<OLSyncStatus>>,
@@ -1255,6 +1339,33 @@ mod tests {
                 .get(block.blkid())
                 .copied()
                 .unwrap_or(BlockExecutionOutcome::Accepted))
+        }
+
+        async fn validate_block_inputs(
+            &self,
+            block: OLBlockCommitment,
+        ) -> anyhow::Result<BlockValidationOutcome> {
+            self.validated_blocks.lock().unwrap().push(block);
+            if let Some(reason) = self
+                .validation_deferrals
+                .lock()
+                .unwrap()
+                .get(block.blkid())
+                .copied()
+            {
+                return Ok(BlockValidationOutcome::Deferred(reason));
+            }
+            if self
+                .validation_failures
+                .lock()
+                .unwrap()
+                .contains(block.blkid())
+            {
+                return Ok(BlockValidationOutcome::Rejected(anyhow!(
+                    "injected canonical authentication failure"
+                )));
+            }
+            Ok(BlockValidationOutcome::Authenticated)
         }
 
         async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()> {
@@ -2039,6 +2150,95 @@ mod tests {
         );
         assert_eq!(storage.get_canonical_block_at(2).await?, None);
         assert_eq!(storage.get_canonical_block_at(3).await?, None);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn startup_authenticates_valid_blocks_before_any_reconciliation() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = FcmTestFixture::new(
+            &chain.genesis,
+            &[&chain.x1, &chain.x2, &chain.x3, &chain.x4],
+        );
+        let ctx = fixture.ctx;
+        ctx.storage()
+            .replace_canonical_suffix_from(1, vec![chain.x1.blkid(), chain.x2.blkid()])
+            .await?;
+        ctx.validation_failures
+            .lock()
+            .unwrap()
+            .insert(chain.x2.blkid());
+
+        let result = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await;
+        assert!(result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("cannot authenticate restored"));
+        assert_eq!(
+            ctx.storage().get_canonical_block_at(2).await?,
+            Some(chain.x2.commitment())
+        );
+        assert_eq!(
+            ctx.storage().get_block_status(chain.x2.blkid()).await?,
+            Some(BlockStatus::Valid)
+        );
+        assert!(ctx.executed_blocks().is_empty());
+        assert!(ctx.safe_tip_updates().is_empty());
+        assert!(ctx.published_statuses().is_empty());
+        assert!(ctx.startup_mmr_reconcile_targets().is_empty());
+        assert!(ctx.storage().indexing_rollbacks().is_empty());
+
+        ctx.validation_failures.lock().unwrap().clear();
+        ctx.validated_blocks.lock().unwrap().clear();
+        let state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+        assert_eq!(state.cur_best_block(), chain.x4.commitment());
+        assert_eq!(
+            *ctx.validated_blocks.lock().unwrap(),
+            vec![
+                chain.x1.commitment(),
+                chain.x2.commitment(),
+                chain.x3.commitment(),
+                chain.x4.commitment()
+            ]
+        );
+        assert!(ctx.executed_blocks().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn startup_retries_stored_valid_block_after_authentication_deferral() -> anyhow::Result<()>
+    {
+        let chain = LinearChain::new();
+        let fixture = FcmTestFixture::new(&chain.genesis, &[&chain.x1]);
+        let ctx = fixture.ctx;
+        ctx.validation_deferrals
+            .lock()
+            .unwrap()
+            .insert(chain.x1.blkid(), ExecutionDeferral::Dependency);
+
+        let mut state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+        assert_eq!(state.cur_best_block(), chain.genesis.commitment());
+        assert_eq!(
+            ctx.storage().get_block_status(chain.x1.blkid()).await?,
+            Some(BlockStatus::Valid)
+        );
+
+        <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut state).await?;
+        assert_eq!(state.pending_block_count(), 1);
+        assert!(ctx.executed_blocks().is_empty());
+
+        ctx.validation_deferrals.lock().unwrap().clear();
+        retry_pending_blocks(&mut state, true).await;
+
+        assert_eq!(state.pending_block_count(), 0);
+        assert_eq!(state.cur_best_block(), chain.x1.commitment());
+        assert_eq!(ctx.executed_blocks(), vec![chain.x1.commitment()]);
+        assert_eq!(
+            ctx.storage().get_block_status(chain.x1.blkid()).await?,
+            Some(BlockStatus::Valid)
+        );
 
         Ok(())
     }

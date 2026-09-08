@@ -6,8 +6,8 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use strata_chain_worker::{ChainWorkerHandle, WorkerError};
 use strata_consensus_logic::{
-    BlockExecutionOutcome, ChainController, CsmStatusReader, ExecutionDeferral, FcmContext,
-    FcmServiceHandle, FcmStartupReconciler, FcmStorage,
+    BlockExecutionOutcome, BlockValidationOutcome, ChainController, CsmStatusReader,
+    ExecutionDeferral, FcmContext, FcmServiceHandle, FcmStartupReconciler, FcmStorage,
     ol_mmr_reconcile::{
         OLMmrReconcileResult, OLMmrReconcileTarget, reconcile_ol_mmr_index_to_target,
     },
@@ -37,6 +37,37 @@ struct StrataFcmContext {
     status_channel: Arc<StatusChannel>,
 }
 
+enum WorkerFailureOutcome {
+    Deferred(ExecutionDeferral),
+    Rejected(anyhow::Error),
+}
+
+fn classify_worker_failure(
+    block: OLBlockCommitment,
+    error: WorkerError,
+) -> anyhow::Result<WorkerFailureOutcome> {
+    match error {
+        WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_) => Ok(
+            WorkerFailureOutcome::Deferred(ExecutionDeferral::Dependency),
+        ),
+        WorkerError::ManifestPending { height, reason } => {
+            warn!(%block, height, ?reason, "deferring unauthenticated ASM manifest");
+            Ok(WorkerFailureOutcome::Deferred(
+                ExecutionDeferral::Dependency,
+            ))
+        }
+        WorkerError::ManifestStorage(err) => {
+            warn!(%block, %err, "canonical manifest storage unavailable");
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        }
+        error @ WorkerError::StfExecution(_) => {
+            warn!(%block, %error, "rejecting invalid block inputs");
+            Ok(WorkerFailureOutcome::Rejected(error.into()))
+        }
+        error => Err(error.into()),
+    }
+}
+
 impl StrataFcmContext {
     fn new(
         storage: Arc<NodeStorage>,
@@ -63,24 +94,29 @@ impl ChainController for StrataFcmContext {
     ) -> anyhow::Result<BlockExecutionOutcome> {
         match self.chain_worker.try_exec_block(block).await {
             Ok(()) => Ok(BlockExecutionOutcome::Accepted),
-            Err(WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_)) => Ok(
-                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
-            ),
-            Err(WorkerError::ManifestPending { height, reason }) => {
-                warn!(%block, height, ?reason, "deferring unauthenticated ASM manifest");
-                Ok(BlockExecutionOutcome::Deferred(
-                    ExecutionDeferral::Dependency,
-                ))
-            }
-            Err(WorkerError::ManifestStorage(err)) => {
-                warn!(%block, %err, "canonical manifest storage unavailable");
-                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
-            }
-            Err(WorkerError::StfExecution(err)) => {
-                warn!(%block, %err, "rejecting invalid block execution");
-                Ok(BlockExecutionOutcome::Rejected)
-            }
-            Err(err) => Err(err.into()),
+            Err(error) => match classify_worker_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockExecutionOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(_) => Ok(BlockExecutionOutcome::Rejected),
+            },
+        }
+    }
+
+    async fn validate_block_inputs(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockValidationOutcome> {
+        match self.chain_worker.validate_block_inputs(block).await {
+            Ok(()) => Ok(BlockValidationOutcome::Authenticated),
+            Err(error) => match classify_worker_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockValidationOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(error) => {
+                    Ok(BlockValidationOutcome::Rejected(error))
+                }
+            },
         }
     }
 

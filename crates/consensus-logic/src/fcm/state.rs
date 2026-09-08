@@ -69,7 +69,10 @@ impl<C: FcmContext> FcmServiceState<C> {
         progress: bool,
         limit: usize,
     ) -> Vec<(Slot, OLBlockId)> {
-        self.pending.due(progress, limit)
+        let chain_tracker = &self.inner_state.chain_tracker;
+        self.pending.due(progress, limit, |parent| {
+            chain_tracker.is_seen_block(parent)
+        })
     }
 
     pub(super) fn record_pending_storage_failure(&mut self, slot: Slot, id: OLBlockId) {
@@ -344,7 +347,9 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     // Populate the unfinalized block tracker.
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
     let startup_replay_candidates = chain_tracker
-        .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref())
+        .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref(), |block| {
+            fcm_ctx.validate_block_inputs(block)
+        })
         .await?;
 
     let cur_tip_block = determine_start_tip(&chain_tracker, fcm_ctx.as_ref()).await?;

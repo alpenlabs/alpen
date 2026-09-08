@@ -1,4 +1,4 @@
-//! Bounded scheduling cache for durable unchecked blocks.
+//! Bounded scheduling cache for durable replayable blocks.
 
 use std::{collections::BTreeMap, time::Duration};
 
@@ -35,6 +35,22 @@ pub(super) struct PendingBlocks {
 }
 
 impl PendingBlocks {
+    fn contains_id(&self, id: &OLBlockId) -> bool {
+        self.entries.keys().any(|(_, entry_id)| entry_id == id)
+    }
+
+    fn has_pending_child(&self, id: &OLBlockId) -> bool {
+        self.entries.values().any(|entry| &entry.parent == id)
+    }
+
+    fn eviction_candidate(&self) -> Option<PendingKey> {
+        self.entries
+            .iter()
+            .filter(|((_, id), entry)| entry.failures > 0 && !self.has_pending_child(id))
+            .min_by_key(|(_, entry)| entry.last_attempt)
+            .map(|(key, _)| *key)
+    }
+
     pub(super) fn len(&self) -> usize {
         self.entries.len()
     }
@@ -54,13 +70,9 @@ impl PendingBlocks {
         if self.entries.len() == MAX_PENDING_BLOCKS {
             // Rotate the oldest attempted entry back to durable storage so a queue of
             // mismatches cannot prevent later discovered blocks from ever being tried.
-            let Some(oldest) = self
-                .entries
-                .iter()
-                .filter(|(_, entry)| entry.failures > 0)
-                .min_by_key(|(_, entry)| entry.last_attempt)
-                .map(|(key, _)| *key)
-            else {
+            // Keep entries that anchor pending descendants so eviction cannot make a
+            // child appear ready before its parent attaches to the chain tracker.
+            let Some(oldest) = self.eviction_candidate() else {
                 // Preserve work that has never had a turn. The durable scan will
                 // revisit this incoming entry after the current batch is attempted.
                 return;
@@ -113,7 +125,12 @@ impl PendingBlocks {
         }
     }
 
-    pub(super) fn due(&mut self, progress: bool, limit: usize) -> Vec<PendingKey> {
+    pub(super) fn due(
+        &mut self,
+        progress: bool,
+        limit: usize,
+        is_parent_attached: impl Fn(&OLBlockId) -> bool,
+    ) -> Vec<PendingKey> {
         let now = Instant::now();
         let mut candidates: Vec<_> = self
             .entries
@@ -123,8 +140,8 @@ impl PendingBlocks {
                     || (progress && entry.reason == ExecutionDeferral::Dependency)
             })
             .filter(|((slot, _), entry)| {
-                slot.checked_sub(1).is_none_or(|parent_slot| {
-                    !self.entries.contains_key(&(parent_slot, entry.parent))
+                slot.checked_sub(1).is_none_or(|_| {
+                    !self.contains_id(&entry.parent) && is_parent_attached(&entry.parent)
                 })
             })
             .map(|(key, entry)| (*key, entry.last_attempt))
@@ -176,9 +193,39 @@ mod tests {
             .entries
             .insert((1, parent), entry(OLBlockId::null()));
         pending.entries.insert((2, child), entry(parent));
-        assert_eq!(pending.due(true, 32), vec![(1, parent)]);
+        assert_eq!(pending.due(true, 32, |_| true), vec![(1, parent)]);
         pending.remove(1, parent);
-        assert_eq!(pending.due(true, 32), vec![(2, child)]);
+        assert_eq!(pending.due(true, 32, |_| true), vec![(2, child)]);
+    }
+
+    #[test]
+    fn missing_parent_outside_queue_blocks_child_until_parent_attaches() {
+        let parent = OLBlockId::from(Buf32::from([1; 32]));
+        let child = OLBlockId::from(Buf32::from([2; 32]));
+        let mut pending = PendingBlocks::default();
+        pending.entries.insert((2, child), entry(parent));
+
+        assert!(pending.due(true, 32, |_| false).is_empty());
+        assert_eq!(pending.due(true, 32, |id| *id == parent), vec![(2, child)]);
+    }
+
+    #[test]
+    fn eviction_preserves_entries_with_pending_children() {
+        let parent = OLBlockId::from(Buf32::from([1; 32]));
+        let child = OLBlockId::from(Buf32::from([2; 32]));
+        let leaf = OLBlockId::from(Buf32::from([3; 32]));
+        let mut pending = PendingBlocks::default();
+        let mut parent_entry = entry(OLBlockId::null());
+        parent_entry.failures = 1;
+        parent_entry.last_attempt -= Duration::from_secs(2);
+        let mut leaf_entry = entry(OLBlockId::null());
+        leaf_entry.failures = 1;
+        leaf_entry.last_attempt -= Duration::from_secs(1);
+        pending.entries.insert((1, parent), parent_entry);
+        pending.entries.insert((2, child), entry(parent));
+        pending.entries.insert((3, leaf), leaf_entry);
+
+        assert_eq!(pending.eviction_candidate(), Some((3, leaf)));
     }
 
     #[test]
@@ -194,8 +241,8 @@ mod tests {
             entry.next_retry.duration_since(entry.last_attempt),
             Duration::from_secs(32)
         );
-        assert!(pending.due(true, 32).is_empty());
+        assert!(pending.due(true, 32, |_| true).is_empty());
         pending.entries.get_mut(&(1, id)).unwrap().next_retry = Instant::now();
-        assert_eq!(pending.due(false, 32), vec![(1, id)]);
+        assert_eq!(pending.due(false, 32, |_| true), vec![(1, id)]);
     }
 }
