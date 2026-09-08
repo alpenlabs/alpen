@@ -295,7 +295,8 @@ impl L1BlockManager {
         })
     }
 
-    pub(crate) fn get_canonical_blockid_at_height_uncached(
+    /// Reads the canonical ID without the height cache for provenance decisions.
+    pub fn get_canonical_blockid_at_height_uncached(
         &self,
         height: L1Height,
     ) -> DbResult<Option<L1BlockId>> {

@@ -66,6 +66,16 @@ impl ChainController for StrataFcmContext {
             Err(WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_)) => Ok(
                 BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
             ),
+            Err(WorkerError::ManifestPending { height, reason }) => {
+                warn!(%block, height, ?reason, "deferring unauthenticated ASM manifest");
+                Ok(BlockExecutionOutcome::Deferred(
+                    ExecutionDeferral::Dependency,
+                ))
+            }
+            Err(WorkerError::ManifestStorage(err)) => {
+                warn!(%block, %err, "canonical manifest storage unavailable");
+                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
+            }
             Err(WorkerError::StfExecution(err)) => {
                 warn!(%block, %err, "rejecting invalid block execution");
                 Ok(BlockExecutionOutcome::Rejected)

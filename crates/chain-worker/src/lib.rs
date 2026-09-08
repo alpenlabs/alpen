@@ -20,6 +20,7 @@ mod handle;
 mod message;
 mod mmr_prefill;
 mod output;
+mod provenance;
 mod service;
 mod state;
 mod traits;
@@ -28,7 +29,7 @@ mod traits;
 mod tests;
 
 pub use context::ChainWorkerContextImpl;
-pub use errors::{WorkerError, WorkerResult};
+pub use errors::{ManifestPendingReason, WorkerError, WorkerResult};
 pub use handle::ChainWorkerHandle;
 pub use message::ChainWorkerMessage;
 pub use mmr_prefill::{prefill_l1_block_refs_mmr, prefill_l1_block_refs_mmr_blocking};

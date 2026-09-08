@@ -97,8 +97,11 @@ impl<'b> BlockExecInput<'b> {
     }
 }
 
-/// Verifies a block end-to-end. Composes [`verify_block_predrain`] and
-/// [`apply_epoch_terminal`].
+/// Verifies a block by composing [`verify_block_predrain`] and [`apply_epoch_terminal`].
+///
+/// Canonical ASM provenance must be established by the runtime caller or bound to the
+/// independently derived canonical manifest-range commitment by the checkpoint verifier.
+/// This deterministic STF checks the supplied data; it does not read canonical L1 storage.
 #[tracing::instrument(
     skip_all,
     fields(

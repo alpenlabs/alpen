@@ -14,6 +14,7 @@ use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
+    DbResult,
     errors::DbError,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
 };
@@ -84,6 +85,7 @@ pub struct ChainWorkerContextImpl {
 
     /// Runtime parameters for OL STF execution.
     runtime_params: OLRuntimeParams,
+    l1_reorg_safe_depth: u32,
 
     /// Runtime handle
     handle: Handle,
@@ -104,6 +106,7 @@ impl ChainWorkerContextImpl {
             epoch_summary_tx,
             ol_params: nodectx.ol_params().clone(),
             runtime_params: nodectx.ol_params().runtime_params(),
+            l1_reorg_safe_depth: nodectx.config().btcio.l1_reorg_safe_depth,
             handle: nodectx.executor().handle().clone(),
         }
     }
@@ -122,6 +125,26 @@ impl ChainWorkerContextImpl {
 }
 
 impl ChainWorkerContext for ChainWorkerContextImpl {
+    fn l1_reorg_safe_depth(&self) -> u32 {
+        self.l1_reorg_safe_depth
+    }
+
+    fn canonical_l1_tip_height(&self) -> DbResult<Option<u32>> {
+        self.l1_block_mgr
+            .get_canonical_chain_tip()
+            .map(|tip| tip.map(|(height, _)| height))
+    }
+
+    fn canonical_manifest(&self, height: u32) -> DbResult<Option<AsmManifest>> {
+        let Some(id) = self
+            .l1_block_mgr
+            .get_canonical_blockid_at_height_uncached(height)?
+        else {
+            return Ok(None);
+        };
+        self.l1_block_mgr.get_block_manifest(&id)
+    }
+
     fn runtime_params(&self) -> OLRuntimeParams {
         self.runtime_params
     }
