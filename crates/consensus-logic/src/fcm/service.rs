@@ -24,7 +24,7 @@ use super::state::init_fcm_service_state;
 use crate::{
     errors::Error,
     fcm::{
-        context::{FcmContext, FcmStorage},
+        context::{BlockExecutionOutcome, FcmContext, FcmStorage},
         input::FcmEvent,
         state::FcmServiceState,
     },
@@ -152,7 +152,7 @@ async fn process_fc_message<C: FcmContext>(
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
 
-            let ok = match handle_new_block(fcm_state, &block_bundle).await {
+            let outcome = match handle_new_block(fcm_state, &block_bundle).await {
                 Ok(v) => v,
                 Err(e) => {
                     // Really we shouldn't emit this error unless there's a
@@ -165,10 +165,18 @@ async fn process_fc_message<C: FcmContext>(
                         err = ?e,
                         "error processing block, interpreting as invalid"
                     );
-                    false
+                    BlockExecutionOutcome::Rejected
                 }
             };
 
+            let ok = match outcome {
+                BlockExecutionOutcome::Accepted => true,
+                BlockExecutionOutcome::Rejected => false,
+                BlockExecutionOutcome::Deferred(reason) => {
+                    debug!(%blkid, ?reason, "deferring block execution");
+                    return Ok(());
+                }
+            };
             let status = if ok {
                 // check if any pending blocks can be finalized
                 if let Err(err) = handle_epoch_finalization(fcm_state).await {
@@ -419,7 +427,7 @@ async fn publish_sync_status<C: FcmContext>(fcm_state: &FcmServiceState<C>) -> a
 async fn handle_new_block<C: FcmContext>(
     fcm_state: &mut FcmServiceState<C>,
     bundle: &OLBlockV1,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<BlockExecutionOutcome> {
     let slot = bundle.header().slot();
     let blkid = &bundle.header().compute_blkid();
     info!(%blkid, %slot, "handling new block");
@@ -429,23 +437,26 @@ async fn handle_new_block<C: FcmContext>(
     if let Err(err) = check_ol_block_proposal_valid(blkid, bundle, fcm_state.sequencer_predicate())
     {
         warn!(%err, "rejecting block");
-        return Ok(false);
+        return Ok(BlockExecutionOutcome::Rejected);
     }
 
     // This stores the block output in the database, which lets us make queries
     // about it, at least until it gets reorged out by another block being
     // finalized.
     let bc = OLBlockCommitment::new(bundle.header().slot(), *blkid);
-    let exec_ok = match fcm_state.ctx().try_exec_block(bc).await {
-        Ok(()) => true,
+    let outcome = match fcm_state.ctx().try_exec_block(bc).await {
+        Ok(outcome) => outcome,
         Err(err) => {
             // TODO(STR-2141): Need some way to distinguish an invalid block from a exec failure
             error!(%err, "try_exec_block failed");
-            false
+            BlockExecutionOutcome::Rejected
         }
     };
 
-    if exec_ok {
+    if let BlockExecutionOutcome::Deferred(_) = outcome {
+        return Ok(outcome);
+    }
+    if outcome == BlockExecutionOutcome::Accepted {
         fcm_state
             .ctx()
             .set_block_status(*blkid, BlockStatus::Valid)
@@ -458,7 +469,7 @@ async fn handle_new_block<C: FcmContext>(
             BlockStatus::Invalid,
         )
         .await?;
-        return Ok(false);
+        return Ok(BlockExecutionOutcome::Rejected);
     }
 
     // Insert block into pending block tracker and figure out if we
@@ -489,7 +500,7 @@ async fn handle_new_block<C: FcmContext>(
     let tip_update = compute_tip_update(&cur_tip, &best_block, depth, fcm_state.chain_tracker())?;
     let Some(tip_update) = tip_update else {
         // In this case there's no change.
-        return Ok(true);
+        return Ok(BlockExecutionOutcome::Accepted);
     };
 
     let tip_blkid = *tip_update.new_tip();
@@ -500,7 +511,7 @@ async fn handle_new_block<C: FcmContext>(
         Ok(()) => {
             info!(%tip_blkid, "new chain tip");
 
-            Ok(true)
+            Ok(BlockExecutionOutcome::Accepted)
         }
 
         Err(e) => {
@@ -508,9 +519,9 @@ async fn handle_new_block<C: FcmContext>(
 
             // TODO(STR-2170): the legacy chain worker surfaced a typed
             // `InvalidStateTsn` error that let us reject a bad block and remember
-            // not to retry it (returning `Ok(false)`). The new OL STF path does
-            // not yet expose such a detectable error, so for now we propagate all
-            // apply failures. Restore block rejection once the OL chain worker
+            // not to retry it (returning `Ok(BlockExecutionOutcome::Rejected)`). The new OL STF
+            // path does not yet expose such a detectable error, so for now we propagate
+            // all apply failures. Restore block rejection once the OL chain worker
             // exposes an invalid-transition error to match on here.
             Err(e)
         }
@@ -825,7 +836,7 @@ mod tests {
     use super::*;
     use crate::{
         fcm::{
-            context::{ChainController, CsmStatusReader, FcmStartupReconciler},
+            context::{ChainController, CsmStatusReader, ExecutionDeferral, FcmStartupReconciler},
             state::{reconcile_canonical_blocks_index, FcmInnerState},
         },
         ol_mmr_reconcile::{OLMmrReconcileResult, OLMmrReconcileTarget},
@@ -960,6 +971,7 @@ mod tests {
         last_finalized_epoch: Option<EpochCommitment>,
         last_confirmed_epoch: Option<EpochCommitment>,
         executed_blocks: Mutex<Vec<OLBlockCommitment>>,
+        execution_outcomes: Mutex<HashMap<OLBlockId, BlockExecutionOutcome>>,
         safe_tip_updates: Mutex<Vec<OLBlockCommitment>>,
         finalized_epochs: Mutex<Vec<EpochCommitment>>,
         published_statuses: Mutex<Vec<OLSyncStatus>>,
@@ -1145,9 +1157,18 @@ mod tests {
 
     #[async_trait]
     impl ChainController for StubFcmContext {
-        async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()> {
+        async fn try_exec_block(
+            &self,
+            block: OLBlockCommitment,
+        ) -> anyhow::Result<BlockExecutionOutcome> {
             self.executed_blocks.lock().unwrap().push(block);
-            Ok(())
+            Ok(self
+                .execution_outcomes
+                .lock()
+                .unwrap()
+                .get(block.blkid())
+                .copied()
+                .unwrap_or(BlockExecutionOutcome::Accepted))
         }
 
         async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()> {
@@ -2365,6 +2386,48 @@ mod tests {
         assert_eq!(statuses[0].recently_complete_epoch(), genesis_epoch);
         assert_eq!(statuses[0].confirmed_epoch(), genesis_epoch);
         assert_eq!(statuses[0].finalized_epoch(), genesis_epoch);
+    }
+
+    #[tokio::test]
+    async fn deferred_execution_preserves_status_head_and_high_watermark() {
+        let (genesis, mut state) = execute_test_genesis();
+        let block = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        fixture.ctx.storage().put_ol_block(block.block.clone());
+        fixture
+            .ctx
+            .storage()
+            .set_block_status(block.blkid(), BlockStatus::Unchecked)
+            .await
+            .unwrap();
+        fixture
+            .ctx
+            .storage()
+            .set_block_high_watermark(block.commitment());
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        for reason in [ExecutionDeferral::Dependency, ExecutionDeferral::Storage] {
+            fixture
+                .ctx
+                .execution_outcomes
+                .lock()
+                .unwrap()
+                .insert(block.blkid(), BlockExecutionOutcome::Deferred(reason));
+            process_fc_message(&ForkChoiceMessage::NewBlock(block.blkid()), &mut fcm)
+                .await
+                .unwrap();
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Unchecked)
+            );
+            assert_eq!(fcm.cur_best_block(), genesis.commitment());
+            assert_eq!(
+                fixture.ctx.storage().block_high_watermark(),
+                Some(block.commitment())
+            );
+            assert!(fixture.ctx.storage().indexing_rollbacks().is_empty());
+            assert!(fixture.ctx.storage().epoch_summary_deletes().is_empty());
+            assert!(fixture.ctx.published_statuses().is_empty());
+        }
     }
 
     #[tokio::test]

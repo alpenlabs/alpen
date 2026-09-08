@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use strata_chain_worker::ChainWorkerHandle;
+use strata_chain_worker::{ChainWorkerHandle, WorkerError};
 use strata_consensus_logic::{
-    ChainController, CsmStatusReader, FcmContext, FcmServiceHandle, FcmStartupReconciler,
-    FcmStorage,
+    BlockExecutionOutcome, ChainController, CsmStatusReader, ExecutionDeferral, FcmContext,
+    FcmServiceHandle, FcmStartupReconciler, FcmStorage,
     ol_mmr_reconcile::{
         OLMmrReconcileResult, OLMmrReconcileTarget, reconcile_ol_mmr_index_to_target,
     },
@@ -25,6 +25,7 @@ use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
+use tracing::warn;
 
 use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
 
@@ -56,9 +57,21 @@ impl StrataFcmContext {
 
 #[async_trait]
 impl ChainController for StrataFcmContext {
-    async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()> {
-        self.chain_worker.try_exec_block(block).await?;
-        Ok(())
+    async fn try_exec_block(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockExecutionOutcome> {
+        match self.chain_worker.try_exec_block(block).await {
+            Ok(()) => Ok(BlockExecutionOutcome::Accepted),
+            Err(WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_)) => Ok(
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            ),
+            Err(WorkerError::StfExecution(err)) => {
+                warn!(%block, %err, "rejecting invalid block execution");
+                Ok(BlockExecutionOutcome::Rejected)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()> {

@@ -12,10 +12,30 @@ use crate::{
     unfinalized_tracker::UnfinalizedOLBlockSource,
 };
 
+/// A local dependency that prevents a block execution verdict.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecutionDeferral {
+    /// Parent execution or canonical L1/ASM data is not ready.
+    Dependency,
+    /// A local storage read failed and must be retried with backoff.
+    Storage,
+}
+
+/// Distinguishes invalid blocks from blocks waiting for local execution data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockExecutionOutcome {
+    Accepted,
+    Deferred(ExecutionDeferral),
+    Rejected,
+}
+
 /// Chain execution operations required by FCM.
 #[async_trait]
 pub trait ChainController: Send + Sync {
-    async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()>;
+    async fn try_exec_block(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockExecutionOutcome>;
     async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()>;
     async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()>;
 }
