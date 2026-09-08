@@ -9158,19 +9158,18 @@ dependencies = [
 
 [[package]]
 name = "strata-gchain-executor"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "strata-gchain-types",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "strata-gchain-types"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
- "anyhow",
  "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -9466,7 +9465,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-gchain-impl"
-version = "0.1.0"
+version = "0.3.0-alpha.1"
 dependencies = [
  "strata-checkpoint-types",
  "strata-gchain-types",

@@ -14,19 +14,17 @@
 //! Nodes correspond to "at rest" states.  Blocks and checkpoints are different
 //! types of state transitions forming links between nodes.
 
-use std::collections::*;
 use std::fmt::Debug;
 use std::hash::Hash;
 
 pub type NodeRef<S: GChainSpec> = <S as GChainSpec>::NodeRef;
 pub type Node<S: GChainSpec> = <S as GChainSpec>::Node;
-pub type LinkTable<S: GChainSpec> = HashMap<NodeRef<S>, Node<S>>;
 pub type LinkRef<S: GChainSpec> = <S as GChainSpec>::LinkRef;
 pub type LinkHeader<S: GChainSpec> = <S as GChainSpec>::LinkHeader;
 pub type Link<S: GChainSpec> = <S as GChainSpec>::Link;
 
 /// Toplevel trait describing a chain.
-pub trait GChainSpec {
+pub trait GChainSpec: 'static {
     /// The chain's node ref type.
     type NodeRef: GNodeRef;
 
@@ -43,9 +41,9 @@ pub trait GChainSpec {
     type Link: GLink;
 
     /// Gets or computes the ref that points to this header.
-    fn get_header_ref(nh: &Self::LinkHeader) -> Self::LinkRef;
+    fn get_header_ref(lh: &Self::LinkHeader) -> Self::LinkRef;
 
-    /// Checks if the node ref matches the header.
+    /// Checks if the link ref matches the header.
     ///
     /// Default impl just called `get_header_ref` and checks equality, but there
     /// may be more optimized impls.
@@ -53,15 +51,18 @@ pub trait GChainSpec {
         Self::get_header_ref(lh) == *lref
     }
 
-    /// Gets the in-protocol canonical previous node ref from the header (such
+    /// Gets the in-protocol canonical previous link ref from the header (such
     /// as a "parent block"), if there is one.  There may be other completely
-    /// valid previous nodes, but this may be across sync modes.
-    // TODO(trey): do we need this fn?
-    fn get_header_canonical_prev(nh: &Self::LinkHeader) -> Option<Self::LinkRef>;
+    /// valid links reaching the same origin node, but those may be across sync
+    /// modes.
+    ///
+    /// This is what lets us walk a header chain backwards without consulting a
+    /// provider, which the sync driver uses to assemble a candidate path before
+    /// it has fetched any link bodies.
+    fn get_header_canonical_prev(lh: &Self::LinkHeader) -> Option<Self::LinkRef>;
 }
 
 /// Describes a reference to a gchain node.
-// TODO(trey): readd Copy
 pub trait GNodeRef: Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {}
 
 /// A node in the chain.
@@ -73,7 +74,6 @@ pub trait GNode: Clone {
 }
 
 /// A link between two nodes.
-// TODO(trey): readd Copy
 pub trait GLinkRef: Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {
     // TODO
 }
@@ -94,25 +94,69 @@ pub trait GLink: Clone {
     fn check_structurally_consistent(&self) -> bool;
 }
 
+/// The nodes a link connects.
+///
+/// A link ref on its own only names a transition, it doesn't say where in the
+/// graph that transition sits.  These are what let a sync driver walk the graph:
+/// the target of the link it just traversed is the node it fetches the next
+/// forward links from.  They're also what makes it possible to notice that a
+/// checkpoint step and a path of block steps converge on the same node.
+///
+/// Not every chain can derive these from a link header alone, so they're fetched
+/// from the provider (see
+/// [`ChainProvider::fetch_link_endpoints`](crate::ChainProvider::fetch_link_endpoints)).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LinkEndpoints<S: GChainSpec> {
+    origin: NodeRef<S>,
+    target: NodeRef<S>,
+}
+
+impl<S: GChainSpec> LinkEndpoints<S> {
+    pub fn new(origin: NodeRef<S>, target: NodeRef<S>) -> Self {
+        Self { origin, target }
+    }
+
+    /// The node the link departs from.
+    pub fn origin(&self) -> &NodeRef<S> {
+        &self.origin
+    }
+
+    /// The node the link arrives at.
+    pub fn target(&self) -> &NodeRef<S> {
+        &self.target
+    }
+}
+
 /// Describes a path through the node graph.
+///
+/// The path always knows the node it currently ends at, so appending to it can
+/// check that the new link actually continues from there instead of jumping to
+/// an unrelated part of the graph.
 pub struct LinkPath<S: GChainSpec> {
     base_node: NodeRef<S>,
+    terminal_node: NodeRef<S>,
     links: Vec<LinkRef<S>>,
 }
 
 impl<S: GChainSpec> LinkPath<S> {
-    pub fn new(base_node: NodeRef<S>, links: Vec<LinkRef<S>>) -> Self {
-        Self { base_node, links }
-    }
-
+    /// Creates a path rooted at a node with no links traversed yet.
     pub fn new_at(base_node: NodeRef<S>) -> Self {
-        Self::new(base_node, Vec::new())
+        Self {
+            terminal_node: base_node.clone(),
+            base_node,
+            links: Vec::new(),
+        }
     }
 
     /// The node the path starts from.  Traversing `links` in order starting
-    /// here reaches the path's final node.
+    /// here reaches the path's terminal node.
     pub fn base_node(&self) -> &NodeRef<S> {
         &self.base_node
+    }
+
+    /// The node the path currently ends at.
+    pub fn terminal_node(&self) -> &NodeRef<S> {
+        &self.terminal_node
     }
 
     /// The links making up the path, in traversal order.
@@ -128,11 +172,112 @@ impl<S: GChainSpec> LinkPath<S> {
         self.links.is_empty()
     }
 
-    /// Attempts to add a link onto the end of the path, if valid.
-    // TODO this is an iteration from an earlier simpler design, but right now
-    // we don't have a way to authoritatively assert canonicality
-    pub fn try_push_link(&mut self, lref: LinkRef<S>) -> bool {
+    /// Attempts to add a link onto the end of the path.
+    ///
+    /// Returns `false` without modifying the path if the link doesn't depart
+    /// from the node the path currently ends at.
+    pub fn try_push_link(&mut self, lref: LinkRef<S>, endpoints: &LinkEndpoints<S>) -> bool {
+        if *endpoints.origin() != self.terminal_node {
+            return false;
+        }
+
         self.links.push(lref);
+        self.terminal_node = endpoints.target().clone();
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+    struct TestRef(u8);
+
+    impl GNodeRef for TestRef {}
+    impl GLinkRef for TestRef {}
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct TestLink(u8);
+
+    impl GNode for TestLink {}
+    impl GLinkHeader for TestLink {}
+
+    impl GLink for TestLink {
+        fn check_structurally_consistent(&self) -> bool {
+            true
+        }
+    }
+
+    struct TestSpec;
+
+    impl GChainSpec for TestSpec {
+        type NodeRef = TestRef;
+        type Node = TestLink;
+        type LinkRef = TestRef;
+        type LinkHeader = TestLink;
+        type Link = TestLink;
+
+        fn get_header_ref(lh: &TestLink) -> TestRef {
+            TestRef(lh.0)
+        }
+
+        fn get_header_canonical_prev(_lh: &TestLink) -> Option<TestRef> {
+            None
+        }
+    }
+
+    fn endpoints(origin: u8, target: u8) -> LinkEndpoints<TestSpec> {
+        LinkEndpoints::new(TestRef(origin), TestRef(target))
+    }
+
+    #[test]
+    fn test_new_path_terminates_at_its_base() {
+        let path = LinkPath::<TestSpec>::new_at(TestRef(1));
+        assert_eq!(path.base_node(), &TestRef(1));
+        assert_eq!(path.terminal_node(), &TestRef(1));
+        assert!(path.is_empty());
+    }
+
+    #[test]
+    fn test_push_link_continuing_path_advances_terminal() {
+        let mut path = LinkPath::<TestSpec>::new_at(TestRef(1));
+
+        assert!(path.try_push_link(TestRef(10), &endpoints(1, 2)));
+        assert!(path.try_push_link(TestRef(11), &endpoints(2, 3)));
+
+        assert_eq!(path.links(), &[TestRef(10), TestRef(11)]);
+        assert_eq!(path.terminal_node(), &TestRef(3));
+        assert_eq!(path.base_node(), &TestRef(1));
+        assert_eq!(path.len(), 2);
+    }
+
+    /// A link that departs from somewhere else entirely would silently splice
+    /// two unrelated parts of the graph together.
+    #[test]
+    fn test_push_link_from_other_node_is_rejected() {
+        let mut path = LinkPath::<TestSpec>::new_at(TestRef(1));
+        assert!(path.try_push_link(TestRef(10), &endpoints(1, 2)));
+
+        assert!(!path.try_push_link(TestRef(11), &endpoints(7, 8)));
+
+        // The rejected link left no trace.
+        assert_eq!(path.links(), &[TestRef(10)]);
+        assert_eq!(path.terminal_node(), &TestRef(2));
+    }
+
+    /// Two different links reaching the same node is the whole point of the
+    /// graph model, so either is acceptable from a given terminal.
+    #[test]
+    fn test_converging_links_are_both_acceptable() {
+        let mut via_block = LinkPath::<TestSpec>::new_at(TestRef(1));
+        let mut via_ckpt = LinkPath::<TestSpec>::new_at(TestRef(1));
+
+        assert!(via_block.try_push_link(TestRef(10), &endpoints(1, 2)));
+        assert!(via_block.try_push_link(TestRef(11), &endpoints(2, 9)));
+        assert!(via_ckpt.try_push_link(TestRef(20), &endpoints(1, 9)));
+
+        assert_eq!(via_block.terminal_node(), via_ckpt.terminal_node());
+        assert_ne!(via_block.links(), via_ckpt.links());
     }
 }

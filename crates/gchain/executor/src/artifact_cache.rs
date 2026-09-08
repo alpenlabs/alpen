@@ -62,6 +62,17 @@ impl<S: GChainSpec> ArtifactCache<S> {
     pub fn remove_link(&mut self, lref: &LinkRef<S>) {
         self.links.remove(lref);
     }
+
+    /// Discards the artifacts for every link outside the provided set, such as
+    /// after committing or abandoning a path.
+    pub fn retain_links(&mut self, keep: &HashSet<LinkRef<S>>) {
+        self.links.retain(|lref, _| keep.contains(lref));
+    }
+
+    /// The number of links with artifacts currently cached.
+    pub fn cached_link_count(&self) -> usize {
+        self.links.len()
+    }
 }
 
 impl<S: GChainSpec> Default for ArtifactCache<S> {
@@ -96,6 +107,14 @@ impl<P: GChainProc> ProcHistory<P> {
     pub fn steps(&self) -> &[Arc<ProcStepOutput<P>>] {
         &self.steps
     }
+
+    /// Drops the oldest `count` steps, rebasing the history onto the node they
+    /// ended at.  Used once those steps are committed and can't be rolled back.
+    pub fn drain_committed(&mut self, count: usize, new_base: NodeRef<P::Spec>) {
+        let count = count.min(self.steps.len());
+        self.steps.drain(..count);
+        self.base = new_base;
+    }
 }
 
 #[cfg(test)]
@@ -103,64 +122,7 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-    struct TestRef(u8);
-
-    impl GNodeRef for TestRef {}
-    impl GLinkRef for TestRef {}
-
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    struct TestLink(u8);
-
-    impl GNode for TestLink {}
-    impl GLinkHeader for TestLink {}
-
-    impl GLink for TestLink {
-        fn check_structurally_consistent(&self) -> bool {
-            true
-        }
-    }
-
-    struct TestSpec;
-
-    impl GChainSpec for TestSpec {
-        type NodeRef = TestRef;
-        type Node = TestLink;
-        type LinkRef = TestRef;
-        type LinkHeader = TestLink;
-        type Link = TestLink;
-
-        fn get_header_ref(nh: &TestLink) -> TestRef {
-            TestRef(nh.0)
-        }
-
-        fn get_header_canonical_prev(_nh: &TestLink) -> Option<TestRef> {
-            None
-        }
-    }
-
-    #[derive(Debug, Eq, PartialEq)]
-    struct CountArtifact(u32);
-
-    impl ProcArtifact for CountArtifact {
-        fn from_buf(_buf: &[u8]) -> anyhow::Result<Self> {
-            unimplemented!("test: artifact decoding")
-        }
-    }
-
-    #[derive(Debug, Eq, PartialEq)]
-    struct FlagArtifact(bool);
-
-    impl ProcArtifact for FlagArtifact {
-        fn from_buf(_buf: &[u8]) -> anyhow::Result<Self> {
-            unimplemented!("test: artifact decoding")
-        }
-
-        fn is_link_valid(&self) -> bool {
-            self.0
-        }
-    }
+    use crate::test_support::*;
 
     fn proc_id(s: &str) -> ProcId {
         ProcId::from_str(s).expect("test: parse ProcId")
@@ -283,6 +245,55 @@ mod tests {
             cache
                 .get_artifact::<CountArtifact>(&kept, proc_id("count"))
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn test_retain_links_drops_everything_else() {
+        let kept = TestRef(1);
+        let mut cache = ArtifactCache::<TestSpec>::new();
+        cache.insert_artifact(kept, proc_id("count"), Arc::new(CountArtifact(7)));
+        cache.insert_artifact(TestRef(2), proc_id("count"), Arc::new(CountArtifact(8)));
+        cache.insert_artifact(TestRef(3), proc_id("count"), Arc::new(CountArtifact(9)));
+        assert_eq!(cache.cached_link_count(), 3);
+
+        cache.retain_links(&HashSet::from([kept]));
+
+        assert_eq!(cache.cached_link_count(), 1);
+        assert!(
+            cache
+                .get_artifact::<CountArtifact>(&kept, proc_id("count"))
+                .is_some()
+        );
+    }
+
+    /// The executor persists artifacts on behalf of stages, so what a stage
+    /// encodes has to come back as the same artifact.
+    #[test]
+    fn test_artifact_roundtrips_through_stored_data() {
+        let version = ProcVersion::from(TestProc::VERSION);
+        let data = ProcessorArtifactData::from_artifact(version, &CountArtifact(7))
+            .expect("test: encode artifact");
+
+        assert_eq!(data.exec_version(), version);
+        assert_eq!(
+            data.try_decode_artifact::<CountArtifact>()
+                .expect("test: decode artifact"),
+            CountArtifact(7)
+        );
+    }
+
+    /// Artifacts are stored type-erased, so the executor encodes them without
+    /// knowing which stage produced them.
+    #[test]
+    fn test_artifact_encodes_through_erasure() {
+        let artifact: Arc<dyn DynProcArtifact> = Arc::new(CountArtifact(7));
+
+        let buf = artifact.to_buf_dyn().expect("test: encode artifact");
+
+        assert_eq!(
+            CountArtifact::from_buf(&buf).expect("test: decode artifact"),
+            CountArtifact(7)
         );
     }
 }

@@ -6,7 +6,7 @@
 //! which are only "moderately sized" and feasible to juggle many of in memory
 //! (or recompute on the fly).  The processor itself maintains some abstract
 //! aggregated base state that it may access in order to produce artifacts,
-//! potentially through the lens of intermediate aritfacts.
+//! potentially through the lens of intermediate artifacts.
 //!
 //! The happy path looks like this:
 //! 1. The executor picks a new node to process.
@@ -25,26 +25,53 @@ use std::fmt::{self, Debug, Display};
 use std::str::{self, FromStr};
 use std::sync::Arc;
 
-use crate::chain_spec::*;
+use thiserror::Error as ThisError;
 
-const PROC_ID_LEN: usize = 8;
+use crate::chain_spec::*;
+use crate::errors::ProcError;
+use crate::version::ProcVersion;
+
+/// Maximum length of a [`ProcId`], in bytes.
+pub const PROC_ID_LEN: usize = 8;
 
 /// ID used to refer to a registered processor stage.
+///
+/// Always a non-empty, ASCII alphanumeric string of at most [`PROC_ID_LEN`]
+/// bytes, zero-padded to a fixed width.  [`FromStr`] is the only constructor, so
+/// that invariant holds for every value that exists.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ProcId([u8; 8]);
+pub struct ProcId([u8; PROC_ID_LEN]);
+
+/// Reasons a string isn't a well-formed [`ProcId`].
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ThisError)]
+pub enum ProcIdParseError {
+    /// An empty id would display as an empty string, making it impossible to
+    /// tell apart from a missing value.
+    #[error("proc id was empty")]
+    Empty,
+
+    #[error("proc id too long (expected at most {PROC_ID_LEN}, got {0})")]
+    TooLong(usize),
+
+    #[error("proc id contained a non-ASCII-alphanumeric character")]
+    NotAlphanumeric,
+}
 
 impl FromStr for ProcId {
-    type Err = ();
+    type Err = ProcIdParseError;
 
-    // TODO(trey): make this a real error
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(ProcIdParseError::Empty);
+        }
+
         if !s.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return Err(());
+            return Err(ProcIdParseError::NotAlphanumeric);
         }
 
         let sb = s.as_bytes();
         if sb.len() > PROC_ID_LEN {
-            return Err(());
+            return Err(ProcIdParseError::TooLong(sb.len()));
         }
 
         let mut inner = [0; PROC_ID_LEN];
@@ -55,13 +82,11 @@ impl FromStr for ProcId {
 
 impl AsRef<str> for ProcId {
     fn as_ref(&self) -> &str {
-        let idx = self
-            .0
-            .iter()
-            .enumerate()
-            .find_map(|(i, b)| (*b == 0).then(|| i))
-            .unwrap_or(PROC_ID_LEN);
-        unsafe { str::from_utf8_unchecked(&self.0[..idx]) }
+        let idx = self.0.iter().position(|b| *b == 0).unwrap_or(PROC_ID_LEN);
+
+        // Scanning at most 8 bytes isn't worth an `unsafe` that a future
+        // constructor could silently invalidate.
+        str::from_utf8(&self.0[..idx]).expect("gchain: ProcId is always ASCII")
     }
 }
 
@@ -89,6 +114,14 @@ pub trait GChainProc: Sized + 'static {
     /// The incremental artifacts produced for the output of running on a link.
     type Artifact: ProcArtifact;
 
+    /// The version of this stage's processing behavior.
+    ///
+    /// The executor records this alongside every artifact it persists, so that
+    /// opening a database written by a client whose behavior has since changed
+    /// can be detected and the affected links reprocessed.  Bump it whenever a
+    /// change would produce a different artifact for the same link.
+    fn proc_version(&self) -> ProcVersion;
+
     /// Called when the processor is first initialized.
     ///
     /// This only ever happens once, but this fn may be called multiple times
@@ -99,7 +132,7 @@ pub trait GChainProc: Sized + 'static {
         &self,
         cur_node: &NodeRef<Self::Spec>,
         node: &Node<Self::Spec>,
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), ProcError>;
 
     /// Processes a link and produces some output from the step.
     ///
@@ -112,7 +145,7 @@ pub trait GChainProc: Sized + 'static {
         lref: &LinkRef<Self::Spec>,
         link: &Link<Self::Spec>,
         ctx: &impl ProcContext<Self>,
-    ) -> anyhow::Result<Self::Artifact>;
+    ) -> Result<Self::Artifact, ProcError>;
 
     /// Applies a path of artifacts for processed links for multiple nodes into
     /// the aggregated state, as a single operation.
@@ -123,7 +156,7 @@ pub trait GChainProc: Sized + 'static {
         &self,
         path: &LinkPath<Self::Spec>,
         outputs: &[Arc<Self::Artifact>],
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), ProcError>;
 
     /// Rolls back the artifacts of a set of links from the aggregated state (as
     /// a direct "undo" operation to `commit_outputs`), as a single operation.
@@ -136,7 +169,7 @@ pub trait GChainProc: Sized + 'static {
         &self,
         path: &LinkPath<Self::Spec>,
         outputs: &[Arc<Self::Artifact>],
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), ProcError>;
 
     /// Called by the executor before we discard an artifact (like one that's
     /// pruned) order to discard any auxiliary data that might exist.
@@ -146,20 +179,28 @@ pub trait GChainProc: Sized + 'static {
         &self,
         lref: &LinkRef<Self::Spec>,
         output: &Self::Artifact,
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), ProcError>;
 
     /// Called when we are sure we will never try to roll back to before a
     /// certain node so that we can perform cleanups and discard information we
     /// no longer need.
     ///
     /// The provided node will become the oldest node.
-    fn prune_state_upto(&self, nref: &NodeRef<Self::Spec>) -> anyhow::Result<()>;
+    fn prune_state_upto(&self, nref: &NodeRef<Self::Spec>) -> Result<(), ProcError>;
 }
 
 /// Output from a processing stage on a link transition.
+///
+/// Artifacts are persisted by the executor, not by the stage that produced
+/// them, so they have to round-trip through a buffer in both directions.
 pub trait ProcArtifact: Sync + Send + Sized + 'static {
+    /// Encodes the artifact so the executor can persist it.
+    ///
+    /// Must round-trip through [`ProcArtifact::from_buf`].
+    fn to_buf(&self) -> Result<Vec<u8>, ProcError>;
+
     /// Attempts to decode a buf as the proc artifact.
-    fn from_buf(buf: &[u8]) -> anyhow::Result<Self>;
+    fn from_buf(buf: &[u8]) -> Result<Self, ProcError>;
 
     /// Checks if the output indicates the link transition was valid, as far as
     /// the processor stage cares.  A layer processor stage may be used to
@@ -186,6 +227,12 @@ pub trait DynProcArtifact: Sync + Send + 'static {
     /// See [`ProcArtifact::is_link_valid`].
     fn is_link_valid(&self) -> bool;
 
+    /// See [`ProcArtifact::to_buf`].
+    ///
+    /// Named apart from the [`ProcArtifact`] method so that calls on a concrete
+    /// artifact type, which implements both traits, stay unambiguous.
+    fn to_buf_dyn(&self) -> Result<Vec<u8>, ProcError>;
+
     /// Returns the type ID of the underlying concrete artifact type.
     fn artifact_type_id(&self) -> TypeId;
 
@@ -201,6 +248,10 @@ pub trait DynProcArtifact: Sync + Send + 'static {
 impl<A: ProcArtifact> DynProcArtifact for A {
     fn is_link_valid(&self) -> bool {
         <A as ProcArtifact>::is_link_valid(self)
+    }
+
+    fn to_buf_dyn(&self) -> Result<Vec<u8>, ProcError> {
+        <A as ProcArtifact>::to_buf(self)
     }
 
     fn artifact_type_id(&self) -> TypeId {
@@ -311,11 +362,48 @@ pub trait ProcContext<P: GChainProc> {
 
 #[cfg(test)]
 mod tests {
-    use super::ProcId;
     use std::str::FromStr;
+
+    use super::{PROC_ID_LEN, ProcId, ProcIdParseError};
 
     #[test]
     fn test_parse_short_proc_id() {
         ProcId::from_str("foo").expect("test: parse ProcId");
+    }
+
+    #[test]
+    fn test_parse_proc_id_roundtrips_through_str() {
+        for s in ["a", "foo", "exactly8"] {
+            let id = ProcId::from_str(s).expect("test: parse ProcId");
+            assert_eq!(id.as_ref(), s);
+            assert_eq!(id.to_string(), s);
+        }
+    }
+
+    /// An empty id displays as an empty string, which is indistinguishable from
+    /// a missing value, so it must not be constructible.
+    #[test]
+    fn test_parse_empty_proc_id_fails() {
+        assert_eq!(ProcId::from_str(""), Err(ProcIdParseError::Empty));
+    }
+
+    #[test]
+    fn test_parse_overlong_proc_id_fails() {
+        let overlong = "a".repeat(PROC_ID_LEN + 1);
+        assert_eq!(
+            ProcId::from_str(&overlong),
+            Err(ProcIdParseError::TooLong(PROC_ID_LEN + 1))
+        );
+    }
+
+    #[test]
+    fn test_parse_nonalphanumeric_proc_id_fails() {
+        for s in ["foo_bar", "foo bar", "fo-o", "é"] {
+            assert_eq!(
+                ProcId::from_str(s),
+                Err(ProcIdParseError::NotAlphanumeric),
+                "test: expected {s:?} to be rejected"
+            );
+        }
     }
 }
