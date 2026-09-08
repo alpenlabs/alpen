@@ -7,6 +7,7 @@ use std::{
 
 use metrics::{counter, gauge};
 use strata_identifiers::{Epoch, Slot};
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
@@ -16,7 +17,11 @@ use tracing::{debug, warn};
 
 use crate::{
     errors::Error,
-    fcm::context::{FcmContext, FcmStorage},
+    fcm::{
+        context::{FcmContext, FcmStorage},
+        pending::PendingBlocks,
+        ExecutionDeferral,
+    },
     ol_mmr_reconcile::OLMmrReconcileTarget,
     unfinalized_tracker::UnfinalizedBlockTracker,
 };
@@ -31,9 +36,46 @@ pub(crate) struct FcmServiceState<C: FcmContext> {
     ctx: Arc<C>,
     sequencer_predicate: PredicateKey,
     inner_state: FcmInnerState,
+    pending: PendingBlocks,
 }
 
 impl<C: FcmContext> FcmServiceState<C> {
+    pub(super) fn pending_block_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub(super) fn defer_block(&mut self, block: &OLBlockV1, reason: ExecutionDeferral) {
+        self.pending.defer(block, reason);
+    }
+
+    pub(super) fn remove_pending_block(&mut self, slot: Slot, id: OLBlockId) {
+        self.pending.remove(slot, id);
+    }
+
+    pub(super) fn pending_scan_cursor(&self) -> Option<OLBlockId> {
+        self.pending.scan_cursor
+    }
+
+    pub(super) fn set_pending_scan_cursor(&mut self, cursor: Option<OLBlockId>) {
+        self.pending.scan_cursor = cursor;
+    }
+
+    pub(super) fn discover_pending_block(&mut self, block: &OLBlockV1) {
+        self.pending.discover(block);
+    }
+
+    pub(super) fn due_pending_blocks(
+        &mut self,
+        progress: bool,
+        limit: usize,
+    ) -> Vec<(Slot, OLBlockId)> {
+        self.pending.due(progress, limit)
+    }
+
+    pub(super) fn record_pending_storage_failure(&mut self, slot: Slot, id: OLBlockId) {
+        self.pending.storage_failure(slot, id);
+    }
+
     pub(crate) fn cur_ol_state(&self) -> Arc<OLStateV1> {
         self.inner_state.cur_olstate.clone()
     }
@@ -227,6 +269,7 @@ impl<C: FcmContext> FcmServiceState<C> {
             ctx,
             sequencer_predicate,
             inner_state,
+            pending: PendingBlocks::default(),
         }
     }
 

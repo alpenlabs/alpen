@@ -26,6 +26,7 @@ use crate::{
     fcm::{
         context::{BlockExecutionOutcome, FcmContext, FcmStorage},
         input::FcmEvent,
+        pending::{RETRY_BATCH_SIZE, STATUS_SCAN_SIZE},
         state::FcmServiceState,
     },
     message::ForkChoiceMessage,
@@ -81,15 +82,27 @@ pub async fn start_fcm_service<C: FcmContext>(
 pub(crate) struct FcmService<C: FcmContext>(PhantomData<C>);
 
 #[derive(Clone, Debug, Serialize)]
-pub struct FcmStatus;
+pub struct FcmStatus {
+    /// Number of blocks currently cached for dependency retries.
+    pending_blocks: usize,
+}
+
+impl FcmStatus {
+    /// Returns the number of blocks currently cached for dependency retries.
+    pub fn pending_blocks(&self) -> usize {
+        self.pending_blocks
+    }
+}
 
 impl<C: FcmContext> Service for FcmService<C> {
     type Msg = FcmEvent;
     type State = FcmServiceState<C>;
     type Status = FcmStatus;
 
-    fn get_status(_s: &Self::State) -> Self::Status {
-        FcmStatus
+    fn get_status(state: &Self::State) -> Self::Status {
+        FcmStatus {
+            pending_blocks: state.pending_block_count(),
+        }
     }
 }
 
@@ -129,8 +142,10 @@ impl<C: FcmContext> AsyncService for FcmService<C> {
         match &input {
             FcmEvent::NewFcmMsg(m) => process_fc_message(m, fcm_state).await?,
             FcmEvent::NewStateUpdate => handle_new_state_update(fcm_state).await?,
+            FcmEvent::RetryTick => {}
             FcmEvent::Abort => return Ok(Response::ShouldExit),
         };
+        retry_pending_blocks(fcm_state, !matches!(input, FcmEvent::RetryTick)).await;
         Ok(Response::Continue)
     }
 }
@@ -173,10 +188,12 @@ async fn process_fc_message<C: FcmContext>(
                 BlockExecutionOutcome::Accepted => true,
                 BlockExecutionOutcome::Rejected => false,
                 BlockExecutionOutcome::Deferred(reason) => {
+                    fcm_state.defer_block(&block_bundle, reason);
                     debug!(%blkid, ?reason, "deferring block execution");
                     return Ok(());
                 }
             };
+            fcm_state.remove_pending_block(slot, *blkid);
             let status = if ok {
                 // check if any pending blocks can be finalized
                 if let Err(err) = handle_epoch_finalization(fcm_state).await {
@@ -209,6 +226,55 @@ async fn process_fc_message<C: FcmContext>(
     }
 
     Ok(())
+}
+
+/// Recovers durable unchecked blocks and retries a bounded, fair batch.
+async fn retry_pending_blocks<C: FcmContext>(state: &mut FcmServiceState<C>, progress: bool) {
+    match state
+        .ctx()
+        .scan_block_statuses(state.pending_scan_cursor(), STATUS_SCAN_SIZE)
+        .await
+    {
+        Ok(rows) => {
+            state.set_pending_scan_cursor(rows.last().map(|(id, _)| *id));
+            for (id, status) in rows {
+                if status != BlockStatus::Unchecked {
+                    continue;
+                }
+                match state.ctx().get_ol_block(id).await {
+                    Ok(Some(block))
+                        if block.header().slot()
+                            > state.chain_tracker().finalized_epoch().last_slot() =>
+                    {
+                        state.discover_pending_block(&block);
+                    }
+                    Ok(_) => {}
+                    Err(err) => warn!(%id, %err, "failed to load pending block"),
+                }
+            }
+        }
+        Err(err) => warn!(%err, "failed to refill pending blocks"),
+    }
+    let candidates = state.due_pending_blocks(progress, RETRY_BATCH_SIZE);
+    for (slot, id) in candidates {
+        match state.ctx().get_block_status(id).await {
+            Ok(Some(BlockStatus::Unchecked)) => {}
+            Ok(_) => {
+                state.remove_pending_block(slot, id);
+                continue;
+            }
+            Err(err) => {
+                state.record_pending_storage_failure(slot, id);
+                warn!(%id, %err, "failed to read pending block status");
+                continue;
+            }
+        }
+        counter!("strata_fcm_pending_retried_total").increment(1);
+        if let Err(err) = process_fc_message(&ForkChoiceMessage::NewBlock(id), state).await {
+            state.record_pending_storage_failure(slot, id);
+            warn!(%id, %err, "failed to retry pending block");
+        }
+    }
 }
 
 async fn set_block_status_and_clear_invalid_high_watermark<C: FcmContext>(
@@ -836,8 +902,9 @@ mod tests {
     use super::*;
     use crate::{
         fcm::{
-            context::{ChainController, CsmStatusReader, ExecutionDeferral, FcmStartupReconciler},
+            context::{ChainController, CsmStatusReader, FcmStartupReconciler},
             state::{reconcile_canonical_blocks_index, FcmInnerState},
+            ExecutionDeferral,
         },
         ol_mmr_reconcile::{OLMmrReconcileResult, OLMmrReconcileTarget},
         tip_update::TipUpdate,
@@ -1051,6 +1118,25 @@ mod tests {
 
     #[async_trait]
     impl FcmStorage for StubFcmStorage {
+        async fn scan_block_statuses(
+            &self,
+            after: Option<OLBlockId>,
+            limit: usize,
+        ) -> DbResult<Vec<(OLBlockId, BlockStatus)>> {
+            let mut rows: Vec<_> = self
+                .inner
+                .lock()
+                .unwrap()
+                .statuses
+                .iter()
+                .filter(|(id, _)| after.is_none_or(|after| **id > after))
+                .map(|(id, status)| (*id, *status))
+                .collect();
+            rows.sort_by_key(|(id, _)| *id);
+            rows.truncate(limit);
+            Ok(rows)
+        }
+
         async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
             let mut inner = self.inner.lock().unwrap();
             let block_exists = inner.blocks.contains_key(&blkid);
@@ -1213,6 +1299,14 @@ mod tests {
 
     #[async_trait]
     impl FcmStorage for StubFcmContext {
+        async fn scan_block_statuses(
+            &self,
+            after: Option<OLBlockId>,
+            limit: usize,
+        ) -> DbResult<Vec<(OLBlockId, BlockStatus)>> {
+            self.storage.scan_block_statuses(after, limit).await
+        }
+
         async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
             self.storage.set_block_status(blkid, status).await
         }
@@ -2386,6 +2480,77 @@ mod tests {
         assert_eq!(statuses[0].recently_complete_epoch(), genesis_epoch);
         assert_eq!(statuses[0].confirmed_epoch(), genesis_epoch);
         assert_eq!(statuses[0].finalized_epoch(), genesis_epoch);
+    }
+
+    #[tokio::test]
+    async fn pending_parent_and_child_resume_in_order() {
+        let (genesis, mut state) = execute_test_genesis();
+        let parent = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let child = execute_test_block(&mut state, &parent.block, 1_002, 2);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        for block in [&parent, &child] {
+            seed_executed_block(fixture.ctx.storage(), block, BlockStatus::Unchecked);
+            fixture.ctx.execution_outcomes.lock().unwrap().insert(
+                block.blkid(),
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            );
+        }
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        for block in [&child, &parent] {
+            process_fc_message(&ForkChoiceMessage::NewBlock(block.blkid()), &mut fcm)
+                .await
+                .unwrap();
+        }
+        fixture.ctx.execution_outcomes.lock().unwrap().clear();
+        retry_pending_blocks(&mut fcm, true).await;
+        retry_pending_blocks(&mut fcm, true).await;
+        assert_eq!(fcm.cur_best_block(), child.commitment());
+        assert_eq!(fcm.pending_block_count(), 0);
+        for block in [&parent, &child] {
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Valid)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn durable_refill_retries_overflow_without_restart() {
+        let (genesis, _) = execute_test_genesis();
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let mut expected = BTreeSet::new();
+        for slot in 1..=300 {
+            let block = make_storage_block(slot, genesis.blkid());
+            let commitment = fixture.ctx.storage().put_ol_block(block);
+            fixture
+                .ctx
+                .set_block_status(*commitment.blkid(), BlockStatus::Unchecked)
+                .await
+                .unwrap();
+            fixture.ctx.execution_outcomes.lock().unwrap().insert(
+                *commitment.blkid(),
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            );
+            expected.insert(*commitment.blkid());
+        }
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        for _ in 0..40 {
+            retry_pending_blocks(&mut fcm, true).await;
+            assert!(fcm.pending_block_count() <= 256);
+        }
+        let attempted: BTreeSet<_> = fixture
+            .ctx
+            .executed_blocks()
+            .iter()
+            .map(|block| *block.blkid())
+            .collect();
+        assert_eq!(
+            attempted.len(),
+            expected.len(),
+            "all durable entries must eventually get a turn"
+        );
+        assert_eq!(attempted, expected);
+        assert_eq!(fcm.cur_best_block(), genesis.commitment());
     }
 
     #[tokio::test]

@@ -128,6 +128,16 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
 
+    /// Reads at most `limit` status rows after `after`, ordered by block ID.
+    ///
+    /// The cursor counts all examined rows, including checked blocks, so callers can bound
+    /// recovery work even when there are no unchecked blocks. An empty page ends the scan.
+    fn scan_block_statuses(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, BlockStatus)>>;
+
     /// Returns the highest slot recorded in the canonical OL block index.
     fn get_tip_slot(&self) -> DbResult<Slot>;
 

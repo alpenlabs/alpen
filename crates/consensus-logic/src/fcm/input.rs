@@ -1,6 +1,11 @@
+use std::time::Duration;
+
 use strata_csm_types::CheckpointState;
 use strata_service::{AsyncServiceInput, ServiceInput};
-use tokio::sync::{mpsc, watch};
+use tokio::{
+    sync::{mpsc, watch},
+    time::{interval, Interval, MissedTickBehavior},
+};
 use tracing::trace;
 
 use crate::message::ForkChoiceMessage;
@@ -9,12 +14,14 @@ use crate::message::ForkChoiceMessage;
 pub enum FcmEvent {
     NewFcmMsg(ForkChoiceMessage),
     NewStateUpdate,
+    RetryTick,
     Abort,
 }
 
 #[derive(Debug)]
 pub struct FcmInput {
     fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
+    retry_tick: Interval,
     // TODO(STR-3673): Rename CheckpointState to sth like ClientStateAtL1
     checkpoint_state_rx: watch::Receiver<CheckpointState>,
 }
@@ -24,8 +31,11 @@ impl FcmInput {
         fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
         checkpoint_state_rx: watch::Receiver<CheckpointState>,
     ) -> Self {
+        let mut retry_tick = interval(Duration::from_secs(1));
+        retry_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         Self {
             fcm_rx,
+            retry_tick,
             checkpoint_state_rx,
         }
     }
@@ -38,6 +48,7 @@ impl ServiceInput for FcmInput {
 impl AsyncServiceInput for FcmInput {
     async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         let msg = tokio::select! {
+            _ = self.retry_tick.tick() => Some(FcmEvent::RetryTick),
             m = self.fcm_rx.recv() => {
                 let msg = m.map(FcmEvent::NewFcmMsg).unwrap_or_else(|| {
                     trace!("input channel closed");

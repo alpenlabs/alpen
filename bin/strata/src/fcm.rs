@@ -119,6 +119,17 @@ impl UnfinalizedOLBlockSource for StrataFcmContext {
 
 #[async_trait]
 impl FcmStorage for StrataFcmContext {
+    async fn scan_block_statuses(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, BlockStatus)>> {
+        self.storage
+            .ol_block()
+            .scan_block_statuses_async(after, limit)
+            .await
+    }
+
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
         self.storage
             .ol_block()

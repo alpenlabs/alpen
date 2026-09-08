@@ -1,3 +1,5 @@
+use std::ops::Bound::{Excluded, Unbounded};
+
 use sled::transaction::ConflictableTransactionError;
 use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
 use strata_db_types::{DbError, DbResult};
@@ -312,6 +314,20 @@ impl OLBlockDatabase for OLBlockDBSled {
             .unwrap_or(Vec::new()))
     }
 
+    fn scan_block_statuses(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, BlockStatus)>> {
+        let start = after.map_or(Unbounded, Excluded);
+        self.blk_status_tree
+            .range((start, Unbounded))
+            .map_err(conv_sled_err)?
+            .take(limit)
+            .map(|row| row.map_err(conv_sled_err))
+            .collect()
+    }
+
     fn get_highest_block_slot(&self) -> DbResult<Option<Slot>> {
         // Skip empty height rows: older datadirs may retain rows whose last
         // block was deleted before empty rows were removed on delete.
@@ -400,6 +416,35 @@ mod tests {
     sled_db_test_setup!(OLBlockDBSled, ol_block_db_tests);
 
     proptest::proptest! {
+        #[test]
+        fn status_scan_advances_across_checked_pages(
+            mut block in ol_test_utils::ol_block_strategy(),
+        ) {
+            let db = setup_db();
+            let mut expected = Vec::new();
+            for slot in 1..=5 {
+                block.signed_header.header.slot = slot;
+                let id = block.header().compute_blkid();
+                db.put_block_data(block.clone()).unwrap();
+                db.set_block_status(id, BlockStatus::Valid).unwrap();
+                expected.push((id, BlockStatus::Valid));
+            }
+            expected.sort_by_key(|(id, _)| *id);
+            // Place the only unchecked row after two fully checked pages.
+            expected[4].1 = BlockStatus::Unchecked;
+            db.set_block_status(expected[4].0, BlockStatus::Unchecked).unwrap();
+            assert!(db.scan_block_statuses(None, 0).unwrap().is_empty());
+            let first = db.scan_block_statuses(None, 2).unwrap();
+            assert_eq!(first, expected[..2]);
+            // Deleting the previous cursor's block must not skip subsequent rows.
+            db.del_block_data(first[1].0).unwrap();
+            let second = db.scan_block_statuses(Some(first[1].0), 2).unwrap();
+            assert_eq!(second, expected[2..4]);
+            let third = db.scan_block_statuses(Some(second[1].0), 2).unwrap();
+            assert_eq!(third, expected[4..]);
+            assert!(db.scan_block_statuses(Some(third[0].0), 2).unwrap().is_empty());
+        }
+
         #[test]
         fn get_highest_block_slot_skips_empty_height_rows(
             mut block in ol_test_utils::ol_block_strategy(),
