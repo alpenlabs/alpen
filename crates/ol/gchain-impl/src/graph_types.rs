@@ -5,17 +5,28 @@ use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OLStateNode {
-    epoch: u32,
+    epoch: Epoch,
     state_root: Buf32,
 }
 
 impl OLStateNode {
+    pub fn new(epoch: Epoch, state_root: Buf32) -> Self {
+        Self { epoch, state_root }
+    }
+
     pub fn epoch(&self) -> Epoch {
-        self.epoch.into()
+        self.epoch
+    }
+
+    pub fn state_root(&self) -> &Buf32 {
+        &self.state_root
     }
 }
 
-// actually fine that these are the same here, for now
+// An OL state node is an epoch number and a state root, which is already both
+// small and `Copy`, so a separate commitment to it would just be a second copy
+// of the same bytes.  It serves as its own ref until there's state in a node
+// that's too big to carry around.
 impl GNodeRef for OLStateNode {}
 impl GNode for OLStateNode {}
 
@@ -108,7 +119,17 @@ pub enum OLLink {
 
 impl GLink for OLLink {
     fn check_structurally_consistent(&self) -> bool {
-        // TODO(trey): implement this
-        true
+        match self {
+            // Same body commitment check the OL STF makes, so that a provider
+            // handing back a block whose body was altered is caught before any
+            // stage processes it.
+            OLLink::BlockV1(block) => {
+                block.body().compute_hash_commitment() == *block.header().body_root()
+            }
+
+            // A checkpoint link carries only its summary, which has no separate
+            // body to commit to.
+            OLLink::Checkpoint(_) => true,
+        }
     }
 }

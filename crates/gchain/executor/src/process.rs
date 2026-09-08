@@ -18,8 +18,11 @@ pub trait GChainProcDyn<S: GChainSpec>: 'static {
     /// The ID the wrapped processor stage is registered under.
     fn proc_id(&self) -> ProcId;
 
+    /// See [`GChainProc::proc_version`].
+    fn proc_version(&self) -> ProcVersion;
+
     /// See [`GChainProc::on_init`].
-    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> anyhow::Result<()>;
+    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> Result<(), ProcError>;
 
     /// Processes a link and returns the type-erased artifact.
     ///
@@ -33,31 +36,31 @@ pub trait GChainProcDyn<S: GChainSpec>: 'static {
         link: &Link<S>,
         cache: &ArtifactCache<S>,
         prev_lref: Option<&LinkRef<S>>,
-    ) -> anyhow::Result<Arc<dyn DynProcArtifact>>;
+    ) -> Result<Arc<dyn DynProcArtifact>, ProcError>;
 
     /// See [`GChainProc::commit_outputs`].
     fn commit_outputs(
         &self,
         path: &LinkPath<S>,
         outputs: &[Arc<dyn DynProcArtifact>],
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), ProcError>;
 
     /// See [`GChainProc::uncommit_outputs`].
     fn uncommit_outputs(
         &self,
         path: &LinkPath<S>,
         outputs: &[Arc<dyn DynProcArtifact>],
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), ProcError>;
 
     /// See [`GChainProc::preprune_artifact`].
     fn preprune_artifact(
         &self,
         lref: &LinkRef<S>,
         artifact: &dyn DynProcArtifact,
-    ) -> anyhow::Result<()>;
+    ) -> Result<(), ProcError>;
 
     /// See [`GChainProc::prune_state_upto`].
-    fn prune_state_upto(&self, nref: &NodeRef<S>) -> anyhow::Result<()>;
+    fn prune_state_upto(&self, nref: &NodeRef<S>) -> Result<(), ProcError>;
 }
 
 /// Generic processor shim wrapper to expose as `dyn`-safe object.
@@ -80,7 +83,11 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
         self.proc_id
     }
 
-    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> anyhow::Result<()> {
+    fn proc_version(&self) -> ProcVersion {
+        self.proc.proc_version()
+    }
+
+    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> Result<(), ProcError> {
         self.proc.on_init(cur_node, node)
     }
 
@@ -90,8 +97,8 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
         link: &Link<S>,
         cache: &ArtifactCache<S>,
         prev_lref: Option<&LinkRef<S>>,
-    ) -> anyhow::Result<Arc<dyn DynProcArtifact>> {
-        let ctx = ProcContextImpl::<P>::new(cache, *lref, prev_lref.copied());
+    ) -> Result<Arc<dyn DynProcArtifact>, ProcError> {
+        let ctx = ProcContextImpl::<P>::new(cache, lref.clone(), prev_lref.cloned());
         let artifact = self.proc.process_link(lref, link, &ctx)?;
         Ok(Arc::new(artifact))
     }
@@ -100,7 +107,7 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
         &self,
         path: &LinkPath<S>,
         outputs: &[Arc<dyn DynProcArtifact>],
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), ProcError> {
         let outputs = downcast_artifacts::<P>(self.proc_id, outputs)?;
         self.proc.commit_outputs(path, &outputs)
     }
@@ -109,7 +116,7 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
         &self,
         path: &LinkPath<S>,
         outputs: &[Arc<dyn DynProcArtifact>],
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), ProcError> {
         let outputs = downcast_artifacts::<P>(self.proc_id, outputs)?;
         self.proc.uncommit_outputs(path, &outputs)
     }
@@ -118,28 +125,37 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
         &self,
         lref: &LinkRef<S>,
         artifact: &dyn DynProcArtifact,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), ProcError> {
         let artifact = artifact
             .as_any()
             .downcast_ref::<P::Artifact>()
-            .ok_or(GExecError::ArtifactTypeMismatch(self.proc_id))?;
+            .ok_or_else(|| artifact_type_mismatch(self.proc_id))?;
         self.proc.preprune_artifact(lref, artifact)
     }
 
-    fn prune_state_upto(&self, nref: &NodeRef<S>) -> anyhow::Result<()> {
+    fn prune_state_upto(&self, nref: &NodeRef<S>) -> Result<(), ProcError> {
         self.proc.prune_state_upto(nref)
     }
+}
+
+/// Reports artifacts having gotten crossed between stages inside the executor.
+///
+/// This is an executor bug rather than anything the stage did, but it surfaces
+/// at the shim boundary where only a [`ProcError`] can be returned, so the
+/// typed executor error is preserved as its source.
+fn artifact_type_mismatch(proc_id: ProcId) -> ProcError {
+    ProcError::custom(GExecError::ArtifactTypeMismatch(proc_id))
 }
 
 /// Recovers a stage's own artifact type from a type-erased artifact.
 fn downcast_artifact<P: GChainProc>(
     proc_id: ProcId,
     artifact: &Arc<dyn DynProcArtifact>,
-) -> anyhow::Result<Arc<P::Artifact>> {
+) -> Result<Arc<P::Artifact>, ProcError> {
     Arc::clone(artifact)
         .into_any_arc()
         .downcast::<P::Artifact>()
-        .map_err(|_| GExecError::ArtifactTypeMismatch(proc_id).into())
+        .map_err(|_| artifact_type_mismatch(proc_id))
 }
 
 /// Recovers a stage's own artifact type across a run of type-erased artifacts,
@@ -147,7 +163,7 @@ fn downcast_artifact<P: GChainProc>(
 fn downcast_artifacts<P: GChainProc>(
     proc_id: ProcId,
     artifacts: &[Arc<dyn DynProcArtifact>],
-) -> anyhow::Result<Vec<Arc<P::Artifact>>> {
+) -> Result<Vec<Arc<P::Artifact>>, ProcError> {
     artifacts
         .iter()
         .map(|a| downcast_artifact::<P>(proc_id, a))
