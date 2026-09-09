@@ -230,7 +230,7 @@ mod tests {
     fn block_at_slot(slot: u64) -> OLBlockV1 {
         let header = OLBlockHeaderV1::new(
             0,
-            BlockFlagsV1::from(0),
+            BlockFlagsV1::zero(),
             slot,
             0,
             OLBlockId::from(Buf32::from([0x11; 32])),

@@ -2099,7 +2099,7 @@ mod tests {
         let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
         let header = OLBlockHeaderV1::new(
             1_000 + slot,
-            BlockFlagsV1::from(0),
+            BlockFlagsV1::zero(),
             slot,
             0,
             OLBlockId::from(Buf32::zero()),
@@ -2124,7 +2124,7 @@ mod tests {
         let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
         let header = OLBlockHeaderV1::new(
             1_000 + slot,
-            BlockFlagsV1::from(0),
+            BlockFlagsV1::zero(),
             slot,
             0,
             parent,
@@ -2137,7 +2137,7 @@ mod tests {
 
     fn make_terminal_storage_block(slot: Slot, parent: OLBlockId) -> OLBlockV1 {
         let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
-        let mut flags = BlockFlagsV1::from(0);
+        let mut flags = BlockFlagsV1::zero();
         flags.set_is_terminal(true);
         let header = OLBlockHeaderV1::new(
             1_000 + slot,

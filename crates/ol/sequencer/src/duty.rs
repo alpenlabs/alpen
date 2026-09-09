@@ -215,7 +215,7 @@ mod tests {
             timestamp,
             slot,
             epoch,
-            flags: BlockFlagsV1::from(0),
+            flags: BlockFlagsV1::zero(),
             body_root: [0u8; 32].into(),
             state_root: [0u8; 32].into(),
             logs_root: [0u8; 32].into(),

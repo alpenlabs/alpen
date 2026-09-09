@@ -280,7 +280,7 @@ mod tests {
         fn test_genesis_header() {
             let header = OLBlockHeaderV1 {
                 timestamp: 0,
-                flags: BlockFlagsV1::from(0),
+                flags: BlockFlagsV1::zero(),
                 slot: 0,
                 epoch: 0,
                 parent_blkid: OLBlockId::from(Buf32::zero()),
@@ -336,7 +336,7 @@ mod tests {
                 signed_header: SignedOLBlockHeaderV1 {
                     header: OLBlockHeaderV1 {
                         timestamp: 0,
-                        flags: BlockFlagsV1::from(0),
+                        flags: BlockFlagsV1::zero(),
                         slot: 0,
                         epoch: 0,
                         parent_blkid: OLBlockId::from(Buf32::zero()),
