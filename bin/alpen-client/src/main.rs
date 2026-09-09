@@ -49,6 +49,7 @@ mod services;
 use std::time::Duration;
 use std::{
     env, fs,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     process,
     sync::Arc,
@@ -131,7 +132,8 @@ mod sequencer_imports {
     };
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
-        ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
+        ConcurrencyBudget, ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig,
+        TaskStore,
     };
     pub(super) use strata_proofimpl_alpen_acct::EeAcctProgram;
     pub(super) use strata_proofimpl_alpen_chunk::EeChunkProgram;
@@ -173,6 +175,8 @@ const ALPEN_EE_BLOCK_TIME_MS_ENV_VAR: &str = "ALPEN_EE_BLOCK_TIME_MS";
 
 const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
 const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
+const DEFAULT_MAX_CONCURRENT_PROOF_SUBMISSIONS: NonZeroUsize =
+    NonZeroUsize::new(1).expect("default proof limit is nonzero");
 
 /// Default end-to-end deadline applied to the SP1 prover network for the EE
 /// chunk + acct provers when `--sp1-proof-deadline-secs` is not set. Chosen
@@ -763,6 +767,9 @@ fn main() {
                     ext.custom_chain.genesis().config.clone().into_rsp()
                 };
 
+                let submission_budget =
+                    ConcurrencyBudget::new(ext.max_concurrent_proof_submissions);
+
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
                     chunk_storage_dyn.clone(),
                     storage.clone(),
@@ -772,6 +779,7 @@ fn main() {
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
                 .receipt_hook(ChunkReceiptHook::new(chunk_storage_dyn.clone()))
+                .concurrency_budget(submission_budget.clone())
                 .retry(RetryConfig::default());
 
                 // NOTE: the account prover still assembles its batch-range
@@ -808,6 +816,7 @@ fn main() {
                     batch_storage_dyn.clone(),
                     batch_proofs.clone(),
                 ))
+                .concurrency_budget(submission_budget)
                 .retry(RetryConfig::default());
 
                 // Dev/test escape hatch: use zkaleido NativeHost instead of
@@ -1174,6 +1183,10 @@ pub struct AdditionalConfig {
     /// `DEFAULT_SP1_DEADLINE_SECS`).
     #[arg(long, required = false)]
     pub sp1_proof_deadline_secs: Option<u64>,
+
+    /// Maximum concurrent EE chunk + account proof submissions.
+    #[arg(long, default_value_t = DEFAULT_MAX_CONCURRENT_PROOF_SUBMISSIONS)]
+    pub max_concurrent_proof_submissions: NonZeroUsize,
 
     /// btcio writer fee policy: `bitcoind`, `fixed`, or `mempool`.
     #[cfg(feature = "sequencer")]

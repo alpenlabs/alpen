@@ -362,6 +362,7 @@ def main(argv: list[str]) -> int:
             ol_block_time_ms=1000,
             dev_track_latest_epoch=True,
             batch_sealing_block_count=5,
+            max_concurrent_proof_submissions=2,
         ),
         "el_ol_checkpoint_sync": EeOLCheckpointSyncEnv(pre_generate_blocks=110),
     }

@@ -12,12 +12,13 @@
 
 use std::sync::Arc;
 
+use alloy_primitives::Bytes;
 use alpen_ee_common::{
     BatchId, BatchProver, ChunkStatus, ChunkStorage, Proof, ProofGenerationStatus, ProofId,
 };
 use async_trait::async_trait;
 use strata_paas::{ProverError as PaasError, ProverHandle, TaskStatus};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use super::{
     spec_acct::AcctSpec, spec_chunk::ChunkSpec, BatchTask, ChunkTask, EeBatchProofDbManager,
@@ -112,9 +113,13 @@ impl BatchProver for PaasBatchProver {
             Ok(TaskStatus::PermanentFailure { error }) => {
                 Ok(ProofGenerationStatus::Failed { reason: error })
             }
-            Ok(TaskStatus::Pending)
-            | Ok(TaskStatus::Proving { .. })
-            | Ok(TaskStatus::TransientFailure { .. }) => Ok(ProofGenerationStatus::Pending),
+            Ok(TaskStatus::Pending) => {
+                self.report_blocking_chunk_failures(batch_id).await;
+                Ok(ProofGenerationStatus::Pending)
+            }
+            Ok(TaskStatus::Proving { .. }) | Ok(TaskStatus::TransientFailure { .. }) => {
+                Ok(ProofGenerationStatus::Pending)
+            }
             Err(PaasError::TaskNotFound(_)) => Ok(ProofGenerationStatus::NotStarted),
             Err(e) => {
                 warn!(%batch_id, %e, "acct_handle.get_status failed");
@@ -125,5 +130,47 @@ impl BatchProver for PaasBatchProver {
 
     async fn get_proof(&self, proof_id: ProofId) -> eyre::Result<Option<Proof>> {
         Ok(self.batch_proofs.get_proof_by_id(proof_id))
+    }
+}
+
+impl PaasBatchProver {
+    async fn report_blocking_chunk_failures(&self, batch_id: BatchId) {
+        let chunk_ids = match self.chunk_storage.get_batch_chunks(batch_id).await {
+            Ok(Some(chunk_ids)) => chunk_ids,
+            Ok(None) => return,
+            Err(e) => {
+                warn!(%batch_id, %e, "failed to inspect batch chunks while account proof is pending");
+                return;
+            }
+        };
+
+        for chunk_id in chunk_ids {
+            let task = ChunkTask(chunk_id);
+            match self.chunk_handle.get_receipt(&task) {
+                Ok(Some(_)) => continue,
+                Ok(None) => {}
+                Err(e) => {
+                    warn!(%batch_id, %task, %e, "failed to inspect chunk receipt while account proof is pending");
+                    continue;
+                }
+            }
+
+            match self.chunk_handle.get_status(&task) {
+                Ok(TaskStatus::PermanentFailure { error }) => {
+                    let task_key = Bytes::from(Vec::<u8>::from(task));
+                    error!(
+                        %batch_id,
+                        chunk_task = %task,
+                        %task_key,
+                        %error,
+                        "account proof is blocked by a permanently failed chunk proof; manual reset required"
+                    );
+                }
+                Ok(_) | Err(PaasError::TaskNotFound(_)) => {}
+                Err(e) => {
+                    warn!(%batch_id, %task, %e, "failed to inspect chunk task while account proof is pending");
+                }
+            }
+        }
     }
 }
