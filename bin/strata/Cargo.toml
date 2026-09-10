@@ -23,8 +23,6 @@ debug-utils = [
   "strata-ol-sequencer?/debug-utils",
 ]
 prover = [
-  "dep:strata-ol-state-support-types",
-  "dep:strata-ol-stf-v1",
   "dep:strata-paas",
   "dep:strata-proofimpl-checkpoint",
   "dep:strata-proofimpl-predicate-keys",
@@ -76,10 +74,8 @@ strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
 strata-ol-state-provider = { workspace = true, optional = true }
-strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
-strata-ol-stf-v1 = { workspace = true, optional = true }
 strata-ol-tx-types-v1.workspace = true
 strata-paas = { workspace = true, optional = true }
 strata-predicate.workspace = true
