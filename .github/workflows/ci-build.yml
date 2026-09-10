@@ -20,6 +20,7 @@ on:
       - "docker/strata-checkpoint-sync/**"
       - "docker/strata-signer/**"
       - "docker/strata-datatool/**"
+      - "docker/strata-dbtool/**"
       - "provers/sp1/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -44,6 +45,10 @@ on:
         default: true
       strata_datatool:
         description: "Build strata-datatool"
+        type: boolean
+        default: true
+      strata_dbtool:
+        description: "Build strata-dbtool (maintenance CLI, not a service)"
         type: boolean
         default: true
       ref:
@@ -116,6 +121,7 @@ jobs:
           SEL_CHECKPOINT_SYNC: ${{ inputs.strata_checkpoint_sync }}
           SEL_STRATA_SIGNER: ${{ inputs.strata_signer }}
           SEL_STRATA_DATATOOL: ${{ inputs.strata_datatool }}
+          SEL_STRATA_DBTOOL: ${{ inputs.strata_dbtool }}
         run: |
           # New architecture images only — pushed to shared ECR account.
           #
@@ -133,9 +139,10 @@ jobs:
             "strata":                 {"public_repo":"strata"},
             "strata-checkpoint-sync": {"public_repo":"strata-checkpoint-sync","private":false},
             "strata-signer":          {"public_repo":""},
-            "strata-datatool":        {"public_repo":""}
+            "strata-datatool":        {"public_repo":""},
+            "strata-dbtool":          {"public_repo":""}
           }'
-          ALL='["strata","strata-checkpoint-sync","strata-signer","strata-datatool"]'
+          ALL='["strata","strata-checkpoint-sync","strata-signer","strata-datatool","strata-dbtool"]'
 
           if [ "$EVENT" != "workflow_dispatch" ]; then
             # Scheduled / push builds every program.
@@ -148,6 +155,7 @@ jobs:
             if [ "$SEL_CHECKPOINT_SYNC" = "true" ]; then SEL+=( '"strata-checkpoint-sync"' ); fi
             if [ "$SEL_STRATA_SIGNER" = "true" ];   then SEL+=( '"strata-signer"' ); fi
             if [ "$SEL_STRATA_DATATOOL" = "true" ]; then SEL+=( '"strata-datatool"' ); fi
+            if [ "$SEL_STRATA_DBTOOL" = "true" ];   then SEL+=( '"strata-dbtool"' ); fi
             PROGRAMS="[$(IFS=,; echo "${SEL[*]}")]"
           fi
 
