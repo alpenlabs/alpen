@@ -349,13 +349,14 @@ fn assert_terminal_commitment_matches(
     Ok(())
 }
 
-/// Replays epoch blocks to produce DA state diff bytes, accumulated logs, and
-/// the terminal header.
+/// Replays epoch blocks to produce the checkpoint's OL-originated DA diff,
+/// accumulated logs, and terminal header.
 ///
 /// Loads the OL state at the previous terminal block, wraps it in
-/// `DaAccumulatingState` to intercept mutations, then re-executes every block
-/// in the epoch. The DA blob is extracted from the accumulating layer and the
-/// logs are collected from each block's execution output.
+/// `DaAccumulatingState`, then re-executes every block only through its
+/// pre-drain phase. The resulting diff covers OL transaction effects but
+/// deliberately excludes terminal ASM effects, which reconstruction derives
+/// independently by replaying the epoch's L1 manifests.
 fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
     summary: &EpochSummary,

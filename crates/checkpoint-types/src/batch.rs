@@ -23,7 +23,7 @@ pub struct EpochSummary {
     /// If this is the genesis epoch, then this is all zero.
     prev_terminal: L2BlockCommitment,
 
-    /// The new L1 block that was submitted in the terminal block.
+    /// The latest L1 block incorporated into OL state by the end of this epoch.
     new_l1: L1BlockCommitment,
 
     /// The final state root of the epoch.
