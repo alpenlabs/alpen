@@ -345,6 +345,10 @@ fn process(v: &[u32]) {
 
 **Avoid heap allocation** in pure library crates. Prefer stack allocation and avoid unnecessary `Arc`ing.
 
+Borrow values for inspection, consume them when ownership is required, and use `&mut`
+for in-place updates. Avoid unconditional clones, temporary collections, repeated encoding
+buffers, and `Arc` without an actual sharing requirement.
+
 **Avoid absolute paths**. There's even a clippy lint for that that will error in CI `clippy::absolute_paths`.
 
 **Naming conventions**:
@@ -352,22 +356,68 @@ fn process(v: &[u32]) {
 - Files: `snake_case`
 - Serde fields: `snake_case`
 - Variables: verbose, descriptive names
+- Functions: precise verbs for work; bare noun accessors for cheap field access
+- Conversions: `as_` for cheap borrowed views, `to_` for allocating conversions, and
+  `with_` for builder-style methods
 
 **Documentation**:
 - Use active voice, third-person indicative mood
 - Brief first paragraph (single sentence summary)
 - Additional paragraphs for details
 - Use doclinks: `[`SomeType`]` instead of `` `SomeType` ``
+- Document non-obvious invariants, ordering requirements, preconditions, and design
+  rationale. Explain why the code exists instead of restating what it does.
 
 **Import symbols** with `use` statements at the top of the file instead of inline qualified paths.
+
+Implement `Default` only when the type has a meaningful domain default; use fixtures or
+generators for arbitrary test values. Add `const` only when compile-time use is meaningful
+and intended as an API guarantee.
+
+### Design and API Boundaries
+
+- Give each component a focused responsibility. Keep protocol and pure processing logic
+  independent of RPC, persistence, orchestration, and runtime policy.
+- Express dependencies through narrow capability or context traits. Prefer existing state
+  accessor traits over concrete state implementations, and keep concrete databases and
+  services in the integration layer.
+- Keep binaries focused on loading configuration, opening resources, setting up
+  observability, and launching reusable library services. Put substantive RPC,
+  synchronization, processing, and service implementations in library crates.
+- Do not expose `pub` fields on nontrivial domain structs. Keep fields and implementation
+  details private, then expose constructors, accessors, borrowed views, and domain
+  operations that preserve invariants and hide storage or serialization wrappers. Public
+  fields are appropriate only for deliberately transparent data carriers with no invariants.
+- Reuse authoritative protocol algorithms, validation, assembly, codecs, and test helpers.
+  Factor repeated behavior at the layer that owns it instead of reimplementing it at call
+  sites.
+- Keep constructors to field assembly and basic sanity checks. Use explicitly named
+  initialization functions for substantial work or I/O.
+- Use typed identifiers and domain values internally, converting them to strings only at
+  presentation boundaries. Avoid accepting independent arguments that can form an
+  incoherent state.
+- Separate user configuration from network and protocol parameters. Derive settings from
+  their authoritative source instead of duplicating constants or asking users to configure
+  inferable values. Low-level crates own their configuration types and must not depend on
+  the top-level node configuration.
+- Declare dependency versions in the workspace root and inherit them with
+  `workspace = true`.
 
 ### Error Handling
 
 | Context | Approach |
 |---------|----------|
-| Internal sanity checks | `unwrap()` / `expect("reason")` |
+| Invalid input or recoverable failure | Return `Result` with structured variants |
+| Expected absence | Return `Option`; do not invent a sentinel or default value |
+| Violated internal invariant or programming bug | `assert!`, `unwrap()`, or `expect("specific invariant")` |
 | Library errors | `enum Error` / `struct Error` with `thiserror` |
-| Application errors | `anyhow` for context propagation |
+| Application boundary errors | `anyhow` for context propagation |
+
+Panics identify bugs or violated internal assumptions, never normal user or runtime errors.
+Document panicking conditions in a `# Panics` section on public APIs. Preserve useful error
+distinctions at abstraction boundaries; do not collapse unrelated failures into opaque
+strings or catch-all variants. Error messages should describe the failure without adding a
+redundant `error` prefix.
 
 ```rust
 // Library error
@@ -387,6 +437,14 @@ fn main() -> anyhow::Result<()> {
 }
 ```
 
+### Async and Concurrency
+
+- Never perform blocking I/O or other blocking work on an async executor thread. Use the
+  async API or isolate the work with the runtime's blocking-task facility.
+- Do not hold a lock guard across an `.await` point.
+- Keep worker state owned by the worker. Expose commands and status through a handle rather
+  than sharing the worker's mutable internals behind locks.
+
 ### Logging (Observability)
 
 Use structured logging with `tracing`. Always include relevant context as fields.
@@ -395,7 +453,7 @@ Use structured logging with `tracing`. Always include relevant context as fields
 | Level | Usage |
 |-------|-------|
 | `error!` | Unrecoverable errors, requires immediate attention |
-| `warn!` | Recoverable issues, potential problems |
+| `warn!` | Unexpected, actionable conditions where processing can continue |
 | `info!` | Significant events (startup, connections, milestones) |
 | `debug!` | Detailed information for debugging |
 | `trace!` | Very verbose, step-by-step execution |
@@ -421,6 +479,10 @@ info!(batch_id = ?batch_id, foo = %foo, "processing batch");
 
 Avoid adding ad hoc `component` fields to logs when the module path or surrounding spans already provide enough context.
 
+Expected lag, graceful shutdown, irrelevant traffic, and rejected untrusted input should
+not produce repetitive warnings. Keep pure processing free of operational logging when the
+caller can report the outcome with better context.
+
 **Spans**: Any function with significant work should create a span when it improves correlation. Prefer the span name and module path for context, and only add a `component` field when it adds signal beyond the existing metadata:
 ```rust
 #[tracing::instrument(fields(component = "asm_stf"))]
@@ -442,6 +504,7 @@ fn process_block(block: &Block) -> Result<()> {
 | Protocol data structures | SSZ | `ssz_rs`, custom `.ssz` files |
 | On-chain envelope payloads | `strata-codec` | `strata-codec` |
 | Private proof interfaces | `rkyv` | `rkyv` (zero-copy) |
+| Non-protocol persistent data | CBOR | `ciborium` |
 | Human-readable/config | JSON/TOML | `serde` |
 
 **SSZ** is used for consensus data structures due to:
@@ -453,7 +516,19 @@ fn process_block(block: &Block) -> Result<()> {
 
 **`rkyv`** provides zero-copy deserialization for proof guest programs where performance matters.
 
+Use distinct domain or runtime types and wire or storage types when those roles have
+different fields or invariants. Use the boundary's designated compact codec for nested
+message or log bodies when the boundary already provides framing. Do not introduce new
+Borsh persistence formats.
+
 ## Git Best Practices
+
+### Pull Requests
+
+Before filling out or opening a pull request, read and follow
+[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md), including its
+self-review, testing, documentation, and AI-use disclosure checklist. Keep PRs focused and
+independently reviewable; split unrelated restructuring or migrations into separate PRs.
 
 ### Commit Message Standards
 
@@ -534,6 +609,11 @@ Best practices:
 - Test public API behavior, not implementation details
 - Use descriptive test names: `test_deposit_with_invalid_amount_fails`
 - Prefer `assert_eq!` over `assert!` for better error messages
+- Keep unit tests independent of external processes; use functional tests for running-node
+  behavior
+- Exercise production assembly or encoding paths together with verification or decoding
+- Reuse common fixtures, environment-readiness checks, and high-level wait helpers
+- Test repository behavior rather than re-testing guarantees of upstream libraries
 
 ### Functional Tests
 
