@@ -590,7 +590,7 @@ fn make_block_with_gam_tx(
 ) -> OLBlockV1 {
     let header = OLBlockHeaderV1::new(
         0,
-        0.into(),
+        BlockFlagsV1::zero(),
         slot,
         epoch,
         parent,

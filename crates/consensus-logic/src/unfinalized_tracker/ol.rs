@@ -189,7 +189,7 @@ mod tests {
         let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).expect("empty tx segment"));
         let header = OLBlockHeaderV1::new(
             1_000 + slot,
-            BlockFlagsV1::from(0),
+            BlockFlagsV1::zero(),
             slot,
             0,
             parent,

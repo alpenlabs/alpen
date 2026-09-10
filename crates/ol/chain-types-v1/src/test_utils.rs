@@ -64,7 +64,11 @@ pub fn manifests_strategy() -> impl Strategy<Value = Option<OLAsmManifestContain
 pub fn ol_block_header_strategy() -> impl Strategy<Value = OLBlockHeaderV1> {
     (
         any::<u64>(),
-        any::<u16>().prop_map(BlockFlagsV1::from),
+        any::<bool>().prop_map(|is_terminal| {
+            let mut flags = BlockFlagsV1::zero();
+            flags.set_is_terminal(is_terminal);
+            flags
+        }),
         any::<Slot>(),
         any::<Epoch>(),
         ol_block_id_strategy(),
