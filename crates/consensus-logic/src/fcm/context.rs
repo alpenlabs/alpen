@@ -12,10 +12,46 @@ use crate::{
     unfinalized_tracker::UnfinalizedOLBlockSource,
 };
 
+/// A local dependency that prevents a block execution verdict.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecutionDeferral {
+    /// Parent execution or canonical L1/ASM data is not ready.
+    Dependency,
+    /// A local storage read failed and must be retried with backoff.
+    Storage,
+}
+
+/// Distinguishes invalid blocks from blocks waiting for local execution data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockExecutionOutcome {
+    Accepted,
+    Deferred(ExecutionDeferral),
+    Rejected,
+}
+
+/// Distinguishes authenticated stored blocks from retryable and rejected inputs.
+#[derive(Debug)]
+pub enum BlockValidationOutcome {
+    /// The stored block inputs match currently available canonical data.
+    Authenticated,
+    /// Canonical data or another local dependency is not ready yet.
+    Deferred(ExecutionDeferral),
+    /// Available canonical data proves that the stored block inputs are invalid.
+    Rejected(anyhow::Error),
+}
+
 /// Chain execution operations required by FCM.
 #[async_trait]
 pub trait ChainController: Send + Sync {
-    async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()>;
+    async fn try_exec_block(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockExecutionOutcome>;
+    /// Authenticates stored unfinalized inputs before restoring fork choice.
+    async fn validate_block_inputs(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockValidationOutcome>;
     async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()>;
     async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()>;
 }
@@ -29,6 +65,13 @@ pub trait CsmStatusReader: Send + Sync {
 /// Storage operations required by FCM.
 #[async_trait]
 pub trait FcmStorage: UnfinalizedOLBlockSource {
+    /// Reads a bounded status page to refill the in-memory retry queue.
+    async fn scan_block_statuses(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, BlockStatus)>>;
+
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool>;
 
     async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;

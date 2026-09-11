@@ -3,6 +3,7 @@
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
+use strata_db_types::DbResult;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
@@ -17,6 +18,15 @@ use crate::{OLBlockExecutionOutput, WorkerResult};
 /// tested with mock implementations. All methods should be blocking operations
 /// as the worker runs on a dedicated thread pool.
 pub trait ChainWorkerContext: Send + Sync + 'static {
+    /// Returns the configured depth beyond which L1 reorgs are unsupported.
+    fn l1_reorg_safe_depth(&self) -> u32;
+
+    /// Reads the canonical Bitcoin tip, which may lead ASM materialization.
+    fn canonical_l1_tip_height(&self) -> DbResult<Option<u32>>;
+
+    /// Resolves the uncached canonical ID then reads its ASM-generated manifest.
+    fn canonical_manifest(&self, height: u32) -> DbResult<Option<AsmManifest>>;
+
     /// Returns the runtime parameters used for OL STF execution.
     fn runtime_params(&self) -> OLRuntimeParams;
 

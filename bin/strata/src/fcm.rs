@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use strata_chain_worker::ChainWorkerHandle;
+use strata_chain_worker::{ChainWorkerHandle, WorkerError};
 use strata_consensus_logic::{
-    ChainController, CsmStatusReader, FcmContext, FcmServiceHandle, FcmStartupReconciler,
-    FcmStorage,
+    BlockExecutionOutcome, BlockValidationOutcome, ChainController, CsmStatusReader,
+    ExecutionDeferral, FcmContext, FcmServiceHandle, FcmStartupReconciler, FcmStorage,
     ol_mmr_reconcile::{
         OLMmrReconcileResult, OLMmrReconcileTarget, reconcile_ol_mmr_index_to_target,
     },
@@ -25,6 +25,7 @@ use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
+use tracing::warn;
 
 use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
 
@@ -34,6 +35,37 @@ struct StrataFcmContext {
     chain_worker: Arc<ChainWorkerHandle>,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     status_channel: Arc<StatusChannel>,
+}
+
+enum WorkerFailureOutcome {
+    Deferred(ExecutionDeferral),
+    Rejected(anyhow::Error),
+}
+
+fn classify_worker_failure(
+    block: OLBlockCommitment,
+    error: WorkerError,
+) -> anyhow::Result<WorkerFailureOutcome> {
+    match error {
+        WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_) => Ok(
+            WorkerFailureOutcome::Deferred(ExecutionDeferral::Dependency),
+        ),
+        WorkerError::ManifestPending { height, reason } => {
+            warn!(%block, height, ?reason, "deferring unauthenticated ASM manifest");
+            Ok(WorkerFailureOutcome::Deferred(
+                ExecutionDeferral::Dependency,
+            ))
+        }
+        WorkerError::ManifestStorage(err) => {
+            warn!(%block, %err, "canonical manifest storage unavailable");
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        }
+        error @ WorkerError::StfExecution(_) => {
+            warn!(%block, %error, "rejecting invalid block inputs");
+            Ok(WorkerFailureOutcome::Rejected(error.into()))
+        }
+        error => Err(error.into()),
+    }
 }
 
 impl StrataFcmContext {
@@ -56,9 +88,36 @@ impl StrataFcmContext {
 
 #[async_trait]
 impl ChainController for StrataFcmContext {
-    async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()> {
-        self.chain_worker.try_exec_block(block).await?;
-        Ok(())
+    async fn try_exec_block(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockExecutionOutcome> {
+        match self.chain_worker.try_exec_block(block).await {
+            Ok(()) => Ok(BlockExecutionOutcome::Accepted),
+            Err(error) => match classify_worker_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockExecutionOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(_) => Ok(BlockExecutionOutcome::Rejected),
+            },
+        }
+    }
+
+    async fn validate_block_inputs(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockValidationOutcome> {
+        match self.chain_worker.validate_block_inputs(block).await {
+            Ok(()) => Ok(BlockValidationOutcome::Authenticated),
+            Err(error) => match classify_worker_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockValidationOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(error) => {
+                    Ok(BlockValidationOutcome::Rejected(error))
+                }
+            },
+        }
     }
 
     async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()> {
@@ -106,6 +165,17 @@ impl UnfinalizedOLBlockSource for StrataFcmContext {
 
 #[async_trait]
 impl FcmStorage for StrataFcmContext {
+    async fn scan_block_statuses(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, BlockStatus)>> {
+        self.storage
+            .ol_block()
+            .scan_block_statuses_async(after, limit)
+            .await
+    }
+
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
         self.storage
             .ol_block()
@@ -237,3 +307,6 @@ pub(crate) fn start(
         nodectx.executor().clone(),
     ))
 }
+
+#[cfg(test)]
+mod tests;

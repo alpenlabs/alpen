@@ -7,28 +7,33 @@
 //! block of the epoch creates, and in a single-block epoch no earlier block
 //! has created that row.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, slice::from_ref, sync::Mutex};
 
 use strata_acct_types::BitcoinAmount;
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_asm_common::AsmManifest;
+use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::errors::DbError;
+use strata_db_types::{DbResult, errors::DbError};
 use strata_identifiers::{
-    Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId, SubjectId,
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+    SubjectId, WtxidsRoot,
 };
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
-use strata_ol_stf_v1::test_utils::{
-    EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
-    epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
-    make_deposit_manifest_for_account, make_genesis_state,
+use strata_ol_stf_v1::{
+    BlockComponents, BlockInfo,
+    test_utils::{
+        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT,
+        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
+        epoch_runner_seed_accounts as seed_accounts, execute_block,
+        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state, to_ol_block,
+    },
 };
 
 use crate::{
-    WorkerError, WorkerResult, output::OLBlockExecutionOutput, state::exec_block,
-    traits::ChainWorkerContext,
+    ManifestPendingReason, WorkerError, WorkerResult, output::OLBlockExecutionOutput,
+    provenance::validate_manifests, state::exec_block, traits::ChainWorkerContext,
 };
 
 /// A [`ChainWorkerContext`] that enforces the OL state indexing DB's write
@@ -36,7 +41,12 @@ use crate::{
 /// errors unless some block of that epoch had its indexing writes applied
 /// first ([`Self::store_block_output`]), mirroring `set_epoch_commitment` on
 /// the sled-backed store.
+#[derive(Default)]
 struct OrderEnforcingContext {
+    manifests: HashMap<u32, AsmManifest>,
+    tip: Option<u32>,
+    depth: u32,
+    read_failure: bool,
     /// Blocks served to [`ChainWorkerContext::fetch_block`].
     blocks: HashMap<OLBlockId, OLBlockV1>,
     /// Headers served to [`ChainWorkerContext::fetch_header`].
@@ -54,6 +64,19 @@ struct OrderEnforcingContext {
 }
 
 impl ChainWorkerContext for OrderEnforcingContext {
+    fn l1_reorg_safe_depth(&self) -> u32 {
+        self.depth
+    }
+    fn canonical_l1_tip_height(&self) -> DbResult<Option<u32>> {
+        Ok(self.tip)
+    }
+    fn canonical_manifest(&self, height: u32) -> DbResult<Option<AsmManifest>> {
+        if self.read_failure {
+            return Err(DbError::Other("injected read failure".into()));
+        }
+        Ok(self.manifests.get(&height).cloned())
+    }
+
     fn runtime_params(&self) -> OLRuntimeParams {
         OLRuntimeParams::test_default()
     }
@@ -214,7 +237,12 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         *genesis_header.state_root(),
     );
 
+    let canonical_manifest = terminal_block.body().manifests().unwrap().manifests()[0].clone();
     let ctx = OrderEnforcingContext {
+        manifests: HashMap::from([(canonical_manifest.height(), canonical_manifest)]),
+        tip: Some(100),
+        depth: 1,
+        read_failure: false,
         blocks: HashMap::from([(*terminal_commitment.blkid(), terminal_block)]),
         headers: HashMap::from([(*genesis_commitment.blkid(), genesis_header)]),
         states: HashMap::from([(genesis_commitment, pre_epoch_state)]),
@@ -237,4 +265,200 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         &[epoch],
         "epoch data merged before the summary was stored"
     );
+}
+
+fn manifest_context(manifests: &[AsmManifest]) -> OrderEnforcingContext {
+    OrderEnforcingContext {
+        manifests: manifests
+            .iter()
+            .map(|mf| (mf.height(), mf.clone()))
+            .collect(),
+        tip: Some(100),
+        depth: 6,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn full_manifest_authentication_covers_ids_roots_and_ordered_log_bytes() {
+    let original = AsmManifest::new(
+        2,
+        L1BlockId::from(Buf32::from([1; 32])),
+        WtxidsRoot::from(Buf32::from([2; 32])),
+        vec![
+            AsmLogEntry::from_raw(vec![1, 2, 3]).unwrap(),
+            AsmLogEntry::from_raw(vec![4, 5]).unwrap(),
+        ],
+    )
+    .unwrap();
+    let ctx = manifest_context(from_ref(&original));
+    validate_manifests(&ctx, 1, from_ref(&original)).unwrap();
+    let mut variants = vec![
+        AsmManifest::new(
+            2,
+            L1BlockId::from(Buf32::from([9; 32])),
+            *original.wtxids_root(),
+            original.logs().to_vec(),
+        )
+        .unwrap(),
+        AsmManifest::new(
+            2,
+            *original.blkid(),
+            WtxidsRoot::from(Buf32::from([9; 32])),
+            original.logs().to_vec(),
+        )
+        .unwrap(),
+    ];
+    for logs in [
+        vec![],
+        original.logs()[..1].to_vec(),
+        original.logs().iter().cloned().rev().collect(),
+        vec![
+            AsmLogEntry::from_raw(vec![1, 2, 9]).unwrap(),
+            original.logs()[1].clone(),
+        ],
+        vec![
+            original.logs()[0].clone(),
+            original.logs()[1].clone(),
+            original.logs()[0].clone(),
+        ],
+    ] {
+        variants
+            .push(AsmManifest::new(2, *original.blkid(), *original.wtxids_root(), logs).unwrap());
+    }
+    for forged in variants {
+        assert!(matches!(
+            validate_manifests(&ctx, 1, &[forged]),
+            Err(WorkerError::ManifestPending {
+                reason: ManifestPendingReason::ContentMismatch,
+                ..
+            })
+        ));
+    }
+}
+
+#[test]
+fn provenance_checks_order_before_dependencies_and_exact_burial_boundary() {
+    let first = make_empty_manifest(2, 1);
+    let second = make_empty_manifest(3, 2);
+    let mut ctx = manifest_context(&[first.clone(), second.clone()]);
+    for malformed in [
+        vec![second.clone()],
+        vec![first.clone(), first.clone()],
+        vec![second.clone(), first.clone()],
+    ] {
+        assert!(matches!(
+            validate_manifests(&ctx, 1, &malformed),
+            Err(WorkerError::StfExecution(_))
+        ));
+    }
+    ctx.tip = None;
+    validate_manifests(&ctx, u32::MAX, &[]).unwrap();
+    assert!(matches!(
+        validate_manifests(&ctx, u32::MAX, from_ref(&first)),
+        Err(WorkerError::StfExecution(_))
+    ));
+    assert!(matches!(
+        validate_manifests(&ctx, 1, from_ref(&first)),
+        Err(WorkerError::ManifestPending {
+            reason: ManifestPendingReason::MissingTip,
+            ..
+        })
+    ));
+    ctx.tip = Some(6); // h=2 has five confirmations; six are required.
+    assert!(matches!(
+        validate_manifests(&ctx, 1, from_ref(&first)),
+        Err(WorkerError::ManifestPending {
+            reason: ManifestPendingReason::NotBuried,
+            ..
+        })
+    ));
+    ctx.tip = Some(7);
+    validate_manifests(&ctx, 1, from_ref(&first)).unwrap();
+    // The later manifest cannot pass just because the first one is buried.
+    assert!(matches!(
+        validate_manifests(&ctx, 1, &[first.clone(), second]),
+        Err(WorkerError::ManifestPending {
+            height: 3,
+            reason: ManifestPendingReason::NotBuried
+        })
+    ));
+    ctx.manifests.clear();
+    assert!(matches!(
+        validate_manifests(&ctx, 1, from_ref(&first)),
+        Err(WorkerError::ManifestPending {
+            reason: ManifestPendingReason::MissingManifest,
+            ..
+        })
+    ));
+    ctx.read_failure = true;
+    assert!(matches!(
+        validate_manifests(&ctx, 1, &[first]),
+        Err(WorkerError::ManifestStorage(_))
+    ));
+    ctx.tip = Some(0);
+    assert!(matches!(
+        validate_manifests(&ctx, 0, &[make_empty_manifest(1, 1)]),
+        Err(WorkerError::ManifestPending {
+            reason: ManifestPendingReason::NotBuried,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn forged_deposit_never_reaches_worker_persistence() {
+    for terminal in [false, true] {
+        let mut state = make_genesis_state();
+        let account = seed_accounts(&mut state);
+        let genesis = run_genesis(&mut state);
+        let parent_header = genesis.header().clone();
+        let parent = parent_header.compute_block_commitment();
+        let pre_state = state.clone().into_inner();
+        let canonical = make_empty_manifest(2, 7);
+        let deposit = make_deposit_manifest_for_account(
+            2,
+            7,
+            account,
+            SubjectId::from([1; 32]),
+            BitcoinAmount::try_from(100).unwrap(),
+        );
+        // Keep the real L1 ID and witness root: only the logs are forged.
+        let forged = AsmManifest::new(
+            2,
+            *canonical.blkid(),
+            *canonical.wtxids_root(),
+            deposit.logs().to_vec(),
+        )
+        .unwrap();
+        let components = BlockComponents::new_manifests(vec![forged]);
+        let components = if terminal {
+            components.as_terminal()
+        } else {
+            components
+        };
+        let completed = execute_block(
+            &mut state,
+            &BlockInfo::new(1_001, 1, 1),
+            Some(&parent_header),
+            components,
+        )
+        .unwrap();
+        let block = to_ol_block(&completed);
+        let commitment = block.header().compute_block_commitment();
+        let mut ctx = manifest_context(&[canonical]);
+        ctx.blocks.insert(*commitment.blkid(), block);
+        ctx.headers.insert(*parent.blkid(), parent_header);
+        ctx.states.insert(parent, pre_state);
+        assert!(matches!(
+            exec_block(&ctx, OLRuntimeParams::test_default(), &commitment),
+            Err(WorkerError::ManifestPending {
+                reason: ManifestPendingReason::ContentMismatch,
+                ..
+            })
+        ));
+        assert!(ctx.indexed_epochs.lock().unwrap().is_empty());
+        assert!(ctx.stored_summaries.lock().unwrap().is_empty());
+        assert!(ctx.merged_epochs.lock().unwrap().is_empty());
+    }
 }
