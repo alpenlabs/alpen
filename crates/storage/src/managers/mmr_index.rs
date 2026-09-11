@@ -20,6 +20,9 @@ use tokio::task::spawn_blocking;
 
 use crate::ops::mmr_index::MmrIndexOps;
 
+/// Bounds transaction memory while reducing the 307,050-leaf genesis prefill to 38 writes.
+const REPEATED_LEAF_CHUNK_SIZE: u64 = 8192;
+
 /// Retry behavior for optimistic CAS-style MMR updates.
 #[derive(Debug, Clone, Copy)]
 pub struct MmrIndexRetryConfig {
@@ -199,6 +202,102 @@ impl MmrIndexHandle {
         run_with_precondition_retries(self.max_retries, || {
             self.append_leaf_once_blocking(hash, None)
         })
+    }
+
+    /// Extends a height-indexed MMR with a repeated sentinel prefix.
+    ///
+    /// Returns without writing when the count already reaches `target_leaf_count`.
+    /// Otherwise, verifies the existing peaks commit to repeated `leaf_hash` leaves
+    /// before extending the prefix. Each chunk commits a complete prefix, allowing
+    /// startup to resume after a crash. Batching reduces STR-3703's roughly 614,000
+    /// per-leaf writes across the two genesis MMRs to tens of transactions.
+    ///
+    /// Requires a single writer during startup. Count and empty-slot preconditions
+    /// reject conflicting writes without retrying. Returns
+    /// [`DbError::MmrPrefillPrefixMismatch`] without writing if a peak is missing
+    /// or differs from the repeated prefix.
+    pub fn prefill_repeated_leaves_blocking(
+        &self,
+        leaf_hash: Hash,
+        target_leaf_count: u64,
+    ) -> DbResult<()> {
+        self.prefill_repeated_leaves_with_chunk_blocking(
+            leaf_hash,
+            target_leaf_count,
+            REPEATED_LEAF_CHUNK_SIZE,
+        )
+    }
+
+    /// Allows benchmarks to vary transaction size without changing the public API.
+    fn prefill_repeated_leaves_with_chunk_blocking(
+        &self,
+        leaf_hash: Hash,
+        target_leaf_count: u64,
+        chunk_size: u64,
+    ) -> DbResult<()> {
+        assert!(chunk_size > 0, "prefill chunk size must be positive");
+        let mut current = self.get_leaf_count_blocking()?;
+        if current >= target_leaf_count {
+            return Ok(());
+        }
+
+        // This is the same hash ladder as Mmr::new_repeated and write_plan's
+        // completed subtrees, including the node hasher's domain separation.
+        // Retain zero hashes too: they are valid stored nodes, not absent peaks.
+        let mut level_hashes = [leaf_hash.0; 64];
+        for height in 1..=target_leaf_count.ilog2() as usize {
+            let child = level_hashes[height - 1];
+            level_hashes[height] = Sha256Hasher::hash_node(child, child);
+        }
+        for peak in peak_positions(current) {
+            let expected = Hash::from(level_hashes[usize::from(peak.height())]);
+            if self.get_node_blocking(peak)? != Some(expected) {
+                return Err(DbError::MmrPrefillPrefixMismatch {
+                    mmr_id: self.mmr_id_bytes(),
+                    leaf_count: current,
+                });
+            }
+        }
+
+        while current < target_leaf_count {
+            let next = current + (target_leaf_count - current).min(chunk_size);
+            let mut batch = MmrBatchWrite::default();
+            let mmr_batch = batch.entry(self.mmr_id_bytes());
+            mmr_batch.set_expected_leaf_count(current);
+            mmr_batch.add_node_precond(LeafPos::new(current).to_node_pos(), None);
+
+            // At height h, exactly floor(count / 2^h) nodes are complete.
+            for height in 0..=next.ilog2() as u8 {
+                let start = current >> height;
+                let end = next >> height;
+                if start == end {
+                    break;
+                }
+                let hash = Hash::from(level_hashes[usize::from(height)]);
+                for index in start..end {
+                    mmr_batch.put_node(NodePos::new(height, index), hash);
+                }
+            }
+            mmr_batch.set_leaf_count(next);
+            self.ops.apply_update_blocking(batch)?;
+            current = next;
+        }
+        Ok(())
+    }
+
+    /// Extends the sentinel prefix on a blocking task.
+    ///
+    /// Applies the invariant and single-writer contract of
+    /// [`Self::prefill_repeated_leaves_blocking`].
+    pub async fn prefill_repeated_leaves(
+        &self,
+        leaf_hash: Hash,
+        target_leaf_count: u64,
+    ) -> DbResult<()> {
+        let this = self.clone();
+        spawn_blocking(move || this.prefill_repeated_leaves_blocking(leaf_hash, target_leaf_count))
+            .await
+            .map_err(DbError::from)?
     }
 
     /// Appends a caller-provided leaf hash and stores its preimage bytes.
@@ -805,8 +904,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
+    use sled::Config;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_store_sled::{SledBackend, SledDbConfig};
     use strata_merkle::{Mmr, Mmr64B32, MmrState};
+    use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
+    use tempfile::tempdir;
+    use typed_sled::SledDb;
 
     use super::*;
 
@@ -818,6 +924,242 @@ mod tests {
         let handle = crate::test_runtime_handle();
         let backend = get_test_sled_backend();
         MmrIndexManager::new(handle, backend.mmr_index_db())
+    }
+
+    fn append_sentinels(handle: &MmrIndexHandle, count: u64) {
+        for _ in 0..count {
+            handle
+                .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)
+                .expect("append sentinel");
+        }
+    }
+
+    fn snapshot_nodes(handle: &MmrIndexHandle, count: u64) -> Vec<(NodePos, Option<Hash>)> {
+        iter_prune_after_positions(0, count)
+            .map(|pos| (pos, handle.get_node_blocking(pos).expect("read node")))
+            .collect()
+    }
+
+    fn assert_mmr_equivalent(expected: &MmrIndexHandle, actual: &MmrIndexHandle, count: u64) {
+        assert_eq!(expected.get_leaf_count_blocking().unwrap(), count);
+        assert_eq!(actual.get_leaf_count_blocking().unwrap(), count);
+        let size = expected.get_mmr_size_blocking().unwrap();
+        assert_eq!(actual.get_mmr_size_blocking().unwrap(), size);
+
+        // Enumerate every completed node independently of the batching level walk.
+        let mut visited = 0;
+        for pos in iter_prune_after_positions(0, count) {
+            let expected_hash = expected.get_node_blocking(pos).unwrap();
+            assert!(expected_hash.is_some(), "missing reference node {pos:?}");
+            assert_eq!(
+                actual.get_node_blocking(pos).unwrap(),
+                expected_hash,
+                "node {pos:?} at leaf count {count}"
+            );
+            visited += 1;
+        }
+        assert_eq!(visited, size);
+        let state = actual.get_state_at_blocking(count).unwrap();
+        assert_eq!(state, expected.get_state_at_blocking(count).unwrap());
+        if count > 0 {
+            for index in [0, count / 2, count - 1] {
+                let proof = actual.generate_proof_at(index, count).unwrap();
+                assert_eq!(proof, expected.generate_proof_at(index, count).unwrap());
+                let leaf = actual.get_leaf_blocking(index).unwrap().unwrap();
+                assert!(<Mmr64B32 as Mmr<Sha256Hasher>>::verify(
+                    &state, &proof, &leaf.0
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn test_prefill_repeated_leaves_matches_per_leaf_appends() {
+        for count in [
+            0, 1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 100, 8191, 8192, 8193, 20000,
+        ] {
+            let expected = setup_handle();
+            let actual = setup_handle();
+            append_sentinels(&expected, count);
+            actual
+                .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, count)
+                .unwrap();
+            assert_mmr_equivalent(&expected, &actual, count);
+
+            let distinct = Hash::from([0x42; 32]);
+            expected.append_leaf_blocking(distinct).unwrap();
+            actual.append_leaf_blocking(distinct).unwrap();
+            assert_mmr_equivalent(&expected, &actual, count + 1);
+        }
+    }
+
+    #[test]
+    fn test_prefill_repeated_leaves_resumes_per_leaf_prefix() {
+        let expected = setup_handle();
+        append_sentinels(&expected, 20000);
+        for prefix in [1, 5, 8192, 12345] {
+            let actual = setup_handle();
+            append_sentinels(&actual, prefix);
+            actual
+                .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, 20000)
+                .unwrap();
+            assert_mmr_equivalent(&expected, &actual, 20000);
+        }
+    }
+
+    #[test]
+    fn test_prefill_repeated_leaves_noops_at_or_above_target() {
+        let handle = setup_handle();
+        let count = 17;
+        handle
+            .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, count)
+            .unwrap();
+        let before = snapshot_nodes(&handle, count);
+        for target in [count, count - 1] {
+            handle
+                .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, target)
+                .unwrap();
+            assert_eq!(handle.get_leaf_count_blocking().unwrap(), count);
+            assert_eq!(snapshot_nodes(&handle, count), before);
+        }
+        // A completed prefill remains a no-op after real manifests arrive.
+        handle.append_leaf_blocking(Hash::from([0x42; 32])).unwrap();
+        handle
+            .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, count)
+            .unwrap();
+        assert_eq!(handle.get_leaf_count_blocking().unwrap(), count + 1);
+    }
+
+    #[test]
+    fn test_prefill_repeated_leaves_rejects_prefix_mismatch_without_writes() {
+        let handle = setup_handle();
+        append_sentinels(&handle, 1);
+        handle.append_leaf_blocking(Hash::from([0x42; 32])).unwrap();
+        append_sentinels(&handle, 1);
+        assert_prefill_prefix_rejected(&handle);
+    }
+
+    fn assert_prefill_prefix_rejected(handle: &MmrIndexHandle) {
+        let before = snapshot_nodes(handle, 100);
+        let error = handle
+            .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, 100)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            DbError::MmrPrefillPrefixMismatch { mmr_id, leaf_count: 3 }
+                if mmr_id == MmrId::Asm.to_bytes()
+        ));
+        assert_eq!(handle.get_leaf_count_blocking().unwrap(), 3);
+        assert_eq!(snapshot_nodes(handle, 100), before);
+    }
+
+    #[test]
+    fn test_prefill_repeated_leaves_rejects_missing_peak_without_writes() {
+        let manager = setup_manager();
+        let handle = manager.get_handle(MmrId::Asm);
+        append_sentinels(&handle, 3);
+        let mut batch = MmrBatchWrite::default();
+        batch
+            .entry(MmrId::Asm.to_bytes())
+            .del_node(NodePos::new(1, 0));
+        manager.apply_update_blocking(batch).unwrap();
+        assert_prefill_prefix_rejected(&handle);
+    }
+
+    #[test]
+    fn test_prefill_repeated_leaves_resumes_at_chunk_boundary() {
+        let expected = setup_handle();
+        let actual = setup_handle();
+        let target = REPEATED_LEAF_CHUNK_SIZE * 5 / 2;
+        append_sentinels(&expected, target);
+        actual
+            .prefill_repeated_leaves_blocking(
+                MMR_SENTINEL_DUMMY_LEAF_HASH,
+                REPEATED_LEAF_CHUNK_SIZE,
+            )
+            .unwrap();
+        actual
+            .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, target)
+            .unwrap();
+        assert_mmr_equivalent(&expected, &actual, target);
+    }
+
+    #[test]
+    #[ignore = "compares on-disk genesis prefill transaction sizes"]
+    fn bench_prefill_chunk_sizes_307050_leaves() {
+        let expected_state =
+            <Mmr64B32 as Mmr<Sha256Hasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF_HASH.0, 307_050);
+        for chunk_size in [8192, 32768, 131072] {
+            let directory = tempdir().unwrap();
+            let db = Config::new().path(directory.path()).open().unwrap();
+            let db = Arc::new(SledDb::new(db).unwrap());
+            let backend = SledBackend::new(db, SledDbConfig::production()).unwrap();
+            let handle = MmrIndexManager::new(crate::test_runtime_handle(), backend.mmr_index_db())
+                .get_handle(MmrId::Asm);
+
+            let start = Instant::now();
+            handle
+                .prefill_repeated_leaves_with_chunk_blocking(
+                    MMR_SENTINEL_DUMMY_LEAF_HASH,
+                    307_050,
+                    chunk_size,
+                )
+                .unwrap();
+            let duration = start.elapsed();
+            println!("batched 307050 leaves, chunk {chunk_size}: {duration:?}");
+            assert_eq!(handle.get_leaf_count_blocking().unwrap(), 307_050);
+            assert_eq!(
+                handle.get_state_at_blocking(307_050).unwrap(),
+                expected_state
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "measures on-disk genesis prefill against per-leaf transactions"]
+    fn bench_prefill_307050_leaves() {
+        let batched_dir = tempdir().unwrap();
+        let per_leaf_dir = tempdir().unwrap();
+        let setup = |path| {
+            let db = Config::new().path(path).open().unwrap();
+            let db = Arc::new(SledDb::new(db).unwrap());
+            let backend = SledBackend::new(db, SledDbConfig::production()).unwrap();
+            MmrIndexManager::new(crate::test_runtime_handle(), backend.mmr_index_db())
+                .get_handle(MmrId::Asm)
+        };
+        let batched = setup(batched_dir.path());
+        let per_leaf = setup(per_leaf_dir.path());
+        let start = Instant::now();
+        batched
+            .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, 307_050)
+            .unwrap();
+        let batched_duration = start.elapsed();
+        println!("batched 307050 leaves: {batched_duration:?}");
+
+        let start = Instant::now();
+        append_sentinels(&per_leaf, 30_705);
+        let sample_duration = start.elapsed();
+        if sample_duration * 10 > Duration::from_secs(15 * 60) {
+            let extrapolated = sample_duration * 10;
+            println!("per-leaf 30705 leaves: {sample_duration:?}");
+            println!("per-leaf 307050 leaves (x10 extrapolation): {extrapolated:?}");
+            println!(
+                "extrapolated speedup: {:.2}x",
+                extrapolated.as_secs_f64() / batched_duration.as_secs_f64()
+            );
+        } else {
+            append_sentinels(&per_leaf, 307_050 - 30_705);
+            let per_leaf_duration = start.elapsed();
+            println!("per-leaf 307050 leaves: {per_leaf_duration:?}");
+            println!(
+                "speedup: {:.2}x",
+                per_leaf_duration.as_secs_f64() / batched_duration.as_secs_f64()
+            );
+            assert_eq!(
+                per_leaf.get_state_at_blocking(307_050).unwrap(),
+                batched.get_state_at_blocking(307_050).unwrap()
+            );
+        }
     }
 
     #[test]
