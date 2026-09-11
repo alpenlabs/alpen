@@ -8280,6 +8280,8 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
+ "strata-ol-stf-v1",
+ "strata-ol-tx-policy",
  "strata-ol-tx-types-v1",
  "strata-paas",
  "strata-predicate",
@@ -9411,6 +9413,7 @@ dependencies = [
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-stf-v1",
+ "strata-ol-tx-policy",
  "strata-ol-tx-types-v1",
  "strata-predicate",
  "strata-primitives",
@@ -9572,6 +9575,7 @@ dependencies = [
  "serde",
  "ssz",
  "strata-acct-types",
+ "strata-bridge-params",
  "strata-csm-types",
  "strata-db-store-sled",
  "strata-db-types",
@@ -9583,6 +9587,7 @@ dependencies = [
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-stf-v1",
+ "strata-ol-tx-policy",
  "strata-ol-tx-types-v1",
  "strata-predicate",
  "strata-service",
@@ -9818,6 +9823,20 @@ dependencies = [
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "tracing",
+]
+
+[[package]]
+name = "strata-ol-tx-policy"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-asm-checkpoint-types",
+ "strata-bridge-params",
+ "strata-codec",
+ "strata-ol-chain-types-v1",
+ "strata-ol-stf-v1",
+ "strata-ol-tx-types-v1",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

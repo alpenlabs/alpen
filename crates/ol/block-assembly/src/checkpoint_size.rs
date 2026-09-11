@@ -12,18 +12,10 @@
 
 use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
 use strata_ol_chain_types_v1::OLLog;
+use strata_ol_tx_policy::MAX_TOTAL_LOG_PAYLOAD_BYTES;
 
 /// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
 pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
-
-/// Maximum total OL log payload size per checkpoint (16 KiB per SPS-ol-chain-structures).
-///
-/// Set well below [`MAX_CHECKPOINT_PAYLOAD_SIZE`] to reserve room for the
-/// checkpoint's other components (e.g. state diff), by bounding logs in
-/// aggregate rather than lowering `MAX_LOG_PAYLOAD_LEN` (per-log) or
-/// `MAX_OL_LOGS_PER_CHECKPOINT`. It is intentionally separate from,
-/// and inconsistent with, those two limits.
-pub(crate) const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
 
 /// Fixed overhead in the `CheckpointPayload` SSZ encoding.
 ///
