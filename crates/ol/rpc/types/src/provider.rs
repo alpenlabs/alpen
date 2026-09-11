@@ -19,7 +19,7 @@ use strata_ol_mempool::OLMempoolResult;
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_primitives::epoch::EpochCommitment;
-use strata_primitives::OLBlockCommitment;
+use strata_primitives::{L1BlockId, OLBlockCommitment};
 use strata_status::OLSyncStatus;
 
 /// Provides all data access needed by the OL RPC server.
@@ -96,6 +96,12 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     /// Get the L1 block manifest at a given height.
     async fn get_block_manifest_at_height(&self, height: L1Height)
         -> DbResult<Option<AsmManifest>>;
+
+    /// Returns the canonical L1 block ID at a given height.
+    async fn get_canonical_l1_blockid_at_height(
+        &self,
+        height: L1Height,
+    ) -> DbResult<Option<L1BlockId>>;
 
     /// Get current OL chain sync status.
     fn get_ol_sync_status(&self) -> Option<OLSyncStatus>;

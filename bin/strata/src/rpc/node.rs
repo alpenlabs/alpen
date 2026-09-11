@@ -903,26 +903,37 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         {
             let l1_reference = RpcCheckpointL1Ref::new(obs.l1_commitment, obs.txid, obs.wtxid);
             let observed_height = obs.l1_commitment.height();
-            let Some(tip) = self.provider.get_l1_tip_height().await.map_err(db_error)? else {
-                return Err(internal_error(
-                    "L1 tip height unavailable while constructing checkpoint info",
-                ));
-            };
-            if tip < observed_height {
-                return Err(internal_error(format!(
-                    "L1 tip height {tip} is below observed checkpoint height {observed_height}",
-                )));
-            }
-
-            let is_finalized = self
+            let canonical_observation = self
                 .provider
-                .get_ol_sync_status()
-                .is_some_and(|sync_status| sync_status.finalized_epoch().epoch() >= epoch);
+                .get_canonical_l1_blockid_at_height(observed_height)
+                .await
+                .map_err(db_error)?
+                .is_some_and(|blockid| blockid == *obs.l1_commitment.blkid());
 
-            if is_finalized {
-                RpcCheckpointConfStatus::Finalized { l1_reference }
+            if !canonical_observation {
+                RpcCheckpointConfStatus::Pending
             } else {
-                RpcCheckpointConfStatus::Confirmed { l1_reference }
+                let Some(tip) = self.provider.get_l1_tip_height().await.map_err(db_error)? else {
+                    return Err(internal_error(
+                        "L1 tip height unavailable while constructing checkpoint info",
+                    ));
+                };
+                if tip < observed_height {
+                    return Err(internal_error(format!(
+                        "L1 tip height {tip} is below observed checkpoint height {observed_height}",
+                    )));
+                }
+
+                let is_finalized = self
+                    .provider
+                    .get_ol_sync_status()
+                    .is_some_and(|sync_status| sync_status.finalized_epoch().epoch() >= epoch);
+
+                if is_finalized {
+                    RpcCheckpointConfStatus::Finalized { l1_reference }
+                } else {
+                    RpcCheckpointConfStatus::Confirmed { l1_reference }
+                }
             }
         } else {
             RpcCheckpointConfStatus::Pending
