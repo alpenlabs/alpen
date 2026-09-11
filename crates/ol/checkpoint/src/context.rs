@@ -8,12 +8,12 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types_v1::OLStateV1;
-use strata_ol_stf_v1::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
+
+use crate::compute_epoch_da;
 
 pub(crate) type StateDiffRaw = Vec<u8>;
 
@@ -371,25 +371,15 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     let ol_state_raw = ctx
         .get_ol_state(prev_terminal)?
         .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
-    let ol_state = MemoryStateBaseLayer::new(ol_state_raw);
-
-    let mut da_state = DaAccumulatingState::new(ol_state);
-
-    let logs = execute_block_batch_predrain(
-        &mut da_state,
+    let da_output = compute_epoch_da(
+        ol_state_raw,
         &epoch_blocks,
         &prev_terminal_header,
         runtime_params,
-    )
-    .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
+    )?;
+    let (da_bytes, logs) = da_output.into_parts();
 
     let terminal_header = epoch_blocks.ensured_last().header().clone();
-
-    // Extract the DA blob from the accumulating layer.
-    let da_bytes = da_state
-        .take_completed_epoch_da_blob()
-        .map_err(|e| anyhow::anyhow!("DA accumulation failed: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("no DA blob produced after epoch replay"))?;
 
     Ok((da_bytes, logs, terminal_header))
 }
