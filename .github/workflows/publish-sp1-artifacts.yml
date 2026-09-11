@@ -93,6 +93,8 @@ jobs:
       - name: Build SP1 guest artifacts
         env:
           ZKVM_MOCK: "0"
+          BUILD_ELF: "1"
+          BUILD_VKEY: "1"
         run: |
           case "${ZKVM_MOCK,,}" in
             1|true)
@@ -106,7 +108,7 @@ jobs:
         id: summarize
         env:
           ARTIFACT_DIR: artifacts/sp1
-          CACHE_ROOT: provers/sp1
+          ELF_ROOT: provers/sp1/generated
           DEPLOY_ENV: ${{ inputs.env }}
           ALPEN_REF: ${{ github.ref }}
           ALPEN_SHA: ${{ steps.resolve-sha.outputs.sha }}

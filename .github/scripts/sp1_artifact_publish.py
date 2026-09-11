@@ -76,9 +76,9 @@ def cmd_validate() -> None:
 
 
 def cmd_summarize() -> None:
-    """Env: CACHE_ROOT, ARTIFACT_DIR, DEPLOY_ENV, ALPEN_REF, ALPEN_SHA,
+    """Env: ELF_ROOT, ARTIFACT_DIR, DEPLOY_ENV, ALPEN_REF, ALPEN_SHA,
     SP1_VERSION, ZKVM_MOCK, GITHUB_STEP_SUMMARY."""
-    cache_root = Path(os.environ["CACHE_ROOT"])
+    elf_root = Path(os.environ["ELF_ROOT"])
     artifact_dir = Path(os.environ["ARTIFACT_DIR"])
     env = validate_env(os.environ["DEPLOY_ENV"])
     alpen_ref = os.environ["ALPEN_REF"]
@@ -94,9 +94,8 @@ def cmd_summarize() -> None:
     predicates: dict[str, str] = {}
     vk_hashes: dict[str, str] = {}
     for guest, key in GUESTS:
-        guest_cache = cache_root / guest / "cache"
         for suffix in ("elf", "predicate", "vk-hash"):
-            src = guest_cache / f"{guest}.{suffix}"
+            src = elf_root / f"{guest}.{suffix}"
             require_file(src)
             (artifact_dir / src.name).write_bytes(src.read_bytes())
 
