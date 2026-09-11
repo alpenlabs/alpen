@@ -6,7 +6,7 @@ use thiserror::Error;
 #[cfg(feature = "proxies")]
 use tokio::task::JoinError;
 
-use crate::mmr_index::{LeafPos, NodePos};
+use crate::mmr_index::{LeafPos, NodePos, RawMmrId};
 
 #[derive(Clone, Debug, Error)]
 pub enum DbError {
@@ -101,6 +101,10 @@ pub enum DbError {
     /// MMR node not found at the given tree position.
     #[error("MMR node not found at position {0:?}")]
     MmrNodeNotFound(NodePos),
+
+    /// Existing peaks do not commit to the requested repeated sentinel prefix.
+    #[error("MMR {mmr_id:?} does not have the repeated prefill prefix at {leaf_count} leaves")]
+    MmrPrefillPrefixMismatch { mmr_id: RawMmrId, leaf_count: u64 },
 
     /// MMR index batch precondition failed.
     #[error("MMR precondition failed for {mmr_id:?}: {detail}")]

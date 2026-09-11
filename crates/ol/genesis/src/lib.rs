@@ -66,12 +66,9 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     let genesis_ts = params.genesis_params().header().timestamp;
     let genesis_info = BlockInfo::new_genesis(genesis_ts);
 
-    // Do not include the genesis manifest in OL state's ASM manifest accumulator.
-    //
-    // ASM worker stores genesis manifest for data consumers, but intentionally starts the
-    // external/global ASM MMR at `genesis_l1_height + 1` (first post-genesis manifest at leaf 0).
-    // If OL genesis appends the genesis manifest here, OL state's MMR gets an extra leading leaf
-    // and ledger-reference proofs become permanently off-by-one against the global ASM MMR.
+    // Both in-state and DB-side MMRs are height-indexed: sentinel leaves occupy
+    // indices 0..=genesis_l1_height, so the manifest for L1 height h lands at leaf h.
+    // OL genesis must not append the genesis manifest or shift that index by one.
     // Genesis is the epoch terminal for epoch 0 (it carries no manifests, but
     // terminality is set explicitly via the header flag).
     let genesis_components = BlockComponents::new_manifests(vec![]).as_terminal();

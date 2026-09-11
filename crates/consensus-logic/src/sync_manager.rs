@@ -157,13 +157,6 @@ pub fn spawn_asm_worker(
 /// `target_count` entries. It is used to align DB-side MMR leaf indices with
 /// L1 block heights, mirroring the in-memory OL state initialization.
 fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result<()> {
-    let current = handle.get_leaf_count_blocking()?;
-    if current >= target_count {
-        return Ok(());
-    }
-
-    for _ in current..target_count {
-        handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
-    }
+    handle.prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, target_count)?;
     Ok(())
 }
