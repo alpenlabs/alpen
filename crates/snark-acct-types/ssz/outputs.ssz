@@ -1,8 +1,8 @@
 import strata_acct_types
 import strata_predicate
 
-MAX_TRANSFERS = 2 << 15
-MAX_MESSAGES = 2 << 15
+MAX_TRANSFERS = 1 << 16
+MAX_MESSAGES = 1 << 16
 
 ### Transfer of native asset to an OL account
 class OutputTransfer(Container):
