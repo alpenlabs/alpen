@@ -2,7 +2,9 @@ use std::fmt::Display;
 
 use jsonrpsee::types::ErrorObjectOwned;
 pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
+use serde_json::json;
 use strata_ol_mempool::OLMempoolError;
+use strata_ol_tx_policy::TxLogBudgetError;
 use tracing::*;
 
 /// Custom error code for mempool capacity-related errors.
@@ -39,6 +41,20 @@ pub(crate) fn invalid_params_error(msg: impl Into<String>) -> ErrorObjectOwned {
     ErrorObjectOwned::owned(INVALID_PARAMS_CODE, msg.into(), None::<()>)
 }
 
+/// Creates an RPC rejection with the exceeded resource and its limit.
+fn resource_limit_error(
+    msg: impl Into<String>,
+    resource: &str,
+    actual: usize,
+    limit: usize,
+) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(
+        INVALID_PARAMS_CODE,
+        msg.into(),
+        Some(json!({"resource": resource, "actual": actual, "limit": limit})),
+    )
+}
+
 /// Creates an RPC error for data this node role does not serve (e.g. OL block
 /// bodies on a checkpoint-sync node).
 pub(crate) fn not_available_on_node_error(msg: impl Into<String>) -> ErrorObjectOwned {
@@ -62,6 +78,12 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
             ErrorObjectOwned::owned(MEMPOOL_CAPACITY_ERROR_CODE, err.to_string(), None::<()>)
         }
         // Validation errors that are user's fault
+        OLMempoolError::LogBudget(TxLogBudgetError::LogCount { actual, limit }) => {
+            resource_limit_error(err.to_string(), "log_count", *actual, *limit)
+        }
+        OLMempoolError::LogBudget(TxLogBudgetError::LogPayloadBytes { actual, limit }) => {
+            resource_limit_error(err.to_string(), "log_payload_bytes", *actual, *limit)
+        }
         OLMempoolError::AccountDoesNotExist { .. }
         | OLMempoolError::AccountTypeMismatch { .. }
         | OLMempoolError::TransactionTooLarge { .. }
@@ -74,7 +96,8 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
             ErrorObjectOwned::owned(NOT_AVAILABLE_ON_NODE_CODE, err.to_string(), None::<()>)
         }
         // Internal errors
-        OLMempoolError::AccountStateAccess(_)
+        OLMempoolError::LogBudget(TxLogBudgetError::Encoding(_))
+        | OLMempoolError::AccountStateAccess(_)
         | OLMempoolError::TransactionNotFound(_)
         | OLMempoolError::Database(_)
         | OLMempoolError::Serialization(_)

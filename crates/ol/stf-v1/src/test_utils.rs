@@ -1587,6 +1587,11 @@ impl FixtureGenesisOutput {
 }
 
 impl FixtureBlockOutput {
+    /// Returns the logs emitted by block execution.
+    pub fn logs(&self) -> &[OLLog] {
+        self.output.outputs().logs()
+    }
+
     /// Returns the completed block.
     pub fn completed_block(&self) -> &CompletedBlock {
         self.output.completed_block()
