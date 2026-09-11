@@ -57,9 +57,9 @@ pub use block::{
 pub use da::{EpochDaReplayError, apply_da_epoch, verify_epoch_with_diff};
 pub use strata_ol_state_types::OLSpecId;
 pub use strata_ol_stf_v1::{
-    BasicExecContext, BlockComponents, BlockContext, BlockExecOutputs, BlockInfo, CompletedBlock,
-    ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecError, ExecOutputBuffer,
-    ExecResult, ManifestProcessingOutcome, TxExecContext,
+    BasicExecContext, BlockComponents, BlockContext, BlockExecOutputs, BlockInfo,
+    BridgeMessageRejection, CompletedBlock, ConstructBlockOutput, EpochExecExpectations, EpochInfo,
+    ExecError, ExecOutputBuffer, ExecResult, ManifestProcessingOutcome, TxExecContext,
 };
 
 #[cfg(test)]

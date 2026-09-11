@@ -8,11 +8,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use metrics::{counter, gauge};
 use ssz::{Decode, Encode};
 use strata_acct_types::AccountId;
+use strata_bridge_params::BridgeParams;
 use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
-use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types::{IStateAccessor, OLSpecId};
+use strata_ol_tx_policy::check_tx_log_budget;
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_service::ServiceState;
 use strata_storage::NodeStorage;
@@ -57,6 +59,9 @@ pub(crate) struct MempoolContext<P: StateProvider> {
     /// Mempool configuration.
     pub(crate) config: OLMempoolConfig,
 
+    /// Network parameters shared with the STF's bridge-message classification.
+    pub(crate) bridge_params: BridgeParams,
+
     /// Storage backend for database operations (transactions, blocks).
     pub(crate) storage: Arc<NodeStorage>,
 
@@ -68,11 +73,13 @@ impl<P: StateProvider> MempoolContext<P> {
     /// Create new mempool context with explicit provider.
     pub(crate) fn new(
         config: OLMempoolConfig,
+        bridge_params: BridgeParams,
         storage: Arc<NodeStorage>,
         provider: Arc<P>,
     ) -> MempoolContext<P> {
         MempoolContext {
             config,
+            bridge_params,
             storage,
             provider,
         }
@@ -83,10 +90,15 @@ impl MempoolContext<OLStateManagerProviderImpl> {
     /// Create new mempool context.
     ///
     /// Extracts the state provider from storage.
-    pub(crate) fn new_from_nodestorage(config: OLMempoolConfig, storage: Arc<NodeStorage>) -> Self {
+    pub(crate) fn new_from_nodestorage(
+        config: OLMempoolConfig,
+        bridge_params: BridgeParams,
+        storage: Arc<NodeStorage>,
+    ) -> Self {
         let provider = Arc::new(OLStateManagerProviderImpl::new(storage.ol_state().clone()));
         Self {
             config,
+            bridge_params,
             storage,
             provider,
         }
@@ -134,11 +146,17 @@ impl<P: StateProvider> MempoolServiceState<P> {
     #[expect(dead_code, reason = "another constructor is used")]
     pub(crate) async fn new(
         config: OLMempoolConfig,
+        bridge_params: BridgeParams,
         storage: Arc<NodeStorage>,
         provider: Arc<P>,
         tip: OLBlockCommitment,
     ) -> OLMempoolResult<Self> {
-        let ctx = Arc::new(MempoolContext::new(config, storage, provider));
+        let ctx = Arc::new(MempoolContext::new(
+            config,
+            bridge_params,
+            storage,
+            provider,
+        ));
         Self::new_with_context(ctx, tip).await
     }
 
@@ -222,9 +240,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             // Note: this plays nice with sequence number validation because we don't allow gaps
             // (sequence numbers and timestamps are guaranteed to be compatible). When we move to a
             // different priority ordering, this should be revised.
-            if let Err(e) =
-                validate_transaction(txid, &tx, &self.state_accessor, &self.account_state)
-            {
+            if let Err(e) = self.validate_admission(txid, &tx) {
                 // Skip invalid transaction and remove from DB
                 warn!(
                     txid = ?tx_data.txid(),
@@ -387,6 +403,16 @@ impl<P: StateProvider> MempoolServiceState<P> {
         None
     }
 
+    /// Checks whether a submitted or restored transaction can enter the mempool.
+    fn validate_admission(&self, txid: OLTxId, tx: &OLTransactionV1) -> OLMempoolResult<()> {
+        validate_transaction(txid, tx, &self.state_accessor, &self.account_state)?;
+
+        // TODO(STR-4086): use the spec scheduled for the snapshot state's epoch.
+        let spec = OLSpecId::V1;
+        check_tx_log_budget(spec, tx, &self.ctx.bridge_params)?;
+        Ok(())
+    }
+
     /// Add a transaction to the mempool.
     ///
     /// Returns the transaction ID. Idempotent - returns existing txid if duplicate.
@@ -427,9 +453,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             return Err(e);
         }
 
-        // Validate transaction using STF validation helpers
-        // This checks: slot bounds, account existence, sequence number validity
-        if let Err(e) = validate_transaction(txid, &tx, &self.state_accessor, &self.account_state) {
+        if let Err(e) = self.validate_admission(txid, &tx) {
             if let Some(reason) = OLMempoolRejectReason::from_error(&e) {
                 self.update_stats_on_reject(reason);
             }
@@ -876,19 +900,201 @@ fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::Buf32;
+    use strata_acct_types::{BitcoinAmount, MsgPayload};
+    use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32};
+    use strata_ol_params::BridgeParams;
+    use strata_ol_stf_v1::test_utils::make_withdrawal_payload;
+    use strata_ol_tx_policy::TxLogBudgetError;
+    use strata_snark_acct_types::{
+        LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate, UpdateOperationData,
+        UpdateOutputs,
+    };
 
     use super::*;
     use crate::test_utils::{
         create_test_account_id_with, create_test_block_commitment,
         create_test_constraints_with_slots, create_test_context,
         create_test_generic_tx_for_account, create_test_generic_tx_with_size,
-        create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
-        create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
-        create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
+        create_test_ol_state_for_tip, create_test_snark_tx_from_update,
+        create_test_snark_tx_with_seq_no, create_test_snark_tx_with_seq_no_and_slots,
+        create_test_state_provider, create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
     };
     use crate::types::OLMempoolConfig;
     use crate::{DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH};
+
+    fn withdrawal_update(count: usize) -> OLTransactionV1 {
+        let mut descriptor = vec![0x42; 81];
+        descriptor[0] = 0; // Valid OP_RETURN BOSD with 80 data bytes.
+        let payload = MsgPayload::from_bytes(
+            BitcoinAmount::try_from(BridgeParams::default().denomination()).unwrap(),
+            make_withdrawal_payload(descriptor),
+        )
+        .unwrap();
+        let outputs = UpdateOutputs::new_empty().with_messages(vec![
+            OutputMessage::new(
+                BRIDGE_GATEWAY_ACCT_ID,
+                payload
+            );
+            count
+        ]);
+        let operation = UpdateOperationData::new(
+            0,
+            ProofState::new(Buf32::zero(), 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            outputs,
+            vec![],
+        );
+        create_test_snark_tx_from_update(
+            create_test_account_id_with(1),
+            SnarkAccountUpdate::new(operation, vec![]),
+            create_test_constraints_with_slots(None, None),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_oversized_log_replacement_preserves_pending_update() {
+        let tip = create_test_block_commitment(100);
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            Arc::new(create_test_state_provider(tip)),
+        ));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
+        let original_id = state.add_transaction(withdrawal_update(172)).await.unwrap();
+
+        let error = state
+            .add_transaction(withdrawal_update(173))
+            .await
+            .expect_err("an update exceeding an empty checkpoint's log budget must be rejected");
+        assert!(matches!(
+            error,
+            OLMempoolError::LogBudget(TxLogBudgetError::LogPayloadBytes {
+                actual: 16_445,
+                limit: 16_383,
+            })
+        ));
+
+        let pending = state.handle_get_transactions(10).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].0, original_id);
+
+        // Reload through the service path to verify the rejected replacement was not persisted.
+        let mut reloaded = MempoolServiceState::new_with_context(state.ctx.clone(), tip)
+            .await
+            .unwrap();
+        reloaded.load_from_db().await.unwrap();
+        let pending = reloaded.handle_get_transactions(10).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].0, original_id);
+    }
+
+    #[tokio::test]
+    async fn test_log_budget_uses_configured_bridge_params() {
+        let tip = create_test_block_commitment(100);
+        let mut context = create_test_context(
+            OLMempoolConfig::default(),
+            Arc::new(create_test_state_provider(tip)),
+        );
+        // This network limbos the fixture's 81-byte descriptors, so they emit no logs.
+        context.bridge_params = BridgeParams::new_with_descriptor_limit(
+            BridgeParams::default().denomination(),
+            None,
+            21,
+        )
+        .unwrap();
+        let mut state = MempoolServiceState::new_with_context(Arc::new(context), tip)
+            .await
+            .unwrap();
+        let txid = state.add_transaction(withdrawal_update(173)).await.unwrap();
+        assert_eq!(state.handle_get_transactions(10).await.unwrap().len(), 1);
+
+        let mut reloaded = MempoolServiceState::new_with_context(state.ctx.clone(), tip)
+            .await
+            .unwrap();
+        reloaded.load_from_db().await.unwrap();
+        let pending = reloaded.handle_get_transactions(10).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].0, txid);
+    }
+
+    #[tokio::test]
+    async fn test_reload_removes_oversized_logs_and_successors() {
+        let tip = create_test_block_commitment(100);
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            Arc::new(create_test_state_provider(tip)),
+        ));
+        let independent = create_test_snark_tx_with_seq_no(2, 0);
+        let independent_id = independent.compute_txid();
+        let message = create_test_generic_tx_for_account(1);
+        let message_id = message.compute_txid();
+
+        // Bypass submission to simulate transactions stored before budget enforcement.
+        for (timestamp, tx) in [
+            withdrawal_update(173),
+            create_test_snark_tx_with_seq_no(1, 1),
+            independent,
+            create_test_snark_tx_with_seq_no(1, 2),
+            message,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            context
+                .storage
+                .mempool()
+                .put_tx(MempoolTxData::new(
+                    tx.compute_txid(),
+                    tx.as_ssz_bytes(),
+                    timestamp as u64,
+                ))
+                .unwrap();
+        }
+
+        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
+            .await
+            .unwrap();
+        state.load_from_db().await.unwrap();
+        let pending = state.handle_get_transactions(10).await.unwrap();
+        assert_eq!(
+            pending.iter().map(|(txid, _)| *txid).collect::<Vec<_>>(),
+            vec![independent_id, message_id]
+        );
+        let persisted = context.storage.mempool().get_all_txs().unwrap();
+        assert_eq!(
+            persisted
+                .iter()
+                .map(MempoolTxData::txid)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([independent_id, message_id])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_oversized_logs_do_not_enter_empty_mempool() {
+        let tip = create_test_block_commitment(100);
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            Arc::new(create_test_state_provider(tip)),
+        ));
+        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
+            .await
+            .unwrap();
+        assert!(matches!(
+            state.add_transaction(withdrawal_update(173)).await,
+            Err(OLMempoolError::LogBudget(
+                TxLogBudgetError::LogPayloadBytes { .. }
+            ))
+        ));
+        assert_eq!(state.handle_get_transactions(10).await.unwrap().len(), 0);
+        let mut reloaded = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
+        reloaded.load_from_db().await.unwrap();
+        assert_eq!(reloaded.handle_get_transactions(10).await.unwrap().len(), 0);
+    }
 
     #[tokio::test]
     async fn test_add_transaction() {

@@ -78,6 +78,7 @@ strata-ol-state-provider = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
+strata-ol-tx-policy.workspace = true
 strata-ol-tx-types-v1.workspace = true
 strata-paas = { workspace = true, optional = true }
 strata-predicate.workspace = true
@@ -121,6 +122,7 @@ strata-storage = { workspace = true, features = ["test-utils"] }
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }

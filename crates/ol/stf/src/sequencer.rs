@@ -11,10 +11,14 @@
 // per-block phases with epoch-level transaction processing.
 
 use strata_acct_types::{AccountId, TxEffects};
-use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1};
+use strata_ol_chain_types_v1::{
+    AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, SimpleWithdrawalIntentLogData,
+};
+use strata_ol_params::BridgeParams;
 use strata_ol_state_types::{IAccountState, IStateAccessorMut, OLSpecId, TxProofIndexer};
 use strata_ol_stf_v1::{
-    BasicExecContext, BlockContext, ExecResult, ManifestProcessingOutcome, TxExecContext,
+    BasicExecContext, BlockContext, BridgeMessageRejection, ExecResult, ManifestProcessingOutcome,
+    TxExecContext,
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
@@ -43,6 +47,18 @@ pub fn process_single_tx<S: IStateAccessorMut>(
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     dispatch_spec!(spec => process_single_tx(state, tx, context))
+}
+
+/// Parses and validates a bridge withdrawal under `spec`.
+///
+/// See [`strata_ol_stf_v1::parse_bridge_withdrawal`].
+pub fn parse_bridge_withdrawal(
+    spec: OLSpecId,
+    amount: u64,
+    data: &[u8],
+    bridge_params: &BridgeParams,
+) -> Result<SimpleWithdrawalIntentLogData, BridgeMessageRejection> {
+    dispatch_spec!(spec => parse_bridge_withdrawal(amount, data, bridge_params))
 }
 
 /// Checks a transaction's constraints against `state` under `spec`.

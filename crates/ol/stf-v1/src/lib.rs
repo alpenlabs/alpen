@@ -4,6 +4,7 @@ use strata_ol_state_types_v1 as _;
 
 mod account_processing;
 mod assembly;
+mod bridge_message;
 mod chain_processing;
 mod constants;
 mod context;
@@ -22,6 +23,7 @@ pub mod test_utils;
 mod tests;
 
 pub use assembly::*;
+pub use bridge_message::{BridgeMessageRejection, parse_bridge_withdrawal};
 pub use chain_processing::{process_block_start, process_epoch_initial};
 pub use constants::*;
 pub use context::{BasicExecContext, BlockContext, BlockInfo, EpochInfo, TxExecContext};

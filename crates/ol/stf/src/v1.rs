@@ -1,14 +1,16 @@
 //! The genesis OL rules, implemented by [`strata_ol_stf_v1`].
 
 use strata_acct_types::{AccountId, TxEffects};
-use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
+use strata_ol_chain_types_v1::{
+    AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, SimpleWithdrawalIntentLogData,
+};
 use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
-use strata_ol_params::OLRuntimeParams;
+use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_types::{IAccountState, IStateAccessorMut, TxProofIndexer};
 use strata_ol_stf_v1::{
-    self as v1, BasicExecContext, BlockComponents, BlockContext, CompletedBlock,
-    ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecResult, ManifestProcessingOutcome,
-    TxExecContext,
+    self as v1, BasicExecContext, BlockComponents, BlockContext, BridgeMessageRejection,
+    CompletedBlock, ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecResult,
+    ManifestProcessingOutcome, TxExecContext,
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
@@ -102,6 +104,14 @@ impl OLStfSpec for StfV1 {
         context: &TxExecContext<'_>,
     ) -> ExecResult<()> {
         v1::process_single_tx(state, tx, context)
+    }
+
+    fn parse_bridge_withdrawal(
+        amount: u64,
+        data: &[u8],
+        bridge_params: &BridgeParams,
+    ) -> Result<SimpleWithdrawalIntentLogData, BridgeMessageRejection> {
+        v1::parse_bridge_withdrawal(amount, data, bridge_params)
     }
 
     fn check_tx_constraints<S: IStateAccessorMut>(

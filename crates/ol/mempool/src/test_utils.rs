@@ -11,7 +11,7 @@ use proptest::test_runner::TestRunner;
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, Slot};
-use strata_ol_params::OLParams;
+use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{
@@ -378,7 +378,7 @@ pub(crate) fn create_test_context<P: StateProvider>(
             .expect("Failed to create test NodeStorage"),
     );
 
-    MempoolContext::new(config, test_storage, provider)
+    MempoolContext::new(config, BridgeParams::default(), test_storage, provider)
 }
 
 /// Create an InMemoryStateProvider with initial test state at the given tip.

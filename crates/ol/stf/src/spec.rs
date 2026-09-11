@@ -1,12 +1,15 @@
 //! The operations an OL rules version implements, and dispatch by spec.
 
 use strata_acct_types::{AccountId, TxEffects};
-use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
-use strata_ol_params::OLRuntimeParams;
+use strata_ol_chain_types_v1::{
+    AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, SimpleWithdrawalIntentLogData,
+};
+use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_types::{IAccountState, IStateAccessorMut, TxProofIndexer};
 use strata_ol_stf_v1::{
-    BasicExecContext, BlockComponents, BlockContext, CompletedBlock, ConstructBlockOutput,
-    EpochExecExpectations, EpochInfo, ExecResult, ManifestProcessingOutcome, TxExecContext,
+    BasicExecContext, BlockComponents, BlockContext, BridgeMessageRejection, CompletedBlock,
+    ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecResult, ManifestProcessingOutcome,
+    TxExecContext,
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
@@ -82,6 +85,12 @@ pub(crate) trait OLStfSpec {
         tx: &OLTransactionV1,
         context: &TxExecContext<'_>,
     ) -> ExecResult<()>;
+
+    fn parse_bridge_withdrawal(
+        amount: u64,
+        data: &[u8],
+        bridge_params: &BridgeParams,
+    ) -> Result<SimpleWithdrawalIntentLogData, BridgeMessageRejection>;
 
     fn check_tx_constraints<S: IStateAccessorMut>(
         constraints: &TxConstraintsV1,
