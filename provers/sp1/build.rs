@@ -21,8 +21,6 @@
 //! - **`CHECKPOINT_RUNTIME_PARAMS_PATH`** — path to the OL params (or bare OL runtime params) JSON
 //!   to bake into the checkpoint guest. Required whenever the guest is actually built, because the
 //!   params are part of what the ELF proves.
-//! - **`ZKVM_MOCK`** — set to `1`/`true` to build guests with recursive proof verification stubbed
-//!   out. Only for local runs and perf evaluation, never for anything published.
 //!
 //! # Features
 //!
@@ -52,7 +50,6 @@ const RUNTIME_PARAMS_PATH_VAR: &str = "CHECKPOINT_RUNTIME_PARAMS_PATH";
 fn main() {
     println!("cargo:rerun-if-env-changed=BUILD_ELF");
     println!("cargo:rerun-if-env-changed=BUILD_VKEY");
-    println!("cargo:rerun-if-env-changed=ZKVM_MOCK");
     println!("cargo:rerun-if-env-changed={RUNTIME_PARAMS_PATH_VAR}");
 
     // clippy only needs the crate to typecheck, so it never builds guests whatever is set.
@@ -82,7 +79,6 @@ fn build_guest(guest: &str) {
     let build_args = BuildArgs {
         output_directory: Some(GENERATED_DIR.to_owned()),
         elf_name: Some(format!("{guest}.elf")),
-        features: vec![verification_feature().to_owned()],
         // In the Docker build, override the guest's own Cargo workspace root with the Alpen
         // workspace root so Docker mounts the whole workspace and the guest can import Alpen
         // crates by relative path.
@@ -93,18 +89,6 @@ fn build_guest(guest: &str) {
         ..BuildArgs::default()
     };
     build_program_with_args(guest, build_args);
-}
-
-/// Picks the guest feature that decides whether recursive SP1 proof verification runs for real.
-fn verification_feature() -> &'static str {
-    if is_enabled("ZKVM_MOCK") {
-        println!(
-            "cargo:warning=ZKVM_MOCK is set: guest proof verification is a no-op, so the resulting ELF must never be used in production"
-        );
-        "mock-verify"
-    } else {
-        "zkvm-verify"
-    }
 }
 
 /// Bakes the OL runtime params into the checkpoint guest by generating the source file the guest

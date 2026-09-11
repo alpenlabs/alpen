@@ -20,9 +20,6 @@ BUILD_ELF=1 BUILD_VKEY=1 cargo build --release -p strata-sp1-guest-builder
 Add `--features docker-build` to compile the guests inside a pinned Docker image, which is what
 the artifact publishing workflow uses for reproducibility.
 
-Set `ZKVM_MOCK=1` to stub out recursive proof verification inside the guest. That is for local
-runs and perf evaluation only; artifacts built that way must never be published.
-
 ## Artifacts
 
 `generated/` is gitignored and survives `cargo clean`, so a build that skips the steps above leaves
