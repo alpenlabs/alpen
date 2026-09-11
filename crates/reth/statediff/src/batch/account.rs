@@ -17,7 +17,7 @@ use crate::{
 ///
 /// - `balance`: Counter (signed U256 delta, trimmed encoding)
 /// - `nonce`: Counter (signed delta, varint-encoded)
-/// - `code_hash`: Register (only changes on contract creation)
+/// - `code_hash`: Register (changes on contract creation and on EIP-7702 delegation set/clear)
 ///
 /// # Delta vs Full Value Replacement
 ///
@@ -43,7 +43,7 @@ pub struct AccountDiff {
     pub balance: DaCounter<CtrU256BySignedU256>,
     /// Nonce delta (signed, supports both increments and decrements).
     pub nonce: DaCounter<CtrU64BySignedVarInt>,
-    /// Code hash change (only on contract creation).
+    /// Code hash change (contract creation, or EIP-7702 delegation set/clear).
     pub code_hash: DaRegister<CodecB256>,
 }
 
@@ -124,8 +124,12 @@ impl AccountDiff {
         let nonce = nonce_delta_to_counter(nonce_delta);
 
         let code_hash = match orig_code_hash {
+            // Unchanged code: nothing to record.
             Some(oc) if oc == current.code_hash => DaRegister::new_unset(),
-            _ if current.code_hash == KECCAK_EMPTY => DaRegister::new_unset(),
+            // Newly created account with no code: empty is the default, no write needed.
+            None if current.code_hash == KECCAK_EMPTY => DaRegister::new_unset(),
+            // Code changed — including a clear back to empty (EIP-7702 delegation clearing),
+            // which must be recorded or DA reconstruction keeps the stale designator.
             _ => DaRegister::new_set(CodecB256(current.code_hash)),
         };
 
@@ -376,5 +380,52 @@ mod tests {
         ContextlessDaWrite::apply(&decoded, &mut snapshot).unwrap();
         assert_eq!(snapshot.balance, U256::from(999_000));
         assert_eq!(snapshot.nonce, 6);
+    }
+
+    #[test]
+    fn test_account_diff_code_hash_cleared_to_empty() {
+        // EIP-7702 delegation clearing: an existing account's code_hash goes from
+        // a non-empty designator back to empty. The diff must record the clear,
+        // else DA reconstruction keeps the stale designator and the state root
+        // diverges from the proven chunk tip.
+        let original = AccountSnapshot {
+            balance: U256::ZERO,
+            nonce: 1,
+            code_hash: B256::from([0x77u8; 32]),
+        };
+        let current = AccountSnapshot {
+            balance: U256::ZERO,
+            nonce: 2,
+            code_hash: KECCAK_EMPTY,
+        };
+
+        let diff =
+            AccountDiff::from_account_snapshot(&current, Some(&original), Address::ZERO).unwrap();
+
+        // The clear is recorded as an explicit set to empty, not dropped.
+        assert_eq!(diff.code_hash.new_value().map(|v| v.0), Some(KECCAK_EMPTY));
+
+        // Roundtrip + apply lands the snapshot on empty code.
+        let encoded = encode_to_vec(&diff).unwrap();
+        let decoded: AccountDiff = decode_buf_exact(&encoded).unwrap();
+        let mut snapshot = original.clone();
+        ContextlessDaWrite::apply(&decoded, &mut snapshot).unwrap();
+        assert_eq!(snapshot.code_hash, KECCAK_EMPTY);
+        assert_eq!(snapshot.nonce, 2);
+    }
+
+    #[test]
+    fn test_account_diff_created_empty_code_unset() {
+        // A newly created account with no code records no code_hash write — empty
+        // is the default, so the common EOA-funding case stays out of the blob.
+        let current = AccountSnapshot {
+            balance: U256::from(1000),
+            nonce: 0,
+            code_hash: KECCAK_EMPTY,
+        };
+
+        let diff = AccountDiff::from_account_snapshot(&current, None, Address::ZERO).unwrap();
+
+        assert!(diff.code_hash.new_value().is_none());
     }
 }
