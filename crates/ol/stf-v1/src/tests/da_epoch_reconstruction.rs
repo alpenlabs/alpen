@@ -1,5 +1,6 @@
-//! Reconstructing an epoch from its DA diff via [`apply_da_epoch`] must yield
-//! the same post-state root as direct block-by-block execution.
+//! Applying a checkpoint DA diff and then replaying its L1 ASM manifests via
+//! [`apply_da_epoch`] must yield the same post-state root as direct
+//! block-by-block execution.
 //!
 //! Covers a deposit manifest only, a snark account update only, both
 //! combined, and a bridge withdrawal. Each test builds a multi-block epoch
@@ -75,8 +76,9 @@ fn test_apply_da_epoch_snark_update_only() {
     assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);
 }
 
-/// A declared predicate rotation changes consensus account state, so the DA
-/// diff must carry it: if reconstruction misses the new VK, the roots diverge.
+/// A predicate rotation declared by an OL snark-account update changes consensus
+/// account state, so the checkpoint diff must carry it. This differs from an
+/// ASM-triggered rotation message, which manifest replay reconstructs.
 #[test]
 fn test_apply_da_epoch_snark_update_with_rotation() {
     let mut state = make_genesis_state();
@@ -329,7 +331,8 @@ fn build_snark_update(state: &MemoryStateBaseLayer, inbox_msg: &MessageEntry) ->
         .build(snark_id, make_state_root(2), vec![0u8; 32])
 }
 
-/// Reconstructs the epoch from its DA diff and returns the post-state root.
+/// Reconstructs the epoch from its checkpoint DA diff plus L1 ASM manifests and returns the
+/// post-state root.
 fn reconstruct_epoch(
     pre_epoch_state: &MemoryStateBaseLayer,
     genesis: &CompletedBlock,

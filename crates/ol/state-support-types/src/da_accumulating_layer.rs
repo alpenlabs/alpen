@@ -584,6 +584,8 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
     pending_epoch_diffs: VecDeque<OLStateDiffV1>,
 
     /// Completed epoch blobs waiting to be drained.
+    // TODO: Remove this queue unless a producer is introduced; it is initialized and read but
+    // never populated.
     pending_epoch_blobs: VecDeque<Vec<u8>>,
 
     /// Error captured while finalizing an epoch via set_cur_epoch.
@@ -640,6 +642,9 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     }
 
     /// Returns the next completed epoch DA blob, if any.
+    // TODO: Split queued completed-epoch draining from finalizing the current accumulator.
+    // Production checkpoint callers only finalize one pre-drain epoch, so combining both
+    // responsibilities behind an optional result obscures the interface contract.
     pub fn take_completed_epoch_da_blob(&mut self) -> Result<Option<Vec<u8>>, DaAccumulationError> {
         if let Some(err) = self.pending_epoch_error.take() {
             return Err(err);
