@@ -11,9 +11,9 @@ pub(crate) enum BroadcasterInputMessage {
     ///
     /// The fee bumper persists the [`L1TxStatus::Replaced`](strata_db_types::l1_broadcast::
     /// L1TxStatus::Replaced) status itself. This message exists so the service also drops its
-    /// in-memory copy: without it the service would keep probing the replaced txid, find it gone
-    /// from the mempool, re-publish it against its own replacement, and then write the stale
-    /// status back over the persisted one.
+    /// in-memory copy promptly. The database write-back path independently refuses to overwrite
+    /// `Replaced` and returns the authoritative row, so this notification is an optimization
+    /// rather than the correctness boundary.
     NotifyReplacedEntry { txid: Buf32 },
 }
 

@@ -20,8 +20,8 @@ pub(crate) async fn process_unbundled_entries(
     let mut pending: BTreeSet<u64> = unbundled.into_iter().collect();
 
     while let Some(&intent_idx) = pending.first() {
-        if !is_predecessor_bundled(ops, intent_idx).await? {
-            pending.insert(intent_idx - 1); // intent_idx - 1 is safe here as 0 is already checked
+        if let Some(predecessor_idx) = unbundled_predecessor(ops, intent_idx).await? {
+            pending.insert(predecessor_idx);
             continue;
         }
 
@@ -33,22 +33,14 @@ pub(crate) async fn process_unbundled_entries(
     Ok(vec![])
 }
 
-async fn is_predecessor_bundled(ops: &EnvelopeDataOps, idx: u64) -> anyhow::Result<bool> {
-    if idx == 0 {
-        return Ok(true);
+async fn unbundled_predecessor(ops: &EnvelopeDataOps, idx: u64) -> anyhow::Result<Option<u64>> {
+    for predecessor_idx in (0..idx).rev() {
+        let Some(entry) = ops.get_intent_by_idx_async(predecessor_idx).await? else {
+            continue;
+        };
+        return Ok((entry.status == IntentStatus::Unbundled).then_some(predecessor_idx));
     }
-
-    let prev_idx = idx - 1;
-    let Some(prev_entry) = ops.get_intent_by_idx_async(prev_idx).await? else {
-        bail!(
-            "inconsistent L1 writer DB: missing predecessor intent idx {prev_idx} before bundling idx {idx}"
-        );
-    };
-
-    match prev_entry.status {
-        IntentStatus::Bundled { .. } => Ok(true),
-        IntentStatus::Unbundled => Ok(false),
-    }
+    Ok(None)
 }
 
 async fn bundle_unbundled_intent(ops: &EnvelopeDataOps, intent_idx: u64) -> anyhow::Result<()> {
@@ -79,35 +71,19 @@ async fn bundle_unbundled_intent(ops: &EnvelopeDataOps, intent_idx: u64) -> anyh
     Ok(())
 }
 
-/// Retrieves unbundled intents since the beginning in ascending order with their intent indexes.
-/// This traverses backwards from latest index and breaks once it finds a bundled entry. The
-/// processing of unbundled entries [`process_unbundled_entries`] ensures that the entries are
-/// bundled *in order*.
+/// Retrieves every unbundled intent in ascending index order.
 pub(crate) fn get_initial_unbundled_entries(
     ops: &EnvelopeDataOps,
 ) -> anyhow::Result<Vec<PendingIntent>> {
-    let mut curr_idx = ops.get_next_intent_idx_blocking()?;
     let mut unbundled = Vec::new();
-
-    while curr_idx > 0 {
-        curr_idx -= 1;
-        if let Some(intent) = ops.get_intent_by_idx_blocking(curr_idx)? {
-            match intent.status {
-                IntentStatus::Unbundled => unbundled.push(curr_idx),
-                IntentStatus::Bundled { .. } => {
-                    // Bundled intent found, no more to scan
-                    break;
-                }
-            }
-        } else {
-            warn!(%curr_idx, "Could not find expected intent in db");
-            break;
+    for idx in 0..ops.get_next_intent_idx_blocking()? {
+        let Some(intent) = ops.get_intent_by_idx_blocking(idx)? else {
+            continue;
+        };
+        if intent.status == IntentStatus::Unbundled {
+            unbundled.push(idx);
         }
     }
-
-    // Reverse the items so that they are in ascending order of index
-    unbundled.reverse();
-
     Ok(unbundled)
 }
 
@@ -171,7 +147,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_predecessor_is_fatal_writer_db_inconsistency() {
+    async fn deleted_predecessor_does_not_block_later_intent() {
         let ops = get_envelope_ops();
         let (first_idx, first_entry) = put_unbundled_intent(&ops, 1);
         let (second_idx, _) = put_unbundled_intent(&ops, 2);
@@ -179,20 +155,24 @@ mod tests {
         ops.del_intent_entry_blocking(*first_entry.intent.commitment())
             .expect("test: delete predecessor intent");
 
-        let err = process_unbundled_entries(ops.as_ref(), vec![second_idx])
+        let pending = get_initial_unbundled_entries(ops.as_ref()).expect("test: startup scan");
+        assert_eq!(pending, [second_idx]);
+        process_unbundled_entries(ops.as_ref(), pending)
             .await
-            .expect_err("missing predecessor should be fatal");
+            .expect("test: process remaining intent");
 
         assert_eq!(first_idx, 0);
-        assert!(
-            err.to_string()
-                .contains("inconsistent L1 writer DB: missing predecessor intent idx 0"),
-            "unexpected error: {err}"
+        assert_eq!(
+            ops.get_intent_by_idx_blocking(second_idx)
+                .expect("test: get second intent")
+                .expect("test: second intent exists")
+                .status,
+            IntentStatus::Bundled { bundle_idx: 0 }
         );
     }
 
     #[test]
-    fn startup_scan_returns_indexed_unbundled_tail_in_order() {
+    fn startup_scan_returns_all_unbundled_entries_in_order() {
         let ops = get_envelope_ops();
         let (first_idx, first_entry) = put_unbundled_intent(&ops, 1);
         let first_payload = BundledPayloadEntry::new_unsigned(first_entry.payload().clone());
@@ -203,11 +183,19 @@ mod tests {
         )
         .expect("test: bundle first intent");
         let (second_idx, _) = put_unbundled_intent(&ops, 2);
-        let (third_idx, _) = put_unbundled_intent(&ops, 3);
+        let (_, third_entry) = put_unbundled_intent(&ops, 3);
+        let third_payload = BundledPayloadEntry::new_unsigned(third_entry.payload().clone());
+        ops.bundle_intent_payload_blocking(
+            *third_entry.intent.commitment(),
+            third_entry,
+            third_payload,
+        )
+        .expect("test: bundle third intent");
+        let (fourth_idx, _) = put_unbundled_intent(&ops, 4);
 
         let unbundled = get_initial_unbundled_entries(ops.as_ref()).expect("test: scan unbundled");
 
         assert_eq!(first_idx, 0);
-        assert_eq!(unbundled, vec![second_idx, third_idx]);
+        assert_eq!(unbundled, vec![second_idx, fourth_idx]);
     }
 }

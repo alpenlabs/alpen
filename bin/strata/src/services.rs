@@ -15,8 +15,9 @@ use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_service::ServiceMonitor;
 
+#[cfg(feature = "sequencer")]
+use crate::sequencer::NodeCheckpointContext;
 use crate::{
-    checkpoint_reconcile::reconcile_unaccepted_checkpoint_artifacts,
     context::ensure_genesis,
     css, fcm,
     helpers::build_btcio_params,
@@ -39,6 +40,7 @@ mod sequencer_services {
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, LimitAwareSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
+    use strata_ol_sequencer::CheckpointPublishPolicy;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_service::DumbTickHandle;
     use strata_storage::{BroadcastDbOps, ops::writer::EnvelopeDataOps};
@@ -46,8 +48,9 @@ mod sequencer_services {
 
     use crate::{
         checkpoint_auth::CheckpointSequencerKeyProvider,
-        helpers::generate_sequencer_address,
+        helpers::{build_btcio_params, generate_sequencer_address},
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
+        sequencer::NodeCheckpointContext,
     };
 
     pub(super) fn start_if_enabled(
@@ -90,17 +93,23 @@ mod sequencer_services {
             nodectx.storage().handle().clone(),
             broadcast_db,
         ));
+        let btcio_params = build_btcio_params(
+            nodectx.asm_params(),
+            nodectx.config().btcio.l1_reorg_safe_depth,
+        );
+        let policy = Arc::new(CheckpointPublishPolicy::new(
+            Arc::new(NodeCheckpointContext::new(nodectx.storage().clone())),
+            btcio_params.magic_bytes(),
+        ));
 
         nodectx.task_manager().handle().block_on(async {
             BroadcasterBuilder::new(
                 nodectx.bitcoin_client().clone(),
                 broadcast_ops,
-                super::build_btcio_params(
-                    nodectx.asm_params(),
-                    nodectx.config().btcio.l1_reorg_safe_depth,
-                ),
+                btcio_params,
                 nodectx.config().btcio.broadcaster.max_fee_rate(),
             )
+            .with_publish_policy(policy)
             .with_broadcast_poll_interval_ms(nodectx.config().btcio.broadcaster.poll_interval_ms)
             .launch(nodectx.executor().as_ref())
             .await
@@ -273,7 +282,12 @@ pub(crate) fn start_strata_services(
         nodectx.ol_params(),
         nodectx.status_channel().as_ref(),
     )?;
-    reconcile_unaccepted_checkpoint_artifacts(&nodectx)?;
+
+    #[cfg(feature = "sequencer")]
+    if nodectx.config().prover.is_some() {
+        let checkpoint_context = NodeCheckpointContext::new(nodectx.storage().clone());
+        strata_ol_sequencer::reconcile_unaccepted_checkpoint_artifacts(&checkpoint_context)?;
+    }
 
     let is_sequencer = nodectx.config().client.is_sequencer;
 

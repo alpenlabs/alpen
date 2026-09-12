@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use strata_csm_types::{PayloadDest, PayloadIntent};
-use strata_db_types::l1_writer::{IntentEntry, L1BundleStatus};
+use strata_db_types::l1_writer::{BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::writer::EnvelopeDataOps;
 use tokio::sync::mpsc::Sender;
@@ -77,8 +77,27 @@ impl EnvelopeHandle {
         debug!(commitment = %id, "Received intent for processing");
 
         // Check if it is duplicate
-        if self.ops.get_intent_by_id_async(id).await?.is_some() {
+        if let Some(entry) = self.ops.get_intent_by_id_async(id).await? {
             warn!(commitment = %id, "Received duplicate intent");
+            if let IntentStatus::Bundled {
+                bundle_idx: payload_idx,
+            } = entry.status
+            {
+                if self
+                    .ops
+                    .get_payload_entry_by_idx_async(payload_idx)
+                    .await?
+                    .is_some_and(|payload| payload.status == L1BundleStatus::Abandoned)
+                {
+                    self.ops
+                        .requeue_abandoned_intent_async(
+                            id,
+                            payload_idx,
+                            BundledPayloadEntry::new_unsigned(entry.payload().clone()),
+                        )
+                        .await?;
+                }
+            }
             let next_idx = self.ops.get_next_intent_idx_async().await?;
             return self.find_intent_idx_in_range(id, 0, next_idx).await;
         }
@@ -115,28 +134,31 @@ impl EnvelopeHandle {
     }
 }
 
-/// Looks into the database from descending index order till it reaches 0 or `Finalized`
-/// [`PayloadEntry`] from which the rest of the [`PayloadEntry`]s should be watched.
+/// Returns the earliest nonterminal payload index that the watcher must resume from.
 pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow::Result<u64> {
-    let mut next_idx = insc_ops.get_next_payload_idx_blocking()?;
-
-    while next_idx > 0 {
-        let Some(payload) = insc_ops.get_payload_entry_by_idx_blocking(next_idx - 1)? else {
-            break;
+    let next_idx = insc_ops.get_next_payload_idx_blocking()?;
+    for idx in 0..next_idx {
+        let Some(payload) = insc_ops.get_payload_entry_by_idx_blocking(idx)? else {
+            continue;
         };
-        if payload.status == L1BundleStatus::Finalized {
-            break;
-        };
-        next_idx -= 1;
+        if !payload.status.is_finished() {
+            return Ok(idx);
+        }
     }
     Ok(next_idx)
 }
 
 #[cfg(test)]
 mod test {
-    use strata_db_types::{l1_broadcast::L1TxStatus, l1_writer::BundledPayloadEntry};
+    use strata_csm_types::L1Payload;
+    use strata_db_types::{
+        l1_broadcast::L1TxStatus,
+        l1_writer::{BundledPayloadEntry, IntentStatus},
+    };
+    use strata_l1_txfmt::TagData;
     use strata_primitives::buf::Buf32;
     use strata_test_utils::ArbitraryGenerator;
+    use tokio::sync::mpsc;
 
     use super::*;
     use crate::writer::{test_utils::get_envelope_ops, watcher::determine_payload_next_status};
@@ -171,12 +193,51 @@ mod test {
         iops.put_payload_entry_blocking(2, e3).unwrap();
 
         let mut e4: BundledPayloadEntry = ArbitraryGenerator::new().generate();
-        e4.status = L1BundleStatus::Unsigned;
+        e4.status = L1BundleStatus::Abandoned;
         iops.put_payload_entry_blocking(3, e4).unwrap();
 
         let idx = get_next_payloadidx_to_watch(&iops).unwrap();
 
         assert_eq!(idx, expected_idx);
+    }
+
+    #[tokio::test]
+    async fn duplicate_abandoned_intent_is_requeued_at_the_tail() {
+        let ops = get_envelope_ops();
+        let payload = L1Payload::new(vec![vec![1]], TagData::new(1, 1, vec![]).unwrap()).unwrap();
+        let intent = PayloadIntent::new(PayloadDest::L1, Buf32::from([1; 32]), payload.clone());
+        let mut abandoned = BundledPayloadEntry::new_unsigned(payload);
+        abandoned.status = L1BundleStatus::Abandoned;
+        ops.put_payload_entry_async(0, abandoned).await.unwrap();
+        ops.put_intent_entry_async(
+            *intent.commitment(),
+            IntentEntry::new_bundled(intent.clone(), 0),
+        )
+        .await
+        .unwrap();
+
+        let (tx, _) = mpsc::channel(1);
+        EnvelopeHandle::new(ops.clone(), tx)
+            .submit_intent_async_with_idx(intent.clone())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ops.get_intent_by_id_async(*intent.commitment())
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            IntentStatus::Bundled { bundle_idx: 1 }
+        );
+        assert_eq!(
+            ops.get_payload_entry_by_idx_async(1)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            L1BundleStatus::Unsigned
+        );
     }
 
     #[test]
@@ -224,5 +285,14 @@ mod test {
         let (commit_status, reveal_status) = (conf.clone(), L1TxStatus::InvalidInputs);
         let next = determine_payload_next_status(&commit_status, &reveal_status);
         assert_eq!(next, L1BundleStatus::NeedsResign);
+
+        // An invalidated commit marks a still-needed pair for rebuilding, even if its reveal was
+        // previously abandoned. An abandoned commit terminalizes an obsolete pair.
+        let next =
+            determine_payload_next_status(&L1TxStatus::InvalidInputs, &L1TxStatus::Abandoned);
+        assert_eq!(next, L1BundleStatus::NeedsResign);
+        let next =
+            determine_payload_next_status(&L1TxStatus::Abandoned, &L1TxStatus::InvalidInputs);
+        assert_eq!(next, L1BundleStatus::Abandoned);
     }
 }

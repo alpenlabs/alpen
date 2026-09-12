@@ -61,6 +61,12 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     /// Get last written checkpoint payload commitment.
     fn get_last_checkpoint_payload_epoch(&self) -> DbResult<Option<EpochCommitment>>;
 
+    /// Get locally-built checkpoint commitments at or above `start_epoch`.
+    fn get_checkpoint_payload_commitments_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>>;
+
     /// Delete a checkpoint payload entry by epoch commitment.
     ///
     /// Returns true if it existed and was deleted.
@@ -85,6 +91,12 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
         &self,
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;
+
+    /// Deletes a locally-built payload only when no L1 observation exists.
+    ///
+    /// Returns `true` when the local payload existed and was deleted. The check and deletion are
+    /// atomic, and observed payload and reference tables are never modified.
+    fn del_local_checkpoint_payload_if_unobserved(&self, epoch: EpochCommitment) -> DbResult<bool>;
 
     /// Store an OL checkpoint signing entry by epoch.
     fn put_checkpoint_signing_entry(

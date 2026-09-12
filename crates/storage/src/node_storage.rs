@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use strata_csm_types::ClientState;
 use strata_db_store_sled::SledBackend;
 
 use crate::managers::asm::AsmStateManager;
@@ -269,6 +270,54 @@ impl NodeStorage {
         warn!(%recent_block, tip_height, "ASM has states but none on the canonical chain");
         Ok(None)
     }
+
+    /// Returns the latest persisted client state on the canonical L1 chain, or
+    /// [`None`] if there is none. May lag the L1 canonical tip when the CSM is behind.
+    pub async fn fetch_canonical_client_state_async(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, ClientState)>> {
+        let Some((recent_block, recent_state)) = self
+            .client_state_manager
+            .fetch_most_recent_state_async()
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        if self
+            .l1_block_manager
+            .get_canonical_blockid_at_height_async(recent_block.height())
+            .await?
+            == Some(*recent_block.blkid())
+        {
+            return Ok(Some((recent_block, recent_state)));
+        }
+
+        let Some((tip_height, _)) = self
+            .l1_block_manager
+            .get_canonical_chain_tip_async()
+            .await?
+        else {
+            return Ok(None);
+        };
+        let search_tip = tip_height.min(recent_block.height());
+        for height in (0..=search_tip).rev() {
+            let Some(blockid) = self
+                .l1_block_manager
+                .get_canonical_blockid_at_height_async(height)
+                .await?
+            else {
+                continue;
+            };
+            let block = L1BlockCommitment::new(height, blockid);
+            if let Some(state) = self.client_state_manager.get_state_async(block).await? {
+                return Ok(Some((block, state)));
+            }
+        }
+
+        warn!(%recent_block, tip_height, "client state has rows but none on the canonical chain");
+        Ok(None)
+    }
 }
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
@@ -347,6 +396,7 @@ pub fn test_runtime_handle() -> Handle {
 
 #[cfg(test)]
 mod tests {
+    use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_tests::asm_tests::make_test_asm_state;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
@@ -506,6 +556,46 @@ mod tests {
         assert!(storage
             .fetch_canonical_asm_state_blocking()
             .unwrap()
+            .is_none());
+    }
+
+    fn put_client_state(storage: &NodeStorage, block: L1BlockCommitment) {
+        storage
+            .client_state()
+            .put_update_blocking(
+                &block,
+                ClientUpdateOutput::new_state(ClientState::new(None, None)),
+            )
+            .expect("test: put client state");
+    }
+
+    #[test]
+    fn canonical_client_state_prefers_canonical_over_higher_orphan() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        let canonical = L1BlockCommitment::new(10, blkid(10));
+        let orphan = L1BlockCommitment::new(12, blkid(99));
+        put_client_state(&storage, canonical);
+        put_client_state(&storage, orphan);
+
+        let (resolved, _) = test_runtime_handle()
+            .block_on(storage.fetch_canonical_client_state_async())
+            .expect("test: resolve canonical client state")
+            .expect("test: canonical client state exists");
+        assert_eq!(resolved, canonical);
+    }
+
+    #[test]
+    fn canonical_client_state_is_none_when_all_rows_are_orphans() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+
+        put_client_state(&storage, L1BlockCommitment::new(12, blkid(99)));
+
+        assert!(test_runtime_handle()
+            .block_on(storage.fetch_canonical_client_state_async())
+            .expect("test: resolve canonical client state")
             .is_none());
     }
 }

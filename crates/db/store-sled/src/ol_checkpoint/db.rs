@@ -198,6 +198,20 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             .map(|(commitment, _payload)| commitment))
     }
 
+    fn get_checkpoint_payload_commitments_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.payload_tree
+            .iter()
+            .filter_map(|item| match item {
+                Ok((commitment, _)) if commitment.epoch() >= start_epoch => Some(Ok(commitment)),
+                Ok(_) => None,
+                Err(err) => Some(Err(conv_sled_err(err))),
+            })
+            .collect()
+    }
+
     fn del_checkpoint_payload_entry(&self, epoch: EpochCommitment) -> DbResult<bool> {
         let epoch_num = epoch.epoch();
         self.config.with_retry(
@@ -310,6 +324,30 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             },
         )?;
         Ok(deleted_epochs)
+    }
+
+    fn del_local_checkpoint_payload_if_unobserved(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        let epoch_num = epoch.epoch();
+        self.config.with_retry(
+            (
+                &self.payload_tree,
+                &self.signing_tree,
+                &self.l1_ref_tree,
+                &self.unsigned_tree,
+            ),
+            |(pt, st, lot, ut)| {
+                if lot.contains_key(&epoch)? || !pt.contains_key(&epoch)? {
+                    return Ok(false);
+                }
+                let had_signing = st.contains_key(&epoch)?;
+                pt.remove(&epoch)?;
+                st.remove(&epoch)?;
+                if !had_signing {
+                    ut.remove(&epoch_num)?;
+                }
+                Ok(true)
+            },
+        )
     }
 
     fn put_checkpoint_signing_entry(

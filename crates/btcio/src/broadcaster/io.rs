@@ -47,6 +47,12 @@ pub(crate) async fn send_raw_transaction_with_max_fee_rate(
 
 /// IO context abstraction for broadcaster service internals.
 pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
+    fn publish_decision<'a>(
+        &'a self,
+        idx: u64,
+        tx: &'a Transaction,
+    ) -> impl Future<Output = PublishDecision> + Send + 'a;
+
     /// Returns the next write index in broadcaster database.
     fn get_next_tx_idx(&self) -> impl Future<Output = BroadcasterResult<u64>> + Send;
 
@@ -56,12 +62,21 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         idx: u64,
     ) -> impl Future<Output = BroadcasterResult<Option<L1TxEntry>>> + Send;
 
-    /// Persists `entry` at the existing broadcast index `idx`.
-    fn put_tx_entry_by_idx(
+    /// Persists `entry` if the row still equals `expected` and returns the stored row.
+    ///
+    /// The returned row differs from `entry` when a concurrent durable transition won first.
+    fn compare_and_put_tx_entry_by_idx(
         &self,
         idx: u64,
+        expected: L1TxEntry,
         entry: L1TxEntry,
-    ) -> impl Future<Output = BroadcasterResult<()>> + Send;
+    ) -> impl Future<Output = BroadcasterResult<L1TxEntry>> + Send;
+
+    /// Atomically claims the entry at `idx` for submission to Bitcoin.
+    fn try_mark_tx_entry_submitting(
+        &self,
+        idx: u64,
+    ) -> impl Future<Output = BroadcasterResult<bool>> + Send;
 
     /// Returns the broadcast entry for `txid`, or `None` if the row is missing.
     fn get_tx_entry_by_id(
@@ -92,6 +107,32 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
         &'a self,
         tx: &'a Transaction,
     ) -> impl Future<Output = BroadcasterResult<PublishTxOutcome>> + Send + 'a;
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PublishDecision {
+    #[default]
+    Publish,
+    Defer,
+    Abandon,
+    /// Marks an unusable transaction so its owner can rebuild it.
+    Invalidate,
+}
+
+/// Decides whether a broadcaster entry may cross the Bitcoin RPC boundary.
+#[async_trait::async_trait]
+pub trait PublishPolicy: Send + Sync + 'static {
+    async fn decide(&self, idx: u64, tx: &Transaction) -> PublishDecision;
+}
+
+#[derive(Debug)]
+pub struct AllowAllPublishPolicy;
+
+#[async_trait::async_trait]
+impl PublishPolicy for AllowAllPublishPolicy {
+    async fn decide(&self, _: u64, _: &Transaction) -> PublishDecision {
+        PublishDecision::Publish
+    }
 }
 
 /// Minimal transaction view needed by broadcaster confirmation logic.
@@ -239,15 +280,22 @@ pub(crate) struct BroadcasterIo<T> {
     rpc_client: Arc<T>,
     ops: Arc<BroadcastDbOps>,
     max_fee_rate: FeeRate,
+    policy: Arc<dyn PublishPolicy>,
 }
 
 impl<T> BroadcasterIo<T> {
     /// Creates a production IO adapter from RPC client and broadcast DB ops.
-    pub(crate) fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>, max_fee_rate: FeeRate) -> Self {
+    pub(crate) fn new(
+        rpc_client: Arc<T>,
+        ops: Arc<BroadcastDbOps>,
+        max_fee_rate: FeeRate,
+        policy: Arc<dyn PublishPolicy>,
+    ) -> Self {
         Self {
             rpc_client,
             ops,
             max_fee_rate,
+            policy,
         }
     }
 }
@@ -256,6 +304,10 @@ impl<T> BroadcasterIoContext for BroadcasterIo<T>
 where
     T: Broadcaster + WalletTxLookup,
 {
+    async fn publish_decision(&self, idx: u64, tx: &Transaction) -> PublishDecision {
+        self.policy.decide(idx, tx).await
+    }
+
     async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
         Ok(self.ops.get_next_tx_idx_async().await?)
     }
@@ -264,9 +316,20 @@ where
         Ok(self.ops.get_tx_entry_async(idx).await?)
     }
 
-    async fn put_tx_entry_by_idx(&self, idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
-        self.ops.put_tx_entry_by_idx_async(idx, entry).await?;
-        Ok(())
+    async fn compare_and_put_tx_entry_by_idx(
+        &self,
+        idx: u64,
+        expected: L1TxEntry,
+        entry: L1TxEntry,
+    ) -> BroadcasterResult<L1TxEntry> {
+        Ok(self
+            .ops
+            .compare_and_put_tx_entry_by_idx_async(idx, expected, entry)
+            .await?)
+    }
+
+    async fn try_mark_tx_entry_submitting(&self, idx: u64) -> BroadcasterResult<bool> {
+        Ok(self.ops.try_mark_tx_entry_submitting_async(idx).await?)
     }
 
     async fn get_tx_entry_by_id(&self, txid: Buf32) -> BroadcasterResult<Option<L1TxEntry>> {
@@ -386,7 +449,7 @@ mod tests {
     ) -> BroadcasterIo<TestBitcoinClient> {
         let db = get_test_sled_backend().broadcast_db();
         let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
-        BroadcasterIo::new(client, ops, max_fee_rate)
+        BroadcasterIo::new(client, ops, max_fee_rate, Arc::new(AllowAllPublishPolicy))
     }
 
     #[test]
