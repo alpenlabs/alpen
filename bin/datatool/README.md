@@ -53,7 +53,7 @@ strata-datatool gen-asm-params \
     -b <operator1-compressed-pubkey> \
     -b <operator2-compressed-pubkey> \
     --ol-params ol-params.json \
-    --checkpoint-predicate-file provers/sp1/guest-checkpoint/cache/guest-checkpoint.predicate \
+    --checkpoint-predicate-file provers/sp1/generated/guest-checkpoint.predicate \
     --safe-harbour-address <p2tr-bosd-descriptor> \
     --l1-anchor-file l1-anchor.json \
     -o asm-params.json \
@@ -115,15 +115,15 @@ for each guest, which consumers can use wherever they need the corresponding
 predicate.
 
 ```bash
-cargo build -p strata-sp1-guest-builder --features build-elf --release
+BUILD_ELF=1 BUILD_VKEY=1 cargo build -p strata-sp1-guest-builder --release
 ```
 
 The guest builder writes predicate metadata next to the guest ELFs under
-`provers/sp1/guest-*/cache/`.
+`provers/sp1/generated/`.
 
 ```bash
 strata-datatool gen-asm-params \
-    --checkpoint-predicate-file provers/sp1/guest-checkpoint/cache/guest-checkpoint.predicate \
+    --checkpoint-predicate-file provers/sp1/generated/guest-checkpoint.predicate \
     ...
 
 strata-datatool gen-ol-params \

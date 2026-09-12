@@ -216,7 +216,7 @@ zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
-sp1-helper = "6.1.0"
+sp1-build = "6.1.0"
 sp1-sdk = "6.1.0"
 sp1-verifier = "6.1.0"
 

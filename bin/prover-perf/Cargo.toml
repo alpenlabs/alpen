@@ -23,7 +23,6 @@ strata-zkvm-hosts.workspace = true
 
 # sp1
 sp1-sdk.workspace = true
-strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 anyhow.workspace = true
@@ -43,5 +42,4 @@ sp1 = [
   "zkaleido-sp1-host/perf",
   "strata-zkvm-hosts/sp1-builder",
   "dep:zkaleido-sp1-host",
-  "dep:strata-sp1-guest-builder",
 ]

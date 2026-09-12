@@ -45,10 +45,6 @@ def validate_env(env: str) -> str:
     return env
 
 
-def zkvm_mock_enabled(value: str) -> bool:
-    return value.lower() in ("1", "true")
-
-
 def sha256_hex(path: Path) -> str:
     h = __import__("hashlib").sha256()
     with path.open("rb") as f:
@@ -76,17 +72,14 @@ def cmd_validate() -> None:
 
 
 def cmd_summarize() -> None:
-    """Env: CACHE_ROOT, ARTIFACT_DIR, DEPLOY_ENV, ALPEN_REF, ALPEN_SHA,
-    SP1_VERSION, ZKVM_MOCK, GITHUB_STEP_SUMMARY."""
-    cache_root = Path(os.environ["CACHE_ROOT"])
+    """Env: ELF_ROOT, ARTIFACT_DIR, DEPLOY_ENV, ALPEN_REF, ALPEN_SHA,
+    SP1_VERSION, GITHUB_STEP_SUMMARY."""
+    elf_root = Path(os.environ["ELF_ROOT"])
     artifact_dir = Path(os.environ["ARTIFACT_DIR"])
     env = validate_env(os.environ["DEPLOY_ENV"])
     alpen_ref = os.environ["ALPEN_REF"]
     alpen_sha = os.environ["ALPEN_SHA"]
     sp1_version = os.environ["SP1_VERSION"]
-    zkvm_mock = os.environ.get("ZKVM_MOCK", "0")
-    if zkvm_mock_enabled(zkvm_mock):
-        fail("ZKVM_MOCK must not be enabled for published SP1 artifacts")
     run_id = os.environ.get("GITHUB_RUN_ID", "")
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -94,9 +87,8 @@ def cmd_summarize() -> None:
     predicates: dict[str, str] = {}
     vk_hashes: dict[str, str] = {}
     for guest, key in GUESTS:
-        guest_cache = cache_root / guest / "cache"
         for suffix in ("elf", "predicate", "vk-hash"):
-            src = guest_cache / f"{guest}.{suffix}"
+            src = elf_root / f"{guest}.{suffix}"
             require_file(src)
             (artifact_dir / src.name).write_bytes(src.read_bytes())
 
@@ -119,7 +111,6 @@ def cmd_summarize() -> None:
         "version": version,
         "run_id": run_id,
         "sp1_version": sp1_version,
-        "zkvm_mock": False,
         "alpen": {
             "ref": alpen_ref,
             "sha": alpen_sha,
@@ -144,7 +135,6 @@ def cmd_summarize() -> None:
         f"- env: `{env}`",
         f"- alpen ref: `{alpen_ref}` @ `{alpen_sha}`",
         f"- SP1 toolchain: `{sp1_version}`",
-        "- ZKVM mock: `false`",
         f"- version: `{version}`",
         "",
         "### Predicates",
