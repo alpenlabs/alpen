@@ -43,7 +43,7 @@ use crate::{
     tx_attempt::{attempt_parts, TxAttemptExt},
     tx_entry::L1TxEntryExt,
     writer::{
-        builder::BITCOIN_DUST_LIMIT, chunked_envelope::CommitPhaseLatch, fees::resolve_fee_rate,
+        builder::BITCOIN_DUST_LIMIT, chunked_envelope::CommitPhaseLatch, resolve_fee_rate,
         EnvelopeSigningMode, EnvelopeSigningModeProvider,
     },
 };
@@ -167,7 +167,7 @@ where
     // Price the replacement through the same fee policy the original was built with. Calling
     // `estimatesmartfee` directly here would silently ignore a `fee_policy = "mempool"` node's
     // configured estimator and bump against a source it does not otherwise use.
-    let estimate_fee_rate = resolve_fee_rate(client, writer_config).await?;
+    let estimate_fee_rate = resolve_fee_rate(client, writer_config.l1_fee_policy_config()).await?;
     // BIP-125 rule 4 is priced at the node's configured incremental relay fee, so read it rather
     // than assuming Core's 1 sat/vB default. Fall back to that default when the field is absent.
     let incremental_relay_fee_rate = client

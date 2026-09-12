@@ -32,8 +32,7 @@ use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
 use strata_primitives::buf::Buf32;
 use thiserror::Error;
 
-use super::context::WriterContext;
-use crate::writer::fees::resolve_fee_rate;
+use super::{context::WriterContext, resolve_fee_rate};
 
 pub(crate) const BITCOIN_DUST_LIMIT: u64 = 546;
 
@@ -317,9 +316,9 @@ async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
         .await
         .map_err(|error| EnvelopeError::PrereqFetch(error.into()))?
         .0;
-    let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
+    let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.l1_fee_policy_config())
         .await
-        .map_err(EnvelopeError::PrereqFetch)?;
+        .map_err(|error| EnvelopeError::PrereqFetch(error.into()))?;
     ensure_initial_fee_rate_within_max(fee_rate, ctx.max_fee_rate)?;
     Ok((network, utxos, fee_rate))
 }
