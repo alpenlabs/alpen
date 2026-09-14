@@ -20,7 +20,14 @@ use tokio::task::spawn_blocking;
 
 use crate::ops::mmr_index::MmrIndexOps;
 
-/// Bounds transaction memory while reducing the 307,050-leaf genesis prefill to 38 writes.
+/// Leaves written per prefill transaction.
+///
+/// Chunk size does not affect prefill speed, because sled's per-key work dominates,
+/// but a transaction holds roughly 9 KB per leaf in memory until it commits. On an
+/// on-disk sled, 8192-leaf chunks peak near 230 MB for 307,050 leaves and 500 MB
+/// for 1,000,000 leaves, whereas a single transaction for 307,050 leaves peaks near
+/// 2.9 GB and one for 1,000,000 leaves exceeds 6 GB. Chunking also lets a crashed
+/// prefill resume from the last committed prefix.
 const REPEATED_LEAF_CHUNK_SIZE: u64 = 8192;
 
 /// Retry behavior for optimistic CAS-style MMR updates.
@@ -208,7 +215,9 @@ impl MmrIndexHandle {
     ///
     /// Returns without writing when the count already reaches `target_leaf_count`.
     /// Otherwise, verifies the existing peaks commit to repeated `leaf_hash` leaves
-    /// before extending the prefix. Each chunk commits a complete prefix, allowing
+    /// before extending the prefix. The peaks commit to every stored leaf, so a
+    /// matching peak ladder proves the prefix is all `leaf_hash` and the nodes this
+    /// call adds join it consistently. Each chunk commits a complete prefix, allowing
     /// startup to resume after a crash. Batching reduces STR-3703's roughly 614,000
     /// per-leaf writes across the two genesis MMRs to tens of transactions.
     ///
@@ -940,6 +949,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::env;
     use std::time::{Duration, Instant};
 
     use sled::Config;
@@ -1120,35 +1130,39 @@ mod tests {
         assert_mmr_equivalent(&expected, &actual, target);
     }
 
+    /// Reads `PREFILL_LEAVES` and `PREFILL_CHUNK` so one process runs one
+    /// configuration, which lets `/usr/bin/time -v` report its peak memory.
     #[test]
-    #[ignore = "compares on-disk genesis prefill transaction sizes"]
-    fn bench_prefill_chunk_sizes_307050_leaves() {
+    #[ignore = "measures on-disk genesis prefill time for one chunk size"]
+    fn bench_prefill_chunk_size() {
+        let env_or = |name: &str, default: u64| -> u64 {
+            env::var(name).map_or(default, |value| value.parse().unwrap())
+        };
+        let leaves = env_or("PREFILL_LEAVES", 307_050);
+        let chunk_size = env_or("PREFILL_CHUNK", REPEATED_LEAF_CHUNK_SIZE);
+        let directory = tempdir().unwrap();
+        let db = Config::new().path(directory.path()).open().unwrap();
+        let db = Arc::new(SledDb::new(db).unwrap());
+        let backend = SledBackend::new(db, SledDbConfig::production()).unwrap();
+        let handle = MmrIndexManager::new(crate::test_runtime_handle(), backend.mmr_index_db())
+            .get_handle(MmrId::Asm);
+        let start = Instant::now();
+        handle
+            .prefill_repeated_leaves_with_chunk_blocking(
+                MMR_SENTINEL_DUMMY_LEAF_HASH,
+                leaves,
+                chunk_size,
+            )
+            .unwrap();
+        let duration = start.elapsed();
+        println!("batched {leaves} leaves, chunk {chunk_size}: {duration:?}");
+        assert_eq!(handle.get_leaf_count_blocking().unwrap(), leaves);
         let expected_state =
-            <Mmr64B32 as Mmr<Sha256Hasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF_HASH.0, 307_050);
-        for chunk_size in [8192, 32768, 131072] {
-            let directory = tempdir().unwrap();
-            let db = Config::new().path(directory.path()).open().unwrap();
-            let db = Arc::new(SledDb::new(db).unwrap());
-            let backend = SledBackend::new(db, SledDbConfig::production()).unwrap();
-            let handle = MmrIndexManager::new(crate::test_runtime_handle(), backend.mmr_index_db())
-                .get_handle(MmrId::Asm);
-
-            let start = Instant::now();
-            handle
-                .prefill_repeated_leaves_with_chunk_blocking(
-                    MMR_SENTINEL_DUMMY_LEAF_HASH,
-                    307_050,
-                    chunk_size,
-                )
-                .unwrap();
-            let duration = start.elapsed();
-            println!("batched 307050 leaves, chunk {chunk_size}: {duration:?}");
-            assert_eq!(handle.get_leaf_count_blocking().unwrap(), 307_050);
-            assert_eq!(
-                handle.get_state_at_blocking(307_050).unwrap(),
-                expected_state
-            );
-        }
+            <Mmr64B32 as Mmr<Sha256Hasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF_HASH.0, leaves);
+        assert_eq!(
+            handle.get_state_at_blocking(leaves).unwrap(),
+            expected_state
+        );
     }
 
     #[test]
