@@ -43,17 +43,20 @@ pub enum EpochDaError {
     MissingBlob,
 }
 
-/// Epoch DA bytes and OL logs computed from an epoch's blocks.
+/// Version-agnostic artifacts computed by replaying an epoch's blocks.
+///
+/// The DA encoding is intentionally opaque. Consumers interpret `encoded_da`
+/// using the STF and DA scheme selected for the epoch's protocol version.
 #[derive(Debug)]
-pub struct EpochDaOutput {
-    da_bytes: Vec<u8>,
-    ol_logs: Vec<OLLog>,
+pub struct EpochReplayArtifacts<Log> {
+    encoded_da: Vec<u8>,
+    ol_logs: Vec<Log>,
 }
 
-impl EpochDaOutput {
+impl<Log> EpochReplayArtifacts<Log> {
     /// Consumes the output and returns the epoch DA bytes and OL logs.
-    pub fn into_parts(self) -> (Vec<u8>, Vec<OLLog>) {
-        (self.da_bytes, self.ol_logs)
+    pub fn into_parts(self) -> (Vec<u8>, Vec<Log>) {
+        (self.encoded_da, self.ol_logs)
     }
 }
 
@@ -72,7 +75,7 @@ pub fn compute_epoch_da(
     epoch_blocks: &[OLBlockV1],
     previous_terminal: &OLBlockHeaderV1,
     runtime_params: &OLRuntimeParams,
-) -> Result<EpochDaOutput, EpochDaError> {
+) -> Result<EpochReplayArtifacts<OLLog>, EpochDaError> {
     let (terminal, preceding_blocks) = epoch_blocks.split_last().ok_or(EpochDaError::NoBlocks)?;
     if !terminal.header().is_terminal() {
         return Err(EpochDaError::FinalBlockNotTerminal);
@@ -93,12 +96,15 @@ pub fn compute_epoch_da(
     )
     .map_err(EpochDaError::BlockReplay)?;
 
-    let da_bytes = da_state
+    let encoded_da = da_state
         .take_completed_epoch_da_blob()
         .map_err(EpochDaError::Accumulation)?
         .ok_or(EpochDaError::MissingBlob)?;
 
-    Ok(EpochDaOutput { da_bytes, ol_logs })
+    Ok(EpochReplayArtifacts {
+        encoded_da,
+        ol_logs,
+    })
 }
 
 #[cfg(test)]

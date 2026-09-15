@@ -10,5 +10,5 @@ mod state;
 
 pub use builder::OLCheckpointBuilder;
 pub use context::{ProofNotify, ProverConfig};
-pub use epoch_da::{EpochDaError, EpochDaOutput, compute_epoch_da};
+pub use epoch_da::{EpochDaError, EpochReplayArtifacts, compute_epoch_da};
 pub use handle::OLCheckpointWorkerHandle;
