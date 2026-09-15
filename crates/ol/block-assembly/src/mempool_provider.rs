@@ -15,6 +15,8 @@ pub trait MempoolProvider: Send + Sync + 'static {
     /// Gets [`OLTransactionV1`] entries from mempool.
     ///
     /// Returns up to `limit` transactions in priority order with their [`OLTxId`] values.
+    /// Returned transactions must pass the standalone log-budget check.
+    /// Assembly checks their execution and remaining block/epoch capacity.
     async fn get_transactions(
         &self,
         limit: usize,

@@ -69,6 +69,7 @@ test-utils = [
 ]
 
 [dev-dependencies]
+ssz.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-manifest-types.workspace = true
@@ -84,6 +85,7 @@ strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-predicate.workspace = true
+strata-status.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 
 bitcoin.workspace = true

@@ -373,6 +373,11 @@ impl EpochDaAccumulator {
         Ok(())
     }
 
+    /// Returns whether any account creations or account writes were recorded.
+    pub fn has_account_writes(&self) -> bool {
+        !self.new_account_records.is_empty() || !self.account_deltas.is_empty()
+    }
+
     /// Conservative upper-bound estimate of the encoded DA blob size.
     ///
     /// This is cheaper than finalizing + encoding, suitable for checking whether
