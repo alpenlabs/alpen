@@ -2,10 +2,17 @@
 
 use std::sync::Arc;
 
+use ssz::Encode;
 use strata_config::SequencerConfig;
+use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
-use strata_ol_params::OLRuntimeParams;
+use strata_ol_mempool::{MempoolBuilder, MempoolTxInvalidReason, OLMempoolConfig, OLMempoolError};
+use strata_ol_params::{BridgeParams, OLRuntimeParams};
+use strata_ol_state_provider::OLStateManagerProviderImpl;
+use strata_status::StatusChannel;
+use strata_tasks::TaskManager;
+use tokio::runtime::Handle;
+use tokio::task::spawn_blocking;
 
 use crate::block_assembly::generate_block_template_inner;
 use crate::context::BlockAssemblyContext;
@@ -13,10 +20,135 @@ use crate::resource_state::EpochResourceState;
 use crate::test_utils::{
     FailingStateProvider, MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
     TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder, create_test_storage,
-    included_txids, test_account_id,
+    included_txids, make_p2wpkh_bosd_descriptor, test_account_id,
 };
 use crate::types::BlockGenerationConfig;
-use crate::{BlockAssemblyError, FixedSlotSealing, LimitAwareSealing};
+use crate::{
+    BlockAssemblyError, FixedSlotSealing, LimitAwareSealing, MempoolProvider, MempoolProviderImpl,
+};
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_persisted_oversized_update_rejection_removes_successors() {
+    let account1 = test_account_id(1);
+    let account2 = test_account_id(2);
+    let env = build_mempool_env([
+        TestAccount::new(account1, 100_000_000_000),
+        TestAccount::new(account2, 100_000_000_000),
+    ])
+    .await;
+    let oversized = MempoolSnarkTxBuilder::new(account1)
+        .with_withdrawals(500, 100_000_000, make_p2wpkh_bosd_descriptor(0x14))
+        .build();
+    let oversized_id = oversized.compute_txid();
+    let successor = MempoolSnarkTxBuilder::new(account1).with_seq_no(1).build();
+    let successor_id = successor.compute_txid();
+    let independent = MempoolSnarkTxBuilder::new(account2).build();
+    let independent_id = independent.compute_txid();
+
+    // Simulate transactions persisted before log-budget admission was introduced.
+    let storage = env.storage().clone();
+    spawn_blocking(move || {
+        for (timestamp, tx) in [oversized, successor, independent].into_iter().enumerate() {
+            storage
+                .mempool()
+                .put_tx(MempoolTxData::new(
+                    tx.compute_txid(),
+                    tx.as_ssz_bytes(),
+                    timestamp as u64,
+                ))
+                .expect("persist queued transaction");
+        }
+    })
+    .await
+    .expect("persist queued transactions");
+    let status = StatusChannel::new(
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        None,
+        None,
+    );
+    let task_manager = TaskManager::new(Handle::current());
+    let mempool = Arc::new(
+        MempoolBuilder::new(
+            OLMempoolConfig::default(),
+            BridgeParams::default(),
+            env.storage().clone(),
+            status.clone(),
+            env.parent_commitment(),
+        )
+        .launch(&task_manager.create_executor())
+        .await
+        .expect("load persisted mempool"),
+    );
+    assert_eq!(
+        mempool
+            .get_transactions(3)
+            .await
+            .expect("fetch queued transactions")
+            .iter()
+            .map(|(txid, _)| *txid)
+            .collect::<Vec<_>>(),
+        vec![oversized_id, successor_id, independent_id],
+    );
+    let context = BlockAssemblyContext::new(
+        env.storage().clone(),
+        MempoolProviderImpl::new(mempool.clone()),
+        OLStateManagerProviderImpl::new(env.storage().ol_state().clone()),
+        0,
+        OLRuntimeParams::test_default(),
+    );
+    let result = generate_block_template_inner(
+        &context,
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        BlockGenerationConfig::new(env.parent_commitment()),
+        EpochResourceState::new_empty(),
+    )
+    .await
+    .expect("assemble from persisted mempool");
+    let (template, failed_txs, _) = result.into_parts();
+    assert_eq!(included_txids(&template), vec![independent_id]);
+    assert_eq!(
+        failed_txs,
+        vec![(oversized_id, MempoolTxInvalidReason::Invalid)]
+    );
+
+    context
+        .report_invalid_transactions(&failed_txs)
+        .await
+        .expect("report rejected predecessor");
+    assert_eq!(
+        mempool
+            .get_transactions(3)
+            .await
+            .expect("fetch remaining transactions")
+            .iter()
+            .map(|(txid, _)| *txid)
+            .collect::<Vec<_>>(),
+        vec![independent_id],
+    );
+    let storage = env.storage().clone();
+    spawn_blocking(move || {
+        assert_eq!(
+            storage
+                .mempool()
+                .get_tx(oversized_id)
+                .expect("read rejected update"),
+            None
+        );
+        assert_eq!(
+            storage
+                .mempool()
+                .get_tx(successor_id)
+                .expect("read successor"),
+            None
+        );
+    })
+    .await
+    .expect("check persisted removal");
+    task_manager.get_shutdown_signal().send();
+}
 
 async fn build_mempool_env(accounts: impl IntoIterator<Item = TestAccount>) -> TestEnv {
     let fixture_builder = TestStorageFixtureBuilder::new()
