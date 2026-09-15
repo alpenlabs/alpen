@@ -950,32 +950,32 @@ mod tests {
             .collect()
     }
 
-    fn assert_mmr_equivalent(expected: &MmrIndexHandle, actual: &MmrIndexHandle, count: u64) {
-        assert_eq!(expected.get_leaf_count_blocking().unwrap(), count);
-        assert_eq!(actual.get_leaf_count_blocking().unwrap(), count);
-        let size = expected.get_mmr_size_blocking().unwrap();
-        assert_eq!(actual.get_mmr_size_blocking().unwrap(), size);
+    fn assert_mmr_equivalent(reference: &MmrIndexHandle, candidate: &MmrIndexHandle, count: u64) {
+        assert_eq!(reference.get_leaf_count_blocking().unwrap(), count);
+        assert_eq!(candidate.get_leaf_count_blocking().unwrap(), count);
+        let size = reference.get_mmr_size_blocking().unwrap();
+        assert_eq!(candidate.get_mmr_size_blocking().unwrap(), size);
 
         // Enumerate every completed node independently of the batching level walk.
         let mut visited = 0;
         for pos in iter_prune_after_positions(0, count) {
-            let expected_hash = expected.get_node_blocking(pos).unwrap();
+            let expected_hash = reference.get_node_blocking(pos).unwrap();
             assert!(expected_hash.is_some(), "missing reference node {pos:?}");
             assert_eq!(
-                actual.get_node_blocking(pos).unwrap(),
+                candidate.get_node_blocking(pos).unwrap(),
                 expected_hash,
                 "node {pos:?} at leaf count {count}"
             );
             visited += 1;
         }
         assert_eq!(visited, size);
-        let state = actual.get_state_at_blocking(count).unwrap();
-        assert_eq!(state, expected.get_state_at_blocking(count).unwrap());
+        let state = candidate.get_state_at_blocking(count).unwrap();
+        assert_eq!(state, reference.get_state_at_blocking(count).unwrap());
         if count > 0 {
             for index in [0, count / 2, count - 1] {
-                let proof = actual.generate_proof_at(index, count).unwrap();
-                assert_eq!(proof, expected.generate_proof_at(index, count).unwrap());
-                let leaf = actual.get_leaf_blocking(index).unwrap().unwrap();
+                let proof = candidate.generate_proof_at(index, count).unwrap();
+                assert_eq!(proof, reference.generate_proof_at(index, count).unwrap());
+                let leaf = candidate.get_leaf_blocking(index).unwrap().unwrap();
                 assert!(<Mmr64B32 as Mmr<Sha256Hasher>>::verify(
                     &state, &proof, &leaf.0
                 ));
@@ -988,32 +988,32 @@ mod tests {
         for count in [
             0, 1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 100, 8191, 8192, 8193, 20000,
         ] {
-            let expected = setup_handle();
-            let actual = setup_handle();
-            append_sentinels(&expected, count);
-            actual
+            let per_leaf = setup_handle();
+            let batched = setup_handle();
+            append_sentinels(&per_leaf, count);
+            batched
                 .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, count)
                 .unwrap();
-            assert_mmr_equivalent(&expected, &actual, count);
+            assert_mmr_equivalent(&per_leaf, &batched, count);
 
             let distinct = Hash::from([0x42; 32]);
-            expected.append_leaf_blocking(distinct).unwrap();
-            actual.append_leaf_blocking(distinct).unwrap();
-            assert_mmr_equivalent(&expected, &actual, count + 1);
+            per_leaf.append_leaf_blocking(distinct).unwrap();
+            batched.append_leaf_blocking(distinct).unwrap();
+            assert_mmr_equivalent(&per_leaf, &batched, count + 1);
         }
     }
 
     #[test]
     fn test_prefill_repeated_leaves_resumes_per_leaf_prefix() {
-        let expected = setup_handle();
-        append_sentinels(&expected, 20000);
+        let reference = setup_handle();
+        append_sentinels(&reference, 20000);
         for prefix in [1, 5, 8192, 12345] {
-            let actual = setup_handle();
-            append_sentinels(&actual, prefix);
-            actual
+            let resumed = setup_handle();
+            append_sentinels(&resumed, prefix);
+            resumed
                 .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, 20000)
                 .unwrap();
-            assert_mmr_equivalent(&expected, &actual, 20000);
+            assert_mmr_equivalent(&reference, &resumed, 20000);
         }
     }
 
@@ -1034,10 +1034,12 @@ mod tests {
         }
         // A completed prefill remains a no-op after real manifests arrive.
         handle.append_leaf_blocking(Hash::from([0x42; 32])).unwrap();
+        let before = snapshot_nodes(&handle, count + 1);
         handle
             .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, count)
             .unwrap();
         assert_eq!(handle.get_leaf_count_blocking().unwrap(), count + 1);
+        assert_eq!(snapshot_nodes(&handle, count + 1), before);
     }
 
     #[test]
@@ -1078,20 +1080,20 @@ mod tests {
 
     #[test]
     fn test_prefill_repeated_leaves_resumes_at_chunk_boundary() {
-        let expected = setup_handle();
-        let actual = setup_handle();
+        let reference = setup_handle();
+        let resumed = setup_handle();
         let target = REPEATED_LEAF_CHUNK_SIZE * 5 / 2;
-        append_sentinels(&expected, target);
-        actual
+        append_sentinels(&reference, target);
+        resumed
             .prefill_repeated_leaves_blocking(
                 MMR_SENTINEL_DUMMY_LEAF_HASH,
                 REPEATED_LEAF_CHUNK_SIZE,
             )
             .unwrap();
-        actual
+        resumed
             .prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, target)
             .unwrap();
-        assert_mmr_equivalent(&expected, &actual, target);
+        assert_mmr_equivalent(&reference, &resumed, target);
     }
 
     /// Reads `PREFILL_LEAVES` and `PREFILL_CHUNK` so one process runs one
