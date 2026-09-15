@@ -37,10 +37,6 @@ pub enum EpochDaError {
     /// Finalizing or encoding the accumulated DA failed.
     #[error("DA accumulation failed: {0}")]
     Accumulation(#[source] DaAccumulationError),
-
-    /// The accumulator did not produce a DA blob.
-    #[error("no DA blob produced after epoch replay")]
-    MissingBlob,
 }
 
 /// Version-agnostic artifacts computed by replaying an epoch's blocks.
@@ -99,7 +95,7 @@ pub fn compute_epoch_da(
     let encoded_da = da_state
         .take_completed_epoch_da_blob()
         .map_err(EpochDaError::Accumulation)?
-        .ok_or(EpochDaError::MissingBlob)?;
+        .expect("a successfully replayed terminal epoch must produce a DA blob");
 
     Ok(EpochReplayArtifacts {
         encoded_da,
