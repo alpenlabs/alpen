@@ -5,6 +5,7 @@
 //! Host-only: depends on btcio, the Bitcoin RPC client, and EE node storage, so
 //! it is never linked into proof/guest builds.
 
+mod batch_statediff;
 mod blob_provider;
 mod blob_source;
 mod chunking;

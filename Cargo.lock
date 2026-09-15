@@ -1225,6 +1225,7 @@ dependencies = [
  "strata-btc-types",
  "strata-btcio",
  "strata-codec",
+ "strata-da-framework",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
