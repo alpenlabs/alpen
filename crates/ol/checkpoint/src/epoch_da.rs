@@ -61,6 +61,9 @@ impl<Log> EpochReplayArtifacts<Log> {
 /// ASM manifests are already available from L1, so epoch DA does not duplicate
 /// the state effects reconstructed from them. The computation therefore
 /// replays the epoch's blocks without applying the terminal ASM-log drain.
+/// Log collection begins after epoch-initial processing. This is currently
+/// complete because [`strata_ol_stf_v1::process_epoch_initial`] has no log
+/// output; include that phase's output here if this changes.
 ///
 /// # Errors
 ///
