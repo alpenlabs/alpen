@@ -8,6 +8,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
@@ -372,7 +373,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
         .get_ol_state(prev_terminal)?
         .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
     let da_output = compute_epoch_da(
-        ol_state_raw,
+        MemoryStateBaseLayer::new(ol_state_raw),
         &epoch_blocks,
         &prev_terminal_header,
         runtime_params,

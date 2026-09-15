@@ -8,10 +8,8 @@
 
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_support_types::{
-    DaAccumulatingState, DaAccumulationError, MemoryStateBaseLayer,
-};
-use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_state_support_types::{DaAccumulatingState, DaAccumulationError};
+use strata_ol_state_types::IStateAccessorMut;
 use strata_ol_stf_v1::{ExecError, execute_block_batch_predrain};
 use thiserror::Error;
 
@@ -69,12 +67,16 @@ impl<Log> EpochReplayArtifacts<Log> {
 ///
 /// Returns an error if the blocks do not form a complete epoch, block replay
 /// fails, or the accumulated DA diff cannot be encoded.
-pub fn compute_epoch_da(
-    pre_epoch_state: OLStateV1,
+pub fn compute_epoch_da<S>(
+    pre_epoch_state: S,
     epoch_blocks: &[OLBlockV1],
     previous_terminal: &OLBlockHeaderV1,
     runtime_params: &OLRuntimeParams,
-) -> Result<EpochReplayArtifacts<OLLog>, EpochDaError> {
+) -> Result<EpochReplayArtifacts<OLLog>, EpochDaError>
+where
+    S: IStateAccessorMut,
+    DaAccumulatingState<S>: IStateAccessorMut,
+{
     let (terminal, preceding_blocks) = epoch_blocks.split_last().ok_or(EpochDaError::NoBlocks)?;
     if !terminal.header().is_terminal() {
         return Err(EpochDaError::FinalBlockNotTerminal);
@@ -86,7 +88,7 @@ pub fn compute_epoch_da(
         return Err(EpochDaError::EarlyTerminal);
     }
 
-    let mut da_state = DaAccumulatingState::new(MemoryStateBaseLayer::new(pre_epoch_state));
+    let mut da_state = DaAccumulatingState::new(pre_epoch_state);
     let ol_logs = execute_block_batch_predrain(
         &mut da_state,
         epoch_blocks,
@@ -109,6 +111,7 @@ pub fn compute_epoch_da(
 #[cfg(test)]
 mod tests {
     use strata_ol_params::OLRuntimeParams;
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf_v1::BlockComponents;
     use strata_ol_stf_v1::test_utils::{
         epoch_runner_run_block as run_block, epoch_runner_run_genesis as run_genesis,
@@ -125,7 +128,7 @@ mod tests {
         let runtime_params = OLRuntimeParams::test_default();
 
         let empty_error = compute_epoch_da(
-            pre_epoch_state.clone(),
+            MemoryStateBaseLayer::new(pre_epoch_state.clone()),
             &[],
             previous_terminal.header(),
             &runtime_params,
@@ -141,7 +144,7 @@ mod tests {
             BlockComponents::new_empty(),
         );
         let nonterminal_error = compute_epoch_da(
-            pre_epoch_state,
+            MemoryStateBaseLayer::new(pre_epoch_state),
             &blocks,
             previous_terminal.header(),
             &runtime_params,

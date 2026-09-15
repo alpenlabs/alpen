@@ -26,6 +26,7 @@ prover = [
   "dep:strata-paas",
   "dep:strata-proofimpl-checkpoint",
   "dep:strata-proofimpl-predicate-keys",
+  "dep:strata-ol-state-support-types",
   "dep:zkaleido",
 ]
 sp1 = [
@@ -74,6 +75,7 @@ strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
 strata-ol-state-provider = { workspace = true, optional = true }
+strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
 strata-ol-tx-types-v1.workspace = true

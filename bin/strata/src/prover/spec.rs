@@ -11,6 +11,7 @@ pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_checkpoint::compute_epoch_da;
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_paas::{InputResolution, ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
@@ -152,8 +153,13 @@ fn fetch_input_blocking(
 
     blocks.reverse();
 
-    let da_output = compute_epoch_da((*start_state).clone(), &blocks, &parent, &runtime_params)
-        .map_err(|err| ProverError::DaComputation(err.to_string()))?;
+    let da_output = compute_epoch_da(
+        MemoryStateBaseLayer::new((*start_state).clone()),
+        &blocks,
+        &parent,
+        &runtime_params,
+    )
+    .map_err(|err| ProverError::DaComputation(err.to_string()))?;
     let (da_state_diff_bytes, _) = da_output.into_parts();
 
     debug!(
