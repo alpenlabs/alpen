@@ -5,13 +5,10 @@ use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_service::CommandCompletionSender;
 use tokio::sync::oneshot;
 
-use crate::{MempoolTxInvalidReason, OLMempoolResult};
+use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolResult};
 
 /// Type alias for transaction submission result.
 type SubmitTransactionResult = OLMempoolResult<OLTxId>;
-
-/// Type alias for get transactions result.
-type GetTransactionsResult = OLMempoolResult<Vec<(OLTxId, OLTransactionV1)>>;
 
 /// Commands that can be sent to the mempool service.
 #[derive(Debug)]
@@ -27,14 +24,10 @@ pub enum MempoolCommand {
         completion: CommandCompletionSender<SubmitTransactionResult>,
     },
 
-    /// Get transactions from the mempool in priority order.
-    ///
-    /// Returns up to `limit` transactions.
-    GetTransactions {
-        /// Maximum number of transactions to return.
-        limit: usize,
-        /// Completion sender for the result.
-        completion: CommandCompletionSender<GetTransactionsResult>,
+    /// Snapshot shared transaction bodies and ordering metadata for one selection attempt.
+    GetCandidates {
+        /// Completion sender for the snapshot.
+        completion: CommandCompletionSender<MempoolCandidates>,
     },
 
     /// Report invalid transactions to the mempool.

@@ -7,12 +7,14 @@
     )
 )]
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::iter;
 use std::ops::RangeInclusive;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::vec::IntoIter;
 
 use async_trait::async_trait;
 use bitcoin::Network;
@@ -45,7 +47,7 @@ use strata_ol_chain_types_v1::{
     LogDecodeError, OLBlockBodyV1, OLBlockV1, OLLog, OLLogType, OLTxSegmentV1,
     SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData, test_utils as ol_test_utils,
 };
-use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
+use strata_ol_mempool::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
@@ -72,7 +74,7 @@ pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
 }
 
 use crate::block_assembly::{
-    ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
+    ConstructBlockOutput, TransactionSource, calculate_block_slot_and_epoch, construct_block,
     generate_block_template_inner,
 };
 use crate::context::{BlockAssemblyAnchorContext, BlockAssemblyContext};
@@ -180,7 +182,7 @@ pub(crate) const TEST_L1_REORG_SAFE_DEPTH: u32 = 0;
 /// Mock mempool provider for tests that stores transactions in memory.
 #[derive(Debug)]
 pub struct MockMempoolProvider {
-    transactions: Mutex<Vec<(OLTxId, OLTransactionV1)>>,
+    transactions: Mutex<Vec<(OLTxId, Arc<OLTransactionV1>)>>,
     report_call_count: AtomicUsize,
     last_reported_invalid_txs: Mutex<Vec<(OLTxId, MempoolTxInvalidReason)>>,
     fail_mode: Mutex<MockMempoolFailMode>,
@@ -191,7 +193,7 @@ pub struct MockMempoolProvider {
 pub(crate) enum MockMempoolFailMode {
     #[default]
     None,
-    GetTransactions,
+    GetCandidates,
     ReportInvalidTransactions,
 }
 
@@ -208,7 +210,7 @@ impl MockMempoolProvider {
 
     /// Add a transaction to the mock mempool.
     pub(crate) fn add_transaction(&self, txid: OLTxId, tx: OLTransactionV1) {
-        self.transactions.lock().unwrap().push((txid, tx));
+        self.transactions.lock().unwrap().push((txid, Arc::new(tx)));
     }
 
     /// Configures a failure injection mode.
@@ -235,20 +237,20 @@ impl Default for MockMempoolProvider {
 
 #[async_trait]
 impl MempoolProvider for MockMempoolProvider {
-    async fn get_transactions(
-        &self,
-        limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransactionV1)>> {
-        if *self.fail_mode.lock().unwrap() == MockMempoolFailMode::GetTransactions {
+    async fn get_candidates(&self) -> BlockAssemblyResult<MempoolCandidates> {
+        if *self.fail_mode.lock().unwrap() == MockMempoolFailMode::GetCandidates {
             return Err(crate::BlockAssemblyError::Mempool(
                 OLMempoolError::ServiceClosed(
-                    "mock mempool: get_transactions injected failure".to_string(),
+                    "mock mempool: get_candidates injected failure".to_string(),
                 ),
             ));
         }
-
         let txs = self.transactions.lock().unwrap();
-        Ok(txs.iter().take(limit).cloned().collect())
+        Ok(MempoolCandidates::build_snapshot(
+            txs.iter()
+                .enumerate()
+                .map(|(index, (txid, tx))| (*txid, tx, index as u64)),
+        ))
     }
 
     async fn report_invalid_transactions(
@@ -276,11 +278,8 @@ impl MempoolProvider for MockMempoolProvider {
 
 #[async_trait]
 impl MempoolProvider for Arc<MockMempoolProvider> {
-    async fn get_transactions(
-        &self,
-        limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransactionV1)>> {
-        MempoolProvider::get_transactions(self.as_ref(), limit).await
+    async fn get_candidates(&self) -> BlockAssemblyResult<MempoolCandidates> {
+        MempoolProvider::get_candidates(self.as_ref()).await
     }
 
     async fn report_invalid_transactions(
@@ -1616,6 +1615,20 @@ pub(crate) fn seeded_da(n: usize) -> AccumulatedDaData {
 
 // ===== Assembly Pipeline Helper =====
 
+// Preserves supplied order, including duplicate and out-of-order updates.
+impl TransactionSource for IntoIter<(OLTxId, OLTransactionV1)> {
+    fn max_accepted(&self) -> usize {
+        self.len()
+    }
+
+    fn next(
+        &mut self,
+        _blocked_sequences: &HashMap<AccountId, u64>,
+    ) -> Option<(OLTxId, Arc<OLTransactionV1>)> {
+        Iterator::next(self).map(|(txid, tx)| (txid, Arc::new(tx)))
+    }
+}
+
 /// Assembles a block for `config` using tx list and epoch resource state before the candidate
 /// block.
 pub(crate) async fn assemble_block_with_txs(
@@ -1640,7 +1653,7 @@ pub(crate) async fn assemble_block_with_txs(
         parent_state,
         block_slot,
         block_epoch,
-        txs,
+        txs.into_iter(),
         resource_state_before_block,
     )
     .await

@@ -11,13 +11,12 @@ use strata_db_types::MmrId;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
-use strata_ol_mempool::MempoolTxInvalidReason;
+use strata_ol_mempool::{MempoolCandidates, MempoolTxInvalidReason};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1};
-use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
 use tracing::debug;
@@ -253,11 +252,8 @@ where
     M: MempoolProvider + Send + Sync + 'static,
     S: Send + Sync + 'static,
 {
-    async fn get_transactions(
-        &self,
-        limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransactionV1)>> {
-        MempoolProvider::get_transactions(&self.mempool_provider, limit).await
+    async fn get_candidates(&self) -> BlockAssemblyResult<MempoolCandidates> {
+        self.mempool_provider.get_candidates().await
     }
 
     async fn report_invalid_transactions(
