@@ -4,6 +4,7 @@
 //! without accumulator proofs) before they are included in blocks.
 
 mod builder;
+mod candidates;
 mod command;
 mod error;
 mod handle;
@@ -15,6 +16,7 @@ mod types;
 mod validation;
 
 pub use builder::MempoolBuilder;
+pub use candidates::{MempoolCandidate, MempoolCandidates};
 pub use command::MempoolCommand;
 pub use error::OLMempoolError;
 pub use handle::MempoolHandle;
