@@ -572,6 +572,8 @@ impl EpochDaAccumulator {
 /// This wrapper should only be used for pre-drain execution (the per-block
 /// phases up to but excluding the epoch-terminal drain); the drain effects
 /// derived from L1 manifests must be applied on a non-DA tracking accessor.
+// TODO(STR-4436): Redesign this as a caller-controlled `DaTrackingLayer` that tracks one diff and
+// is consumed when tracking ends instead of managing the epoch lifecycle internally.
 #[derive(Debug)]
 pub struct DaAccumulatingState<S: IStateAccessor> {
     /// Wrapped state accessor.
@@ -584,8 +586,8 @@ pub struct DaAccumulatingState<S: IStateAccessor> {
     pending_epoch_diffs: VecDeque<OLStateDiffV1>,
 
     /// Completed epoch blobs waiting to be drained.
-    // TODO: Remove this queue unless a producer is introduced; it is initialized and read but
-    // never populated.
+    // TODO(STR-4436): Remove this queue unless a producer is introduced; it is initialized and
+    // read but never populated.
     pending_epoch_blobs: VecDeque<Vec<u8>>,
 
     /// Error captured while finalizing an epoch via set_cur_epoch.
@@ -642,7 +644,6 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     }
 
     /// Returns the next completed epoch DA blob, if any.
-    // TODO: Split queued completed-epoch draining from finalizing the current accumulator.
     // Production checkpoint callers only finalize one pre-drain epoch, so combining both
     // responsibilities behind an optional result obscures the interface contract.
     pub fn take_completed_epoch_da_blob(&mut self) -> Result<Option<Vec<u8>>, DaAccumulationError> {
