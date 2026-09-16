@@ -1,6 +1,6 @@
 name: AI Security Review
 
-# Review behavior lives in https://github.com/alpenlabs/actions/tree/main/ai-security-review.
+# Review behavior lives in https://github.com/alpenlabs/actions/tree/v1.0.0/ai-security-review.
 # ALPEN_ACTIONS_READ_TOKEN needs Contents: read access to the internal actions repository.
 # Also configure CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for the shared action.
 # Keep pull_request: pull_request_target would expose secrets to untrusted PR content.
@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: alpenlabs/actions
-          ref: main # Adopt centrally reviewed prompt/model updates on subsequent runs.
+          ref: 667a3a78a2fec2fffc560b39115456b72f4d71d0 # v1.0.0
           token: ${{ secrets.ALPEN_ACTIONS_READ_TOKEN }}
           path: .alpen-actions
           persist-credentials: false
