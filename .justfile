@@ -303,6 +303,7 @@ rustdocs:
     RUSTDOCFLAGS="\
     --show-type-layout \
     --enable-index-page -Z unstable-options \
+    -Znext-solver=coherence \
     -A rustdoc::private-doc-tests \
     -D warnings" \
     cargo doc \
