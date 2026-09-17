@@ -17,8 +17,9 @@ use crate::{batch_statediff::CodeClearAwareBatchBuilder as BatchBuilder, DaBlobS
 /// 1. Retrieves the block range from [`BatchStorage`].
 /// 2. Fetches per-block [`BlockStateChanges`](alpen_reth_statediff::BlockStateChanges) from the
 ///    [`StateDiffProvider`].
-/// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via
-///    [`BatchBuilder`].
+/// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via a wrapper
+///    around [`BatchBuilder`](alpen_reth_statediff::BatchBuilder) that also records EIP-7702 code
+///    clears the builder drops.
 /// 4. Reads the last block's header to build
 ///    [`EvmHeaderSummary`](alpen_ee_da_types::EvmHeaderSummary).
 /// 5. Returns the assembled [`DaBlob`].
