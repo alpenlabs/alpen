@@ -113,14 +113,13 @@ fn test_log_measurement_matches_stf_with_mixed_messages() {
 }
 
 #[test]
-fn test_maximal_update_exceeds_log_count_budget() {
-    // Exercise #2274's full message capacity, including the update's own log.
+fn test_maximal_update_exceeds_log_payload_budget() {
     let error =
-        check_tx_log_budget(&withdrawal_update(65_536, 0), &BridgeParams::default()).unwrap_err();
+        check_tx_log_budget(&withdrawal_update(255, 0), &BridgeParams::default()).unwrap_err();
     assert!(matches!(
         error,
-        TxLogBudgetError::LogCount {
-            actual: 65_537,
+        TxLogBudgetError::LogPayloadBytes {
+            actual: 24_235,
             limit: 16_383
         }
     ));
