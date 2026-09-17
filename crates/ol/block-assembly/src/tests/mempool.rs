@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use ssz::Encode;
+use strata_acct_types::{BitcoinAmount, MsgPayload};
 use strata_config::SequencerConfig;
 use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId, OLTxId};
@@ -15,6 +16,7 @@ use strata_ol_mempool::{
 use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_provider::OLStateManagerProviderImpl;
 use strata_ol_tx_types_v1::OLTransactionV1;
+use strata_snark_acct_types::OutputMessage;
 use strata_status::StatusChannel;
 use strata_tasks::TaskManager;
 use tokio::runtime::Handle;
@@ -26,7 +28,7 @@ use crate::resource_state::EpochResourceState;
 use crate::test_utils::{
     FailingStateProvider, MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
     TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder, create_test_storage,
-    included_txids, make_p2wpkh_bosd_descriptor, test_account_id,
+    included_txids, test_account_id,
 };
 use crate::types::BlockGenerationConfig;
 use crate::{
@@ -44,7 +46,7 @@ async fn test_persisted_oversized_update_rejection_removes_successors() {
     ])
     .await;
     let oversized = MempoolSnarkTxBuilder::new(account1)
-        .with_withdrawals(500, 100_000_000, make_p2wpkh_bosd_descriptor(0x14))
+        .with_withdrawals(173, 100_000_000, vec![0; 81])
         .build();
     let oversized_id = oversized.compute_txid();
     let successor = MempoolSnarkTxBuilder::new(account1).with_seq_no(1).build();
@@ -194,7 +196,13 @@ async fn test_deferred_account_backlog_does_not_hide_independent_transaction() {
     );
     // These inbox messages pass log admission but exceed the DA budget.
     let deferred = MempoolSnarkTxBuilder::new(account_a)
-        .with_outputs(vec![(account_b, 0); 6_000])
+        .with_output_messages(vec![
+            OutputMessage::new(
+                account_b,
+                MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![0; 4096]).unwrap(),
+            );
+            64
+        ])
         .build();
     let deferred_id = mempool.submit_transaction(deferred).await.unwrap();
     for seq_no in 1..=1_024 {

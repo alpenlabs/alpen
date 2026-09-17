@@ -39,8 +39,8 @@ use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
 };
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, ProofState, Seqno, UpdateInputData, UpdateOperationData,
-    UpdateOutputs, UpdateStateData,
+    LedgerRefs, OutputMessage, OutputTransfer, ProofState, Seqno, UpdateInputData,
+    UpdateOperationData, UpdateOutputs, UpdateStateData,
 };
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
@@ -3847,6 +3847,49 @@ async fn snark_acct_update_manifest_missing_extra_data_returns_null_extra_data()
 // ── submit_transaction ──
 
 #[tokio::test]
+async fn submit_transaction_rejects_oversized_outputs_before_mempool() {
+    let account = test_account_id(1);
+    let amount = BitcoinAmount::try_from(1).unwrap();
+    let message = OutputMessage::new(account, MsgPayload::from_bytes(amount, vec![1]).unwrap());
+    let transfer = OutputTransfer::new(account, amount);
+    let rpc = make_rpc(MockProvider::new().with_submit_fn(|_| {
+        panic!("oversized outputs must be rejected before mempool submission")
+    }));
+
+    for (resource, outputs) in [
+        (
+            "message_count",
+            UpdateOutputs::new_empty().with_messages(vec![message; 256]),
+        ),
+        (
+            "transfer_count",
+            UpdateOutputs::new_empty().with_transfers(vec![transfer; 256]),
+        ),
+    ] {
+        let operation = UpdateOperationData::new(
+            0,
+            ProofState::new(Buf32::zero(), 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            outputs,
+            vec![],
+        );
+        let tx = RpcOLTransaction::new_snark_acct_update(RpcSnarkAccountUpdate::new(
+            HexBytes32::from(*account.inner()),
+            HexBytes(operation.as_ssz_bytes()),
+            HexBytes(vec![]),
+        ));
+        let error = rpc.submit_transaction(tx).await.unwrap_err();
+        assert_eq!(error.code(), INVALID_PARAMS_CODE);
+        let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
+        assert_eq!(
+            data,
+            json!({"resource": resource, "actual": 256, "limit": 255})
+        );
+    }
+}
+
+#[tokio::test]
 async fn submit_transaction_preserves_log_budget_error_data() {
     let account = test_account_id(1);
     let mut descriptor = vec![0x42; 81];
@@ -3890,14 +3933,14 @@ async fn submit_transaction_preserves_log_budget_error_data() {
 #[test]
 fn log_count_rejection_preserves_limit_data() {
     let error = map_mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
-        actual: 65_537,
-        limit: 16_383,
+        actual: 4_097,
+        limit: 4_096,
     }));
     assert_eq!(error.code(), INVALID_PARAMS_CODE);
     let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
     assert_eq!(
         data,
-        json!({"resource": "log_count", "actual": 65537, "limit": 16383})
+        json!({"resource": "log_count", "actual": 4097, "limit": 4096})
     );
 }
 

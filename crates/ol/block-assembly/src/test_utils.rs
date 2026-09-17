@@ -510,6 +510,12 @@ impl MempoolSnarkTxBuilder {
         self
     }
 
+    /// Sets the outgoing messages, including their payload data.
+    pub(crate) fn with_output_messages(mut self, messages: Vec<OutputMessage>) -> Self {
+        self.output_messages = messages;
+        self
+    }
+
     /// Appends a withdrawal message routed to the bridge-gateway account.
     pub(crate) fn with_withdrawal(mut self, amount_sats: u64, destination_desc: Vec<u8>) -> Self {
         self.output_messages.push(withdrawal_output_message(
@@ -569,7 +575,7 @@ impl MempoolSnarkTxBuilder {
             operation_data,
         ));
 
-        // Build effects: empty by default. `output_messages()` take precedence;
+        // Build effects: empty by default. Explicit messages take precedence;
         // otherwise we synthesize plain value outputs from `with_outputs()`.
         let output_messages = if !self.output_messages.is_empty() {
             self.output_messages
@@ -590,16 +596,10 @@ impl MempoolSnarkTxBuilder {
                 .collect()
         };
 
-        let mut effects = strata_acct_types::TxEffects::default();
-        for msg in output_messages {
-            effects
-                .push_message(
-                    msg.dest(),
-                    msg.payload().value().to_sat(),
-                    msg.payload().data().to_vec(),
-                )
-                .expect("message payload bytes must fit within SSZ max length");
-        }
+        let effects = UpdateOutputs::new_empty()
+            .with_messages(output_messages)
+            .try_to_tx_effects()
+            .expect("test outputs fit transaction effect capacities");
 
         let data = OLTransactionDataV1::new(payload, effects);
         let update_proof = prop::collection::vec(any::<u8>(), 0..64)

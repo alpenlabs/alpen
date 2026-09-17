@@ -1141,6 +1141,7 @@ mod tests {
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_snark_acct_types::OutputMessage;
 
     use super::*;
     use crate::test_utils::*;
@@ -2854,11 +2855,7 @@ mod tests {
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let oversized = MempoolSnarkTxBuilder::new(account1)
-            .with_withdrawals(
-                500,
-                CHECKPOINT_MSG_VALUE_SATS,
-                make_p2wpkh_bosd_descriptor(0x14),
-            )
+            .with_withdrawals(173, CHECKPOINT_MSG_VALUE_SATS, vec![0; 81])
             .build();
         let oversized_id = oversized.compute_txid();
         let successor = MempoolSnarkTxBuilder::new(account1).with_seq_no(1).build();
@@ -2971,11 +2968,15 @@ mod tests {
                 .await;
             let mut env = TestEnv::from_fixture(fixture, parent_commitment);
             // Each update's inbox writes fit a fresh checkpoint; together they exceed DA capacity.
+            let message = OutputMessage::new(
+                account3,
+                MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![0; 1024]).unwrap(),
+            );
             let first = MempoolSnarkTxBuilder::new(account1)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(vec![message.clone(); 128])
                 .build();
             let deferred = MempoolSnarkTxBuilder::new(account2)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(vec![message; 128])
                 .build();
             let deferred_id = deferred.compute_txid();
             let successor = MempoolSnarkTxBuilder::new(account2).with_seq_no(1).build();
@@ -3063,7 +3064,14 @@ mod tests {
             .await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
         let deferred = MempoolSnarkTxBuilder::new(account1)
-            .with_outputs(vec![(account2, 0); 6_000])
+            .with_output_messages(vec![
+                OutputMessage::new(
+                    account2,
+                    MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![0; 4096])
+                        .unwrap(),
+                );
+                64
+            ])
             .build();
         let deferred_id = deferred.compute_txid();
         let mut resource_state = EpochResourceState::new_empty();
@@ -3162,12 +3170,6 @@ mod tests {
     /// Tests that a tx producing logs which would overflow the remaining block
     /// budget triggers a soft-break: the tx is not included, not marked invalid,
     /// and remains available for future blocks.
-    ///
-    /// Note: `TxEffects::MAX_MESSAGES` and `MAX_LOGS_PER_BLOCK` are both 65,536,
-    /// and a tx emits one log of its own on top of its message logs, so a single
-    /// maximal tx now sits one log over the cap. Pre-filling the block output
-    /// buffer keeps this test cheap either way: a small tx triggers the same
-    /// soft-break without having to build a 65k-message tx.
     async fn build_process_transactions_preamble(
         env: &TestEnv,
         timestamp: u64,

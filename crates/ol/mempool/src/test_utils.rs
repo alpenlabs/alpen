@@ -138,7 +138,10 @@ pub(crate) fn create_test_snark_tx_from_update(
     let sau_operation_data = SauTxOperationDataV1::new(sau_update_data, messages, sau_ledger_refs);
     let payload =
         TransactionPayloadV1::SnarkAccountUpdate(SauTxPayloadV1::new(target, sau_operation_data));
-    let effects = operation.outputs().to_tx_effects();
+    let effects = operation
+        .outputs()
+        .try_to_tx_effects()
+        .expect("test outputs fit transaction effect capacities");
     let data = OLTransactionDataV1::new(payload, effects).with_constraints(constraints);
     let proofs = TxProofsV1::new(
         ProofSatisfierListV1::single(base_update.update_proof().to_vec()),

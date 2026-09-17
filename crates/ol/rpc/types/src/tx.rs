@@ -11,7 +11,7 @@ use strata_ol_tx_types_v1::{
 };
 use strata_predicate::PredicateKey;
 use strata_primitives::{HexBytes, HexBytes32};
-use strata_snark_acct_types::{SnarkAccountUpdate, UpdateOperationData};
+use strata_snark_acct_types::{OutputsError, SnarkAccountUpdate, UpdateOperationData};
 
 use crate::RpcSnarkAccountUpdate;
 
@@ -145,6 +145,10 @@ impl From<RpcTxConstraints> for TxConstraintsV1 {
 /// Error type for transaction conversion.
 #[derive(Debug, thiserror::Error)]
 pub enum RpcTxConversionError {
+    /// The update outputs exceed transaction effect capacities.
+    #[error(transparent)]
+    Outputs(#[from] OutputsError),
+
     /// Failed to decode update operation data.
     #[error("failed to decode update operation data: {0}")]
     DecodeOperationData(String),
@@ -427,7 +431,7 @@ impl TryFrom<RpcOLTransaction> for OLTransactionV1 {
                     target,
                     sau_operation_data,
                 ));
-                let effects = operation.outputs().to_tx_effects();
+                let effects = operation.outputs().try_to_tx_effects()?;
                 let tx_data =
                     OLTransactionDataV1::new(payload, effects).with_constraints(constraints);
                 let tx_proofs = TxProofsV1::new(
@@ -443,8 +447,11 @@ impl TryFrom<RpcOLTransaction> for OLTransactionV1 {
 #[cfg(test)]
 mod tests {
     use ssz::Encode;
+    use strata_acct_types::{BitcoinAmount, MsgPayload};
     use strata_predicate::PredicateTypeId;
-    use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs};
+    use strata_snark_acct_types::{
+        LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs,
+    };
 
     use super::*;
     use crate::RpcSnarkAccountUpdate;
@@ -476,6 +483,102 @@ mod tests {
                 sau.operation().update().new_predicate().cloned()
             }
             _ => panic!("test: expected SAU payload"),
+        }
+    }
+
+    #[test]
+    fn test_sau_conversion_rejects_too_many_messages() {
+        let message = OutputMessage::new(
+            AccountId::from([3; 32]),
+            MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![1]).unwrap(),
+        );
+        let update =
+            make_rpc_sau_update(UpdateOutputs::new_empty().with_messages(vec![message; 256]));
+        let result = OLTransactionV1::try_from(RpcOLTransaction::new_snark_acct_update(update));
+        assert!(matches!(
+            result,
+            Err(RpcTxConversionError::Outputs(
+                OutputsError::MessagesCapacityExceeded {
+                    actual: 256,
+                    limit: 255,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_sau_conversion_rejects_too_many_transfers() {
+        let transfer = OutputTransfer::new(
+            AccountId::from([3; 32]),
+            BitcoinAmount::try_from(1).unwrap(),
+        );
+        let update =
+            make_rpc_sau_update(UpdateOutputs::new_empty().with_transfers(vec![transfer; 256]));
+        let result = OLTransactionV1::try_from(RpcOLTransaction::new_snark_acct_update(update));
+        assert!(matches!(
+            result,
+            Err(RpcTxConversionError::Outputs(
+                OutputsError::TransfersCapacityExceeded {
+                    actual: 256,
+                    limit: 255,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_sau_conversion_preserves_all_effects_at_capacity() {
+        for count in [0, 255] {
+            let outputs = UpdateOutputs::new_empty()
+                .with_transfers(
+                    (0..count)
+                        .map(|i| {
+                            OutputTransfer::new(
+                                AccountId::from([i as u8; 32]),
+                                BitcoinAmount::try_from(i).unwrap(),
+                            )
+                        })
+                        .collect(),
+                )
+                .with_messages(
+                    (0..count)
+                        .map(|i| {
+                            OutputMessage::new(
+                                AccountId::from([i as u8; 32]),
+                                MsgPayload::from_bytes(
+                                    BitcoinAmount::try_from(i).unwrap(),
+                                    vec![i as u8],
+                                )
+                                .unwrap(),
+                            )
+                        })
+                        .collect(),
+                );
+            let tx = convert(make_rpc_sau_update(outputs.clone()));
+            assert_eq!(
+                tx.data()
+                    .effects()
+                    .transfers_iter()
+                    .map(|transfer| (transfer.dest(), transfer.value()))
+                    .collect::<Vec<_>>(),
+                outputs
+                    .transfers()
+                    .iter()
+                    .map(|transfer| (transfer.dest(), transfer.value()))
+                    .collect::<Vec<_>>(),
+            );
+            assert_eq!(
+                tx.data()
+                    .effects()
+                    .messages_iter()
+                    .map(|message| (message.dest(), message.payload()))
+                    .collect::<Vec<_>>(),
+                outputs
+                    .messages()
+                    .iter()
+                    .map(|message| (message.dest(), message.payload()))
+                    .collect::<Vec<_>>(),
+            );
         }
     }
 
