@@ -6,7 +6,9 @@ use strata_acct_types::{
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::constants::AsmLogTypeId;
-use strata_asm_logs::{CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate};
+use strata_asm_logs::{
+    CheckpointPredicateEnacted, CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
+};
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_msg_fmt::{Msg, OwnedMsg};
@@ -26,16 +28,19 @@ use crate::msg_payload_coin::MsgPayloadCoin;
 /// Buffers the ASM logs carried by a sequence of manifests into the intraepoch
 /// state for later processing at the epoch terminal.
 ///
-/// Manifests may be included in any block within an epoch; this does not imply
-/// the block is an epoch terminal. The manifest heights must be strictly
-/// sequential after the state's `last_l1_height`, which carries the running
-/// cursor across blocks since `append_l1_block_rec` is called eagerly here. The
+/// Manifests may be included in any block within an epoch. A manifest carrying
+/// a checkpoint predicate enactment must be the last manifest of a terminal
+/// block, keeping the epoch entirely within the old predicate's territory.
+/// The manifest heights must be strictly sequential after the state's
+/// `last_l1_height`, which carries the running cursor across blocks since
+/// `append_l1_block_rec` is called eagerly here. The
 /// ASM-log *effects* are deferred to [`process_epoch_terminal`].
 ///
 /// Accepts a plain slice rather than the per-block
 /// [`OLAsmManifestContainerV1`](strata_ol_chain_types_v1::OLAsmManifestContainerV1)
 /// so callers replaying a whole epoch (e.g. checkpoint proving) are not bound
-/// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit.
+/// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit. Those callers pass
+/// `is_terminal = true`; block drivers pass the block's terminal flag.
 ///
 /// NOTE: This does not apply any log effects, advance the epoch, or emit OL
 /// logs.
@@ -49,7 +54,23 @@ use crate::msg_payload_coin::MsgPayloadCoin;
 pub fn process_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
+    is_terminal: bool,
 ) -> ExecResult<()> {
+    for (index, manifest) in manifests.iter().enumerate() {
+        if has_checkpoint_predicate_enactment(manifest) {
+            if index + 1 != manifests.len() {
+                return Err(ExecError::CheckpointPredicateBoundaryNotLast {
+                    boundary: manifest.height(),
+                });
+            }
+            if !is_terminal {
+                return Err(ExecError::CheckpointPredicateBoundaryNonterminal {
+                    boundary: manifest.height(),
+                });
+            }
+        }
+    }
+
     // The state's last seen height is the running cursor; new manifests are
     // strictly after it, regardless of which block in the epoch they arrive in.
     let orig_l1_height = state.last_l1_height();
@@ -78,6 +99,19 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
     }
 
     Ok(())
+}
+
+/// Returns whether a manifest carries a decoded checkpoint predicate enactment.
+///
+/// Several enactment logs in one manifest identify a single boundary at its L1
+/// height. Malformed logs are ignored, matching the other ASM-log handlers.
+/// The predicate identifies no OL spec version; discovery derives that
+/// positionally from successive boundary manifests.
+pub fn has_checkpoint_predicate_enactment(manifest: &AsmManifest) -> bool {
+    manifest
+        .logs()
+        .iter()
+        .any(|log| log.try_into_log::<CheckpointPredicateEnacted>().is_ok())
 }
 
 /// Processes the epoch terminal: drains all buffered ASM logs (applying their
@@ -213,6 +247,12 @@ fn process_asm_log<S: IStateAccessorMut>(
                 return Ok(());
             };
             process_ee_predicate_key_update(state, &data, context)?;
+        }
+
+        Ok(AsmLogTypeId::CheckpointPredicateEnacted) => {
+            // The boundary was enforced when buffering this manifest. The terminal
+            // still executes under the old rules; fork discovery owns activation
+            // from the next epoch (STR-4086).
         }
 
         Ok(ty) => {

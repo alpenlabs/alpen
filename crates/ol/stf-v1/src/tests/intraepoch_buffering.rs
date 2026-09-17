@@ -271,7 +271,7 @@ fn intraepoch_buffer_full_is_rejected() {
     let manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(raw_log)
         .build();
-    let err = process_block_manifests(&mut state, &[manifest])
+    let err = process_block_manifests(&mut state, &[manifest], false)
         .expect_err("buffering into a full intraepoch buffer must error");
 
     assert!(

@@ -1,8 +1,8 @@
 //! Epoch sealing policy for OL block assembly.
 //!
 //! The sealing policy determines when an epoch should be sealed, i.e. when to
-//! create a terminal block. This is a batch production concern, not an STF
-//! concern.
+//! create a terminal block. Cadence and resource limits govern normal batching;
+//! checkpoint predicate boundaries also require sealing under the OL STF.
 
 use std::cmp::Ordering;
 use std::fmt::Debug;
@@ -80,11 +80,14 @@ pub(crate) enum EpochSealingLimit {
 
     /// Epoch-cumulative ASM manifest count.
     ManifestCount,
+
+    /// Consensus boundary at an enacted checkpoint predicate.
+    CheckpointPredicateBoundary,
 }
 
 /// Verdict from checking candidate values against sealing limits.
 ///
-/// The verdict preserves checkpoint-size and manifest-count actions separately
+/// The verdict preserves resource-limit and consensus-boundary actions separately
 /// so multiple crossed limits can be observed together.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EpochSealingLimitVerdict {
@@ -121,6 +124,24 @@ impl EpochSealingLimitVerdict {
         } else {
             self.actions.push((limit, action));
         }
+    }
+
+    /// Requires sealing after admitting a checkpoint predicate boundary manifest.
+    ///
+    /// The manifest's L1 height B is the final height governed by the old predicate
+    /// in ASM. Admit B before sealing so the checkpoint ends at B; manifests from
+    /// B+1 belong to the next epoch and the new predicate.
+    pub(crate) fn record_checkpoint_predicate_boundary(&mut self) {
+        self.record(
+            EpochSealingLimit::CheckpointPredicateBoundary,
+            EpochSealingLimitAction::SealAfterAdmit,
+        );
+    }
+
+    /// Returns whether consensus requires a terminal block regardless of cadence.
+    pub(crate) fn requires_terminal(&self) -> bool {
+        self.action_for(EpochSealingLimit::CheckpointPredicateBoundary)
+            .should_seal()
     }
 
     /// Merges another verdict into this one, keeping the stricter action for each limit.

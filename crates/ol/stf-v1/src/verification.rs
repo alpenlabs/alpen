@@ -187,7 +187,11 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
 
     // 4. Buffer any manifests carried by this block (allowed in any block).
     if let Some(manifest_container) = body.manifests() {
-        manifest_processing::process_block_manifests(state, manifest_container.manifests())?;
+        manifest_processing::process_block_manifests(
+            state,
+            manifest_container.manifests(),
+            header.is_terminal(),
+        )?;
     }
 
     // 5. For non-terminal blocks, the header state root reflects the state
@@ -313,9 +317,8 @@ pub fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) ->
         return Err(ExecError::BlockStructureMismatch);
     }
 
-    // Terminality is signalled authoritatively by the header `IS_TERMINAL`
-    // flag and is independent of whether the body carries manifests, so there
-    // is no body/terminal consistency check here.
+    // Manifest buffering enforces terminality at checkpoint predicate boundaries.
+    // Ordinary manifests do not constrain the header IS_TERMINAL flag.
 
     Ok(())
 }
@@ -424,7 +427,7 @@ pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     // DA diff does not carry.
     let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
     let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output, runtime_params);
-    manifest_processing::process_block_manifests(state, manifests)?;
+    manifest_processing::process_block_manifests(state, manifests, true)?;
     manifest_processing::process_epoch_terminal(state, &term_ctx)?;
     output.verify_logs_within_block_limit()?;
 
@@ -512,8 +515,12 @@ mod tests {
         let output = ExecOutputBuffer::new_empty();
         let runtime_params = OLRuntimeParams::test_default();
         let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output, &runtime_params);
-        manifest_processing::process_block_manifests(&mut expected_state, manifests.manifests())
-            .expect("manifest buffering should succeed");
+        manifest_processing::process_block_manifests(
+            &mut expected_state,
+            manifests.manifests(),
+            true,
+        )
+        .expect("manifest buffering should succeed");
         manifest_processing::process_epoch_terminal(&mut expected_state, &term_ctx)
             .expect("epoch terminal processing should succeed");
         expected_state
