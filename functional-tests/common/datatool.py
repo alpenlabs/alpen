@@ -124,22 +124,16 @@ def write_sequencer_runtime_config(
 
 def generate_sequencer_artifacts(
     datadir: Path,
-    use_unchecked_cred_rule: bool,
     seq_fname: str = "sequencer_root_key",
 ) -> SequencerArtifacts:
     """Ensures the sequencer key and operator pubkeys used to build ASM params.
 
-    A sequencer key is always generated so the signer can fulfill block-signing
-    duties. When ``use_unchecked_cred_rule`` is True, the sequencer pubkey is
-    NOT embedded in the ASM checkpoint sequencer predicate (it stays
-    ``AlwaysAccept``); otherwise the derived pubkey is returned so the ASM
-    checkpoint predicate requires that sequencer's signature.
+    ASM checkpoint authentication always requires the derived sequencer public
+    key.
     """
     sequencer_key_path = datadir / seq_fname
     ensure_priv_key(sequencer_key_path)
-    sequencer_pubkey = (
-        None if use_unchecked_cred_rule else generate_sequencer_pubkey(sequencer_key_path)
-    )
+    sequencer_pubkey = generate_sequencer_pubkey(sequencer_key_path)
     operator_pubkeys = get_operator_pubkeys(datadir, "bridge-operator_keys")
     return SequencerArtifacts(
         sequencer_key_path=sequencer_key_path,

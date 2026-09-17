@@ -71,7 +71,6 @@ class StrataFactory(flexitest.Factory):
         config_overrides: dict[str, object] | None = None,
         ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
-        use_unchecked_cred_rule: bool = False,
         admin_confirmation_depth: int | None = None,
         env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
@@ -93,7 +92,6 @@ class StrataFactory(flexitest.Factory):
             config_overrides: Additional config overrides (-o flag)
             ol_params: Custom OL parameters (genesis accounts, etc.)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
-            use_unchecked_cred_rule: If True, generates params with CredRule::Unchecked.
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
             env: Additional process environment variables.
             ol_block_time_ms: Optional sequencer OL block time override.
@@ -206,7 +204,7 @@ class StrataFactory(flexitest.Factory):
                 )
         else:
             # Generate the sequencer key + operator pubkeys consumed when building ASM params.
-            seq_artifacts = generate_sequencer_artifacts(datadir, use_unchecked_cred_rule)
+            seq_artifacts = generate_sequencer_artifacts(datadir)
 
             # Generate or write OL params.
             if ol_params is not None:

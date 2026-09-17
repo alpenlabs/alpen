@@ -72,7 +72,7 @@ DRAIN_STEP_SLEEP_SECONDS = 1.5
 
 # Upstream logs this when the transition is enacted, carrying the boundary we
 # derive independently. Used only as a cross-check.
-ENACTMENT_LOG = "enacting checkpoint predicate transition"
+ENACTMENT_LOG = "recording checkpoint predicate transition"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 BOUNDARY_FIELD_RE = re.compile(r"\bboundary=(\d+)")
 

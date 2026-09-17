@@ -40,6 +40,7 @@ mod sequencer_services {
     };
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
+    use strata_predicate::{PredicateKey, PredicateTypeId};
     use strata_service::DumbTickHandle;
     use strata_storage::{BroadcastDbOps, ops::writer::EnvelopeDataOps};
     use tokio::sync::mpsc;
@@ -185,12 +186,15 @@ mod sequencer_services {
             .sequencer
             .clone()
             .ok_or_else(|| anyhow!("Sequencer config required for block assembly"))?;
-        let sequencer_predicate = nodectx
+        let sequencer_key = nodectx
             .asm_params()
             .checkpoint_config()
             .ok_or_else(|| anyhow!("ASM checkpoint config required for block assembly"))?
-            .sequencer_predicate
-            .clone();
+            .sequencer_key;
+        let sequencer_predicate = PredicateKey::try_new(
+            PredicateTypeId::Bip340Schnorr,
+            sequencer_key.as_ref().to_vec(),
+        )?;
 
         let epoch_sealing_config = nodectx.config().epoch_sealing.clone().unwrap_or_default();
         let slots_per_epoch = match epoch_sealing_config {
