@@ -21,6 +21,7 @@ eyre.workspace = true
 strata-btc-types.workspace = true
 strata-btcio.workspace = true
 strata-codec.workspace = true
+strata-da-framework.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true

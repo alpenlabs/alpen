@@ -6,11 +6,10 @@ use alloy_primitives::B256;
 use alpen_ee_common::{BatchId, BatchStorage, HeaderSummaryProvider};
 use alpen_ee_da_types::DaBlob;
 use alpen_reth_db::{EeDaContext, StateDiffProvider};
-use alpen_reth_statediff::BatchBuilder;
 use async_trait::async_trait;
 use tracing::*;
 
-use crate::DaBlobSource;
+use crate::{batch_statediff::CodeClearAwareBatchBuilder as BatchBuilder, DaBlobSource};
 
 /// [`DaBlobSource`] that builds encoded DA blobs from Reth state diffs.
 ///
@@ -18,8 +17,9 @@ use crate::DaBlobSource;
 /// 1. Retrieves the block range from [`BatchStorage`].
 /// 2. Fetches per-block [`BlockStateChanges`](alpen_reth_statediff::BlockStateChanges) from the
 ///    [`StateDiffProvider`].
-/// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via
-///    [`BatchBuilder`].
+/// 3. Aggregates them into a [`BatchStateDiff`](alpen_reth_statediff::BatchStateDiff) via a wrapper
+///    around [`BatchBuilder`](alpen_reth_statediff::BatchBuilder) that also records EIP-7702 code
+///    clears the builder drops.
 /// 4. Reads the last block's header to build
 ///    [`EvmHeaderSummary`](alpen_ee_da_types::EvmHeaderSummary).
 /// 5. Returns the assembled [`DaBlob`].
@@ -83,7 +83,7 @@ where
             .await?
             .ok_or_else(|| eyre::eyre!("batch {batch_id:?} not found in storage"))?;
 
-        // 2. Aggregate per-block diffs via BatchBuilder.
+        // 2. Aggregate per-block diffs.
         let mut builder = BatchBuilder::new();
         let mut block_count = 0u64;
 
