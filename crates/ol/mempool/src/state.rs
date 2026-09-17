@@ -948,7 +948,7 @@ mod tests {
             error,
             OLMempoolError::LogBudget(TxLogBudgetError::LogPayloadBytes {
                 actual: 16_445,
-                limit: 16_383,
+                limit: 16_384,
             })
         ));
 

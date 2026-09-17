@@ -21,10 +21,10 @@ use strata_ol_tx_types_v1::*;
 use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
-use crate::checkpoint_size::LogMetrics;
+use crate::checkpoint_size::{CheckpointLimit, LogMetrics};
 use crate::context::BlockAssemblyAnchorContext;
 use crate::epoch_sealing::{
-    EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
+    EpochSealingLimit, EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
     EpochSealingResourceStats,
 };
 use crate::error::BlockAssemblyError;
@@ -834,6 +834,22 @@ where
                         successful_txs.push(tx);
                     }
                 }
+            }
+            Err(ExecError::EpochLogBudget(error)) => {
+                let limit = match error {
+                    EpochLogBudgetError::LogCount { .. } => CheckpointLimit::LogCount,
+                    EpochLogBudgetError::LogPayloadBytes { .. } => CheckpointLimit::LogPayloadBytes,
+                };
+                debug!(?txid, %error, "remaining epoch log budget exceeded, deferring tx");
+                staging_state = DaAccumulatingState::new_with_accumulator(
+                    WriteTrackingState::new(parent_state, backup_batch),
+                    backup_accumulator,
+                );
+                deferred_limits.record(
+                    EpochSealingLimit::CheckpointSize(limit),
+                    EpochSealingLimitAction::RejectCandidate,
+                );
+                block_successors(account_seqno, &mut blocked_sequences);
             }
             Err(e) => {
                 #[cfg(test)]
@@ -2900,7 +2916,7 @@ mod tests {
         let independent = MempoolSnarkTxBuilder::new(account2).build();
         let independent_id = independent.compute_txid();
 
-        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 2);
+        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
         let control = env
             .construct_block_with_da(
                 [(independent_id, independent.clone())],
@@ -3211,6 +3227,71 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_stf_epoch_log_deferral_rolls_back_and_allows_independent_update() {
+        let account1 = test_account_id(1);
+        let account2 = test_account_id(2);
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_account(TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE))
+            .with_account(TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE))
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        // Leave space for B's one update log, but not A's update and withdrawal.
+        for (count, bytes) in [(16_383, 0), (100, 16_374)] {
+            let (parent, header, info, batch, output) =
+                build_process_transactions_preamble(&env, 1_000_001, 1).await;
+            let mut parent = (*parent).clone();
+            parent.set_epoch_log_usage(count, bytes);
+            let context = BlockContext::new(&info, Some(&header));
+            let deferred = MempoolSnarkTxBuilder::new(account1)
+                .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, make_p2wpkh_bosd_descriptor(0x14))
+                .build();
+            let successor = MempoolSnarkTxBuilder::new(account1).with_seq_no(1).build();
+            let independent = MempoolSnarkTxBuilder::new(account2).build();
+            let independent_id = independent.compute_txid();
+            let result = process_transactions(
+                env.ctx(),
+                env.epoch_sealing_policy(),
+                &context,
+                &output,
+                &parent,
+                batch,
+                vec![
+                    (deferred.compute_txid(), deferred),
+                    (successor.compute_txid(), successor),
+                    (independent_id, independent),
+                ]
+                .into_iter(),
+                AccumulatedDaData::new_empty(),
+                0,
+                &OLRuntimeParams::test_default(),
+            );
+            assert_eq!(
+                result
+                    .successful_txs
+                    .iter()
+                    .map(OLTransactionV1::compute_txid)
+                    .collect::<Vec<_>>(),
+                vec![independent_id]
+            );
+            assert_eq!(result.failed_txs, vec![]);
+            assert!(result.sealing_limit_verdict.checkpoint_logs_exceeded());
+            assert_eq!(output.log_count(), 1);
+            let state = WriteTrackingState::new(&parent, result.accumulated_batch);
+            assert_eq!(state.epoch_log_count(), count + 1);
+            assert_eq!(state.epoch_log_payload_bytes(), bytes + 10);
+            assert_eq!(snark_account_state(&state, account1).seqno(), 0.into());
+            assert_eq!(
+                account_balance(&state, account1).to_sat(),
+                DEFAULT_ACCOUNT_BALANCE
+            );
+            assert_eq!(snark_account_state(&state, account2).seqno(), 1.into());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_log_overflow_defers_tx() {
         let account_id = test_account_id(1);
         let env = build_process_tx_env(account_id).await;
@@ -3255,6 +3336,9 @@ mod tests {
             out.failed_txs.is_empty(),
             "soft-break should not mark tx invalid"
         );
+        let state = WriteTrackingState::new(parent_state.as_ref(), out.accumulated_batch);
+        assert_eq!(state.epoch_log_count(), 0);
+        assert_eq!(state.epoch_log_payload_bytes(), 0);
     }
 
     /// Tests that when two txs are processed and the first fills the remaining
@@ -3542,7 +3626,7 @@ mod tests {
 
         let out = run_process_transactions_with_seeded_checkpoint_logs(
             account_id,
-            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 1,
             vec![(tx1_id, tx1), (tx2_id, tx2)],
         )
         .await;

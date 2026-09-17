@@ -3926,7 +3926,7 @@ async fn submit_transaction_preserves_log_budget_error_data() {
     let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
     assert_eq!(
         data,
-        json!({"resource": "log_payload_bytes", "actual": 16445, "limit": 16383})
+        json!({"resource": "log_payload_bytes", "actual": 16445, "limit": 16384})
     );
 }
 

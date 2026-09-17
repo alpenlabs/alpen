@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 strata-acct-types.workspace = true
-strata-asm-checkpoint-types.workspace = true
 strata-bridge-params.workspace = true
 strata-codec.workspace = true
 strata-ol-chain-types-v1.workspace = true

@@ -40,6 +40,8 @@ pub fn process_single_tx<S: IStateAccessorMut>(
     tx: &OLTransactionV1,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
+    let output = context.basic_context().output();
+    let start_log = output.log_count();
     // 1. Check the transaction's constraints.
     check_tx_constraints(tx.constraints(), state)?;
 
@@ -70,7 +72,7 @@ pub fn process_single_tx<S: IStateAccessorMut>(
         context.basic_context(),
     )?;
 
-    Ok(())
+    output.record_epoch_logs(state, start_log)
 }
 
 fn verify_gam_tx(gam: &GamTxPayloadV1, fx: &TxEffects) -> ExecResult<()> {

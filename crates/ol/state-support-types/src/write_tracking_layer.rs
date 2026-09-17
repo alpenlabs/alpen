@@ -149,6 +149,28 @@ where
 
     // ===== Intraepoch state methods =====
 
+    fn epoch_log_count(&self) -> u32 {
+        let writes = self.batch.intraepoch_writes();
+        writes.epoch_log_count.unwrap_or_else(|| {
+            if writes.reset {
+                0
+            } else {
+                self.base.epoch_log_count()
+            }
+        })
+    }
+
+    fn epoch_log_payload_bytes(&self) -> u32 {
+        let writes = self.batch.intraepoch_writes();
+        writes.epoch_log_payload_bytes.unwrap_or_else(|| {
+            if writes.reset {
+                0
+            } else {
+                self.base.epoch_log_payload_bytes()
+            }
+        })
+    }
+
     fn pending_asm_logs_len(&self) -> usize {
         let base_len = if self.batch.intraepoch_writes().reset {
             0
@@ -324,7 +346,15 @@ where
     fn reset_intraepoch_state(&mut self) {
         let iw = self.batch.intraepoch_writes_mut();
         iw.reset = true;
+        iw.epoch_log_count = None;
+        iw.epoch_log_payload_bytes = None;
         iw.appended_pending_asm_logs.clear();
+    }
+
+    fn set_epoch_log_usage(&mut self, count: u32, payload_bytes: u32) {
+        let writes = self.batch.intraepoch_writes_mut();
+        writes.epoch_log_count = Some(count);
+        writes.epoch_log_payload_bytes = Some(payload_bytes);
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
@@ -577,6 +607,37 @@ mod tests {
     // =========================================================================
     // Batch extraction tests
     // =========================================================================
+
+    #[test]
+    fn test_epoch_log_usage_survives_batch_storage_and_reset() {
+        let mut base = create_test_base_layer();
+        base.set_epoch_log_usage(7, 700);
+        let mut tracking = WriteTrackingState::new_empty(&base);
+        tracking.set_epoch_log_usage(9, 1_000);
+        let first = tracking.into_batch();
+        let mut batches = vec![first];
+        let diff = BatchDiffState::new(&base, &batches);
+        let mut tracking = WriteTrackingState::new_empty(&diff);
+        assert_eq!(tracking.epoch_log_count(), 9);
+        assert_eq!(tracking.epoch_log_payload_bytes(), 1_000);
+        tracking.reset_intraepoch_state();
+        batches.push(tracking.into_batch());
+        let diff = BatchDiffState::new(&base, &batches);
+        assert_eq!(diff.epoch_log_count(), 0);
+        assert_eq!(diff.epoch_log_payload_bytes(), 0);
+        let mut tracking = WriteTrackingState::new_empty(&diff);
+        tracking.set_epoch_log_usage(1, 10);
+        batches.push(tracking.into_batch());
+        let expected = BatchDiffState::new(&base, &batches)
+            .compute_state_root()
+            .unwrap();
+        for batch in batches {
+            base.apply_write_batch(batch).unwrap();
+        }
+        assert_eq!(base.epoch_log_count(), 1);
+        assert_eq!(base.epoch_log_payload_bytes(), 10);
+        assert_eq!(base.compute_state_root().unwrap(), expected);
+    }
 
     #[test]
     fn test_into_batch_returns_modifications() {

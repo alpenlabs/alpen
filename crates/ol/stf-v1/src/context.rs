@@ -230,7 +230,7 @@ impl<'b> BasicExecContext<'b> {
         &self.block_info
     }
 
-    pub fn output(self) -> &'b ExecOutputBuffer {
+    pub fn output(&self) -> &'b ExecOutputBuffer {
         self.output_buffer
     }
 

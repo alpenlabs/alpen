@@ -51,6 +51,12 @@ pub trait IStateAccessor {
 
     // ===== Intraepoch state methods =====
 
+    /// Returns the number of OL logs emitted in the current epoch.
+    fn epoch_log_count(&self) -> u32;
+
+    /// Returns encoded OL log payload bytes emitted in the current epoch.
+    fn epoch_log_payload_bytes(&self) -> u32;
+
     /// Returns the number of pending ASM log entries buffered for the current
     /// epoch.
     fn pending_asm_logs_len(&self) -> usize;
@@ -131,6 +137,9 @@ pub trait IStateAccessorMut: IStateAccessor {
 
     /// Clears all pending intraepoch state. Called at the epoch boundary.
     fn reset_intraepoch_state(&mut self);
+
+    /// Records cumulative OL log usage after the STF checks the epoch limits.
+    fn set_epoch_log_usage(&mut self, count: u32, payload_bytes: u32);
 
     // ===== Account methods =====
 

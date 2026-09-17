@@ -11,7 +11,7 @@
 
 use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
 use strata_ol_chain_types_v1::OLLog;
-use strata_ol_tx_policy::MAX_TOTAL_LOG_PAYLOAD_BYTES;
+use strata_ol_stf_v1::{MAX_TOTAL_LOG_PAYLOAD_BYTES, check_epoch_log_budget};
 
 /// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
 pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
@@ -82,17 +82,6 @@ pub(crate) enum CheckpointSizeVerdict {
     HardLimitExceeded,
 }
 
-/// Checks a single dimension against its hard limit and 90% soft threshold.
-fn dimension_verdict(value: usize, hard_limit: usize) -> CheckpointSizeVerdict {
-    if value >= hard_limit {
-        CheckpointSizeVerdict::HardLimitExceeded
-    } else if value >= hard_limit * SOFT_LIMIT_RATIO_NUM / SOFT_LIMIT_RATIO_DEN {
-        CheckpointSizeVerdict::SoftLimitReached
-    } else {
-        CheckpointSizeVerdict::WithinLimits
-    }
-}
-
 /// Checks checkpoint usage against the selected limit's hard and soft thresholds.
 ///
 /// `state_diff_size` is the estimated DA diff size.
@@ -112,7 +101,18 @@ pub(crate) fn checkpoint_size_verdict(
             MAX_CHECKPOINT_PAYLOAD_SIZE,
         ),
     };
-    dimension_verdict(value, hard_limit)
+    let hard_limit_exceeded = match limit {
+        CheckpointLimit::LogCount => check_epoch_log_budget(value, 0).is_err(),
+        CheckpointLimit::LogPayloadBytes => check_epoch_log_budget(0, value).is_err(),
+        CheckpointLimit::DaDiff | CheckpointLimit::Envelope => value >= hard_limit,
+    };
+    if hard_limit_exceeded {
+        CheckpointSizeVerdict::HardLimitExceeded
+    } else if value >= hard_limit * SOFT_LIMIT_RATIO_NUM / SOFT_LIMIT_RATIO_DEN {
+        CheckpointSizeVerdict::SoftLimitReached
+    } else {
+        CheckpointSizeVerdict::WithinLimits
+    }
 }
 
 #[cfg(test)]
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn verdict_log_count_hard_limit() {
         let metrics = LogMetrics {
-            count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
+            count: MAX_OL_LOGS_PER_CHECKPOINT as usize + 1,
             ..Default::default()
         };
         assert_eq!(
@@ -191,9 +191,9 @@ mod tests {
 
     #[test]
     fn verdict_log_count_hard_with_da_within() {
-        // DA diff within limits, but log count at hard limit.
+        // DA diff within limits, but log count exceeds the hard limit.
         let metrics = LogMetrics {
-            count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
+            count: MAX_OL_LOGS_PER_CHECKPOINT as usize + 1,
             ..Default::default()
         };
         assert_eq!(
@@ -245,13 +245,28 @@ mod tests {
         // DA diff at soft does not hide the hard log-count limit.
         let da = OL_DA_DIFF_MAX_SIZE as usize * 9 / 10;
         let metrics = LogMetrics {
-            count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
+            count: MAX_OL_LOGS_PER_CHECKPOINT as usize + 1,
             ..Default::default()
         };
         assert_eq!(
             checkpoint_size_verdict(CheckpointLimit::LogCount, da, &metrics),
             CheckpointSizeVerdict::HardLimitExceeded,
         );
+    }
+
+    #[test]
+    fn verdict_allows_exact_consensus_log_limits() {
+        let metrics = LogMetrics {
+            count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
+            total_payload: MAX_TOTAL_LOG_PAYLOAD_BYTES,
+            ..Default::default()
+        };
+        for limit in [CheckpointLimit::LogCount, CheckpointLimit::LogPayloadBytes] {
+            assert_eq!(
+                checkpoint_size_verdict(limit, 0, &metrics),
+                CheckpointSizeVerdict::SoftLimitReached
+            );
+        }
     }
 
     #[test]
