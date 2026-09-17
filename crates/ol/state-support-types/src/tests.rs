@@ -601,6 +601,8 @@ impl IAccountStateMut for TestAccountState {
 
 #[derive(Debug)]
 struct TestState {
+    epoch_log_count: u32,
+    epoch_log_payload_bytes: u32,
     accounts: BTreeMap<AccountId, TestAccountState>,
     next_serial: AccountSerial,
     serial_overrides: VecDeque<AccountSerial>,
@@ -617,6 +619,8 @@ struct TestState {
 impl TestState {
     fn new_with_serials(serials: Vec<AccountSerial>) -> Self {
         Self {
+            epoch_log_count: 0,
+            epoch_log_payload_bytes: 0,
             accounts: BTreeMap::new(),
             next_serial: AccountSerial::one(),
             serial_overrides: VecDeque::from(serials),
@@ -692,6 +696,14 @@ impl IStateAccessor for TestState {
 
     fn pending_asm_logs_len(&self) -> usize {
         self.pending_asm_logs.len()
+    }
+
+    fn epoch_log_count(&self) -> u32 {
+        self.epoch_log_count
+    }
+
+    fn epoch_log_payload_bytes(&self) -> u32 {
+        self.epoch_log_payload_bytes
     }
 
     fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
@@ -799,7 +811,13 @@ impl IStateAccessorMut for TestState {
     }
 
     fn reset_intraepoch_state(&mut self) {
+        self.set_epoch_log_usage(0, 0);
         self.pending_asm_logs.clear();
+    }
+
+    fn set_epoch_log_usage(&mut self, count: u32, payload_bytes: u32) {
+        self.epoch_log_count = count;
+        self.epoch_log_payload_bytes = payload_bytes;
     }
 }
 

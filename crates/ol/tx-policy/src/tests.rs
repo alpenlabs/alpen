@@ -1,7 +1,7 @@
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::{AccountId, BitcoinAmount, MAX_MESSAGES};
 use strata_ol_stf_v1::test_utils::{
-    OLStfFixture, SnarkUpdateBuilder, make_p2wpkh_bosd_descriptor, make_proof, make_state_root,
-    make_withdrawal_payload,
+    OLStfFixture, SnarkUpdateBuilder, assert_verification_succeeds, make_p2wpkh_bosd_descriptor,
+    make_proof, make_state_root, make_withdrawal_payload,
 };
 
 use super::*;
@@ -47,20 +47,44 @@ fn test_payload_budget_includes_update_log_and_extra_data() {
     assert_eq!(usage.count(), 173);
     assert_eq!(usage.payload_bytes(), 16_350);
 
-    let usage = check_tx_log_budget(&withdrawal_update(172, 33), &params).unwrap();
-    assert_eq!(usage.payload_bytes(), 16_383);
+    let tx = withdrawal_update(172, 34);
+    let usage = check_tx_log_budget(&tx, &params).unwrap();
+    assert_eq!(usage.payload_bytes(), 16_384);
+    for terminal in [false, true] {
+        let (mut fixture, _, _) = fixture_and_builder();
+        let parent = fixture.last_completed_block().header().clone();
+        let mut verify_state = fixture.state().clone();
+        let block = fixture.child_block().with_tx(tx.clone());
+        let block = if terminal { block.terminal() } else { block };
+        let output = block.execute_with_outputs();
+        assert_eq!(
+            output
+                .logs()
+                .iter()
+                .map(|log| log.payload().len())
+                .sum::<usize>(),
+            16_384
+        );
+        let block = output.completed_block();
+        assert_verification_succeeds(
+            &mut verify_state,
+            block.header(),
+            Some(parent),
+            block.body(),
+        );
+    }
     assert!(matches!(
-        check_tx_log_budget(&withdrawal_update(172, 34), &params),
+        check_tx_log_budget(&withdrawal_update(172, 35), &params),
         Err(TxLogBudgetError::LogPayloadBytes {
-            actual: 16_384,
-            limit: 16_383
+            actual: 16_385,
+            limit: 16_384
         })
     ));
     assert!(matches!(
         check_tx_log_budget(&withdrawal_update(173, 0), &params),
         Err(TxLogBudgetError::LogPayloadBytes {
             actual: 16_445,
-            limit: 16_383
+            limit: 16_384
         })
     ));
 }
@@ -120,28 +144,26 @@ fn test_maximal_update_exceeds_log_payload_budget() {
         error,
         TxLogBudgetError::LogPayloadBytes {
             actual: 24_235,
-            limit: 16_383
+            limit: 16_384
         }
     ));
 }
 
 #[test]
-fn test_log_count_limit_is_inclusive_for_the_admission_error() {
-    // Isolate the count dimension; real withdrawal payloads hit the byte limit sooner.
-    let limit = (MAX_LOGS_PER_BLOCK as usize).min(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
-    let usage = TxLogUsage {
-        count: limit,
-        payload_bytes: 0,
-    };
-    assert_eq!(usage.check_limits().unwrap(), usage);
-    let error = TxLogUsage {
-        count: limit + 1,
-        payload_bytes: 0,
+fn test_maximum_message_count_fits_block_log_capacity() {
+    let (mut fixture, account, mut builder) = fixture_and_builder();
+    let params = BridgeParams::default();
+    let payload = make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x15));
+    for _ in 0..MAX_MESSAGES {
+        builder = builder.with_output_message(
+            BRIDGE_GATEWAY_ACCT_ID,
+            params.denomination(),
+            payload.clone(),
+        );
     }
-    .check_limits()
-    .unwrap_err();
-    assert!(
-        matches!(error, TxLogBudgetError::LogCount { actual, limit: reported_limit }
-        if actual == limit + 1 && reported_limit == limit)
-    );
+    let tx = builder.build(account, make_state_root(2), make_proof(1));
+    let usage = check_tx_log_budget(&tx, &params).unwrap();
+    let output = fixture.child_block().with_tx(tx).execute_with_outputs();
+    assert_eq!(usage.count(), MAX_MESSAGES as usize + 1);
+    assert_eq!(output.log_count(), usage.count());
 }

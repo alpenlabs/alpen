@@ -93,6 +93,21 @@ impl EpochSealingLimitVerdict {
         Self::default()
     }
 
+    /// Records a checkpoint limit, keeping the stricter action.
+    pub(crate) fn record_checkpoint_limit(
+        &mut self,
+        limit: CheckpointLimit,
+        action: EpochSealingLimitAction,
+    ) {
+        let existing = match limit {
+            CheckpointLimit::DaDiff => &mut self.da_diff,
+            CheckpointLimit::LogCount => &mut self.log_count,
+            CheckpointLimit::LogPayloadBytes => &mut self.log_payload_bytes,
+            CheckpointLimit::Envelope => &mut self.envelope,
+        };
+        *existing = (*existing).max(action);
+    }
+
     /// Merges another verdict into this one, keeping the stricter action for each limit.
     pub(crate) fn merge(&mut self, other: Self) {
         self.da_diff = self.da_diff.max(other.da_diff);
@@ -311,7 +326,7 @@ mod fixed_slot_sealing_tests {
         let stats = EpochSealingResourceStats::new(
             0,
             LogMetrics {
-                count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
+                count: MAX_OL_LOGS_PER_CHECKPOINT as usize + 1,
                 ..Default::default()
             },
             0,
@@ -336,7 +351,7 @@ mod fixed_slot_sealing_tests {
         let stats = EpochSealingResourceStats::new(
             0,
             LogMetrics {
-                count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
+                count: MAX_OL_LOGS_PER_CHECKPOINT as usize + 1,
                 ..Default::default()
             },
             MAX_SEALING_MANIFEST_COUNT as u32,
@@ -366,7 +381,7 @@ mod fixed_slot_sealing_tests {
             OL_DA_DIFF_MAX_SIZE as usize,
             LogMetrics {
                 count: MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10,
-                total_payload: MAX_TOTAL_LOG_PAYLOAD_BYTES,
+                total_payload: MAX_TOTAL_LOG_PAYLOAD_BYTES + 1,
                 ssz_size: 0,
             },
             0,

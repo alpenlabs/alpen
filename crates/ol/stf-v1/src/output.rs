@@ -4,8 +4,11 @@ use std::cell::RefCell;
 use std::iter;
 
 use strata_acct_types::AccountSerial;
+use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLog, OLLogType};
+use strata_ol_state_types::{EpochLogBudgetError, IStateAccessorMut};
 
+use crate::MAX_TOTAL_LOG_PAYLOAD_BYTES;
 use crate::errors::{ExecError, ExecResult};
 
 /// Collector for outputs that we can pass around between different contexts.
@@ -47,6 +50,26 @@ impl ExecOutputBuffer {
         self.logs.borrow().len()
     }
 
+    /// Charges only logs emitted since `start` to the current epoch.
+    pub(crate) fn record_epoch_logs(
+        &self,
+        state: &mut impl IStateAccessorMut,
+        start: usize,
+    ) -> ExecResult<()> {
+        let logs = self.logs.borrow();
+        let new_logs = &logs[start..];
+        let count = (state.epoch_log_count() as usize).saturating_add(new_logs.len());
+        let payload_bytes = new_logs
+            .iter()
+            .fold(state.epoch_log_payload_bytes() as usize, |total, log| {
+                total.saturating_add(log.payload.len())
+            });
+        check_epoch_log_budget(count, payload_bytes)?;
+        // The checked limits fit in the state's u32 counters.
+        state.set_epoch_log_usage(count as u32, payload_bytes as u32);
+        Ok(())
+    }
+
     pub fn verify_logs_within_block_limit(&self) -> ExecResult<()> {
         let count = self.log_count();
         let max = MAX_LOGS_PER_BLOCK as usize;
@@ -59,6 +82,27 @@ impl ExecOutputBuffer {
     pub fn into_logs(self) -> Vec<OLLog> {
         self.logs.into_inner()
     }
+}
+
+/// Checks inclusive epoch limits using encoded payload bytes without OLLog framing.
+pub fn check_epoch_log_budget(
+    count: usize,
+    payload_bytes: usize,
+) -> Result<(), EpochLogBudgetError> {
+    let limit = MAX_OL_LOGS_PER_CHECKPOINT as usize;
+    if count > limit {
+        return Err(EpochLogBudgetError::LogCount {
+            actual: count,
+            limit,
+        });
+    }
+    if payload_bytes > MAX_TOTAL_LOG_PAYLOAD_BYTES {
+        return Err(EpochLogBudgetError::LogPayloadBytes {
+            actual: payload_bytes,
+            limit: MAX_TOTAL_LOG_PAYLOAD_BYTES,
+        });
+    }
+    Ok(())
 }
 
 /// General trait for things that can collect exec outputs.
@@ -81,10 +125,33 @@ pub trait OutputCtx {
 #[cfg(test)]
 mod tests {
     use strata_acct_types::AccountSerial;
+    use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_ol_state_types::EpochLogBudgetError;
 
-    use super::ExecOutputBuffer;
-    use crate::ExecError;
+    use super::{ExecOutputBuffer, check_epoch_log_budget};
+    use crate::{ExecError, MAX_TOTAL_LOG_PAYLOAD_BYTES};
+
+    #[test]
+    fn test_epoch_log_limits_are_inclusive() {
+        let count = MAX_OL_LOGS_PER_CHECKPOINT as usize;
+        let bytes = MAX_TOTAL_LOG_PAYLOAD_BYTES;
+        assert_eq!(check_epoch_log_budget(count, bytes), Ok(()));
+        assert_eq!(
+            check_epoch_log_budget(count + 1, bytes),
+            Err(EpochLogBudgetError::LogCount {
+                actual: count + 1,
+                limit: count
+            })
+        );
+        assert_eq!(
+            check_epoch_log_budget(count, bytes + 1),
+            Err(EpochLogBudgetError::LogPayloadBytes {
+                actual: bytes + 1,
+                limit: bytes
+            })
+        );
+    }
 
     #[test]
     fn test_log_count_tracks_emitted_logs() {

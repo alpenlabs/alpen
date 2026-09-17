@@ -104,6 +104,14 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.intraepoch_state().pending_asm_logs().len()
     }
 
+    fn epoch_log_count(&self) -> u32 {
+        self.state.intraepoch_state().epoch_log_count()
+    }
+
+    fn epoch_log_payload_bytes(&self) -> u32 {
+        self.state.intraepoch_state().epoch_log_payload_bytes()
+    }
+
     fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
         self.state
             .intraepoch_state()
@@ -199,6 +207,12 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 
     fn reset_intraepoch_state(&mut self) {
         self.state.intraepoch_state_mut().reset();
+    }
+
+    fn set_epoch_log_usage(&mut self, count: u32, payload_bytes: u32) {
+        self.state
+            .intraepoch_state_mut()
+            .set_epoch_log_usage(count, payload_bytes);
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>

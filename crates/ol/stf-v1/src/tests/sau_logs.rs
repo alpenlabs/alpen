@@ -1,11 +1,65 @@
 //! Tests for SAU log emission.
 
-use strata_acct_types::{BitcoinAmount, MessageEntry, MsgPayload};
+use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry, MsgPayload};
 use strata_ol_chain_types_v1::SnarkAccountUpdateLogData;
-use strata_ol_state_types::ISnarkAccountState;
+use strata_ol_state_types::{EpochLogBudgetError, ExecError, ISnarkAccountState, IStateAccessor};
 
 use crate::SEQUENCER_ACCT_ID;
 use crate::test_utils::*;
+
+#[test]
+fn test_epoch_log_payload_limit_spans_blocks() {
+    let account = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(account, |acct| {
+            acct.with_balance(BitcoinAmount::try_from(18_000_000_000).unwrap())
+        })
+        .execute_genesis();
+
+    // Each update emits 10 + 90 * 95 = 8,560 payload bytes.
+    let withdrawals = |mut sau: FixtureSauBuilder| {
+        for _ in 0..90 {
+            sau = sau.output_message(
+                BRIDGE_GATEWAY_ACCT_ID,
+                BitcoinAmount::try_from(100_000_000).unwrap(),
+                make_withdrawal_payload(vec![0; 81]),
+            );
+        }
+        sau
+    };
+    let first = fixture
+        .child_block()
+        .with_sau(account, withdrawals)
+        .execute_with_outputs();
+    assert_eq!(first.log_count(), 91);
+    assert_eq!(fixture.state().epoch_log_count(), 91);
+    assert_eq!(fixture.state().epoch_log_payload_bytes(), 8_560);
+
+    let before_attempt = fixture.state().clone();
+    let error = fixture
+        .child_block()
+        .with_sau(account, withdrawals)
+        .execute_err();
+    assert!(matches!(
+        error.base(),
+        ExecError::EpochLogBudget(EpochLogBudgetError::LogPayloadBytes {
+            actual: 17_120,
+            limit: 16_384
+        })
+    ));
+
+    // The caller discards state from failed STF execution.
+    *fixture.state_mut() = before_attempt;
+    fixture.child_block().terminal().execute();
+    assert_eq!(fixture.state().epoch_log_count(), 0);
+    assert_eq!(fixture.state().epoch_log_payload_bytes(), 0);
+    fixture
+        .child_block()
+        .with_sau(account, withdrawals)
+        .execute();
+    assert_eq!(fixture.state().epoch_log_count(), 91);
+    assert_eq!(fixture.state().epoch_log_payload_bytes(), 8_560);
+}
 
 #[test]
 

@@ -86,6 +86,10 @@ class ProofStateV1(Container):
 
 
 class IntraepochStateV1(Container):
+    ### OL logs emitted in the current epoch.
+    epoch_log_count: uint32
+    ### Encoded OL log payload bytes, excluding container framing.
+    epoch_log_payload_bytes: uint32
     #~# external_kind: container
     pending_asm_logs: List[PendingAsmLogEntryV1, MAX_PENDING_ASM_LOGS]
 
