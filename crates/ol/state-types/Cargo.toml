@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-codec.workspace = true
@@ -12,6 +13,7 @@ strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 
 thiserror.workspace = true
+tree_hash.workspace = true
 
 [lints]
 workspace = true
