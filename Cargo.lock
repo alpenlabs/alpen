@@ -9775,6 +9775,7 @@ dependencies = [
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "ssz",
  "strata-acct-types",
  "strata-asm-manifest-types",

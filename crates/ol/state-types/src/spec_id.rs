@@ -16,12 +16,12 @@ use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 /// are rejected, never interpreted as genesis rules.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
-pub enum OlSpecId {
+pub enum OLSpecId {
     /// Genesis OL rules.
     V1 = 1,
 }
 
-impl OlSpecId {
+impl OLSpecId {
     /// Returns the next spec in activation order, or `None` if this binary does
     /// not know it.
     ///
@@ -33,7 +33,7 @@ impl OlSpecId {
     }
 }
 
-impl SszDelegate for OlSpecId {
+impl SszDelegate for OLSpecId {
     type Delegate = u8;
 
     fn into_delegate(self) -> Self::Delegate {
@@ -50,72 +50,92 @@ impl SszDelegate for OlSpecId {
     }
 }
 
-impl_ssz_via_delegate!(OlSpecId);
+impl_ssz_via_delegate!(OLSpecId);
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use ssz::view::DecodeView;
     use ssz::{Decode, Encode};
     use tree_hash::{Sha256Hasher, TreeHash};
 
-    use super::OlSpecId;
+    use super::OLSpecId;
 
-    #[test]
-    fn test_ssz_round_trip_uses_one_byte() {
-        let spec = OlSpecId::V1;
-        let encoded = spec.as_ssz_bytes();
+    // Append each spec and its fixed wire value in activation order.
+    const KNOWN_SPECS: &[(OLSpecId, u8)] = &[(OLSpecId::V1, 1)];
 
-        assert!(<OlSpecId as Encode>::is_ssz_fixed_len());
-        assert!(<OlSpecId as Decode>::is_ssz_fixed_len());
-        assert_eq!(<OlSpecId as Encode>::ssz_fixed_len(), 1);
-        assert_eq!(<OlSpecId as Decode>::ssz_fixed_len(), 1);
-        assert_eq!(spec.ssz_bytes_len(), 1);
-        assert_eq!(encoded, [1]);
-        assert_eq!(<OlSpecId as Decode>::from_ssz_bytes(&encoded), Ok(spec));
-        assert_eq!(<OlSpecId as DecodeView>::from_ssz_bytes(&encoded), Ok(spec));
-    }
+    proptest! {
+        #[test]
+        fn test_ssz_round_trip_uses_one_byte(
+            index in 0..KNOWN_SPECS.len(),
+            prefix in prop::collection::vec(any::<u8>(), 0..=64),
+        ) {
+            let (spec, wire_value) = KNOWN_SPECS[index];
+            let encoded = spec.as_ssz_bytes();
 
-    #[test]
-    fn test_ssz_rejects_unknown_values() {
-        for value in 0..=u8::MAX {
-            if value == 1 {
-                continue;
-            }
-            assert!(<OlSpecId as Decode>::from_ssz_bytes(&[value]).is_err());
-            assert!(<OlSpecId as DecodeView>::from_ssz_bytes(&[value]).is_err());
+            prop_assert!(<OLSpecId as Encode>::is_ssz_fixed_len());
+            prop_assert!(<OLSpecId as Decode>::is_ssz_fixed_len());
+            prop_assert_eq!(<OLSpecId as Encode>::ssz_fixed_len(), 1);
+            prop_assert_eq!(<OLSpecId as Decode>::ssz_fixed_len(), 1);
+            prop_assert_eq!(spec.ssz_bytes_len(), 1);
+            prop_assert_eq!(encoded.as_slice(), &[wire_value]);
+            prop_assert_eq!(<OLSpecId as Decode>::from_ssz_bytes(&encoded), Ok(spec));
+            prop_assert_eq!(<OLSpecId as DecodeView>::from_ssz_bytes(&encoded), Ok(spec));
+
+            let mut buffer = prefix.clone();
+            spec.ssz_append(&mut buffer);
+            prop_assert_eq!(&buffer[..prefix.len()], prefix.as_slice());
+            prop_assert_eq!(&buffer[prefix.len()..], encoded.as_slice());
         }
-    }
 
-    #[test]
-    fn test_ssz_rejects_invalid_lengths() {
-        for bytes in [&[][..], &[1, 0][..]] {
-            assert!(<OlSpecId as Decode>::from_ssz_bytes(bytes).is_err());
-            assert!(<OlSpecId as DecodeView>::from_ssz_bytes(bytes).is_err());
+        #[test]
+        fn test_ssz_decoding_accepts_only_known_values(value in any::<u8>()) {
+            let expected = KNOWN_SPECS.iter()
+                .find_map(|&(spec, wire_value)| (value == wire_value).then_some(spec));
+
+            prop_assert_eq!(<OLSpecId as Decode>::from_ssz_bytes(&[value]).ok(), expected);
+            prop_assert_eq!(<OLSpecId as DecodeView>::from_ssz_bytes(&[value]).ok(), expected);
         }
-    }
 
-    #[test]
-    fn test_tree_hash_matches_uint8() {
-        assert_eq!(
-            OlSpecId::V1.tree_hash_root::<Sha256Hasher>(),
-            1_u8.tree_hash_root::<Sha256Hasher>()
-        );
-    }
+        #[test]
+        fn test_ssz_rejects_invalid_lengths(
+            index in 0..KNOWN_SPECS.len(),
+            trailing in prop::collection::vec(any::<u8>(), 1..=256),
+        ) {
+            let mut encoded = KNOWN_SPECS[index].0.as_ssz_bytes();
+            encoded.extend_from_slice(&trailing);
 
-    #[test]
-    fn test_ordering_follows_activation_order() {
-        // Extend this list in activation order when adding a spec.
-        let specs = [OlSpecId::V1];
-        for (left_index, left) in specs.iter().enumerate() {
-            for (right_index, right) in specs.iter().enumerate() {
-                assert_eq!(left.cmp(right), left_index.cmp(&right_index));
-                assert_eq!(left.partial_cmp(right), Some(left.cmp(right)));
+            for bytes in [&[][..], encoded.as_slice()] {
+                prop_assert!(<OLSpecId as Decode>::from_ssz_bytes(bytes).is_err());
+                prop_assert!(<OLSpecId as DecodeView>::from_ssz_bytes(bytes).is_err());
             }
         }
-    }
 
-    #[test]
-    fn test_last_known_spec_has_no_successor() {
-        assert_eq!(OlSpecId::V1.successor(), None);
+        #[test]
+        fn test_tree_hash_matches_uint8(index in 0..KNOWN_SPECS.len()) {
+            let (spec, wire_value) = KNOWN_SPECS[index];
+            prop_assert_eq!(
+                spec.tree_hash_root::<Sha256Hasher>(),
+                wire_value.tree_hash_root::<Sha256Hasher>()
+            );
+        }
+
+        #[test]
+        fn test_ordering_follows_activation_order(
+            left_index in 0..KNOWN_SPECS.len(),
+            right_index in 0..KNOWN_SPECS.len(),
+        ) {
+            let left = KNOWN_SPECS[left_index].0;
+            let right = KNOWN_SPECS[right_index].0;
+            prop_assert_eq!(left.cmp(&right), left_index.cmp(&right_index));
+            prop_assert_eq!(left.partial_cmp(&right), Some(left.cmp(&right)));
+        }
+
+        #[test]
+        fn test_successor_follows_activation_order(index in 0..KNOWN_SPECS.len()) {
+            let spec = KNOWN_SPECS[index].0;
+            let expected = KNOWN_SPECS.get(index + 1).map(|&(next, _)| next);
+            prop_assert_eq!(spec.successor(), expected);
+        }
     }
 }
