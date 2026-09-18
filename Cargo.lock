@@ -8972,6 +8972,7 @@ dependencies = [
  "strata-ol-mmr-index",
  "strata-ol-params",
  "strata-ol-state-support-types",
+ "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-stf-v1",
  "strata-predicate",

@@ -5,8 +5,8 @@ mod service;
 mod state;
 
 pub use context::{
-    BlockExecutionOutcome, ChainController, CsmStatusReader, ExecutionDeferral, FcmContext,
-    FcmStartupReconciler, FcmStorage,
+    BlockExecutionOutcome, BlockValidationOutcome, ChainController, CsmStatusReader,
+    ExecutionDeferral, FcmContext, FcmStartupReconciler, FcmStorage,
 };
 pub use input::*;
 pub use service::*;
