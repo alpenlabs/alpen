@@ -44,6 +44,18 @@ impl OLBlockManager {
         Ok(())
     }
 
+    /// Reads a bounded page of block statuses for pending-block recovery.
+    pub async fn scan_block_statuses_async(
+        &self,
+        finalized_slot: Slot,
+        after: Option<OLBlockCommitment>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>> {
+        self.ops
+            .scan_block_statuses_async(finalized_slot, after, limit)
+            .await
+    }
+
     /// Gets the block high-watermark.
     ///
     /// This is not the OL tip. Plain block writes do not update it.
