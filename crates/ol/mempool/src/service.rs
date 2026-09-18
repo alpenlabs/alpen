@@ -58,9 +58,8 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
                     completion.send(result).await;
                 }
 
-                MempoolCommand::GetTransactions { completion, limit } => {
-                    let result = state.handle_get_transactions(limit).await;
-                    completion.send(result).await;
+                MempoolCommand::GetCandidates { completion } => {
+                    completion.send(state.handle_get_candidates()).await;
                 }
 
                 MempoolCommand::ReportInvalidTransactions { txs, completion } => {
@@ -87,7 +86,6 @@ mod tests {
 
     use strata_identifiers::OLTxId;
     use strata_service::CommandCompletionSender;
-    use tokio::runtime::Runtime;
     use tokio::sync::oneshot;
 
     use super::*;
@@ -96,7 +94,7 @@ mod tests {
         create_test_state_provider,
     };
     use crate::types::OLMempoolConfig;
-    use crate::{MempoolTxInvalidReason, OLMempoolResult, OLTransactionV1};
+    use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolResult};
 
     #[tokio::test]
     async fn test_service_submit_transaction() {
@@ -131,51 +129,38 @@ mod tests {
         assert_eq!(result.unwrap(), expected_txid);
     }
 
-    proptest::proptest! {
-        #[test]
-        fn test_service_get_transactions_with_limit(limit in 0usize..10) {
-            let rt = Runtime::new().unwrap();
-            rt.block_on(async {
-                let tip = create_test_block_commitment(100);
-                let provider = Arc::new(create_test_state_provider(tip));
-                let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider.clone()));
+    #[tokio::test]
+    async fn test_service_get_candidates_preserves_order_and_bodies() {
+        let tip = create_test_block_commitment(100);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
 
-                let mut state = MempoolServiceState::new_with_context(context.clone(), tip).await.unwrap();
-
-                // Add some transactions via handle_submit_transaction
-                // Use sequential seq_nos (0, 1) for the same account to pass gap checking
-                let tx1 = create_test_snark_tx_with_seq_no(1, 0);
-                let tx2 = create_test_snark_tx_with_seq_no(1, 1);
-                state
-                    .handle_submit_transaction(Box::new(tx1))
-                    .await
-                    .expect("Should add tx1");
-                state
-                    .handle_submit_transaction(Box::new(tx2))
-                    .await
-                    .expect("Should add tx2");
-
-                let (tx_sender, rx) = oneshot::channel();
-                let completion = CommandCompletionSender::new(tx_sender);
-
-                let command = MempoolCommand::GetTransactions {
-                    completion,
-                    limit,
-                };
-
-                MempoolService::process_input(&mut state, MempoolInputMessage::Command(command))
-                    .await
-                    .expect("Should process command");
-
-                let result: OLMempoolResult<Vec<(OLTxId, OLTransactionV1)>> =
-                    rx.await.expect("Should receive result");
-                assert!(result.is_ok());
-                let txs = result.unwrap();
-                #[expect(clippy::absolute_paths, reason = "qualified min avoids ambiguity")]
-                let expected_len = std::cmp::min(limit, 2);
-                assert_eq!(txs.len(), expected_len);
-            });
+        let tx1 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx2 = create_test_snark_tx_with_seq_no(1, 1);
+        for tx in [&tx1, &tx2] {
+            state
+                .handle_submit_transaction(Box::new(tx.clone()))
+                .await
+                .expect("submit transaction");
         }
+
+        let (tx_sender, rx) = oneshot::channel();
+        let completion = CommandCompletionSender::new(tx_sender);
+        let command = MempoolCommand::GetCandidates { completion };
+        MempoolService::process_input(&mut state, MempoolInputMessage::Command(command))
+            .await
+            .expect("fetch candidates");
+
+        let candidates: MempoolCandidates = rx.await.expect("receive candidates");
+        let candidates = candidates.collect::<Vec<_>>();
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].txid(), tx1.compute_txid());
+        assert_eq!(candidates[0].transaction(), &tx1);
+        assert_eq!(candidates[1].txid(), tx2.compute_txid());
+        assert_eq!(candidates[1].transaction(), &tx2);
     }
 
     #[tokio::test]

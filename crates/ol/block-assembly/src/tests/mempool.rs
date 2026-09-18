@@ -2,13 +2,19 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use ssz::Encode;
 use strata_config::SequencerConfig;
 use strata_db_types::mempool::MempoolTxData;
-use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-use strata_ol_mempool::{MempoolBuilder, MempoolTxInvalidReason, OLMempoolConfig, OLMempoolError};
+use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_ol_mempool::{
+    MempoolBuilder, MempoolCandidates, MempoolHandle, MempoolTxInvalidReason, OLMempoolConfig,
+    OLMempoolError,
+};
 use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_provider::OLStateManagerProviderImpl;
+use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_status::StatusChannel;
 use strata_tasks::TaskManager;
 use tokio::runtime::Handle;
@@ -24,7 +30,8 @@ use crate::test_utils::{
 };
 use crate::types::BlockGenerationConfig;
 use crate::{
-    BlockAssemblyError, FixedSlotSealing, LimitAwareSealing, MempoolProvider, MempoolProviderImpl,
+    BlockAssemblyError, BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider,
+    MempoolProviderImpl,
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -83,11 +90,10 @@ async fn test_persisted_oversized_update_rejection_removes_successors() {
     );
     assert_eq!(
         mempool
-            .get_transactions(3)
+            .get_candidates()
             .await
             .expect("fetch queued transactions")
-            .iter()
-            .map(|(txid, _)| *txid)
+            .map(|candidate| candidate.txid())
             .collect::<Vec<_>>(),
         vec![oversized_id, successor_id, independent_id],
     );
@@ -120,11 +126,10 @@ async fn test_persisted_oversized_update_rejection_removes_successors() {
         .expect("report rejected predecessor");
     assert_eq!(
         mempool
-            .get_transactions(3)
+            .get_candidates()
             .await
             .expect("fetch remaining transactions")
-            .iter()
-            .map(|(txid, _)| *txid)
+            .map(|candidate| candidate.txid())
             .collect::<Vec<_>>(),
         vec![independent_id],
     );
@@ -156,6 +161,206 @@ async fn build_mempool_env(accounts: impl IntoIterator<Item = TestAccount>) -> T
         .with_accounts(accounts);
     let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
     TestEnv::from_fixture(fixture, parent_commitment)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_deferred_account_backlog_does_not_hide_independent_transaction() {
+    let account_a = test_account_id(1);
+    let account_b = test_account_id(2);
+    let account_c = test_account_id(3);
+    let env = build_mempool_env(
+        [account_a, account_b, account_c].map(|id| TestAccount::new(id, 100_000_000_000)),
+    )
+    .await;
+    let status = StatusChannel::new(
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        None,
+        None,
+    );
+    let task_manager = TaskManager::new(Handle::current());
+    let mempool = Arc::new(
+        MempoolBuilder::new(
+            OLMempoolConfig::default(),
+            BridgeParams::default(),
+            env.storage().clone(),
+            status.clone(),
+            env.parent_commitment(),
+        )
+        .launch(&task_manager.create_executor())
+        .await
+        .expect("launch mempool"),
+    );
+    // These inbox messages pass log admission but exceed the DA budget.
+    let deferred = MempoolSnarkTxBuilder::new(account_a)
+        .with_outputs(vec![(account_b, 0); 6_000])
+        .build();
+    let deferred_id = mempool.submit_transaction(deferred).await.unwrap();
+    for seq_no in 1..=1_024 {
+        mempool
+            .submit_transaction(
+                MempoolSnarkTxBuilder::new(account_a)
+                    .with_seq_no(seq_no)
+                    .build(),
+            )
+            .await
+            .unwrap();
+    }
+    let independent_id = mempool
+        .submit_transaction(MempoolSnarkTxBuilder::new(account_b).build())
+        .await
+        .unwrap();
+    mempool
+        .submit_transaction(MempoolSnarkTxBuilder::new(account_c).build())
+        .await
+        .unwrap();
+    let context = BlockAssemblyContext::new(
+        env.storage().clone(),
+        MempoolProviderImpl::new(mempool.clone()),
+        OLStateManagerProviderImpl::new(env.storage().ol_state().clone()),
+        0,
+        OLRuntimeParams::test_default(),
+    );
+    let config = SequencerConfig {
+        max_txs_per_block: 1,
+        ..env.sequencer_config().clone()
+    };
+    let result = generate_block_template_inner(
+        &context,
+        env.epoch_sealing_policy(),
+        &config,
+        BlockGenerationConfig::new(env.parent_commitment()),
+        EpochResourceState::new_empty(),
+    )
+    .await
+    .expect("assemble past deferred account");
+    assert_eq!(included_txids(result.template()), vec![independent_id]);
+    let (_, failed_txs, _) = result.into_parts();
+    assert_eq!(failed_txs, vec![]);
+    let pending = mempool.get_candidates().await.unwrap().collect::<Vec<_>>();
+    assert_eq!(pending.len(), 1_027);
+    assert_eq!(pending[0].txid(), deferred_id);
+    task_manager.get_shutdown_signal().send();
+}
+
+struct ReplacingMempool {
+    handle: Arc<MempoolHandle>,
+    replacement: OLTransactionV1,
+}
+
+#[async_trait]
+impl MempoolProvider for ReplacingMempool {
+    async fn get_candidates(&self) -> BlockAssemblyResult<MempoolCandidates> {
+        let snapshot = self.handle.get_candidates().await?;
+        self.handle
+            .submit_transaction(self.replacement.clone())
+            .await?;
+        Ok(snapshot)
+    }
+
+    async fn report_invalid_transactions(
+        &self,
+        txs: &[(OLTxId, MempoolTxInvalidReason)],
+    ) -> BlockAssemblyResult<()> {
+        Ok(self
+            .handle
+            .report_invalid_transactions(txs.to_vec())
+            .await?)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_replacement_affects_only_later_assembly_attempts() {
+    let account_a = test_account_id(1);
+    let account_b = test_account_id(2);
+    let env =
+        build_mempool_env([account_a, account_b].map(|id| TestAccount::new(id, 100_000_000_000)))
+            .await;
+    let status = StatusChannel::new(
+        Default::default(),
+        Default::default(),
+        Default::default(),
+        None,
+        None,
+    );
+    let task_manager = TaskManager::new(Handle::current());
+    let mempool = Arc::new(
+        MempoolBuilder::new(
+            OLMempoolConfig::default(),
+            BridgeParams::default(),
+            env.storage().clone(),
+            status.clone(),
+            env.parent_commitment(),
+        )
+        .launch(&task_manager.create_executor())
+        .await
+        .unwrap(),
+    );
+    let original_id = mempool
+        .submit_transaction(MempoolSnarkTxBuilder::new(account_a).build())
+        .await
+        .unwrap();
+    let successor_id = mempool
+        .submit_transaction(MempoolSnarkTxBuilder::new(account_a).with_seq_no(1).build())
+        .await
+        .unwrap();
+    let independent_id = mempool
+        .submit_transaction(MempoolSnarkTxBuilder::new(account_b).build())
+        .await
+        .unwrap();
+    let replacement = MempoolSnarkTxBuilder::new(account_a)
+        .with_outputs(vec![(account_b, 0)])
+        .build();
+    let replacement_id = replacement.compute_txid();
+    let context = BlockAssemblyContext::new(
+        env.storage().clone(),
+        ReplacingMempool {
+            handle: mempool.clone(),
+            replacement,
+        },
+        OLStateManagerProviderImpl::new(env.storage().ol_state().clone()),
+        0,
+        OLRuntimeParams::test_default(),
+    );
+    let result = generate_block_template_inner(
+        &context,
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        BlockGenerationConfig::new(env.parent_commitment()),
+        EpochResourceState::new_empty(),
+    )
+    .await
+    .unwrap();
+    let (template, failed, _) = result.into_parts();
+    assert_eq!(
+        included_txids(&template),
+        vec![original_id, successor_id, independent_id]
+    );
+    assert_eq!(failed, vec![]);
+    assert_eq!(
+        mempool
+            .get_candidates()
+            .await
+            .unwrap()
+            .map(|candidate| candidate.txid())
+            .collect::<Vec<_>>(),
+        vec![independent_id, replacement_id, successor_id]
+    );
+    let retry = generate_block_template_inner(
+        &context,
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        BlockGenerationConfig::new(env.parent_commitment()),
+        EpochResourceState::new_empty(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        included_txids(retry.template()),
+        vec![independent_id, replacement_id, successor_id]
+    );
+    task_manager.get_shutdown_signal().send();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -216,10 +421,10 @@ async fn test_state_provider_failure_propagates() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_get_transactions_failure_propagates() {
+async fn test_get_candidates_failure_propagates() {
     let env = build_mempool_env([]).await;
     env.mempool()
-        .set_fail_mode(MockMempoolFailMode::GetTransactions);
+        .set_fail_mode(MockMempoolFailMode::GetCandidates);
     let config = BlockGenerationConfig::new(env.parent_commitment());
 
     let err = generate_block_template_inner(
@@ -242,7 +447,7 @@ async fn test_get_transactions_failure_propagates() {
     assert_eq!(
         env.mempool().report_call_count(),
         0,
-        "report_invalid_transactions must not be called when get_transactions fails"
+        "report_invalid_transactions must not be called when get_candidates fails"
     );
 }
 
@@ -406,10 +611,11 @@ async fn test_mixed_failures_keep_order_and_reason() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_max_txs_returns_only_fetched_failures() {
+async fn test_rejected_transactions_do_not_consume_inclusion_limit() {
     let missing_a = test_account_id(13);
     let missing_b = test_account_id(14);
-    let env = build_mempool_env([]).await;
+    let valid_account = test_account_id(1);
+    let env = build_mempool_env([TestAccount::new(valid_account, 0)]).await;
 
     let tx_a = MempoolSnarkTxBuilder::new(missing_a).with_seq_no(0).build();
     let tx_a_id = tx_a.compute_txid();
@@ -417,6 +623,9 @@ async fn test_max_txs_returns_only_fetched_failures() {
     let tx_b_id = tx_b.compute_txid();
     env.mempool().add_transaction(tx_a_id, tx_a);
     env.mempool().add_transaction(tx_b_id, tx_b);
+    let valid_tx = MempoolSnarkTxBuilder::new(valid_account).build();
+    let valid_txid = valid_tx.compute_txid();
+    env.mempool().add_transaction(valid_txid, valid_tx);
 
     let mut sequencer_config = env.sequencer_config().clone();
     sequencer_config.max_txs_per_block = 1;
@@ -430,10 +639,14 @@ async fn test_max_txs_returns_only_fetched_failures() {
         EpochResourceState::new_empty(),
     )
     .await
-    .expect("assembly should succeed with limited tx fetch");
+    .expect("assembly should include a valid transaction after rejections");
 
-    let (_template, failed_txs, _da) = result.into_parts();
-    let expected = vec![(tx_a_id, MempoolTxInvalidReason::Invalid)];
+    let (template, failed_txs, _da) = result.into_parts();
+    assert_eq!(included_txids(&template), vec![valid_txid]);
+    let expected = vec![
+        (tx_a_id, MempoolTxInvalidReason::Invalid),
+        (tx_b_id, MempoolTxInvalidReason::Invalid),
+    ];
     assert_eq!(
         failed_txs, expected,
         "failed_txs should match expected invalid payload"

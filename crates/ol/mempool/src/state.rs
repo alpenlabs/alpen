@@ -1,6 +1,6 @@
 //! Mempool service state management.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -20,11 +20,9 @@ use strata_service::ServiceState;
 use strata_storage::NodeStorage;
 use tracing::{debug, info, instrument, warn};
 
-use crate::types::{
-    MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-};
+use crate::types::{MempoolEntry, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats};
 use crate::validation::validate_transaction;
-use crate::{MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
+use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
 
 /// Per-account mempool state tracking.
 ///
@@ -127,9 +125,6 @@ pub(crate) struct MempoolServiceState<P: StateProvider> {
     /// In-memory entries indexed by transaction ID.
     entries: HashMap<OLTxId, MempoolEntry>,
 
-    /// Ordering index: MempoolOrderingKey → transaction ID.
-    ordering_index: BTreeMap<MempoolOrderingKey, OLTxId>,
-
     /// Per-account mempool state.
     /// Tracks all txids and sequence numbers for each account.
     account_state: HashMap<AccountId, AccountMempoolState>,
@@ -185,7 +180,6 @@ impl<P: StateProvider> MempoolServiceState<P> {
         let state = Self {
             ctx,
             entries: HashMap::new(),
-            ordering_index: BTreeMap::new(),
             account_state: HashMap::new(),
             state_accessor,
             stats: OLMempoolStats::default(),
@@ -201,12 +195,11 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// removed from the database.
     #[instrument(skip(self), fields(component = "ol_mempool"))]
     pub(crate) async fn load_from_db(&mut self) -> OLMempoolResult<()> {
-        let mut all_txs = self.ctx.storage.mempool().get_all_txs()?;
+        let all_txs = self.ctx.storage.mempool().get_all_txs()?;
         let total_in_db = all_txs.len();
         info!(%total_in_db, "loading mempool transactions from database");
 
-        // Sort by `timestamp_micros` to validate transactions in order
-        all_txs.sort_by_key(|tx_data| tx_data.timestamp_micros());
+        let mut pending = HashMap::new();
 
         let mut loaded_count = 0;
         let mut skipped_count = 0;
@@ -234,24 +227,29 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 }
             };
 
-            let txid = tx_data.txid();
+            let entry = MempoolEntry::new(tx, tx_data.timestamp_micros(), tx_data.tx_bytes().len());
+            pending.insert(tx_data.txid(), entry);
+        }
 
-            // Validate transaction
-            // Note: this plays nice with sequence number validation because we don't allow gaps
-            // (sequence numbers and timestamps are guaranteed to be compatible). When we move to a
-            // different priority ordering, this should be revised.
+        // A replacement can arrive after its successors. Validate in account order on reload too.
+        let candidates = MempoolCandidates::build_snapshot(
+            pending
+                .iter()
+                .map(|(&txid, entry)| (txid, &entry.tx, entry.timestamp_micros)),
+        );
+        for candidate in candidates {
+            let txid = candidate.txid();
+            let entry = pending
+                .remove(&txid)
+                .expect("candidate was decoded from storage");
             if let Err(e) =
-                validate_transaction(txid, &tx, &self.state_accessor, &self.account_state)
+                validate_transaction(txid, &entry.tx, &self.state_accessor, &self.account_state)
             {
                 // Skip invalid transaction and remove from DB
-                warn!(
-                    txid = ?tx_data.txid(),
-                    ?e,
-                    "Skipping invalid transaction from database"
-                );
-                if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid()) {
+                warn!(?txid, ?e, "Skipping invalid transaction from database");
+                if let Err(del_err) = self.ctx.storage.mempool().del_tx(txid) {
                     warn!(
-                        txid = ?tx_data.txid(),
+                        ?txid,
                         error = %del_err,
                         "failed to delete invalid tx from mempool db; will retry on next reload"
                     );
@@ -265,11 +263,6 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 skipped_count += 1;
                 continue;
             }
-
-            // Create entry using stored timestamp from database
-            let ordering_key = MempoolOrderingKey::for_transaction(&tx, tx_data.timestamp_micros());
-            let tx_size = tx_data.tx_bytes().len();
-            let entry = MempoolEntry::new(tx, ordering_key, tx_size);
 
             // Add to in-memory state (already in DB, so no write needed)
             self.add_tx_to_in_memory_state(txid, entry);
@@ -298,24 +291,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
         Ok(txid)
     }
 
-    /// Handle get transactions command (returns transactions in priority order).
-    pub(crate) async fn handle_get_transactions(
-        &mut self,
-        limit: usize,
-    ) -> OLMempoolResult<Vec<(OLTxId, OLTransactionV1)>> {
-        // Gap checking at submission ensures no gaps exist.
-        // Simply return transactions in priority order.
-        let result: Vec<(OLTxId, OLTransactionV1)> = self
-            .ordering_index
-            .values()
-            .take(limit)
-            .filter_map(|txid| {
-                let entry = self.entries.get(txid)?;
-                Some((*txid, entry.tx.clone()))
-            })
-            .collect();
-
-        Ok(result)
+    /// Shares the current transaction bodies with one candidate snapshot.
+    pub(crate) fn handle_get_candidates(&self) -> MempoolCandidates {
+        MempoolCandidates::build_snapshot(
+            self.entries
+                .iter()
+                .map(|(&txid, entry)| (txid, &entry.tx, entry.timestamp_micros)),
+        )
     }
 
     /// Handle report invalid transactions command.
@@ -481,8 +463,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             .expect("system time before UNIX epoch")
             .as_micros() as u64;
 
-        let ordering_key = MempoolOrderingKey::for_transaction(&tx, timestamp_micros);
-        let entry = MempoolEntry::new(tx.clone(), ordering_key, tx_size);
+        let entry = MempoolEntry::new(tx, timestamp_micros, tx_size);
 
         // Persist to database first
         let tx_data = MempoolTxData::new(txid, tx_bytes, timestamp_micros);
@@ -506,20 +487,15 @@ impl<P: StateProvider> MempoolServiceState<P> {
     ///
     /// Updates all in-memory data structures:
     /// - entries: Main transaction storage
-    /// - ordering_index: Priority queue for ordering
     /// - account_state: Per-account tracking for validation
     ///
     /// Also updates statistics. Does NOT write to database or perform validation.
     fn add_tx_to_in_memory_state(&mut self, txid: OLTxId, entry: MempoolEntry) {
-        let ordering_key = entry.ordering_key;
         let target_account = entry
             .tx
             .target()
             .expect("all OL payload variants must have a target");
         let tx_size = entry.size_bytes;
-
-        // Add to ordering index
-        self.ordering_index.insert(ordering_key, txid);
 
         // Add to entries
         self.entries.insert(txid, entry.clone());
@@ -550,8 +526,6 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Remove from database first
         self.ctx.storage.mempool().del_tx(txid)?;
 
-        // Get ordering key for ordering index removal
-        let ordering_key = entry.ordering_key;
         let size_bytes = entry.size_bytes;
         let account_id = entry
             .tx
@@ -560,7 +534,6 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         // Remove from memory
         self.entries.remove(&txid);
-        self.ordering_index.remove(&ordering_key);
 
         // Remove from account_state index
         if let Some(acct_state) = self.account_state.get_mut(&account_id) {
@@ -979,18 +952,18 @@ mod tests {
             })
         ));
 
-        let pending = state.handle_get_transactions(10).await.unwrap();
+        let pending = state.handle_get_candidates().collect::<Vec<_>>();
         assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].0, original_id);
+        assert_eq!(pending[0].txid(), original_id);
 
         // Reload through the service path to verify the rejected replacement was not persisted.
         let mut reloaded = MempoolServiceState::new_with_context(state.ctx.clone(), tip)
             .await
             .unwrap();
         reloaded.load_from_db().await.unwrap();
-        let pending = reloaded.handle_get_transactions(10).await.unwrap();
+        let pending = reloaded.handle_get_candidates().collect::<Vec<_>>();
         assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].0, original_id);
+        assert_eq!(pending[0].txid(), original_id);
     }
 
     #[tokio::test]
@@ -1011,7 +984,7 @@ mod tests {
             .await
             .unwrap();
         state.add_transaction(withdrawal_update(173)).await.unwrap();
-        assert_eq!(state.handle_get_transactions(10).await.unwrap().len(), 1);
+        assert_eq!(state.handle_get_candidates().count(), 1);
     }
 
     #[tokio::test]
@@ -1030,12 +1003,12 @@ mod tests {
                 TxLogBudgetError::LogPayloadBytes { .. }
             ))
         ));
-        assert_eq!(state.handle_get_transactions(10).await.unwrap().len(), 0);
+        assert_eq!(state.handle_get_candidates().count(), 0);
         let mut reloaded = MempoolServiceState::new_with_context(context, tip)
             .await
             .unwrap();
         reloaded.load_from_db().await.unwrap();
-        assert_eq!(reloaded.handle_get_transactions(10).await.unwrap().len(), 0);
+        assert_eq!(reloaded.handle_get_candidates().count(), 0);
     }
 
     #[tokio::test]
@@ -1123,12 +1096,12 @@ mod tests {
         state.add_transaction(snark3).await.unwrap();
 
         // SnarkAccountUpdate transactions should be ordered by seq_no (0 < 1 < 2)
-        let txs = state.handle_get_transactions(3).await.unwrap();
+        let txs = state.handle_get_candidates().collect::<Vec<_>>();
         assert_eq!(txs.len(), 3);
         // All transactions target same account, should be in seq_no order
-        let tx1_seq = snark_seq_no(&txs[0].1).expect("expected snark tx");
-        let tx2_seq = snark_seq_no(&txs[1].1).expect("expected snark tx");
-        let tx3_seq = snark_seq_no(&txs[2].1).expect("expected snark tx");
+        let tx1_seq = snark_seq_no(txs[0].transaction()).expect("expected snark tx");
+        let tx2_seq = snark_seq_no(txs[1].transaction()).expect("expected snark tx");
+        let tx3_seq = snark_seq_no(txs[2].transaction()).expect("expected snark tx");
         assert_eq!(tx1_seq, 0);
         assert_eq!(tx2_seq, 1);
         assert_eq!(tx3_seq, 2);
@@ -1166,11 +1139,11 @@ mod tests {
 
         // All three GAM transactions
         // Should be ordered by insertion order (FIFO)
-        let txs = state.handle_get_transactions(3).await.unwrap();
+        let txs = state.handle_get_candidates().collect::<Vec<_>>();
         assert_eq!(txs.len(), 3);
-        assert_eq!(tx_target(&txs[0].1), gam1_target); // First inserted
-        assert_eq!(tx_target(&txs[1].1), gam2_target); // Second inserted
-        assert_eq!(tx_target(&txs[2].1), gam3_target); // Third inserted
+        assert_eq!(tx_target(txs[0].transaction()), gam1_target); // First inserted
+        assert_eq!(tx_target(txs[1].transaction()), gam2_target); // Second inserted
+        assert_eq!(tx_target(txs[2].transaction()), gam3_target); // Third inserted
     }
 
     #[tokio::test]
@@ -1206,11 +1179,11 @@ mod tests {
 
         // All three transactions have seq_no=0 but different accounts
         // Should be ordered by insertion order (FIFO)
-        let txs = state.handle_get_transactions(3).await.unwrap();
+        let txs = state.handle_get_candidates().collect::<Vec<_>>();
         assert_eq!(txs.len(), 3);
-        assert_eq!(tx_target(&txs[0].1), tx1_target); // First inserted
-        assert_eq!(tx_target(&txs[1].1), tx2_target); // Second inserted
-        assert_eq!(tx_target(&txs[2].1), tx3_target); // Third inserted
+        assert_eq!(tx_target(txs[0].transaction()), tx1_target); // First inserted
+        assert_eq!(tx_target(txs[1].transaction()), tx2_target); // Second inserted
+        assert_eq!(tx_target(txs[2].transaction()), tx3_target); // Third inserted
     }
 
     #[tokio::test]
@@ -1261,33 +1234,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_transactions_limit() {
-        let tip = create_test_block_commitment(100);
-        let config = OLMempoolConfig {
-            max_tx_count: 10,
-            max_tx_size: 1_000_000,
-            max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
-            max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
-            command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
-        };
-        let provider = Arc::new(create_test_state_provider(tip));
-        let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
-            .await
-            .unwrap();
-
-        // Add 5 transactions - each to different account with seq_no 0
-        for i in 1..=5 {
-            let tx = create_test_snark_tx_with_seq_no(i, 0);
-            state.add_transaction(tx).await.unwrap();
-        }
-
-        // Request only 3
-        let txs = state.handle_get_transactions(3).await.unwrap();
-        assert_eq!(txs.len(), 3);
-    }
-
-    #[tokio::test]
     async fn test_snark_priority_ordering() {
         let tip = create_test_block_commitment(100);
         let config = OLMempoolConfig {
@@ -1319,11 +1265,11 @@ mod tests {
         state.add_transaction(snark3).await.unwrap();
 
         // SnarkAccountUpdate transactions should be ordered by seq_no (0 < 1 < 2)
-        let txs = state.handle_get_transactions(3).await.unwrap();
+        let txs = state.handle_get_candidates().collect::<Vec<_>>();
         assert_eq!(txs.len(), 3);
-        assert_eq!(tx_target(&txs[0].1), snark1_target); // seq_no 0
-        assert_eq!(tx_target(&txs[1].1), snark2_target); // seq_no 1
-        assert_eq!(tx_target(&txs[2].1), snark3_target); // seq_no 2
+        assert_eq!(tx_target(txs[0].transaction()), snark1_target); // seq_no 0
+        assert_eq!(tx_target(txs[1].transaction()), snark2_target); // seq_no 1
+        assert_eq!(tx_target(txs[2].transaction()), snark3_target); // seq_no 2
     }
 
     #[tokio::test]
@@ -1444,7 +1390,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_get_transactions_ordering() {
+    async fn test_handle_get_candidates_ordering() {
         let tip = create_test_block_commitment(100);
         let config = OLMempoolConfig {
             max_tx_count: 100,
@@ -1470,26 +1416,13 @@ mod tests {
         let txid3 = state.add_transaction(tx3).await.unwrap();
         let txid4 = state.add_transaction(tx4).await.unwrap();
 
-        // Verify ordering: tx1 (id=0), tx2 (id=1), tx3 (id=2), tx4 (id=3)
-        let txs = state.handle_get_transactions(10).await.unwrap();
-        assert_eq!(txs.len(), 4);
-        // handle_get_transactions returns Vec<(OLTxId, OLTransactionV1)>
-        let (tx1_id_result, _) = &txs[0];
-        let (tx2_id_result, _) = &txs[1];
-        let (tx3_id_result, _) = &txs[2];
-        let (tx4_id_result, _) = &txs[3];
-        assert_eq!(*tx1_id_result, txid1);
-        assert_eq!(*tx2_id_result, txid2);
-        assert_eq!(*tx3_id_result, txid3);
-        assert_eq!(*tx4_id_result, txid4);
-
-        // Test limit parameter
-        let txs = state.handle_get_transactions(2).await.unwrap();
-        assert_eq!(txs.len(), 2);
-        let (tx1_id_result, _) = &txs[0];
-        let (tx2_id_result, _) = &txs[1];
-        assert_eq!(*tx1_id_result, txid1);
-        assert_eq!(*tx2_id_result, txid2);
+        assert_eq!(
+            state
+                .handle_get_candidates()
+                .map(|candidate| candidate.txid())
+                .collect::<Vec<_>>(),
+            vec![txid1, txid2, txid3, txid4]
+        );
     }
 
     #[tokio::test]
@@ -1945,6 +1878,95 @@ mod tests {
         let result = state.add_transaction(valid_tx).await;
         assert!(result.is_ok());
         assert_eq!(state.stats().mempool_size(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_retains_removed_bodies_and_excludes_later_arrivals() {
+        let tip = create_test_block_commitment(100);
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            Arc::new(create_test_state_provider(tip)),
+        ));
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
+        let original = create_test_snark_tx_with_seq_no(1, 0);
+        let original_id = state.add_transaction(original.clone()).await.unwrap();
+        let snapshot = state.handle_get_candidates();
+
+        state.handle_report_invalid_transactions(vec![(
+            original_id,
+            MempoolTxInvalidReason::Invalid,
+        )]);
+        let later_id = state
+            .add_transaction(create_test_snark_tx_with_seq_no(2, 0))
+            .await
+            .unwrap();
+
+        let captured = snapshot.collect::<Vec<_>>();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].txid(), original_id);
+        assert_eq!(captured[0].transaction(), &original);
+        assert_eq!(
+            state
+                .handle_get_candidates()
+                .map(|candidate| candidate.txid())
+                .collect::<Vec<_>>(),
+            vec![later_id]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_candidate_order_survives_replacement_and_reload() {
+        let tip = create_test_block_commitment(100);
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            Arc::new(create_test_state_provider(tip)),
+        ));
+        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
+            .await
+            .unwrap();
+        let original = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
+            .await
+            .unwrap();
+        let successor = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 1))
+            .await
+            .unwrap();
+        let independent = state
+            .add_transaction(create_test_snark_tx_with_seq_no(2, 0))
+            .await
+            .unwrap();
+        let mut snapshot = state.handle_get_candidates();
+        let replacement = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
+            .await
+            .unwrap();
+        let original_candidate = snapshot.next().unwrap();
+        assert_eq!(original_candidate.txid(), original);
+        assert_eq!(original_candidate.transaction().compute_txid(), original);
+        assert!(!state.contains(&original));
+        let expected = vec![independent, replacement, successor];
+        assert_eq!(
+            state
+                .handle_get_candidates()
+                .map(|candidate| candidate.txid())
+                .collect::<Vec<_>>(),
+            expected
+        );
+
+        let mut reloaded = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
+        reloaded.load_from_db().await.unwrap();
+        assert_eq!(
+            reloaded
+                .handle_get_candidates()
+                .map(|candidate| candidate.txid())
+                .collect::<Vec<_>>(),
+            expected
+        );
     }
 
     #[tokio::test]

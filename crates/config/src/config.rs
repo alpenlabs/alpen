@@ -205,7 +205,7 @@ pub struct SequencerConfig {
     #[serde(default = "default_ol_block_time_ms")]
     pub ol_block_time_ms: u64,
 
-    /// Maximum number of transactions to fetch from mempool per block.
+    /// Maximum number of transactions to include in a block.
     #[serde(default = "default_max_txs_per_block")]
     pub max_txs_per_block: usize,
 

@@ -8,7 +8,9 @@ use tokio::sync::{mpsc, oneshot};
 use crate::command::create_completion;
 use crate::service::MempoolServiceStatus;
 use crate::types::OLMempoolStats;
-use crate::{MempoolCommand, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
+use crate::{
+    MempoolCandidates, MempoolCommand, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
+};
 
 /// Handle for interacting with the mempool service.
 #[derive(Debug, Clone)]
@@ -64,17 +66,11 @@ impl MempoolHandle {
         self.send_command(command, rx).await?
     }
 
-    /// Get transactions from the mempool in priority order.
-    ///
-    /// Returns up to `limit` transactions in priority order.
-    /// Use `usize::MAX` to get all transactions.
-    pub async fn get_transactions(
-        &self,
-        limit: usize,
-    ) -> OLMempoolResult<Vec<(OLTxId, OLTransactionV1)>> {
+    /// Snapshots candidates with shared transaction bodies.
+    pub async fn get_candidates(&self) -> OLMempoolResult<MempoolCandidates> {
         let (completion, rx) = create_completion();
-        let command = MempoolCommand::GetTransactions { completion, limit };
-        self.send_command(command, rx).await?
+        let command = MempoolCommand::GetCandidates { completion };
+        self.send_command(command, rx).await
     }
 
     /// Report invalid transactions to the mempool.
@@ -198,7 +194,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_transactions_and_report_invalid() {
+    async fn test_get_candidates_and_report_invalid() {
         let (handle, storage, _status_channel) = setup_mempool().await;
 
         // Submit 3 txs from different accounts
@@ -209,7 +205,7 @@ mod tests {
         }
         let [txid1, txid2, txid3]: [_; 3] = txids.try_into().unwrap();
 
-        assert_eq!(handle.get_transactions(10).await.unwrap().len(), 3);
+        assert_eq!(handle.get_candidates().await.unwrap().count(), 3);
 
         // Report tx2 as Invalid (should be removed)
         // Report tx3 as Failed (should NOT be removed)
@@ -226,10 +222,19 @@ mod tests {
         assert!(!tx_exists(&storage, txid2), "Invalid should remove tx");
         assert!(tx_exists(&storage, txid3), "Failed should NOT remove tx");
         assert_eq!(handle.stats().mempool_size(), 2);
+        assert_eq!(
+            handle
+                .get_candidates()
+                .await
+                .unwrap()
+                .map(|candidate| candidate.txid())
+                .collect::<Vec<_>>(),
+            vec![txid1, txid3]
+        );
     }
 
     #[tokio::test]
-    async fn test_get_transactions_with_limit() {
+    async fn test_consuming_snapshot_preserves_pending_transactions() {
         let (handle, storage, _status_channel) = setup_mempool().await;
 
         // Submit 3 txs from different accounts
@@ -239,8 +244,13 @@ mod tests {
             txids.push(handle.submit_transaction(tx).await.unwrap());
         }
 
-        // Get transactions with limit
-        assert_eq!(handle.get_transactions(2).await.unwrap().len(), 2);
+        let selected = handle
+            .get_candidates()
+            .await
+            .unwrap()
+            .map(|candidate| candidate.txid())
+            .collect::<Vec<_>>();
+        assert_eq!(selected, txids);
 
         // Verify all transactions still exist in storage
         for txid in &txids {
