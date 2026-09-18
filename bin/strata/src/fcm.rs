@@ -461,3 +461,6 @@ mod stored_input_failure_tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod tests;
