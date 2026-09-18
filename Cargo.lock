@@ -10147,6 +10147,7 @@ dependencies = [
  "anyhow",
  "futures",
  "proptest",
+ "sled",
  "ssz_types",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
@@ -10163,8 +10164,10 @@ dependencies = [
  "strata-paas",
  "strata-primitives",
  "strata-storage-common",
+ "tempfile",
  "tokio",
  "tracing",
+ "typed-sled",
  "zkaleido",
 ]
 
