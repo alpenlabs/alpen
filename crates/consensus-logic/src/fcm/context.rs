@@ -1,7 +1,10 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use async_trait::async_trait;
-use strata_db_types::{ol_block::BlockStatus, DbResult};
+use strata_db_types::{
+    ol_block::{BlockStatus, StatusScanStart},
+    DbResult,
+};
 use strata_identifiers::{Epoch, Slot};
 use strata_ol_state_types_v1::OLStateV1;
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
@@ -29,6 +32,16 @@ pub trait CsmStatusReader: Send + Sync {
 /// Storage operations required by FCM.
 #[async_trait]
 pub trait FcmStorage: UnfinalizedOLBlockSource {
+    /// Reads a bounded status page to refill the in-memory retry queue.
+    ///
+    /// Reads only slot/status metadata after `start`, in slot then block-ID order.
+    /// The lower bound is exclusive and may refer to a deleted block.
+    async fn scan_block_statuses(
+        &self,
+        start: StatusScanStart,
+        limit: NonZeroUsize,
+    ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>>;
+
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool>;
 
     async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
