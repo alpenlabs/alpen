@@ -6,22 +6,33 @@ use std::{
 };
 
 use metrics::{counter, gauge};
+use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{Epoch, Slot};
+use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
-use tokio::time::sleep;
+use tokio::time::{sleep, Instant};
 use tracing::{debug, warn};
 
 use crate::{
     errors::Error,
-    fcm::context::{FcmContext, FcmStorage},
+    fcm::{
+        context::{FcmContext, FcmStorage},
+        pending::PendingBlockCache,
+        ExecutionDeferral,
+    },
     ol_mmr_reconcile::OLMmrReconcileTarget,
     unfinalized_tracker::UnfinalizedBlockTracker,
 };
 
 type CanonicalSuffix = Vec<OLBlockId>;
+
+struct ForkChoiceRetry {
+    next_retry: Instant,
+    failures: u32,
+}
 
 /// Runtime container for the FCM service.
 ///
@@ -31,9 +42,115 @@ pub(crate) struct FcmServiceState<C: FcmContext> {
     ctx: Arc<C>,
     sequencer_predicate: PredicateKey,
     inner_state: FcmInnerState,
+    pending: PendingBlockCache,
+    fork_choice_retry: Option<ForkChoiceRetry>,
 }
 
 impl<C: FcmContext> FcmServiceState<C> {
+    /// Tracks unfinished fork choice independently of evictable block retries.
+    pub(super) fn mark_fork_choice_pending(&mut self) {
+        self.fork_choice_retry.get_or_insert(ForkChoiceRetry {
+            next_retry: Instant::now(),
+            failures: 0,
+        });
+    }
+
+    pub(super) fn fork_choice_retry_due(&self) -> bool {
+        self.fork_choice_retry
+            .as_ref()
+            .is_some_and(|retry| retry.next_retry <= Instant::now())
+    }
+
+    pub(super) fn record_fork_choice_failure(&mut self) {
+        let retry = self
+            .fork_choice_retry
+            .as_mut()
+            .expect("fork choice is pending");
+        retry.failures = retry.failures.saturating_add(1);
+        let delay = 1u64 << retry.failures.saturating_sub(1).min(5);
+        retry.next_retry = Instant::now() + time::Duration::from_secs(delay);
+    }
+
+    pub(super) fn complete_fork_choice(&mut self) {
+        self.fork_choice_retry = None;
+    }
+
+    pub(super) fn pending_block_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub(super) fn defer_block(&mut self, block: &OLBlockV1, reason: ExecutionDeferral) {
+        let tracker = &self.inner_state.chain_tracker;
+        self.pending
+            .defer(block, reason, |parent| tracker.is_seen_block(parent));
+    }
+
+    pub(super) fn remove_pending_block(&mut self, block: OLBlockCommitment) {
+        self.pending.remove(block);
+    }
+
+    pub(super) fn prepare_pending_refill(&mut self, limit: usize) -> usize {
+        let tracker = &self.inner_state.chain_tracker;
+        self.pending
+            .prepare_refill(tracker.finalized_epoch().last_slot(), limit, |parent| {
+                tracker.is_seen_block(parent)
+            })
+    }
+
+    pub(super) fn pending_scan_cursor(&self) -> Option<OLBlockCommitment> {
+        self.pending.scan_cursor()
+    }
+
+    pub(super) fn rejection_scan_cursor(&self) -> Option<OLBlockId> {
+        self.pending.rejection_scan_cursor()
+    }
+
+    pub(super) fn record_rejection_status_page(&mut self, rows: &[(OLBlockId, bool)]) {
+        self.pending.record_rejection_status_page(rows);
+    }
+
+    pub(super) fn record_pending_status_page(&mut self, rows: &[(OLBlockCommitment, BlockStatus)]) {
+        self.pending.record_status_page(rows);
+    }
+
+    pub(super) fn record_pending_body_read_failure(&mut self, block: OLBlockCommitment) -> bool {
+        self.pending.record_body_read_failure(block)
+    }
+
+    pub(super) fn discover_pending_block(&mut self, block: &OLBlockV1) {
+        let tracker = &self.inner_state.chain_tracker;
+        self.pending
+            .cache_block(block, |parent| tracker.is_seen_block(parent));
+    }
+
+    pub(super) fn discover_pending_cleanup(&mut self, block: &OLBlockV1) {
+        let tracker = &self.inner_state.chain_tracker;
+        self.pending
+            .cache_cleanup(block, |parent| tracker.is_seen_block(parent));
+    }
+
+    pub(super) fn pending_needs_cleanup(&self, block: OLBlockCommitment) -> bool {
+        self.pending.needs_cleanup(block)
+    }
+
+    /// Selects ready blocks against the attached chain and records their attempt time.
+    ///
+    /// Progress permits immediate dependency retries; storage backoff still applies.
+    pub(super) fn select_pending_retry_batch(
+        &mut self,
+        progress: bool,
+        limit: usize,
+    ) -> Vec<OLBlockCommitment> {
+        let chain_tracker = &self.inner_state.chain_tracker;
+        self.pending.select_retry_batch(progress, limit, |parent| {
+            chain_tracker.is_seen_block(parent)
+        })
+    }
+
+    pub(super) fn record_pending_storage_failure(&mut self, block: OLBlockCommitment) {
+        self.pending.record_storage_failure(block);
+    }
+
     pub(crate) fn cur_ol_state(&self) -> Arc<OLStateV1> {
         self.inner_state.cur_olstate.clone()
     }
@@ -124,10 +241,15 @@ impl<C: FcmContext> FcmServiceState<C> {
         block: OLBlockCommitment,
         state: Arc<OLStateV1>,
     ) -> anyhow::Result<()> {
+        self.set_tip_state(block, state);
+        self.ctx().update_safe_tip(block).await
+    }
+
+    /// Sets the local tip, including restoration after an incomplete tip update.
+    pub(super) fn set_tip_state(&mut self, block: OLBlockCommitment, state: Arc<OLStateV1>) {
         self.inner_state.cur_best_block = block;
         self.inner_state.cur_olstate = state;
         gauge!("strata_ol_tip_slot").set(block.slot() as f64);
-        self.ctx().update_safe_tip(block).await
     }
 
     pub(crate) fn find_latest_pending_finalizable_epoch(&self) -> Option<(usize, EpochCommitment)> {
@@ -227,6 +349,8 @@ impl<C: FcmContext> FcmServiceState<C> {
             ctx,
             sequencer_predicate,
             inner_state,
+            pending: PendingBlockCache::default(),
+            fork_choice_retry: None,
         }
     }
 

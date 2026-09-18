@@ -12,10 +12,33 @@ use crate::{
     unfinalized_tracker::UnfinalizedOLBlockSource,
 };
 
+/// A local dependency that prevents a block execution verdict.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecutionDeferral {
+    /// Parent execution or canonical L1/ASM data is not ready.
+    Dependency,
+    /// A local storage read failed and must be retried with backoff.
+    Storage,
+}
+
+/// Distinguishes invalid blocks from blocks waiting for local execution data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockExecutionOutcome {
+    Accepted,
+    Deferred(ExecutionDeferral),
+    Rejected,
+}
+
 /// Chain execution operations required by FCM.
 #[async_trait]
 pub trait ChainController: Send + Sync {
-    async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()>;
+    /// Returns a protocol verdict or an explicit retry reason.
+    ///
+    /// Errors indicate local failures that require service termination without rejecting the block.
+    async fn try_exec_block(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockExecutionOutcome>;
     async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()>;
     async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()>;
 }
@@ -41,6 +64,24 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
     ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>>;
 
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool>;
+
+    /// Returns whether this invalid block needs no further rejection cleanup.
+    async fn is_block_rejection_complete(&self, blkid: OLBlockId) -> DbResult<bool>;
+
+    /// Reads at most `limit` status rows in block-ID order, independently of finality.
+    ///
+    /// The boolean marks unfinished rejection cleanup. Includes nonmatching rows to advance
+    /// the exclusive `after` cursor without scanning an unbounded amount of history.
+    /// Treats unreadable completion markers as pending so cleanup retries those reads
+    /// without blocking discovery of subsequent rows.
+    async fn scan_block_rejection_statuses(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, bool)>>;
+
+    /// Records completion after every rejection cleanup operation succeeds.
+    async fn mark_block_rejection_complete(&self, block: OLBlockCommitment) -> DbResult<()>;
 
     async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
 

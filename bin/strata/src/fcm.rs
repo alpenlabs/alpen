@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
-use strata_chain_worker::ChainWorkerHandle;
+use strata_chain_worker::{ChainWorkerHandle, WorkerError};
 use strata_consensus_logic::{
-    ChainController, CsmStatusReader, FcmContext, FcmServiceHandle, FcmStartupReconciler,
-    FcmStorage,
+    BlockExecutionOutcome, ChainController, CsmStatusReader, ExecutionDeferral, FcmContext,
+    FcmServiceHandle, FcmStartupReconciler, FcmStorage,
     ol_mmr_reconcile::{
         OLMmrReconcileResult, OLMmrReconcileTarget, reconcile_ol_mmr_index_to_target,
     },
@@ -15,7 +15,7 @@ use strata_consensus_logic::{
     unfinalized_tracker::UnfinalizedOLBlockSource,
 };
 use strata_csm_worker::CsmWorkerStatus;
-use strata_db_types::{DbResult, ol_block::BlockStatus};
+use strata_db_types::{DbError, DbResult, ol_block::BlockStatus};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
@@ -25,6 +25,7 @@ use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
+use tracing::warn;
 
 use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
 
@@ -56,9 +57,31 @@ impl StrataFcmContext {
 
 #[async_trait]
 impl ChainController for StrataFcmContext {
-    async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()> {
-        self.chain_worker.try_exec_block(block).await?;
-        Ok(())
+    async fn try_exec_block(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockExecutionOutcome> {
+        match self.chain_worker.try_exec_block(block).await {
+            Ok(()) => Ok(BlockExecutionOutcome::Accepted),
+            Err(WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_)) => Ok(
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            ),
+            Err(err @ WorkerError::Database(DbError::BlockIndexingConflict { .. })) => Err(err)
+                .with_context(|| {
+                    format!(
+                        "cannot execute block {block}: inconsistent local indexing; repair required"
+                    )
+                }),
+            Err(err @ WorkerError::Database(_)) => {
+                warn!(%block, %err, "deferring block after local worker failure");
+                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
+            }
+            Err(WorkerError::StfExecution(err)) => {
+                warn!(%block, %err, "rejecting invalid block execution");
+                Ok(BlockExecutionOutcome::Rejected)
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()> {
@@ -106,6 +129,17 @@ impl UnfinalizedOLBlockSource for StrataFcmContext {
 
 #[async_trait]
 impl FcmStorage for StrataFcmContext {
+    async fn scan_block_rejection_statuses(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, bool)>> {
+        self.storage
+            .ol_block()
+            .scan_block_rejection_statuses_async(after, limit)
+            .await
+    }
+
     async fn scan_block_statuses(
         &self,
         finalized_slot: Slot,
@@ -129,6 +163,20 @@ impl FcmStorage for StrataFcmContext {
         self.storage
             .ol_block()
             .clear_block_high_watermark_async(expected)
+            .await
+    }
+
+    async fn is_block_rejection_complete(&self, blkid: OLBlockId) -> DbResult<bool> {
+        self.storage
+            .ol_block()
+            .is_block_rejection_complete_async(blkid)
+            .await
+    }
+
+    async fn mark_block_rejection_complete(&self, block: OLBlockCommitment) -> DbResult<()> {
+        self.storage
+            .ol_block()
+            .mark_block_rejection_complete_async(block)
             .await
     }
 
