@@ -31,6 +31,7 @@ mod coin;
 mod errors;
 mod pending_asm_log;
 mod proofs;
+mod spec_id;
 mod state_accessor;
 
 pub use account::*;
@@ -38,6 +39,7 @@ pub use coin::{Coin, CoinError};
 pub use errors::*;
 pub use pending_asm_log::PendingAsmLog;
 pub use proofs::*;
+pub use spec_id::OLSpecId;
 pub use state_accessor::*;
 // transitional crap
 pub use strata_asm_manifest_types::AsmManifest;
