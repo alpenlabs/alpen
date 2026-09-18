@@ -131,6 +131,32 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Returns `true` if the status was updated.
     fn set_block_status(&self, id: OLBlockId, status: BlockStatus) -> DbResult<bool>;
 
+    /// Returns whether all rejection cleanup for this block has completed.
+    ///
+    /// Missing markers, including invalid blocks written by older nodes, require cleanup.
+    fn is_block_rejection_complete(&self, id: OLBlockId) -> DbResult<bool>;
+
+    /// Reads rejection-cleanup requirements for at most `limit` blocks in block-ID order.
+    ///
+    /// Each row indicates whether its block is invalid and still needs rejection cleanup.
+    /// Includes rows requiring no cleanup so callers advance the exclusive `after` cursor
+    /// through bounded pages even when there are no matches. Never reads block bodies.
+    /// An unreadable completion marker counts as pending so cleanup can retry that read
+    /// without blocking discovery of subsequent rows.
+    fn scan_block_rejection_cleanup(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, bool)>>;
+
+    /// Records completed rejection cleanup while preserving the invalid verdict.
+    ///
+    /// Returns [`DbError::BlockRejectionStatusMismatch`] unless the block is invalid, or
+    /// [`DbError::BlockRejectionHighWatermark`] if it is still the high-watermark. Checks
+    /// both conditions atomically with the marker write. Callers must finish all other
+    /// cleanup before recording this marker.
+    fn mark_block_rejection_complete(&self, block: OLBlockCommitment) -> DbResult<()>;
+
     /// Gets the OL block IDs that we have at some slot, in case there's more
     /// than one on competing forks.
     fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>>;
