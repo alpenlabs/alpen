@@ -1,12 +1,8 @@
 //! Account-specific interaction handling, such as messages.
 
-use bitcoin_bosd::Descriptor;
 use strata_acct_types::{
     AccountId, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, MsgPayload,
 };
-use strata_msg_fmt::MsgRef;
-use strata_ol_chain_types_v1::SimpleWithdrawalIntentLogData;
-use strata_ol_msg_types::OLMessageExt;
 use strata_ol_state_types::*;
 use strata_snark_acct_sys as snark_sys;
 use tracing::*;
@@ -15,6 +11,7 @@ use crate::context::BasicExecContext;
 use crate::errors::ExecResult;
 use crate::msg_payload_coin::MsgPayloadCoin;
 use crate::output::OutputCtx;
+use crate::parse_bridge_withdrawal;
 
 /// Credits `coin` to `target`'s balance and runs `post` for any additional
 /// account-specific processing, within a single [`IStateAccessorMut::update_account`]
@@ -168,54 +165,18 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
 ) -> ExecResult<()> {
     let amt_raw: u64 = payload.coin_amt().into();
 
-    // 1. Parse the message from the payload data.
-    let Ok(msg) = MsgRef::try_from(payload.data()) else {
-        // Invalid message format, sweep to limbo.
-        warn!(%sender, "limboing malformed message sent to bridge gateway acct");
-        handle_misplaced_funds(state, payload.into_coin())?;
-        return Ok(());
+    let log_data = match parse_bridge_withdrawal(amt_raw, payload.data(), context.bridge_params()) {
+        Ok(log) => log,
+        Err(reason) => {
+            debug!(%sender, %amt_raw, ?reason, "limboing rejected bridge gateway message");
+            handle_misplaced_funds(state, payload.into_coin())?;
+            return Ok(());
+        }
     };
-
-    let Some(withdrawal_data) = msg.try_as_withdrawal() else {
-        // Not a withdrawal message, or malformed, sweep to limbo.
-        warn!(%sender, "limboing non-withdrawal message sent to bridge gateway acct");
-        handle_misplaced_funds(state, payload.into_coin())?;
-        return Ok(());
-    };
-
-    // 2. Validate the withdrawal amount against params.
-    let bridge_params = context.bridge_params();
-
-    if !bridge_params.validate_withdrawal_amount(amt_raw) {
-        warn!(%sender, %amt_raw, "limboing bad amount sent to bridge gateway acct");
-        handle_misplaced_funds(state, payload.into_coin())?;
-        return Ok(());
-    }
-
-    // 3. Validate the withdrawal descriptor against the configured BOSD policy.
-    let dest_desc = withdrawal_data.dest_desc();
-    let dest_desc_len = dest_desc.len();
-    if !bridge_params.validate_withdrawal_descriptor_len(dest_desc_len)
-        || Descriptor::from_bytes(dest_desc).is_err()
-    {
-        warn!(
-            %sender,
-            %amt_raw,
-            dest_desc_len,
-            "limboing bad destination descriptor sent to bridge gateway acct",
-        );
-        handle_misplaced_funds(state, payload.into_coin())?;
-        return Ok(());
-    }
 
     // 4. If it is, then we can emit a OL log with the amount and destination.
-    let selected_operator = withdrawal_data.selected_operator();
-    let dest = withdrawal_data.into_dest_desc();
-    let log_data = SimpleWithdrawalIntentLogData {
-        amt: amt_raw,
-        selected_operator,
-        dest,
-    };
+    let selected_operator = log_data.selected_operator;
+    let dest_desc_len = log_data.dest.len();
     // Defuse the payload on error so it doesn't drop while still live (the log
     // block cap can be exceeded on an otherwise-valid withdrawal).
     if let Err(e) = context.emit_typed_log(BRIDGE_GATEWAY_ACCT_SERIAL, &log_data) {

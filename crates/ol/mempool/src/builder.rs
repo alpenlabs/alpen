@@ -4,6 +4,7 @@ use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::sync::Arc;
 
+use strata_bridge_params::BridgeParams;
 use strata_identifiers::OLBlockCommitment;
 use strata_service::{AsyncServiceInput, ServiceBuilder, ServiceInput};
 use strata_status::{OLSyncStatusUpdate, StatusChannel};
@@ -22,6 +23,7 @@ use crate::{MempoolCommand, MempoolHandle};
 /// Separates service initialization logic from the handle interface.
 pub struct MempoolBuilder {
     config: OLMempoolConfig,
+    bridge_params: BridgeParams,
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
     current_tip: OLBlockCommitment,
@@ -41,12 +43,14 @@ impl MempoolBuilder {
     /// Create a new mempool builder.
     pub fn new(
         config: OLMempoolConfig,
+        bridge_params: BridgeParams,
         storage: Arc<NodeStorage>,
         status_channel: StatusChannel,
         current_tip: OLBlockCommitment,
     ) -> Self {
         Self {
             config,
+            bridge_params,
             storage,
             status_channel,
             current_tip,
@@ -69,6 +73,7 @@ impl MempoolBuilder {
 
         let ctx = Arc::new(MempoolContext::new_from_nodestorage(
             self.config.clone(),
+            self.bridge_params,
             self.storage.clone(),
         ));
 

@@ -408,8 +408,14 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     // to initialize the mempool which requires async operations. The mempool
     // handle must be available before RunContext is constructed.
     nodectx.task_manager().handle().block_on(async {
-        MempoolBuilder::new(config, storage, status_channel, current_tip)
-            .launch(&executor)
-            .await
+        MempoolBuilder::new(
+            config,
+            *nodectx.ol_params().bridge_params(),
+            storage,
+            status_channel,
+            current_tip,
+        )
+        .launch(&executor)
+        .await
     })
 }

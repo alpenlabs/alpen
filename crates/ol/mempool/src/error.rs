@@ -3,10 +3,15 @@
 use strata_acct_types::AccountId;
 use strata_db_types::DbError;
 use strata_identifiers::OLTxId;
+use strata_ol_tx_policy::TxLogBudgetError;
 
 /// Errors that can occur during mempool operations.
 #[derive(Debug, thiserror::Error)]
 pub enum OLMempoolError {
+    /// A transaction exceeds its standalone log budget, or its logs cannot be encoded.
+    #[error(transparent)]
+    LogBudget(#[from] TxLogBudgetError),
+
     /// Mempool is full (transaction count limit reached).
     #[error("mempool is full: current={current}, limit={limit}")]
     MempoolFull { current: usize, limit: usize },
