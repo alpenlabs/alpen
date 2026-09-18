@@ -29,6 +29,17 @@ pub trait CsmStatusReader: Send + Sync {
 /// Storage operations required by FCM.
 #[async_trait]
 pub trait FcmStorage: UnfinalizedOLBlockSource {
+    /// Reads a bounded status page to refill the in-memory retry queue.
+    ///
+    /// Reads only slot/status metadata above `finalized_slot`, in slot then block-ID order.
+    /// The `after` cursor is exclusive and may refer to a deleted block.
+    async fn scan_block_statuses(
+        &self,
+        finalized_slot: Slot,
+        after: Option<OLBlockCommitment>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>>;
+
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool>;
 
     async fn clear_block_high_watermark(&self, expected: OLBlockCommitment) -> DbResult<bool>;
