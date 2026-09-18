@@ -1,6 +1,6 @@
 //! Fork-choice manager service wiring for the Strata binary.
 
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
@@ -15,7 +15,10 @@ use strata_consensus_logic::{
     unfinalized_tracker::UnfinalizedOLBlockSource,
 };
 use strata_csm_worker::CsmWorkerStatus;
-use strata_db_types::{DbResult, ol_block::BlockStatus};
+use strata_db_types::{
+    DbResult,
+    ol_block::{BlockStatus, StatusScanStart},
+};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
@@ -107,6 +110,17 @@ impl UnfinalizedOLBlockSource for StrataFcmContext {
 
 #[async_trait]
 impl FcmStorage for StrataFcmContext {
+    async fn scan_block_statuses(
+        &self,
+        start: StatusScanStart,
+        limit: NonZeroUsize,
+    ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>> {
+        self.storage
+            .ol_block()
+            .scan_block_statuses_async(start, limit)
+            .await
+    }
+
     async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
         self.storage
             .ol_block()
