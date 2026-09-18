@@ -1,6 +1,7 @@
 //! Whole-block and block-batch operations.
 
-use strata_ol_chain_types_v1::{OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
+use strata_identifiers::L1Height;
+use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::{IStateAccessorMut, OLSpecId};
 use strata_ol_stf_v1::{
@@ -73,4 +74,22 @@ pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
         initial_parent,
         runtime_params,
     ))
+}
+
+/// Verifies header continuity under `spec` before runtime dependency checks.
+pub fn verify_header_continuity(
+    spec: OLSpecId,
+    header: &OLBlockHeaderV1,
+    parent_header: Option<&OLBlockHeaderV1>,
+) -> ExecResult<()> {
+    dispatch_spec!(spec => verify_header_continuity(header, parent_header))
+}
+
+/// Validates the complete manifest height range under `spec` without changing state.
+pub fn validate_manifest_heights(
+    spec: OLSpecId,
+    last_l1_height: L1Height,
+    manifests: &[AsmManifest],
+) -> ExecResult<()> {
+    dispatch_spec!(spec => validate_manifest_heights(last_l1_height, manifests))
 }
