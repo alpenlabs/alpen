@@ -391,9 +391,11 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     Ok(())
 }
 
-/// Reconstructs a full-epoch transition from a DA diff.
+/// Reconstructs a full-epoch transition from a checkpoint DA diff and its L1 manifests.
 ///
 /// Like [`verify_epoch_with_diff`] but without the post-state root check.
+/// The diff restores OL-originated effects; replaying `manifests` restores
+/// terminal ASM effects that the checkpoint diff deliberately excludes.
 ///
 /// Use this only when the diff has already been verified to bind the post-state root via an
 /// upstream proof — e.g. the CSM-verified `CheckpointPayload` path that drives checkpoint sync.
