@@ -43,6 +43,10 @@ impl SyncService for ChainWorkerService {
                 completion.send_blocking(res);
             }
 
+            ChainWorkerMessage::ValidateBlockInputs(olbc, completion) => {
+                completion.send_blocking(state.validate_stored_block_inputs(&olbc));
+            }
+
             ChainWorkerMessage::UpdateSafeTip(olbc, completion) => {
                 let res = state.update_cur_tip(olbc);
                 completion.send_blocking(res);

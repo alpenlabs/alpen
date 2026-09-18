@@ -45,6 +45,14 @@ impl ChainWorkerHandle {
             .map_err(convert_service_error)?
     }
 
+    /// Authenticates stored block inputs without executing or persisting state.
+    pub async fn validate_block_inputs(&self, block: OLBlockCommitment) -> WorkerResult<()> {
+        self.command_handle
+            .send_and_wait(|completion| ChainWorkerMessage::ValidateBlockInputs(block, completion))
+            .await
+            .map_err(convert_service_error)?
+    }
+
     /// Tries to execute a block, returns the result (blocking).
     pub fn try_exec_block_blocking(&self, block: OLBlockCommitment) -> WorkerResult<()> {
         self.command_handle

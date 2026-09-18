@@ -199,6 +199,19 @@ impl ChainWorkerServiceState {
         exec_block(&self.ctx, self.ctx.runtime_params(), block_commitment)
     }
 
+    /// Validates a restored block without modifying execution or indexing state.
+    pub(crate) fn validate_stored_block_inputs(
+        &self,
+        commitment: &OLBlockCommitment,
+    ) -> WorkerResult<()> {
+        self.check_initialized()?;
+        let (block, parent_header, parent_commitment) =
+            fetch_block_with_parent(&self.ctx, commitment)?;
+        let parent_state = fetch_parent_state(&self.ctx, parent_commitment)?;
+        validate_block_inputs(&self.ctx, &block, parent_header.as_ref(), &parent_state)?;
+        Ok(())
+    }
+
     /// Updates the current tip as managed by the worker.
     pub(crate) fn update_cur_tip(&mut self, tip: OLBlockCommitment) -> WorkerResult<()> {
         self.state.cur_tip = tip;
