@@ -8,6 +8,7 @@ bitcoin-bosd.workspace = true
 ssz_primitives = { workspace = true, optional = true }
 ssz_types = { workspace = true, optional = true }
 strata-acct-types.workspace = true
+strata-asm-checkpoint-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-codec.workspace = true
@@ -32,7 +33,6 @@ tracing.workspace = true
 [dev-dependencies]
 ssz_primitives.workspace = true
 ssz_types.workspace = true
-strata-asm-checkpoint-types.workspace = true
 strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-da-types-v1.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }

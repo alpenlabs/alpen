@@ -1,30 +1,20 @@
 //! Sequencer admission policy for transaction log budgets.
 //!
-//! These checks retain the assembler's exclusive checkpoint thresholds. They
-//! constrain admission, not consensus validity, and do not establish DA fit.
+//! Applies the STF's log limits to standalone updates before mempool admission.
+//! This does not establish DA fit.
 
 #[cfg(test)]
 mod tests;
 
 use strata_acct_types::BRIDGE_GATEWAY_ACCT_ID;
-use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 use strata_bridge_params::BridgeParams;
 use strata_codec::CodecError;
-use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLogType};
-use strata_ol_stf_v1::parse_bridge_withdrawal;
+use strata_ol_chain_types_v1::OLLogType;
+use strata_ol_stf_v1::{EpochLogBudgetError, check_epoch_log_budget, parse_bridge_withdrawal};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use thiserror::Error;
 
-/// Maximum total OL log payload size per checkpoint (16 KiB per SPS-ol-chain-structures).
-///
-/// Set well below the full checkpoint envelope limit to reserve room for the
-/// checkpoint's other components (e.g. state diff), by bounding logs in
-/// aggregate rather than lowering `MAX_LOG_PAYLOAD_LEN` (per-log) or
-/// [`MAX_OL_LOGS_PER_CHECKPOINT`]. It is intentionally separate from,
-/// and inconsistent with, those two limits.
-///
-/// This threshold is exclusive: total log payload size must be strictly below it.
-pub const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
+pub use strata_ol_stf_v1::MAX_TOTAL_LOG_PAYLOAD_BYTES;
 
 /// Failures when measuring or checking a transaction's own log budget.
 #[derive(Debug, Error)]
@@ -38,6 +28,17 @@ pub enum TxLogBudgetError {
     /// A typed log could not be encoded.
     #[error("cannot encode transaction log: {0}")]
     Encoding(#[from] CodecError),
+}
+
+impl From<EpochLogBudgetError> for TxLogBudgetError {
+    fn from(error: EpochLogBudgetError) -> Self {
+        match error {
+            EpochLogBudgetError::LogCount { actual, limit } => Self::LogCount { actual, limit },
+            EpochLogBudgetError::LogPayloadBytes { actual, limit } => {
+                Self::LogPayloadBytes { actual, limit }
+            }
+        }
+    }
 }
 
 /// Log usage of a transaction that passes the standalone admission budget.
@@ -67,21 +68,7 @@ impl TxLogUsage {
     }
 
     fn check_limits(self) -> Result<Self, TxLogBudgetError> {
-        let count_limit =
-            (MAX_LOGS_PER_BLOCK as usize).min(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
-        if self.count > count_limit {
-            return Err(TxLogBudgetError::LogCount {
-                actual: self.count,
-                limit: count_limit,
-            });
-        }
-        let payload_limit = MAX_TOTAL_LOG_PAYLOAD_BYTES - 1;
-        if self.payload_bytes > payload_limit {
-            return Err(TxLogBudgetError::LogPayloadBytes {
-                actual: self.payload_bytes,
-                limit: payload_limit,
-            });
-        }
+        check_epoch_log_budget(self.count, self.payload_bytes)?;
         Ok(self)
     }
 }
@@ -93,9 +80,8 @@ impl TxLogUsage {
 /// the update, verify its proof, or check its DA/envelope footprint. Valid generic
 /// account messages emit no logs and pass this policy unchanged.
 ///
-/// The log count must fit [`MAX_LOGS_PER_BLOCK`] and remain strictly below
-/// [`MAX_OL_LOGS_PER_CHECKPOINT`]. Combined encoded log payload bytes must remain
-/// strictly below [`MAX_TOTAL_LOG_PAYLOAD_BYTES`].
+/// The transaction effect limits guarantee that its logs fit in one block.
+/// Epoch log count and payload bytes must pass [`check_epoch_log_budget`].
 ///
 /// # Panics
 ///

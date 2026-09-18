@@ -63,6 +63,11 @@ pub struct IntraepochStateWrites {
     /// are appended.
     pub reset: bool,
 
+    /// Updated cumulative OL log count.
+    pub epoch_log_count: Option<u32>,
+    /// Updated cumulative encoded OL log payload bytes.
+    pub epoch_log_payload_bytes: Option<u32>,
+
     /// New pending entries appended during the batch (after the reset, if any).
     pub appended_pending_asm_logs: Vec<PendingAsmLog>,
 }
@@ -311,6 +316,8 @@ impl Codec for GlobalStateWrites {
 impl Codec for IntraepochStateWrites {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         self.reset.encode(enc)?;
+        CodecSsz::new(self.epoch_log_count).encode(enc)?;
+        CodecSsz::new(self.epoch_log_payload_bytes).encode(enc)?;
         (self.appended_pending_asm_logs.len() as u64).encode(enc)?;
         for entry in &self.appended_pending_asm_logs {
             CodecSsz::new(entry.height()).encode(enc)?;
@@ -321,6 +328,8 @@ impl Codec for IntraepochStateWrites {
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let reset = bool::decode(dec)?;
+        let epoch_log_count = CodecSsz::<Option<u32>>::decode(dec)?.into_inner();
+        let epoch_log_payload_bytes = CodecSsz::<Option<u32>>::decode(dec)?.into_inner();
         let len = u64::decode(dec)? as usize;
         let mut appended_pending_asm_logs = Vec::with_capacity(len);
         for _ in 0..len {
@@ -330,6 +339,8 @@ impl Codec for IntraepochStateWrites {
         }
         Ok(Self {
             reset,
+            epoch_log_count,
+            epoch_log_payload_bytes,
             appended_pending_asm_logs,
         })
     }
@@ -424,10 +435,27 @@ impl Codec for LedgerWriteBatch {
 
 #[cfg(test)]
 mod tests {
-    use strata_codec::encode_to_vec;
+    use strata_codec::{decode_buf_exact, encode_to_vec};
 
     use super::*;
     use crate::OLAccountTypeStateV1;
+
+    #[test]
+    fn epoch_log_writes_roundtrip() {
+        let mut batch = WriteBatch::default();
+        let writes = batch.intraepoch_writes_mut();
+        writes.reset = true;
+        writes.epoch_log_count = Some(12);
+        writes.epoch_log_payload_bytes = Some(1_234);
+        let bytes = encode_to_vec(&batch).unwrap();
+        let decoded: WriteBatch = decode_buf_exact(&bytes).unwrap();
+        assert!(decoded.intraepoch_writes().reset);
+        assert_eq!(decoded.intraepoch_writes().epoch_log_count, Some(12));
+        assert_eq!(
+            decoded.intraepoch_writes().epoch_log_payload_bytes,
+            Some(1_234)
+        );
+    }
 
     #[test]
     fn account_write_encoding_matches_bare_state_ssz_encoding() {

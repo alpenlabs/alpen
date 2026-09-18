@@ -256,6 +256,12 @@ impl OLStateV1 {
         if intraepoch_writes.reset {
             self.intraepoch.reset();
         }
+        if let Some(count) = intraepoch_writes.epoch_log_count {
+            self.intraepoch.epoch_log_count = count;
+        }
+        if let Some(payload_bytes) = intraepoch_writes.epoch_log_payload_bytes {
+            self.intraepoch.epoch_log_payload_bytes = payload_bytes;
+        }
         for entry in intraepoch_writes.appended_pending_asm_logs {
             // This panic is safe.
             let ssz_entry = entry.into();

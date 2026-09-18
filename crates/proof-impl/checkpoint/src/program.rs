@@ -89,19 +89,101 @@ impl CheckpointProgram {
 mod tests {
     use std::panic::catch_unwind;
 
+    use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount};
     use strata_asm_checkpoint_types::TerminalHeaderComplement;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
     use strata_identifiers::Buf64;
-    use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
+    use strata_ol_chain_types_v1::{
+        OLBlockBodyV1, OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
+    };
     use strata_ol_da_types_v1::{GlobalStateDiffV1, LedgerDiffV1, OLDaPayloadV1, OLStateDiffV1};
     use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::IStateAccessor;
-    use strata_ol_stf_v1::test_utils::{build_empty_chain, make_genesis_state};
+    use strata_ol_state_types::{EpochLogBudgetError, ExecError, IStateAccessor};
+    use strata_ol_stf_v1::test_utils::{
+        OLStfFixture, SnarkUpdateBuilder, assert_verification_fails_with, build_empty_chain,
+        make_account_id, make_genesis_state, make_proof, make_state_root, make_withdrawal_payload,
+        tamper_body_root, to_ol_block,
+    };
 
-    use crate::program::{CheckpointProgram, CheckpointProverInput};
+    use crate::{
+        process_ol_stf_core,
+        program::{CheckpointProgram, CheckpointProverInput},
+    };
+
+    #[test]
+    fn test_verification_and_checkpoint_proof_reject_epoch_log_overflow() {
+        let account = make_account_id(100);
+        let mut fixture = OLStfFixture::builder()
+            .with_genesis_snark_account(account, |acct| {
+                acct.with_balance(BitcoinAmount::try_from(18_000_000_000).unwrap())
+            })
+            .execute_genesis();
+        let start_state = fixture.state().state().clone();
+        let parent = fixture.last_completed_block().header().clone();
+        let withdrawal_tx = |fixture: &OLStfFixture| {
+            let mut builder =
+                SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(account).clone());
+            for _ in 0..90 {
+                builder = builder.with_output_message(
+                    BRIDGE_GATEWAY_ACCT_ID,
+                    100_000_000,
+                    make_withdrawal_payload(vec![0; 81]),
+                );
+            }
+            builder.build(account, make_state_root(2), make_proof(1))
+        };
+        let first_tx = withdrawal_tx(&fixture);
+        let first = fixture.child_block().with_tx(first_tx).execute();
+        let next_tx = withdrawal_tx(&fixture);
+        let mut verify_state = fixture.state().clone();
+        let terminal = fixture.child_block().terminal().execute();
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![next_tx]).unwrap());
+        let header = tamper_body_root(
+            terminal.completed_block().header(),
+            body.compute_hash_commitment(),
+        );
+
+        assert_verification_fails_with(
+            &mut verify_state,
+            &header,
+            Some(first.completed_block().header().clone()),
+            &body,
+            |error| {
+                matches!(
+                    error.base(),
+                    ExecError::EpochLogBudget(EpochLogBudgetError::LogPayloadBytes {
+                        actual: 17_120,
+                        limit: 16_384
+                    })
+                )
+            },
+        );
+        let blocks = vec![
+            to_ol_block(first.completed_block()),
+            OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body),
+        ];
+        // Execution must reject before the proof program reaches DA verification.
+        let error = catch_unwind(|| {
+            process_ol_stf_core(
+                start_state,
+                blocks,
+                parent,
+                vec![],
+                &OLRuntimeParams::test_default(),
+            )
+        })
+        .unwrap_err();
+        let message = error
+            .downcast_ref::<String>()
+            .expect("proof execution panic message");
+        assert!(
+            message.contains("EpochLogBudget(LogPayloadBytes { actual: 17120, limit: 16384 })"),
+            "{message}"
+        );
+    }
 
     fn prepare_input() -> CheckpointProverInput {
         const SLOTS_PER_EPOCH: u64 = 9;

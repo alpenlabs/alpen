@@ -27,7 +27,7 @@ pub use bridge_message::{BridgeMessageRejection, parse_bridge_withdrawal};
 pub use chain_processing::{process_block_start, process_epoch_initial};
 pub use constants::*;
 pub use context::{BasicExecContext, BlockContext, BlockInfo, EpochInfo, TxExecContext};
-pub use errors::{ErrorKind, ExecError, ExecResult};
+pub use errors::{EpochLogBudgetError, ErrorKind, ExecError, ExecResult};
 pub use manifest_processing::{process_block_manifests, process_epoch_terminal};
 pub use output::*;
 pub use proof_verification::TxProofVerifierImpl;

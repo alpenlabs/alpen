@@ -4,7 +4,9 @@ use jsonrpsee::types::ErrorObjectOwned;
 pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
 use serde_json::json;
 use strata_ol_mempool::OLMempoolError;
+use strata_ol_rpc_types::RpcTxConversionError;
 use strata_ol_tx_policy::TxLogBudgetError;
+use strata_snark_acct_types::OutputsError;
 use tracing::*;
 
 /// Custom error code for mempool capacity-related errors.
@@ -68,6 +70,21 @@ pub(crate) fn block_history_unavailable_error(history_base_slot: u64) -> ErrorOb
         format!("OL block history unavailable at or below history base slot {history_base_slot}"),
         None::<()>,
     )
+}
+
+/// Preserves output capacity errors when converting an RPC transaction.
+pub(crate) fn map_tx_conversion_error_to_rpc(err: RpcTxConversionError) -> ErrorObjectOwned {
+    let message = format!("Invalid transaction: {err}");
+    match err {
+        RpcTxConversionError::Outputs(OutputsError::TransfersCapacityExceeded {
+            actual,
+            limit,
+        }) => resource_limit_error(message, "transfer_count", actual, limit),
+        RpcTxConversionError::Outputs(OutputsError::MessagesCapacityExceeded { actual, limit }) => {
+            resource_limit_error(message, "message_count", actual, limit)
+        }
+        _ => invalid_params_error(message),
+    }
 }
 
 /// Maps mempool errors to RPC errors with appropriate error codes.

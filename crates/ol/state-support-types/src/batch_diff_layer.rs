@@ -163,6 +163,28 @@ where
 
     // ===== Intraepoch state methods =====
 
+    fn epoch_log_count(&self) -> u32 {
+        self.resolve(
+            |batch| {
+                let writes = batch.intraepoch_writes();
+                writes.epoch_log_count.or_else(|| writes.reset.then_some(0))
+            },
+            || self.base.epoch_log_count(),
+        )
+    }
+
+    fn epoch_log_payload_bytes(&self) -> u32 {
+        self.resolve(
+            |batch| {
+                let writes = batch.intraepoch_writes();
+                writes
+                    .epoch_log_payload_bytes
+                    .or_else(|| writes.reset.then_some(0))
+            },
+            || self.base.epoch_log_payload_bytes(),
+        )
+    }
+
     fn pending_asm_logs_len(&self) -> usize {
         let mut len = self.base.pending_asm_logs_len();
         for wb in self.write_batches.iter() {

@@ -27,6 +27,7 @@ strata-predicate.workspace = true
 zkaleido-native-adapter.workspace = true
 
 [dev-dependencies]
+strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true

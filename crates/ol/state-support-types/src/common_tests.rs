@@ -122,6 +122,7 @@ impl Fixture {
             .expect("fixture: add limbo funds");
         base.set_total_ledger_balance(Self::total_ledger_balance());
         base.set_asm_recorded_epoch(Self::asm_recorded_epoch());
+        base.set_epoch_log_usage(7, 700);
 
         // Indices into the L1 block refs MMR are L1 heights, so the record has
         // to be appended at the height matching the current entry count.
@@ -222,6 +223,11 @@ pub(crate) fn reads_all_fields_from_base<S: IStateAccessor>(fx: &Fixture, layer:
         base.l1_block_refs_mmr().num_entries()
     );
     assert_eq!(layer.pending_asm_logs_len(), base.pending_asm_logs_len());
+    assert_eq!(layer.epoch_log_count(), base.epoch_log_count());
+    assert_eq!(
+        layer.epoch_log_payload_bytes(),
+        base.epoch_log_payload_bytes()
+    );
     assert_eq!(layer.pending_asm_logs_full(), base.pending_asm_logs_full());
     assert_eq!(layer.next_account_serial(), base.next_account_serial());
 
@@ -838,6 +844,26 @@ pub(crate) fn reset_hides_base_pending_logs<S: IStateAccessorMut>(fx: &Fixture, 
     assert_eq!(fx.base().pending_asm_logs_len(), Fixture::PENDING_LOGS);
 }
 
+/// Log usage participates in state roots and clears at the epoch boundary.
+pub(crate) fn epoch_log_usage_updates_and_resets<S: IStateAccessorMut>(
+    fx: &Fixture,
+    layer: &mut S,
+) {
+    let initial_root = layer.compute_state_root().unwrap();
+    layer.set_epoch_log_usage(8, 900);
+    assert_eq!(layer.epoch_log_count(), 8);
+    assert_eq!(layer.epoch_log_payload_bytes(), 900);
+    assert_ne!(layer.compute_state_root().unwrap(), initial_root);
+    layer.reset_intraepoch_state();
+    assert_eq!(layer.epoch_log_count(), 0);
+    assert_eq!(layer.epoch_log_payload_bytes(), 0);
+    layer.set_epoch_log_usage(1, 10);
+    assert_eq!(layer.epoch_log_count(), 1);
+    assert_eq!(layer.epoch_log_payload_bytes(), 10);
+    assert_eq!(fx.base().epoch_log_count(), 7);
+    assert_eq!(fx.base().epoch_log_payload_bytes(), 700);
+}
+
 /// Instantiates the shared read-behavior tests for a stack-builder macro.
 ///
 /// `$build` names a macro taking `($base:expr, $layer:ident)` that expands to
@@ -1026,6 +1052,11 @@ macro_rules! impl_mut_layer_tests {
             $build,
             common_reset_hides_base_pending_logs,
             reset_hides_base_pending_logs
+        );
+        $crate::common_tests::mut_layer_test!(
+            $build,
+            common_epoch_log_usage_updates_and_resets,
+            epoch_log_usage_updates_and_resets
         );
     };
 }
