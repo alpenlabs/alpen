@@ -65,6 +65,7 @@ struct OrderEnforcingContext {
     canonical_summaries: HashMap<Epoch, EpochSummary>,
     /// Epochs with at least one block's indexing writes applied.
     indexed_epochs: Mutex<Vec<Epoch>>,
+    last_indexed_block: Mutex<Option<OLBlockCommitment>>,
     /// Summaries accepted by [`ChainWorkerContext::store_summary`].
     stored_summaries: Mutex<Vec<EpochSummary>>,
     /// Epochs passed to [`ChainWorkerContext::merge_epoch_data`].
@@ -136,6 +137,16 @@ impl ChainWorkerContext for OrderEnforcingContext {
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
+        let mut last_indexed = self.last_indexed_block.lock().unwrap();
+        if *last_indexed == Some(commitment) {
+            return Err(DbError::BlockIndexingConflict {
+                epoch: block.header().epoch(),
+                attempted: commitment,
+                last_applied: commitment,
+            }
+            .into());
+        }
+        *last_indexed = Some(commitment);
         let encoded = encode_to_vec(output.write_batch()).expect("write batch encodes");
         self.write_batches
             .lock()
@@ -238,13 +249,13 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 }
 
-/// Builds epoch 1 as a single terminal block on genesis and executes it
-/// through [`exec_block`], returning the context and the terminal header.
+/// Builds epoch 1 as a single terminal block on genesis without executing it,
+/// returning the context and the terminal header.
 ///
 /// With `v0_parent`, genesis's result is first relabelled as the last V0
 /// terminal: the same chainstate as a V0 state, under a header committing to
 /// its bare root. The block then runs as the first V1 block and wraps it.
-fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHeaderV1) {
+fn single_block_epoch_fixture(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHeaderV1) {
     let mut state = make_marked_genesis_state();
     let snark_serial = seed_accounts(&mut state);
     let genesis = run_genesis(&mut state);
@@ -297,6 +308,7 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
         states: HashMap::from([(genesis_commitment, pre_epoch_state)]),
         canonical_summaries: HashMap::from([(0, genesis_summary)]),
         indexed_epochs: Mutex::new(Vec::new()),
+        last_indexed_block: Mutex::new(None),
         stored_summaries: Mutex::new(Vec::new()),
         merged_epochs: Mutex::new(Vec::new()),
         stored_states: Mutex::new(Vec::new()),
@@ -304,6 +316,14 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
         canonical_reads: Mutex::new(0),
     };
 
+    (ctx, terminal_header)
+}
+
+/// Executes the epoch built by [`single_block_epoch_fixture`] through [`exec_block`].
+fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHeaderV1) {
+    let (ctx, terminal_header) = single_block_epoch_fixture(v0_parent);
+    let terminal_commitment =
+        OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
     exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
         .expect("single-block epoch executes");
     (ctx, terminal_header)
@@ -379,6 +399,34 @@ fn test_merge_epoch_state_rejects_root_mismatch() {
         WorkerError::MergedStateRootMismatch { merged, .. } if merged == *summary.final_state()
     ));
 }
+#[test]
+fn terminal_execution_recovers_when_predecessor_summary_arrives() {
+    let (mut ctx, terminal_header) = single_block_epoch_fixture(false);
+    let terminal_commitment =
+        OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
+    let predecessor = ctx.canonical_summaries.remove(&0).unwrap();
+
+    assert!(matches!(
+        exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment),
+        Err(WorkerError::MissingSummaryForEpoch(0))
+    ));
+    assert_eq!(*ctx.indexed_epochs.lock().unwrap(), vec![1]);
+    assert!(ctx.stored_summaries.lock().unwrap().is_empty());
+    assert!(ctx.merged_epochs.lock().unwrap().is_empty());
+
+    ctx.canonical_summaries.insert(0, predecessor);
+    exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
+        .expect("terminal execution resumes after its predecessor summary arrives");
+    assert_eq!(*ctx.indexed_epochs.lock().unwrap(), vec![1]);
+    assert_eq!(
+        *ctx.last_indexed_block.lock().unwrap(),
+        Some(terminal_commitment)
+    );
+    let summaries = ctx.stored_summaries.lock().unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(*summaries[0].terminal(), terminal_commitment);
+}
+
 fn manifest_context(manifests: &[AsmManifest]) -> OrderEnforcingContext {
     OrderEnforcingContext {
         manifests: manifests

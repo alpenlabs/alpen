@@ -653,3 +653,6 @@ mod execution_retry_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
