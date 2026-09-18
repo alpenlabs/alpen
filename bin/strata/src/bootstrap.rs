@@ -503,7 +503,9 @@ mod tests {
         verified_tip: CheckpointTip,
     ) {
         let init_config = CheckpointInitConfig {
-            sequencer_predicate: PredicateKey::always_accept(),
+            // Bootstrap tests read checkpoint state without resolving a signing key.
+            // The zero key is a placeholder and is never used for authentication.
+            sequencer_key: Buf32::zero(),
             checkpoint_predicate: PredicateKey::always_accept(),
             genesis_l1_height: 0,
             genesis_ol_blkid: OLBlockId::null(),

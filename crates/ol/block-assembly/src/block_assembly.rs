@@ -363,7 +363,7 @@ where
     // Phase 4: Ask the sealing policy whether this block should be terminal.
     let sealing_decision =
         epoch_sealing_policy.should_seal_epoch(block_slot, &sealing_limit_verdict);
-    let should_seal = sealing_decision.should_seal();
+    let should_seal = sealing_limit_verdict.requires_terminal() || sealing_decision.should_seal();
     debug!(
         %block_slot,
         ?sealing_limit_verdict,
@@ -482,7 +482,8 @@ where
 /// manifest would overflow the pending-log queue, selection stops and the block
 /// does not seal for that reason. The manifest-count sealing rule can request
 /// either including the boundary manifest and sealing or rejecting the boundary
-/// manifest and sealing with the previously selected manifests.
+/// manifest and sealing with the previously selected manifests. An admitted
+/// checkpoint predicate enactment always ends selection and requires sealing.
 ///
 /// `epoch_cumulative_manifest_count` is the number of ASM manifests already carried
 /// by preceding blocks in the current epoch.
@@ -522,7 +523,12 @@ fn select_asm_manifests<E: EpochSealingPolicy>(
         // epoch-cumulative manifest total if this candidate is admitted.
         let stats =
             EpochSealingResourceStats::new(0, LogMetrics::default(), candidate_manifest_count);
-        let verdict = epoch_sealing_policy.check_limits(&stats);
+        let mut verdict = epoch_sealing_policy.check_limits(&stats);
+        if has_checkpoint_predicate_enactment(&candidate_asm_manifest)
+            && verdict.most_restrictive_action() != EpochSealingLimitAction::RejectCandidate
+        {
+            verdict.record_checkpoint_predicate_boundary();
+        }
 
         match verdict.most_restrictive_action() {
             EpochSealingLimitAction::RejectCandidate => {
@@ -820,7 +826,7 @@ where
 
     // Buffer any manifests carried by this block into intraepoch state.
     if let Some(mc) = &manifest_container {
-        process_block_manifests(&mut final_state, mc.manifests()).map_err(|e| {
+        process_block_manifests(&mut final_state, mc.manifests(), is_terminal).map_err(|e| {
             error!(?e, "manifest buffering failed");
             BlockAssemblyError::BlockConstruction(e)
         })?;
@@ -1009,10 +1015,12 @@ mod tests {
 
     use strata_acct_types::*;
     use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+    use strata_asm_logs::CheckpointPredicateEnacted;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_predicate::PredicateKey;
 
     use super::*;
     use crate::test_utils::*;
@@ -1950,6 +1958,90 @@ mod tests {
 
         let block_template = result.into_template();
         check_block_asm_manifests(&block_template, &[3, 4]);
+    }
+
+    fn checkpoint_enactment_log() -> AsmLogEntry {
+        AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(
+            PredicateKey::always_accept(),
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_selection_stops_at_first_predicate_boundary_and_seals_off_cadence() {
+        let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
+        let selected = select_asm_manifests(
+            &policy,
+            vec![
+                create_l1_manifest_with_logs(2, vec![]),
+                create_l1_manifest_with_logs(
+                    3,
+                    vec![checkpoint_enactment_log(), checkpoint_enactment_log()],
+                ),
+                create_l1_manifest_with_logs(4, vec![checkpoint_enactment_log()]),
+            ],
+            10,
+            0,
+        );
+        assert_eq!(
+            selected
+                .manifests
+                .iter()
+                .map(AsmManifest::height)
+                .collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        assert!(selected.sealing_limit_verdict.requires_terminal());
+        assert!(
+            policy
+                .should_seal_epoch(1, &selected.sealing_limit_verdict)
+                .should_seal()
+        );
+    }
+
+    #[test]
+    fn test_unadmitted_predicate_boundary_does_not_force_sealing() {
+        let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
+        let selected = select_asm_manifests(
+            &policy,
+            vec![create_l1_manifest_with_logs(
+                2,
+                vec![checkpoint_enactment_log()],
+            )],
+            0,
+            0,
+        );
+        assert!(selected.manifests.is_empty());
+        assert!(!selected.sealing_limit_verdict.requires_terminal());
+        assert!(
+            !policy
+                .should_seal_epoch(1, &selected.sealing_limit_verdict)
+                .should_seal()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_assembly_seals_at_predicate_boundary_and_resumes_in_next_epoch() {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .build_fixture()
+            .await;
+        let boundary = create_l1_manifest_with_logs(2, vec![checkpoint_enactment_log()]);
+        fixture
+            .storage()
+            .l1()
+            .put_block_data_async(boundary)
+            .await
+            .unwrap();
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let output = env.construct_empty_block().await.unwrap();
+        check_block_asm_manifests(&output.template, &[2]);
+        check_terminal_header(&output.template);
+        // Persist through the normal test helper so the next block starts from B.
+        env.persist(&output).await;
+        let next = env.construct_empty_block().await.unwrap();
+        check_block_asm_manifests(&next.template, &[3]);
     }
 
     #[test]

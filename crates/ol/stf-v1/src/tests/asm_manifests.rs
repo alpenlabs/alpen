@@ -351,7 +351,7 @@ fn test_oversized_deposit_amount_returns_clean_error() {
     let manifest = FixtureAsmManifestBuilder::new_at_height(1)
         .with_log(deposit_log)
         .build();
-    process_block_manifests(&mut state, &[manifest])
+    process_block_manifests(&mut state, &[manifest], false)
         .expect("buffering the manifest should succeed");
 
     let outputs = ExecOutputBuffer::new_empty();

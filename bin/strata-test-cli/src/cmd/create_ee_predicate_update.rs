@@ -21,7 +21,6 @@ use bdk_wallet::{
     KeychainKind, TxOrdering,
 };
 use serde_json::{json, Value};
-use ssz::Encode as _;
 use strata_asm_proto_admin_txs::{
     actions::{
         updates::{EeStfVkUpdate, OlStfVkUpdate},
@@ -216,7 +215,7 @@ fn build_admin_commit_reveal_pair(
     let action = build_predicate_update_action(args.predicate.clone(), args.target);
     let signed_payload = create_signed_payload(action.clone(), args.seq_no, &admin_secret_key);
 
-    let envelope_bytes = signed_payload.as_ssz_bytes();
+    let envelope_bytes = signed_payload.into_envelope_bytes();
     let (envelope_keypair, envelope_xonly) = generate_keypair(admin_secret_key)?;
     let (reveal_script, taproot_spend_info, reveal_address) =
         build_reveal_script_and_address(&envelope_bytes, envelope_xonly)?;
