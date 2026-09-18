@@ -28,7 +28,10 @@ use super::state::init_fcm_service_state;
 use crate::{
     errors::{ChainTipError, Error},
     fcm::{
-        context::{BlockExecutionOutcome, ExecutionDeferral, FcmContext, FcmStorage},
+        context::{
+            BlockExecutionOutcome, BlockValidationOutcome, ExecutionDeferral, FcmContext,
+            FcmStorage,
+        },
         input::FcmEvent,
         pending::{RETRY_BATCH_SIZE, STATUS_SCAN_SIZE},
         state::FcmServiceState,
@@ -452,8 +455,29 @@ async fn retry_stored_valid_block<C: FcmContext>(
     state: &mut FcmServiceState<C>,
     id: OLBlockId,
 ) -> anyhow::Result<()> {
-    // Keep the durable verdict intact until replay produces an explicit rejection.
-    process_fc_message(&ForkChoiceMessage::NewBlock(id), state).await
+    let block = state
+        .ctx()
+        .get_ol_block(id)
+        .await?
+        .ok_or(Error::MissingOLBlock(id))?;
+    let commitment = block.header().compute_block_commitment();
+
+    match state.ctx().validate_block_inputs(commitment).await? {
+        BlockValidationOutcome::Authenticated => {
+            // Keep the durable verdict intact until replay produces an explicit rejection.
+            process_block_bundle(&block, state).await
+        }
+        BlockValidationOutcome::Deferred(reason) => {
+            state.defer_block(&block, reason);
+            debug!(%id, ?reason, "deferring stored block authentication");
+            Ok(())
+        }
+        BlockValidationOutcome::Rejected(error) => {
+            warn!(%id, %error, "rejecting stored block with invalid inputs");
+            finish_rejection(state, &block).await?;
+            Ok(())
+        }
+    }
 }
 
 /// Retries idempotent invalid-block cleanup without reexecuting a rejected block.
@@ -1128,6 +1152,7 @@ mod tests {
 
     use async_trait::async_trait;
     use strata_asm_common::AsmManifest;
+    use strata_chain_worker::WorkerError;
     use strata_db_types::{ol_block::BlockStatus, DbError, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
     use strata_ol_chain_types_v1::{
@@ -1140,16 +1165,21 @@ mod tests {
     use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
     use strata_ol_stf_v1::{
         test_utils::{execute_block, make_genesis_state},
-        BlockComponents, BlockInfo, CompletedBlock,
+        BlockComponents, BlockInfo, CompletedBlock, ExecError,
     };
     use strata_predicate::PredicateKey;
     use strata_primitives::{crypto::sign_schnorr_sig, l1::L1BlockId, Buf64, OLBlockId};
-    use tokio::time::advance;
+    use tokio::{
+        pin,
+        time::{advance, timeout},
+    };
 
     use super::*;
     use crate::{
         fcm::{
-            context::{ChainController, CsmStatusReader, FcmStartupReconciler},
+            context::{
+                BlockValidationOutcome, ChainController, CsmStatusReader, FcmStartupReconciler,
+            },
             state::{reconcile_canonical_blocks_index, FcmInnerState},
             ExecutionDeferral,
         },
@@ -1342,6 +1372,10 @@ mod tests {
         execution_outcomes: Mutex<HashMap<OLBlockId, BlockExecutionOutcome>>,
         execution_errors: Mutex<BTreeSet<OLBlockId>>,
         execution_statuses: Mutex<Vec<Option<BlockStatus>>>,
+        validated_blocks: Mutex<Vec<OLBlockCommitment>>,
+        validation_deferrals: Mutex<HashMap<OLBlockId, ExecutionDeferral>>,
+        validation_failures: Mutex<BTreeSet<OLBlockId>>,
+        validation_errors: Mutex<HashMap<OLBlockId, DbError>>,
         safe_tip_updates: Mutex<Vec<OLBlockCommitment>>,
         safe_tip_failures: Mutex<usize>,
         safe_tip_error: Mutex<Option<anyhow::Error>>,
@@ -1685,6 +1719,36 @@ mod tests {
                 .get(block.blkid())
                 .copied()
                 .unwrap_or(BlockExecutionOutcome::Accepted))
+        }
+
+        async fn validate_block_inputs(
+            &self,
+            block: OLBlockCommitment,
+        ) -> anyhow::Result<BlockValidationOutcome> {
+            self.validated_blocks.lock().unwrap().push(block);
+            if let Some(error) = self.validation_errors.lock().unwrap().get(block.blkid()) {
+                return Err(error.clone().into());
+            }
+            if let Some(reason) = self
+                .validation_deferrals
+                .lock()
+                .unwrap()
+                .get(block.blkid())
+                .copied()
+            {
+                return Ok(BlockValidationOutcome::Deferred(reason));
+            }
+            if self
+                .validation_failures
+                .lock()
+                .unwrap()
+                .contains(block.blkid())
+            {
+                return Ok(BlockValidationOutcome::Rejected(WorkerError::StfExecution(
+                    ExecError::AsmManifestHeightOverflow,
+                )));
+            }
+            Ok(BlockValidationOutcome::Authenticated)
         }
 
         async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()> {
@@ -2552,6 +2616,222 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_authenticates_valid_blocks_before_any_reconciliation() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = FcmTestFixture::new(
+            &chain.genesis,
+            &[&chain.x1, &chain.x2, &chain.x3, &chain.x4],
+        );
+        let ctx = fixture.ctx;
+        ctx.storage()
+            .replace_canonical_suffix_from(1, vec![chain.x1.blkid(), chain.x2.blkid()])
+            .await?;
+        ctx.validation_failures
+            .lock()
+            .unwrap()
+            .insert(chain.x2.blkid());
+
+        let result = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await;
+        assert!(result
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("cannot authenticate restored"));
+        assert_eq!(
+            ctx.storage().get_canonical_block_at(2).await?,
+            Some(chain.x2.commitment())
+        );
+        assert_eq!(
+            ctx.storage().get_block_status(chain.x2.blkid()).await?,
+            Some(BlockStatus::Valid)
+        );
+        assert!(ctx.executed_blocks().is_empty());
+        assert!(ctx.safe_tip_updates().is_empty());
+        assert!(ctx.published_statuses().is_empty());
+        assert!(ctx.startup_mmr_reconcile_targets().is_empty());
+        assert!(ctx.storage().indexing_rollbacks().is_empty());
+
+        ctx.validation_failures.lock().unwrap().clear();
+        ctx.validated_blocks.lock().unwrap().clear();
+        let state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+        assert_eq!(state.cur_best_block(), chain.x4.commitment());
+        assert_eq!(
+            *ctx.validated_blocks.lock().unwrap(),
+            vec![
+                chain.x1.commitment(),
+                chain.x2.commitment(),
+                chain.x3.commitment(),
+                chain.x4.commitment()
+            ]
+        );
+        assert!(ctx.executed_blocks().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn startup_propagates_authentication_database_errors_without_retrying(
+    ) -> anyhow::Result<()> {
+        for error in [
+            DbError::CodecError("corrupt parent state".to_owned()),
+            DbError::WorkerFailedStrangely("database worker exited".to_owned()),
+        ] {
+            let chain = LinearChain::new();
+            let blocks = [&chain.x1, &chain.x2, &chain.x3, &chain.x4];
+            let fixture = FcmTestFixture::new(&chain.genesis, &blocks);
+            let ctx = fixture.ctx;
+            ctx.storage()
+                .replace_canonical_suffix_from(
+                    1,
+                    blocks.iter().map(|block| block.blkid()).collect(),
+                )
+                .await?;
+            let expected = error.to_string();
+            ctx.validation_errors
+                .lock()
+                .unwrap()
+                .insert(chain.x2.blkid(), error);
+
+            let result = timeout(
+                Duration::from_secs(1),
+                init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()),
+            )
+            .await
+            .expect("permanent authentication failures must not retry");
+            let failure = match result {
+                Err(failure) => failure,
+                Ok(_) => panic!("permanent authentication failures must abort startup"),
+            };
+            assert_eq!(
+                failure.downcast_ref::<DbError>().unwrap().to_string(),
+                expected
+            );
+            assert_eq!(
+                *ctx.validated_blocks.lock().unwrap(),
+                vec![chain.x1.commitment(), chain.x2.commitment()]
+            );
+            for block in blocks {
+                assert_eq!(
+                    ctx.storage()
+                        .get_canonical_block_at(block.commitment().slot())
+                        .await?,
+                    Some(block.commitment())
+                );
+                assert_eq!(
+                    ctx.get_block_status(block.blkid()).await?,
+                    Some(BlockStatus::Valid)
+                );
+            }
+            assert!(ctx.executed_blocks().is_empty());
+            assert!(ctx.safe_tip_updates().is_empty());
+            assert!(ctx.published_statuses().is_empty());
+            assert!(ctx.startup_mmr_reconcile_targets().is_empty());
+            assert!(ctx.storage().indexing_rollbacks().is_empty());
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn startup_preserves_indexes_when_valid_block_data_is_missing() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let blocks = [&chain.x1, &chain.x2, &chain.x3, &chain.x4];
+        let fixture = FcmTestFixture::new(&chain.genesis, &blocks);
+        let ctx = fixture.ctx;
+        ctx.storage()
+            .replace_canonical_suffix_from(1, blocks.iter().map(|block| block.blkid()).collect())
+            .await?;
+        ctx.storage()
+            .inner
+            .lock()
+            .unwrap()
+            .blocks
+            .remove(&chain.x2.blkid());
+
+        let error = match init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await {
+            Err(error) => error,
+            Ok(_) => panic!("missing accepted block data must prevent startup reconciliation"),
+        };
+        assert!(error
+            .to_string()
+            .contains("missing stored valid block data"));
+        for block in blocks {
+            assert_eq!(
+                ctx.storage()
+                    .get_canonical_block_at(block.commitment().slot())
+                    .await?,
+                Some(block.commitment())
+            );
+            assert_eq!(
+                ctx.storage().get_block_status(block.blkid()).await?,
+                Some(BlockStatus::Valid)
+            );
+        }
+        assert!(ctx.executed_blocks().is_empty());
+        assert!(ctx.safe_tip_updates().is_empty());
+        assert!(ctx.published_statuses().is_empty());
+        assert!(ctx.startup_mmr_reconcile_targets().is_empty());
+        assert!(ctx.storage().indexing_rollbacks().is_empty());
+        Ok(())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn startup_waits_for_authentication_before_reconciling_indexes() -> anyhow::Result<()> {
+        for reason in [ExecutionDeferral::Dependency, ExecutionDeferral::Storage] {
+            let chain = LinearChain::new();
+            let fixture = FcmTestFixture::new(
+                &chain.genesis,
+                &[&chain.x1, &chain.x2, &chain.x3, &chain.x4],
+            );
+            let ctx = fixture.ctx;
+            let blocks = [&chain.x1, &chain.x2, &chain.x3, &chain.x4];
+            ctx.storage()
+                .replace_canonical_suffix_from(
+                    1,
+                    blocks.iter().map(|block| block.blkid()).collect(),
+                )
+                .await?;
+            ctx.validation_deferrals
+                .lock()
+                .unwrap()
+                .insert(chain.x2.blkid(), reason);
+
+            let startup = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone());
+            pin!(startup);
+            assert!(timeout(Duration::from_secs(2), startup.as_mut())
+                .await
+                .is_err());
+            for block in blocks {
+                assert_eq!(
+                    ctx.storage()
+                        .get_canonical_block_at(block.commitment().slot())
+                        .await?,
+                    Some(block.commitment())
+                );
+                assert_eq!(
+                    ctx.get_block_status(block.blkid()).await?,
+                    Some(BlockStatus::Valid)
+                );
+            }
+            assert!(ctx.startup_mmr_reconcile_targets().is_empty());
+            assert!(ctx.storage().indexing_rollbacks().is_empty());
+            assert!(ctx.executed_blocks().is_empty());
+            assert!(ctx.safe_tip_updates().is_empty());
+            assert!(ctx.published_statuses().is_empty());
+
+            ctx.validation_deferrals.lock().unwrap().clear();
+            let mut state = startup.await?;
+            assert_eq!(state.cur_best_block(), chain.x4.commitment());
+            assert!(state.take_startup_replay_candidates().is_empty());
+            assert_eq!(ctx.startup_mmr_reconcile_targets().len(), 1);
+            assert_eq!(
+                ctx.startup_mmr_reconcile_targets()[0].block,
+                chain.x4.commitment()
+            );
+            assert!(ctx.executed_blocks().is_empty());
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn startup_preserves_canonical_tip_on_equal_slot_forks() -> anyhow::Result<()> {
         let fork = TestFork::new();
         let fixture = fork.fixture();
@@ -2778,6 +3058,72 @@ mod tests {
     fn sign_block(block: &OLBlockV1, signing_key: &Buf32) -> Buf64 {
         let msg: Buf32 = block.header().compute_blkid().into();
         sign_schnorr_sig(&msg, signing_key)
+    }
+
+    #[tokio::test]
+    async fn startup_rechecks_signatures_on_stored_valid_blocks() {
+        let (signing_key, public_key) = test_schnorr_keypair();
+        let (genesis, mut state) = execute_test_genesis();
+        let block = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let valid_signature = sign_block(&block.block, &signing_key);
+
+        for signature in [None, Some(Buf64::zero()), Some(valid_signature)] {
+            let fixture = FcmTestFixture::new(&genesis, &[&block]);
+            let replacement = OLBlockV1::new(
+                SignedOLBlockHeaderV1 {
+                    header: block.block.header().clone(),
+                    credential: OLBlockCredentialV1 {
+                        schnorr_sig: signature.into(),
+                    },
+                },
+                block.block.body().clone(),
+            );
+            // The credential can change while the block ID and durable Valid status stay put.
+            assert_eq!(
+                fixture.ctx.storage().put_ol_block(replacement),
+                block.commitment()
+            );
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Valid)
+            );
+
+            let result =
+                init_fcm_service_state(schnorr_predicate(&public_key), fixture.ctx.clone()).await;
+            if signature == Some(valid_signature) {
+                assert_eq!(
+                    result
+                        .expect("authentic stored block restores")
+                        .cur_best_block(),
+                    block.commitment()
+                );
+                assert_eq!(fixture.ctx.startup_mmr_reconcile_targets().len(), 1);
+            } else {
+                let error = result
+                    .err()
+                    .expect("invalid stored credential must stop restoration");
+                match (signature, error.downcast_ref::<Error>()) {
+                    (None, Some(Error::MissingBlockSignature(id))) => {
+                        assert_eq!(*id, block.blkid())
+                    }
+                    (Some(_), Some(Error::InvalidBlockSignature(id))) => {
+                        assert_eq!(*id, block.blkid())
+                    }
+                    _ => panic!("unexpected startup failure: {error:#}"),
+                }
+                assert!(fixture.ctx.startup_mmr_reconcile_targets().is_empty());
+                assert_eq!(
+                    fixture
+                        .ctx
+                        .storage()
+                        .get_canonical_block_at(1)
+                        .await
+                        .unwrap(),
+                    None
+                );
+            }
+            assert!(fixture.ctx.executed_blocks().is_empty());
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -4610,7 +4956,7 @@ mod tests {
     #[tokio::test]
     async fn process_fc_message_skips_indexing_rollback_for_non_high_watermark_block(
     ) -> anyhow::Result<()> {
-        let (_, pk) = test_schnorr_keypair();
+        let (sk, pk) = test_schnorr_keypair();
         let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
         let genesis_blkid = genesis.header().compute_blkid();
         let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
@@ -4623,6 +4969,10 @@ mod tests {
 
         // An accepted canonical block holds the high-watermark at slot 1...
         let canonical = make_storage_block(1, genesis_blkid);
+        let canonical = OLBlockV1::new(
+            SignedOLBlockHeaderV1::new(canonical.header().clone(), sign_block(&canonical, &sk)),
+            canonical.body().clone(),
+        );
         let canonical_commitment = OLBlockCommitment::new(
             canonical.header().slot(),
             canonical.header().compute_blkid(),
@@ -4672,7 +5022,7 @@ mod tests {
     #[tokio::test]
     async fn process_fc_message_deletes_summary_for_invalid_non_high_watermark_terminal_block(
     ) -> anyhow::Result<()> {
-        let (_, pk) = test_schnorr_keypair();
+        let (sk, pk) = test_schnorr_keypair();
         let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
         let genesis_blkid = genesis.header().compute_blkid();
         let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
@@ -4685,6 +5035,10 @@ mod tests {
 
         // An accepted canonical block holds the high-watermark at slot 1...
         let canonical = make_storage_block(1, genesis_blkid);
+        let canonical = OLBlockV1::new(
+            SignedOLBlockHeaderV1::new(canonical.header().clone(), sign_block(&canonical, &sk)),
+            canonical.body().clone(),
+        );
         let canonical_commitment = OLBlockCommitment::new(
             canonical.header().slot(),
             canonical.header().compute_blkid(),
