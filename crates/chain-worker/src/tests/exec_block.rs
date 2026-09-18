@@ -58,6 +58,7 @@ struct OrderEnforcingContext {
     canonical_summaries: HashMap<Epoch, EpochSummary>,
     /// Epochs with at least one block's indexing writes applied.
     indexed_epochs: Mutex<Vec<Epoch>>,
+    last_indexed_block: Mutex<Option<OLBlockCommitment>>,
     /// Summaries accepted by [`ChainWorkerContext::store_summary`].
     stored_summaries: Mutex<Vec<EpochSummary>>,
     /// Epochs passed to [`ChainWorkerContext::merge_epoch_data`].
@@ -101,9 +102,19 @@ impl ChainWorkerContext for OrderEnforcingContext {
     fn store_block_output(
         &self,
         block: &OLBlockV1,
-        _commitment: OLBlockCommitment,
+        commitment: OLBlockCommitment,
         _output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
+        let mut last_indexed = self.last_indexed_block.lock().unwrap();
+        if *last_indexed == Some(commitment) {
+            return Err(DbError::BlockIndexingConflict {
+                epoch: block.header().epoch(),
+                attempted: commitment,
+                last_applied: commitment,
+            }
+            .into());
+        }
+        *last_indexed = Some(commitment);
         self.indexed_epochs
             .lock()
             .unwrap()
@@ -193,11 +204,7 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 }
 
-/// Executing a terminal block that is also its epoch's first block must
-/// succeed: the block's own indexing persist creates the epoch row that epoch
-/// finalization stamps.
-#[test]
-fn test_exec_single_block_epoch_persists_before_summary() {
+fn single_block_epoch_fixture() -> (OrderEnforcingContext, OLBlockCommitment) {
     let mut state = make_genesis_state();
     let snark_serial = seed_accounts(&mut state);
     let genesis = run_genesis(&mut state);
@@ -249,10 +256,20 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         states: HashMap::from([(genesis_commitment, pre_epoch_state)]),
         canonical_summaries: HashMap::from([(0, genesis_summary)]),
         indexed_epochs: Mutex::new(Vec::new()),
+        last_indexed_block: Mutex::new(None),
         stored_summaries: Mutex::new(Vec::new()),
         merged_epochs: Mutex::new(Vec::new()),
     };
 
+    (ctx, terminal_commitment)
+}
+
+/// Executing a terminal block that is also its epoch's first block must
+/// succeed: the block's own indexing persist creates the epoch row that epoch
+/// finalization stamps.
+#[test]
+fn test_exec_single_block_epoch_persists_before_summary() {
+    let (ctx, terminal_commitment) = single_block_epoch_fixture();
     exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
         .expect("single-block epoch executes");
 
@@ -266,6 +283,32 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         &[epoch],
         "epoch data merged before the summary was stored"
     );
+}
+
+#[test]
+fn terminal_execution_recovers_when_predecessor_summary_arrives() {
+    let (mut ctx, terminal_commitment) = single_block_epoch_fixture();
+    let predecessor = ctx.canonical_summaries.remove(&0).unwrap();
+
+    assert!(matches!(
+        exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment),
+        Err(WorkerError::MissingSummaryForEpoch(0))
+    ));
+    assert_eq!(*ctx.indexed_epochs.lock().unwrap(), vec![1]);
+    assert!(ctx.stored_summaries.lock().unwrap().is_empty());
+    assert!(ctx.merged_epochs.lock().unwrap().is_empty());
+
+    ctx.canonical_summaries.insert(0, predecessor);
+    exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
+        .expect("terminal execution resumes after its predecessor summary arrives");
+    assert_eq!(*ctx.indexed_epochs.lock().unwrap(), vec![1]);
+    assert_eq!(
+        *ctx.last_indexed_block.lock().unwrap(),
+        Some(terminal_commitment)
+    );
+    let summaries = ctx.stored_summaries.lock().unwrap();
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(*summaries[0].terminal(), terminal_commitment);
 }
 
 fn manifest_context(manifests: &[AsmManifest]) -> OrderEnforcingContext {
