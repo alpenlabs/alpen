@@ -16,6 +16,7 @@ pub(crate) struct BroadcasterSummary {
     pub(crate) confirmed_count: u64,
     pub(crate) finalized_count: u64,
     pub(crate) invalid_inputs_count: u64,
+    pub(crate) abandoned_count: u64,
 }
 
 /// Individual broadcaster transaction information
@@ -37,6 +38,7 @@ impl Formattable for BroadcasterSummary {
             porcelain_field("confirmed_count", self.confirmed_count),
             porcelain_field("finalized_count", self.finalized_count),
             porcelain_field("invalid_inputs_count", self.invalid_inputs_count),
+            porcelain_field("abandoned_count", self.abandoned_count),
         ]
         .join("\n")
     }

@@ -1,5 +1,5 @@
 use strata_db_types::l1_writer::{
-    BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase,
+    BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus, L1WriterDatabase,
 };
 use strata_primitives::buf::Buf32;
 use strata_test_utils::ArbitraryGenerator;
@@ -238,6 +238,34 @@ pub fn test_bundle_intent_payload(db: &impl L1WriterDatabase) {
         intent_idx + 1,
         "bundling should not insert a duplicate intent index entry"
     );
+
+    let mut abandoned = db.get_payload_entry_by_idx(payload_idx).unwrap().unwrap();
+    abandoned.status = L1BundleStatus::Abandoned;
+    db.put_payload_entry(payload_idx, abandoned).unwrap();
+    let replacement = BundledPayloadEntry::new_unsigned(intent.payload().clone());
+    let replacement_idx = db
+        .requeue_abandoned_intent(intent_id, payload_idx, replacement.clone())
+        .unwrap()
+        .unwrap();
+    assert_eq!(replacement_idx, payload_idx + 1);
+    assert_eq!(
+        db.get_intent_by_id(intent_id).unwrap().unwrap().status,
+        IntentStatus::Bundled {
+            bundle_idx: replacement_idx,
+        }
+    );
+    assert_eq!(
+        db.get_payload_entry_by_idx(replacement_idx).unwrap(),
+        Some(replacement)
+    );
+    assert!(db
+        .requeue_abandoned_intent(
+            intent_id,
+            payload_idx,
+            BundledPayloadEntry::new_unsigned(intent.payload().clone())
+        )
+        .unwrap()
+        .is_none());
 }
 
 pub fn test_del_intent_entry_single(db: &impl L1WriterDatabase) {

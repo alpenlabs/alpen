@@ -167,6 +167,21 @@ pub enum L1BundleStatus {
     /// The transactions need to be resigned.
     /// This could be due to transactions input UTXOs already being spent.
     NeedsResign,
+
+    /// The payload was deliberately excluded from publication.
+    Abandoned,
+}
+
+impl L1BundleStatus {
+    /// Returns whether the bundle status records publication on L1.
+    pub fn has_reached_l1(&self) -> bool {
+        matches!(self, Self::Published | Self::Confirmed | Self::Finalized)
+    }
+
+    /// Returns whether the writer has no more work for this bundle.
+    pub fn is_finished(&self) -> bool {
+        matches!(self, Self::Finalized | Self::Abandoned)
+    }
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
@@ -209,6 +224,14 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
         intent_entry: IntentEntry,
         payloadentry: BundledPayloadEntry,
     ) -> DbResult<IntentIdx>;
+
+    /// Appends a replacement only while the intent still points to an abandoned payload.
+    fn requeue_abandoned_intent(
+        &self,
+        intent_id: Buf32,
+        abandoned_payload_idx: u64,
+        payloadentry: BundledPayloadEntry,
+    ) -> DbResult<Option<u64>>;
 
     /// Get a [`IntentEntry`] by its hash
     fn get_intent_by_id(&self, id: Buf32) -> DbResult<Option<IntentEntry>>;
