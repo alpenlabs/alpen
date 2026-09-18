@@ -9,7 +9,9 @@ version = "0.1.0"
 ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.17.0" }
 strata-ol-params = { path = "../../../crates/ol/params" }
 strata-proofimpl-checkpoint = { path = "../../../crates/proof-impl/checkpoint" }
-zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3.0" }
+zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.3.0", features = [
+  "zkvm-verify",
+] }
 
 [patch.crates-io]
 secp256k1 = { git = "https://github.com/sp1-patches/rust-secp256k1", tag = "patch-0.29.1-sp1-6.0.0" }
@@ -18,7 +20,3 @@ sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sh
 substrate-bn = { git = "https://github.com/sp1-patches/bn", tag = "patch-0.6.0-sp1-6.0.0-substrate-bn" }
 sha3 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sha3", tag = "patch-sha3-0.10.8-sp1-6.0.0" }
 k256 = { git = "https://github.com/sp1-patches/elliptic-curves", tag = "patch-k256-13.4-sp1-6.0.0" }
-
-[features]
-mock-verify = ["zkaleido-sp1-guest-env/mock-verify"]
-zkvm-verify = ["zkaleido-sp1-guest-env/zkvm-verify"]

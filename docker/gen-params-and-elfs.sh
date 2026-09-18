@@ -86,13 +86,14 @@ validate_params() {
 
 build_sp1_guest_artifacts() {
     echo "building SP1 guest artifacts (fast if unchanged)..."
-    CHECKPOINT_RUNTIME_PARAMS_PATH="${OUTPUT_DIR}/ol-params.json" \
-        cargo build --locked --release -p strata-sp1-guest-builder --features build-elf
+    BUILD_ELF=1 BUILD_VKEY=1 \
+        CHECKPOINT_RUNTIME_PARAMS_PATH="${OUTPUT_DIR}/ol-params.json" \
+        cargo build --locked --release -p strata-sp1-guest-builder
 
     mkdir -p "${ELF_DIR}"
-    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.elf "${ELF_DIR}/"
-    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.artifact-manifest.json "${ELF_DIR}/"
-    cp "${REPO_ROOT}"/provers/sp1/guest-*/cache/*.predicate "${PREDICATE_DIR}/"
+    cp "${REPO_ROOT}"/provers/sp1/generated/*.elf "${ELF_DIR}/"
+    cp "${REPO_ROOT}"/provers/sp1/generated/*.artifact-manifest.json "${ELF_DIR}/"
+    cp "${REPO_ROOT}"/provers/sp1/generated/*.predicate "${PREDICATE_DIR}/"
     echo "exported SP1 ELFs to ${ELF_DIR}/"
     echo "exported SP1 artifact manifests to ${ELF_DIR}/"
     echo "exported SP1 predicates to ${PREDICATE_DIR}/"

@@ -4,8 +4,6 @@ use std::{error::Error, process};
 
 use sp1_sdk::utils::setup_logger;
 #[cfg(feature = "sp1")]
-use strata_sp1_guest_builder as _;
-#[cfg(feature = "sp1")]
 use zkaleido_sp1_host as _;
 
 pub mod args;
