@@ -100,6 +100,19 @@ impl ChainController for StrataFcmContext {
                 warn!(%block, %err, "deferring block after local worker failure");
                 Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
             }
+            Err(WorkerError::ManifestPending { height, reason }) => {
+                debug!(%block, height, ?reason, "deferring unvalidated ASM manifest");
+                Ok(BlockExecutionOutcome::Deferred(
+                    ExecutionDeferral::Dependency,
+                ))
+            }
+            Err(WorkerError::ManifestStorage(err)) if is_retryable_database_error(&err) => {
+                warn!(%block, %err, "canonical manifest storage unavailable");
+                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
+            }
+            Err(err @ WorkerError::ManifestStorage(_)) => Err(err).with_context(|| {
+                format!("cannot validate block {block}: canonical manifest storage failed; repair required")
+            }),
             Err(WorkerError::StfExecution(err)) => {
                 warn!(%block, %err, "rejecting invalid block execution");
                 Ok(BlockExecutionOutcome::Rejected)

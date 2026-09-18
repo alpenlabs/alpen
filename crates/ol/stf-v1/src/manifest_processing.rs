@@ -54,9 +54,9 @@ impl ManifestProcessingOutcome {
 /// so callers replaying a whole epoch (e.g. checkpoint proving) are not bound
 /// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit.
 ///
-/// Rejects duplicate enactments and manifests following an enactment before changing
-/// state. Callers must additionally verify the terminal header flag when executing
-/// a complete block. Returns events observed during successful buffering.
+/// Rejects invalid heights, duplicate enactments, and manifests following an enactment
+/// before changing state. Callers must additionally verify the terminal header flag when
+/// executing a complete block. Returns events observed during successful buffering.
 ///
 /// NOTE: This does not apply any log effects, advance the epoch, or emit OL
 /// logs.
@@ -73,6 +73,7 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
 ) -> ExecResult<ManifestProcessingOutcome> {
     // Header terminality belongs to block structure validation. Here the slice may also
     // span a whole epoch; in either case no manifest may follow an enactment.
+    validate_manifest_heights(state.last_l1_height(), manifests)?;
     verify_manifest_enactments(manifests)?;
 
     let mut outcome = ManifestProcessingOutcome {
@@ -166,6 +167,29 @@ pub(crate) fn verify_manifest_enactments(
         }
     }
     Ok(None)
+}
+
+/// Validates that manifest heights are consecutive after the last processed L1 height.
+///
+/// Checks the complete range without modifying state or reading canonical L1 data.
+/// Returns a height mismatch or overflow error at the first invalid manifest.
+pub fn validate_manifest_heights(
+    last_l1_height: L1Height,
+    manifests: &[AsmManifest],
+) -> ExecResult<()> {
+    let mut previous_height = last_l1_height;
+    for (index, manifest) in manifests.iter().enumerate() {
+        let expected = next_manifest_height(previous_height)?;
+        if manifest.height() != expected {
+            return Err(ExecError::AsmManifestHeightMismatch {
+                expected,
+                actual: manifest.height(),
+                index,
+            });
+        }
+        previous_height = expected;
+    }
+    Ok(())
 }
 
 /// Processes the epoch terminal: drains all buffered ASM logs (applying their
