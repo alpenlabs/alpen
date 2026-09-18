@@ -121,6 +121,10 @@ impl Reorg {
 /// Computes the update path from a block to a new tip, aborting at some reorg
 /// search depth if necessary.  This behaves sensibly when one block is an
 /// ancestor of another or are the same, although that might not be useful.
+///
+/// Forward extensions are not depth-limited: accepted descendants can accumulate
+/// while fork choice waits for a local storage failure to recover. Updates that
+/// revert blocks retain the search limit on both branches.
 pub fn compute_tip_update(
     start: &L2BlockId,
     dest: &L2BlockId,
@@ -138,6 +142,27 @@ pub fn compute_tip_update(
         .expect("fcm: chain tracker missing new block");
     if dest_parent == start {
         return Ok(Some(TipUpdate::ExtendTip(*start, *dest)));
+    }
+
+    // Recognize linear catch-up before applying the reorg search limit. Stop at
+    // the starting slot so a competing branch cannot bypass that limit.
+    if let Some(start_slot) = tracker.get_slot(start) {
+        let mut intermediate = Vec::new();
+        let mut ancestor = Some(dest_parent);
+        while let Some(block) = ancestor {
+            if block == start {
+                intermediate.reverse();
+                return Ok(Some(TipUpdate::LongExtend(*start, intermediate, *dest)));
+            }
+            if tracker
+                .get_slot(block)
+                .is_none_or(|slot| slot <= start_slot)
+            {
+                break;
+            }
+            intermediate.push(*block);
+            ancestor = tracker.get_parent(block);
+        }
     }
 
     // Create a vec of parents from tip to the beginning(before limit depth) and then move forwards
@@ -459,6 +484,51 @@ mod tests {
         let update = update.expect("test: update not found");
         eprintln!("expected {exp_update:#?}\nfound {update:#?}");
         assert_eq!(update, Some(exp_update));
+    }
+
+    #[test]
+    fn linear_catch_up_exceeds_reorg_search_limit() {
+        let base = rand_epoch_commitment(10, 2);
+        let mut tracker = unfinalized_tracker::UnfinalizedBlockTracker::new_empty(base);
+        let mut chain = vec![*base.last_blkid()];
+        chain.extend((0..150).map(|_| rand_blkid()));
+        insert_branch(&mut tracker, &chain);
+
+        // Both the finalized anchor and an unfinalized tip can lag during retries.
+        for start_index in [0, 1] {
+            let update = compute_tip_update(&chain[start_index], &chain[150], 100, &tracker)
+                .expect("linear catch-up should succeed");
+            assert_eq!(
+                update,
+                Some(TipUpdate::LongExtend(
+                    chain[start_index],
+                    chain[start_index + 1..150].to_vec(),
+                    chain[150],
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn long_competing_branch_retains_reorg_search_limit() {
+        let base = rand_epoch_commitment(10, 2);
+        let mut tracker = unfinalized_tracker::UnfinalizedBlockTracker::new_empty(base);
+        let current_chain = [*base.last_blkid(), rand_blkid()];
+        insert_branch(&mut tracker, &current_chain);
+        let mut competing_chain = vec![*base.last_blkid()];
+        competing_chain.extend((0..150).map(|_| rand_blkid()));
+        insert_branch(&mut tracker, &competing_chain);
+
+        // A much higher tip still requires a reorg when it does not descend from start.
+        for (start, dest) in [
+            (&current_chain[1], &competing_chain[150]),
+            (&competing_chain[150], &current_chain[1]),
+        ] {
+            assert_eq!(
+                compute_tip_update(start, dest, 100, &tracker).unwrap(),
+                None
+            );
+        }
     }
 
     #[test]

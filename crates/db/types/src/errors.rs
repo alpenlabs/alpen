@@ -1,3 +1,5 @@
+use std::io::ErrorKind;
+
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_primitives::epoch::EpochCommitment;
 use strata_primitives::L1Height;
@@ -7,6 +9,7 @@ use thiserror::Error;
 use tokio::task::JoinError;
 
 use crate::mmr_index::{LeafPos, NodePos, RawMmrId};
+use crate::ol_block::BlockStatus;
 
 #[derive(Clone, Debug, Error)]
 pub enum DbError {
@@ -55,6 +58,14 @@ pub enum DbError {
 
     #[error("resource busy")]
     Busy,
+
+    /// Preserves the OS error category so callers can distinguish temporary I/O failures.
+    #[error("storage I/O ({kind:?}): {message}")]
+    Io { kind: ErrorKind, message: String },
+
+    /// The backend detected corruption in its persistent data.
+    #[error("storage corruption: {0}")]
+    Corruption(String),
 
     /// A database worker task did not return a result.
     ///
@@ -141,8 +152,40 @@ pub enum DbError {
         current: OLBlockCommitment,
     },
 
+    /// Rejection cleanup completion requires an invalid block verdict.
+    #[error("cannot complete rejection cleanup for block {block_id}: status is {status:?}")]
+    BlockRejectionStatusMismatch {
+        block_id: OLBlockId,
+        status: Option<BlockStatus>,
+    },
+
+    /// Rejection cleanup cannot complete while the block remains the high-watermark.
+    #[error("cannot complete rejection cleanup for block {0}: still the high-watermark")]
+    BlockRejectionHighWatermark(OLBlockCommitment),
+
     #[error("{0}")]
     Other(String),
+}
+
+impl DbError {
+    /// Returns whether retrying can recover from explicit contention or temporary I/O.
+    ///
+    /// Unknown failures, corruption, and other I/O categories require intervention. Exhausted
+    /// retries retain the classification of their underlying error.
+    pub fn is_retryable(&self) -> bool {
+        let mut cause = self;
+        while let Self::RetriesExhausted { last_error, .. } = cause {
+            cause = last_error;
+        }
+        matches!(
+            cause,
+            Self::Busy
+                | Self::Io {
+                    kind: ErrorKind::Interrupted | ErrorKind::WouldBlock,
+                    ..
+                }
+        )
+    }
 }
 
 // TODO(STR-4241): this conversion is inverted -- the ops layer should map into

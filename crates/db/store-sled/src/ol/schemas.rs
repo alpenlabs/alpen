@@ -67,6 +67,13 @@ define_table_without_codec!(
 impl_cbor_value_codec!(OLBlockStatusScanReadySchema, bool);
 
 define_table_without_codec!(
+    /// Records invalid blocks whose rejection cleanup has completed.
+    (OLBlockRejectionCompleteSchema) OLBlockId => bool
+);
+impl_codec_key_codec!(OLBlockRejectionCompleteSchema, OLBlockId);
+impl_cbor_value_codec!(OLBlockRejectionCompleteSchema, bool);
+
+define_table_without_codec!(
     /// A table to store OL Block IDs by slot. Maps slot to Vec<OLBlockId>
     (OLBlockHeightSchema) u64 => Vec<OLBlockId>
 );
