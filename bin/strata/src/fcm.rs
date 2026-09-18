@@ -25,7 +25,7 @@ use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
 
@@ -74,6 +74,16 @@ impl ChainController for StrataFcmContext {
                 }),
             Err(err @ WorkerError::Database(_)) => {
                 warn!(%block, %err, "deferring block after local worker failure");
+                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
+            }
+            Err(WorkerError::ManifestPending { height, reason }) => {
+                debug!(%block, height, ?reason, "deferring unauthenticated ASM manifest");
+                Ok(BlockExecutionOutcome::Deferred(
+                    ExecutionDeferral::Dependency,
+                ))
+            }
+            Err(WorkerError::ManifestStorage(err)) => {
+                warn!(%block, %err, "canonical manifest storage unavailable");
                 Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
             }
             Err(WorkerError::StfExecution(err)) => {

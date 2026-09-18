@@ -35,7 +35,10 @@ use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
 };
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
-use strata_ol_stf_v1::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
+use strata_ol_stf_v1::{
+    BlockInfo, EpochInfo, apply_da_epoch, verify_block, verify_block_structure,
+    verify_header_continuity,
+};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
@@ -45,6 +48,7 @@ use crate::{
     ChainWorkerContextImpl,
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
+    provenance::validate_manifests,
     traits::ChainWorkerContext,
 };
 
@@ -324,10 +328,37 @@ fn fetch_block_with_parent(
     Ok((block, parent_header, parent_commitment))
 }
 
+/// Authenticates all block inputs without executing or persisting state.
+fn validate_block_inputs(
+    ctx: &impl ChainWorkerContext,
+    block: &OLBlockV1,
+    parent_header: Option<&OLBlockHeaderV1>,
+    parent_state: &impl IStateAccessor,
+) -> WorkerResult<()> {
+    verify_header_continuity(block.header(), parent_header)?;
+    verify_block_structure(block.header(), block.body())?;
+    if let Some(container) = block.body().manifests() {
+        validate_manifests(ctx, parent_state.last_l1_height(), container.manifests())?;
+    }
+    Ok(())
+}
+
+/// Loads the parent state used by input authentication and STF execution.
+fn fetch_parent_state(
+    ctx: &impl ChainWorkerContext,
+    parent_commitment: OLBlockCommitment,
+) -> WorkerResult<MemoryStateBaseLayer> {
+    let parent_state = ctx
+        .fetch_ol_state(parent_commitment)?
+        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    Ok(MemoryStateBaseLayer::new(parent_state))
+}
+
 /// Executes the STF on a block and returns the execution output.
 ///
 /// This fetches parent state, builds the state stack, runs verification,
 /// and extracts the resulting write batch and indexer writes.
+/// Callers classify failures; pending canonical manifests are expected during L1 catch-up.
 #[instrument(
     skip_all,
     fields(
@@ -336,7 +367,6 @@ fn fetch_block_with_parent(
         is_terminal = block.header().is_terminal(),
         %parent_commitment,
     ),
-    err,
 )]
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
@@ -345,11 +375,8 @@ fn execute_stf(
     parent_header: Option<&OLBlockHeaderV1>,
     parent_commitment: OLBlockCommitment,
 ) -> WorkerResult<(OLBlockExecutionOutput, OLStateV1)> {
-    // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
-    let parent_state_raw = ctx
-        .fetch_ol_state(parent_commitment)?
-        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
-    let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
+    let parent_state = fetch_parent_state(ctx, parent_commitment)?;
+    validate_block_inputs(ctx, block, parent_header, &parent_state)?;
 
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) =
