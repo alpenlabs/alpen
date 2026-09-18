@@ -366,7 +366,7 @@ impl OLMempoolRejectReason {
 /// Reason a transaction is invalid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MempoolTxInvalidReason {
-    /// Transaction is permanently invalid (consensus rules, expired).
+    /// Transaction is permanently rejected (consensus rules, expiry, or admission policy).
     /// Will be removed from mempool.
     Invalid,
 
