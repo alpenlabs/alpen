@@ -13,6 +13,9 @@ pub enum ChainWorkerMessage {
     /// Try to execute a block at the given commitment.
     TryExecBlock(OLBlockCommitment, CommandCompletionSender<WorkerResult<()>>),
 
+    /// Authenticates a stored block's inputs without execution or persistence.
+    ValidateBlockInputs(OLBlockCommitment, CommandCompletionSender<WorkerResult<()>>),
+
     /// Finalize an epoch, updating database state accordingly.
     FinalizeEpoch(EpochCommitment, CommandCompletionSender<WorkerResult<()>>),
 

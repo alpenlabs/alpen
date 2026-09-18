@@ -6,8 +6,8 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use strata_chain_worker::{ChainWorkerHandle, WorkerError};
 use strata_consensus_logic::{
-    BlockExecutionOutcome, ChainController, CsmStatusReader, ExecutionDeferral, FcmContext,
-    FcmServiceHandle, FcmStartupReconciler, FcmStorage,
+    BlockExecutionOutcome, BlockValidationOutcome, ChainController, CsmStatusReader,
+    ExecutionDeferral, FcmContext, FcmServiceHandle, FcmStartupReconciler, FcmStorage,
     ol_mmr_reconcile::{
         OLMmrReconcileResult, OLMmrReconcileTarget, reconcile_ol_mmr_index_to_target,
     },
@@ -20,6 +20,7 @@ use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLParams;
+use strata_ol_state_types::ExecError;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
@@ -35,6 +36,62 @@ struct StrataFcmContext {
     chain_worker: Arc<ChainWorkerHandle>,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     status_channel: Arc<StatusChannel>,
+}
+
+enum WorkerFailureOutcome {
+    Deferred(ExecutionDeferral),
+    Rejected(ExecError),
+}
+
+fn classify_worker_failure(
+    block: OLBlockCommitment,
+    error: WorkerError,
+) -> anyhow::Result<WorkerFailureOutcome> {
+    match error {
+        WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_) => Ok(
+            WorkerFailureOutcome::Deferred(ExecutionDeferral::Dependency),
+        ),
+        WorkerError::ManifestPending { height, reason } => {
+            debug!(%block, height, ?reason, "deferring unauthenticated ASM manifest");
+            Ok(WorkerFailureOutcome::Deferred(
+                ExecutionDeferral::Dependency,
+            ))
+        }
+        WorkerError::ManifestStorage(err) => {
+            warn!(%block, %err, "canonical manifest storage unavailable");
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        }
+        error @ WorkerError::Database(DbError::BlockIndexingConflict { .. }) => Err(error)
+            .with_context(|| {
+                format!(
+                    "cannot execute block {block}: inconsistent local indexing; repair required"
+                )
+            }),
+        error @ WorkerError::Database(_) => {
+            warn!(%block, %error, "deferring block after local worker failure");
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        }
+        WorkerError::StfExecution(error) => {
+            warn!(%block, %error, "rejecting invalid block inputs");
+            Ok(WorkerFailureOutcome::Rejected(error))
+        }
+        error => Err(error.into()),
+    }
+}
+
+/// Missing durable OL inputs require repair before restored blocks can be authenticated.
+fn classify_stored_input_failure(
+    block: OLBlockCommitment,
+    error: WorkerError,
+) -> anyhow::Result<WorkerFailureOutcome> {
+    match error {
+        error @ (WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_)) => {
+            Err(error).with_context(|| {
+                format!("cannot authenticate stored block {block}: missing durable OL data; repair required")
+            })
+        }
+        error => classify_worker_failure(block, error),
+    }
 }
 
 impl StrataFcmContext {
@@ -63,34 +120,29 @@ impl ChainController for StrataFcmContext {
     ) -> anyhow::Result<BlockExecutionOutcome> {
         match self.chain_worker.try_exec_block(block).await {
             Ok(()) => Ok(BlockExecutionOutcome::Accepted),
-            Err(WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_)) => Ok(
-                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
-            ),
-            Err(err @ WorkerError::Database(DbError::BlockIndexingConflict { .. })) => Err(err)
-                .with_context(|| {
-                    format!(
-                        "cannot execute block {block}: inconsistent local indexing; repair required"
-                    )
-                }),
-            Err(err @ WorkerError::Database(_)) => {
-                warn!(%block, %err, "deferring block after local worker failure");
-                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
-            }
-            Err(WorkerError::ManifestPending { height, reason }) => {
-                debug!(%block, height, ?reason, "deferring unauthenticated ASM manifest");
-                Ok(BlockExecutionOutcome::Deferred(
-                    ExecutionDeferral::Dependency,
-                ))
-            }
-            Err(WorkerError::ManifestStorage(err)) => {
-                warn!(%block, %err, "canonical manifest storage unavailable");
-                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
-            }
-            Err(WorkerError::StfExecution(err)) => {
-                warn!(%block, %err, "rejecting invalid block execution");
-                Ok(BlockExecutionOutcome::Rejected)
-            }
-            Err(err) => Err(err.into()),
+            Err(error) => match classify_worker_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockExecutionOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(_) => Ok(BlockExecutionOutcome::Rejected),
+            },
+        }
+    }
+
+    async fn validate_block_inputs(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockValidationOutcome> {
+        match self.chain_worker.validate_block_inputs(block).await {
+            Ok(()) => Ok(BlockValidationOutcome::Authenticated),
+            Err(error) => match classify_stored_input_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockValidationOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(error) => {
+                    Ok(BlockValidationOutcome::Rejected(error))
+                }
+            },
         }
     }
 
@@ -306,4 +358,106 @@ pub(crate) fn start(
         checkpoint_state_rx,
         nodectx.executor().clone(),
     ))
+}
+
+#[cfg(test)]
+mod worker_failure_tests {
+    use strata_ol_state_types::StateError;
+
+    use super::*;
+
+    #[test]
+    fn internal_worker_failures_propagate_without_rejecting_blocks() {
+        let block = OLBlockCommitment::null();
+        for error in [
+            WorkerError::ApplyWriteBatch {
+                commitment: block,
+                source: StateError::InsufficientState,
+            },
+            WorkerError::SnarkUpdateLogMismatch {
+                expected: 1,
+                found: 2,
+            },
+            WorkerError::MissingSummaryForEpoch(1),
+            WorkerError::WorkerExited,
+            WorkerError::Unexpected("injected invariant failure".to_owned()),
+            WorkerError::Database(DbError::BlockIndexingConflict {
+                epoch: 1,
+                attempted: block,
+                last_applied: block,
+            }),
+        ] {
+            let expected = error.to_string();
+            let failure = match classify_worker_failure(block, error) {
+                Err(failure) => failure,
+                Ok(_) => panic!("internal failures must propagate"),
+            };
+            assert_eq!(
+                failure.downcast::<WorkerError>().unwrap().to_string(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn storage_failures_defer_and_protocol_failures_reject() {
+        let block = OLBlockCommitment::null();
+        assert!(matches!(
+            classify_worker_failure(
+                block,
+                WorkerError::Database(DbError::Other("read failed".to_owned()))
+            ),
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        ));
+        assert!(matches!(
+            classify_worker_failure(block, WorkerError::StfExecution(ExecError::ChainIntegrity)),
+            Ok(WorkerFailureOutcome::Rejected(ExecError::ChainIntegrity))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod stored_input_failure_tests {
+    use strata_chain_worker::ManifestPendingReason;
+
+    use super::*;
+
+    #[test]
+    fn missing_durable_inputs_require_repair_only_for_stored_validation() {
+        let block = OLBlockCommitment::null();
+        for error in [
+            WorkerError::MissingPreState(block),
+            WorkerError::MissingOLBlock(*block.blkid()),
+        ] {
+            let failure = match classify_stored_input_failure(block, error) {
+                Err(failure) => failure,
+                Ok(_) => panic!("missing durable inputs must fail authentication"),
+            };
+            assert!(failure.to_string().contains("repair required"));
+            let error = failure.downcast::<WorkerError>().unwrap();
+            assert!(matches!(
+                classify_worker_failure(block, error),
+                Ok(WorkerFailureOutcome::Deferred(
+                    ExecutionDeferral::Dependency
+                ))
+            ));
+        }
+    }
+
+    #[test]
+    fn stored_validation_still_waits_for_asm_output() {
+        let block = OLBlockCommitment::null();
+        assert!(matches!(
+            classify_stored_input_failure(
+                block,
+                WorkerError::ManifestPending {
+                    height: 1,
+                    reason: ManifestPendingReason::MissingManifest,
+                },
+            ),
+            Ok(WorkerFailureOutcome::Deferred(
+                ExecutionDeferral::Dependency
+            ))
+        ));
+    }
 }

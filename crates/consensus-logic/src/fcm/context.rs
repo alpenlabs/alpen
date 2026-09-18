@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::{Epoch, Slot};
+use strata_ol_state_types::ExecError;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_status::OLSyncStatus;
@@ -29,6 +30,17 @@ pub enum BlockExecutionOutcome {
     Rejected,
 }
 
+/// Distinguishes authenticated stored blocks from retryable and rejected inputs.
+#[derive(Debug)]
+pub enum BlockValidationOutcome {
+    /// The stored block inputs match currently available canonical data.
+    Authenticated,
+    /// Canonical data or another local dependency is not ready yet.
+    Deferred(ExecutionDeferral),
+    /// Protocol validation rejected the stored block inputs.
+    Rejected(ExecError),
+}
+
 /// Chain execution operations required by FCM.
 #[async_trait]
 pub trait ChainController: Send + Sync {
@@ -39,6 +51,11 @@ pub trait ChainController: Send + Sync {
         &self,
         block: OLBlockCommitment,
     ) -> anyhow::Result<BlockExecutionOutcome>;
+    /// Authenticates stored unfinalized inputs before restoring fork choice.
+    async fn validate_block_inputs(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockValidationOutcome>;
     async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()>;
     async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()>;
 }
