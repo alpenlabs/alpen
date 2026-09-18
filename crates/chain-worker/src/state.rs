@@ -36,9 +36,10 @@ use strata_ol_state_types::{
 };
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf::{
-    BlockInfo, EpochDaReplayError, EpochInfo, EpochSpecSelectionError, OLSpecId, apply_da_epoch,
-    select_next_epoch_spec, verify_block,
+    BlockInfo, EpochDaReplayError, EpochInfo, EpochSpecSelectionError, ExecError, OLSpecId,
+    apply_da_epoch, select_next_epoch_spec, sequencer::verify_block_structure, verify_block,
 };
+use strata_ol_stf_v1::verify_header_continuity;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
@@ -48,6 +49,7 @@ use crate::{
     ChainWorkerContextImpl,
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
+    provenance::validate_manifests,
     traits::ChainWorkerContext,
 };
 
@@ -299,7 +301,8 @@ pub(crate) fn exec_block(
 
 /// Fetches a block and its parent header from the context.
 ///
-/// Returns the block, optional parent header, and parent commitment.
+/// Rejects a header that does not continue its parent. Returns the block, optional
+/// parent header, and parent commitment.
 fn fetch_block_with_parent(
     ctx: &impl ChainWorkerContext,
     block_commitment: &OLBlockCommitment,
@@ -328,13 +331,53 @@ fn fetch_block_with_parent(
         )
     };
 
+    // The parent commitment above assumes the block's slot follows its parent's. Check the
+    // header links first, so a discontinuous block is rejected instead of deferred on a
+    // missing pre-state or on manifests that are not yet buried.
+    if let Some(parent) = &parent_header
+        && parent.slot().checked_add(1) != Some(block.header().slot())
+    {
+        // The shared verifier subtracts slots as `i64`, which overflows for slots at or
+        // above 2^63, so reject any slot gap before calling it.
+        return Err(ExecError::SkipTooManySlots(parent.slot(), block.header().slot()).into());
+    }
+    // TODO(STR-4086): pick the function by the block's spec.
+    verify_header_continuity(block.header(), parent_header.as_ref())?;
+
     Ok((block, parent_header, parent_commitment))
+}
+
+/// Validates all block inputs without executing or persisting state.
+fn validate_block_inputs(
+    spec: OLSpecId,
+    ctx: &impl ChainWorkerContext,
+    block: &OLBlockV1,
+    parent_state: &impl IStateAccessor,
+) -> WorkerResult<()> {
+    verify_block_structure(spec, block.header(), block.body())?;
+    if let Some(container) = block.body().manifests() {
+        validate_manifests(ctx, parent_state.last_l1_height(), container.manifests())?;
+    }
+    Ok(())
+}
+
+/// Loads the parent state used by input validation and STF execution, keeping its
+/// spec versions.
+fn fetch_parent_state(
+    ctx: &impl ChainWorkerContext,
+    parent_commitment: OLBlockCommitment,
+) -> WorkerResult<MemoryStateBaseLayer<OLStateV1>> {
+    let parent_state = ctx
+        .fetch_ol_state(parent_commitment)?
+        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    Ok(MemoryStateBaseLayer::from_container(parent_state))
 }
 
 /// Executes the STF on a block and returns the execution output.
 ///
 /// This fetches parent state, builds the state stack, runs verification,
 /// and extracts the resulting write batch and indexer writes.
+/// Callers classify failures; pending canonical manifests are expected during L1 catch-up.
 #[instrument(
     skip_all,
     fields(
@@ -344,7 +387,6 @@ fn fetch_block_with_parent(
         is_terminal = block.header().is_terminal(),
         %parent_commitment,
     ),
-    err,
 )]
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
@@ -354,12 +396,8 @@ fn execute_stf(
     parent_header: Option<&OLBlockHeaderV1>,
     parent_commitment: OLBlockCommitment,
 ) -> WorkerResult<(OLBlockExecutionOutput, OLStateContainer)> {
-    // Fetch parent state and build its state accessor, keeping its spec
-    // versions.
-    let parent_state_raw = ctx
-        .fetch_ol_state(parent_commitment)?
-        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
-    let parent_state = MemoryStateBaseLayer::from_container(parent_state_raw);
+    let parent_state = fetch_parent_state(ctx, parent_commitment)?;
+    validate_block_inputs(spec, ctx, block, &parent_state)?;
 
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) =
