@@ -21,11 +21,11 @@ pub enum EpochDaError {
     NoBlocks,
 
     /// The final supplied block is not an epoch terminal.
-    #[error("cannot compute epoch DA: final block is not terminal")]
+    #[error("cannot compute epoch DA; final block is not terminal")]
     FinalBlockNotTerminal,
 
     /// A terminal block appears before the end of the supplied epoch.
-    #[error("cannot compute epoch DA: terminal block appears before the end")]
+    #[error("cannot compute epoch DA; terminal block appears before the end")]
     EarlyTerminal,
 
     /// Replaying the epoch blocks failed.
