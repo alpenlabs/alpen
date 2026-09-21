@@ -313,9 +313,35 @@ pub fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) ->
         return Err(ExecError::BlockStructureMismatch);
     }
 
-    // Terminality is signalled authoritatively by the header `IS_TERMINAL`
-    // flag and is independent of whether the body carries manifests, so there
-    // is no body/terminal consistency check here.
+    if let Some(manifests) = body.manifests() {
+        verify_checkpoint_predicate_boundaries(manifests.manifests(), header.is_terminal())?;
+    }
+
+    Ok(())
+}
+
+/// Checks that an enacted checkpoint predicate ends the supplied block or epoch.
+///
+/// The boundary height B is the final height governed by the old predicate.
+/// Whole-epoch replay passes `is_terminal = true` because the slice spans the epoch.
+pub(crate) fn verify_checkpoint_predicate_boundaries(
+    manifests: &[AsmManifest],
+    is_terminal: bool,
+) -> ExecResult<()> {
+    for (index, manifest) in manifests.iter().enumerate() {
+        if manifest_processing::has_checkpoint_predicate_enactment(manifest) {
+            if index + 1 != manifests.len() {
+                return Err(ExecError::CheckpointPredicateBoundaryNotLast {
+                    boundary: manifest.height(),
+                });
+            }
+            if !is_terminal {
+                return Err(ExecError::CheckpointPredicateBoundaryNonterminal {
+                    boundary: manifest.height(),
+                });
+            }
+        }
+    }
 
     Ok(())
 }
@@ -408,6 +434,7 @@ pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     manifests: &[AsmManifest],
     runtime_params: &OLRuntimeParams,
 ) -> ExecResult<()> {
+    verify_checkpoint_predicate_boundaries(manifests, true)?;
     let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
     chain_processing::process_epoch_initial(state, &init_ctx)?;
 

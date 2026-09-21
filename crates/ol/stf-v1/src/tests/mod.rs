@@ -3,6 +3,7 @@
 mod asm_manifests;
 mod chain;
 mod chain_processing;
+mod checkpoint_predicate_boundary;
 mod coin_error_paths;
 mod da_epoch_reconstruction;
 mod da_epoch_root_correctness;
