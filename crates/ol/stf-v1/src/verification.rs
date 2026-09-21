@@ -391,7 +391,8 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     Ok(())
 }
 
-/// Reconstructs a full-epoch transition from a checkpoint DA diff and its L1 manifests.
+/// Applies a checkpoint's DA diff and the epoch's L1 manifests to advance
+/// OL state from the previous epoch's end to the current epoch's end.
 ///
 /// Like [`verify_epoch_with_diff`] but without the post-state root check.
 /// The diff restores OL-originated effects; replaying `manifests` restores
