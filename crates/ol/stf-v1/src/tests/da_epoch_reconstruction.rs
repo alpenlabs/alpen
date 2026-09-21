@@ -1,5 +1,6 @@
-//! Reconstructing an epoch from its DA diff via [`apply_da_epoch`] must yield
-//! the same post-state root as direct block-by-block execution.
+//! Applying a checkpoint DA diff and then replaying its L1 ASM manifests via
+//! [`apply_da_epoch`] must yield the same post-state root as direct
+//! block-by-block execution.
 //!
 //! Covers a deposit manifest only, a snark account update only, both
 //! combined, and a bridge withdrawal. Each test builds a multi-block epoch
@@ -7,12 +8,12 @@
 
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MessageEntry};
 use strata_codec::decode_buf_exact;
-use strata_identifiers::{Buf32, OLBlockCommitment, SubjectId};
+use strata_identifiers::{OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_state_types::{IAccountState, IStateAccessor};
+use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
@@ -75,8 +76,9 @@ fn test_apply_da_epoch_snark_update_only() {
     assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);
 }
 
-/// A declared predicate rotation changes consensus account state, so the DA
-/// diff must carry it: if reconstruction misses the new VK, the roots diverge.
+// A predicate rotation declared by an OL snark-account update changes consensus
+// account state, so the checkpoint diff must carry it. This differs from an
+// ASM-triggered rotation message, which manifest replay reconstructs.
 #[test]
 fn test_apply_da_epoch_snark_update_with_rotation() {
     let mut state = make_genesis_state();
@@ -183,7 +185,7 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
         let mut state = make_genesis_state();
         let snark_serial = seed_accounts(&mut state);
         let genesis = run_genesis(&mut state);
-        let pre_epoch_state = state.clone();
+        let mut reconstructed_state = state.clone();
         let mut blocks = Vec::new();
         let mut prev = genesis.header().clone();
         for _ in 0..4 {
@@ -202,13 +204,15 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
                     .expect("amount must not exceed the Bitcoin money supply"),
             ),
         );
-        reconstruct_epoch(&pre_epoch_state, &genesis, &terminal, &blocks)
+        let payload = derive_checkpoint_da_payload(&reconstructed_state, &genesis, &blocks);
+        reconstruct_post_epoch_state(&mut reconstructed_state, &genesis, &terminal, payload);
+        reconstructed_state.compute_state_root().unwrap()
     };
     let snark_only = {
         let mut state = make_genesis_state();
         seed_accounts(&mut state);
         let genesis = run_genesis(&mut state);
-        let pre_epoch_state = state.clone();
+        let mut reconstructed_state = state.clone();
         let mut blocks = Vec::new();
         let prev = run_snark_update_blocks(&mut state, &mut blocks, genesis.header());
         let terminal = run_terminal(
@@ -217,13 +221,15 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
             &prev,
             make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
         );
-        reconstruct_epoch(&pre_epoch_state, &genesis, &terminal, &blocks)
+        let payload = derive_checkpoint_da_payload(&reconstructed_state, &genesis, &blocks);
+        reconstruct_post_epoch_state(&mut reconstructed_state, &genesis, &terminal, payload);
+        reconstructed_state.compute_state_root().unwrap()
     };
     let snark_and_deposit = {
         let mut state = make_genesis_state();
         let snark_serial = seed_accounts(&mut state);
         let genesis = run_genesis(&mut state);
-        let pre_epoch_state = state.clone();
+        let mut reconstructed_state = state.clone();
         let mut blocks = Vec::new();
         let prev = run_snark_update_blocks(&mut state, &mut blocks, genesis.header());
         let terminal = run_terminal(
@@ -239,7 +245,9 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
                     .expect("amount must not exceed the Bitcoin money supply"),
             ),
         );
-        reconstruct_epoch(&pre_epoch_state, &genesis, &terminal, &blocks)
+        let payload = derive_checkpoint_da_payload(&reconstructed_state, &genesis, &blocks);
+        reconstruct_post_epoch_state(&mut reconstructed_state, &genesis, &terminal, payload);
+        reconstructed_state.compute_state_root().unwrap()
     };
 
     assert_ne!(deposit_only, snark_only);
@@ -329,18 +337,41 @@ fn build_snark_update(state: &MemoryStateBaseLayer, inbox_msg: &MessageEntry) ->
         .build(snark_id, make_state_root(2), vec![0u8; 32])
 }
 
-/// Reconstructs the epoch from its DA diff and returns the post-state root.
-fn reconstruct_epoch(
-    pre_epoch_state: &MemoryStateBaseLayer,
-    genesis: &CompletedBlock,
+/// Reconstructs post-epoch OL state from checkpoint DA and the epoch's L1 manifests.
+fn reconstruct_post_epoch_state(
+    state: &mut impl IStateAccessorMut,
+    previous_terminal: &CompletedBlock,
     terminal: &CompletedBlock,
+    payload: OLDaPayloadV1,
+) {
+    let epoch_info = EpochInfo::new(
+        BlockInfo::from_header(terminal.header()),
+        OLBlockCommitment::new(
+            previous_terminal.header().slot(),
+            previous_terminal.header().compute_blkid(),
+        ),
+    );
+    let manifests = terminal
+        .body()
+        .manifests()
+        .expect("terminal must have manifests")
+        .manifests();
+
+    let runtime_params = OLRuntimeParams::test_default();
+    apply_da_epoch::<_, OLDaSchemeV1>(state, &epoch_info, payload, manifests, &runtime_params)
+        .expect("apply_da_epoch");
+}
+
+fn derive_checkpoint_da_payload(
+    pre_epoch_state: &MemoryStateBaseLayer,
+    previous_terminal: &CompletedBlock,
     blocks: &[OLBlockV1],
-) -> Buf32 {
+) -> OLDaPayloadV1 {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
     execute_block_batch_predrain(
         &mut da,
         blocks,
-        genesis.header(),
+        previous_terminal.header(),
         &OLRuntimeParams::test_default(),
     )
     .expect("execute_block_batch_predrain");
@@ -348,43 +379,28 @@ fn reconstruct_epoch(
         .take_completed_epoch_da_blob()
         .expect("finalize DA")
         .expect("DA blob");
-    let payload: OLDaPayloadV1 = decode_buf_exact(&da_blob).expect("decode DA payload");
-
-    let epoch_info = EpochInfo::new(
-        BlockInfo::from_header(terminal.header()),
-        OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid()),
-    );
-    let manifests = terminal
-        .body()
-        .manifests()
-        .expect("terminal must have manifests")
-        .manifests()
-        .to_vec();
-
-    let mut reconstructed = pre_epoch_state.clone();
-    let runtime_params = OLRuntimeParams::test_default();
-    apply_da_epoch::<_, OLDaSchemeV1>(
-        &mut reconstructed,
-        &epoch_info,
-        payload,
-        &manifests,
-        &runtime_params,
-    )
-    .expect("apply_da_epoch");
-    reconstructed.compute_state_root().unwrap()
+    decode_buf_exact(&da_blob).expect("decode DA payload")
 }
 
 /// Asserts the DA-reconstructed root equals the directly-executed root.
 fn assert_reconstruction_matches(
     state: &MemoryStateBaseLayer,
     pre_epoch_state: &MemoryStateBaseLayer,
-    genesis: &CompletedBlock,
+    previous_terminal: &CompletedBlock,
     terminal: &CompletedBlock,
     blocks: &[OLBlockV1],
 ) {
     let direct_root = state.compute_state_root().unwrap();
+    let mut reconstructed_state = pre_epoch_state.clone();
+    let payload = derive_checkpoint_da_payload(pre_epoch_state, previous_terminal, blocks);
+    reconstruct_post_epoch_state(
+        &mut reconstructed_state,
+        previous_terminal,
+        terminal,
+        payload,
+    );
     assert_eq!(
-        reconstruct_epoch(pre_epoch_state, genesis, terminal, blocks),
+        reconstructed_state.compute_state_root().unwrap(),
         direct_root,
         "DA-reconstructed state root must equal directly-executed root"
     );
