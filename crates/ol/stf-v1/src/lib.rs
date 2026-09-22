@@ -27,7 +27,8 @@ pub use constants::*;
 pub use context::{BasicExecContext, BlockContext, BlockInfo, EpochInfo, TxExecContext};
 pub use errors::{ErrorKind, ExecError, ExecResult};
 pub use manifest_processing::{
-    has_checkpoint_predicate_enactment, process_block_manifests, process_epoch_terminal,
+    ManifestProcessingOutcome, has_checkpoint_predicate_enactment, process_asm_manifest,
+    process_block_manifests, process_epoch_terminal,
 };
 pub use output::*;
 pub use proof_verification::TxProofVerifierImpl;

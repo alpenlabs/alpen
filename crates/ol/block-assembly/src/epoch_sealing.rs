@@ -306,7 +306,7 @@ pub trait EpochSealingPolicy: Send + Sync + Debug + 'static {
     fn should_seal_epoch(
         &self,
         slot: Slot,
-        checkpoint_predicate_boundary: Option<L1Height>,
+        checkpoint_enactment_height: Option<L1Height>,
         limit_verdict: &EpochSealingLimitVerdict,
     ) -> EpochSealingDecision;
 }
@@ -337,10 +337,10 @@ impl<C: CadencePolicy> EpochSealingPolicy for LimitAwareSealing<C> {
     fn should_seal_epoch(
         &self,
         slot: Slot,
-        checkpoint_predicate_boundary: Option<L1Height>,
+        checkpoint_enactment_height: Option<L1Height>,
         limit_verdict: &EpochSealingLimitVerdict,
     ) -> EpochSealingDecision {
-        if let Some(height) = checkpoint_predicate_boundary {
+        if let Some(height) = checkpoint_enactment_height {
             EpochSealingDecision::Seal(EpochSealTrigger::CheckpointPredicateBoundary(height))
         } else if let Some(trigger) = limit_verdict.seal_trigger() {
             EpochSealingDecision::Seal(trigger)

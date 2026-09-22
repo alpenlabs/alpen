@@ -2,7 +2,7 @@
 
 use strata_acct_types::TxEffects;
 use strata_asm_common::AsmManifest;
-use strata_identifiers::{Buf32, L1Height};
+use strata_identifiers::Buf32;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_v1::*;
 use strata_ol_params::OLRuntimeParams;
@@ -11,6 +11,7 @@ use strata_ol_tx_types_v1::*;
 
 use crate::context::{BasicExecContext, BlockContext, TxExecContext};
 use crate::errors::ExecResult;
+use crate::manifest_processing::ManifestProcessingOutcome;
 use crate::output::ExecOutputBuffer;
 use crate::verification::{
     BlockExecInput, verify_block_predrain, verify_checkpoint_predicate_boundaries,
@@ -104,13 +105,13 @@ pub fn execute_block_tx_segment<S: IStateAccessorMut>(
 
 /// Buffers the ASM logs carried by a block's manifests into intraepoch state.
 ///
-/// Returns the L1 height of an enacted checkpoint predicate, if present. Callers
-/// must verify boundary placement before executing a complete block or epoch,
-/// as described by [`manifest_processing::process_block_manifests`].
+/// Returns events observed during successful buffering. Callers must verify the
+/// terminal header flag before executing a complete block, as described by
+/// [`manifest_processing::process_block_manifests`].
 pub fn execute_block_manifest_buffering<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
-) -> ExecResult<Option<L1Height>> {
+) -> ExecResult<ManifestProcessingOutcome> {
     manifest_processing::process_block_manifests(state, manifests)
 }
 

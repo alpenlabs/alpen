@@ -142,13 +142,14 @@ pub enum ExecError {
         index: usize,
     },
 
-    #[error("checkpoint predicate boundary at L1 height {boundary} must be the last manifest")]
-    CheckpointPredicateBoundaryNotLast { boundary: L1Height },
+    #[error("checkpoint predicate boundary at L1 height {height} must be the last manifest")]
+    CheckpointPredicateBoundaryNotLast { height: L1Height },
 
-    #[error(
-        "checkpoint predicate boundary at L1 height {boundary} requires an epoch-terminal block"
-    )]
-    CheckpointPredicateBoundaryNonterminal { boundary: L1Height },
+    #[error("checkpoint predicate boundary at L1 height {height} requires an epoch-terminal block")]
+    CheckpointPredicateBoundaryNonterminal { height: L1Height },
+
+    #[error("multiple checkpoint predicate enactments at L1 height {height}")]
+    DuplicateCheckpointPredicateEnactment { height: L1Height },
 
     #[error("ASM manifest height overflow")]
     AsmManifestHeightOverflow,

@@ -328,19 +328,10 @@ pub(crate) fn verify_checkpoint_predicate_boundaries(
     manifests: &[AsmManifest],
     is_terminal: bool,
 ) -> ExecResult<()> {
-    for (index, manifest) in manifests.iter().enumerate() {
-        if manifest_processing::has_checkpoint_predicate_enactment(manifest) {
-            if index + 1 != manifests.len() {
-                return Err(ExecError::CheckpointPredicateBoundaryNotLast {
-                    boundary: manifest.height(),
-                });
-            }
-            if !is_terminal {
-                return Err(ExecError::CheckpointPredicateBoundaryNonterminal {
-                    boundary: manifest.height(),
-                });
-            }
-        }
+    if let Some(height) = manifest_processing::verify_manifest_enactments(manifests)?
+        && !is_terminal
+    {
+        return Err(ExecError::CheckpointPredicateBoundaryNonterminal { height });
     }
 
     Ok(())
