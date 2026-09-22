@@ -105,7 +105,7 @@ impl L1DataProvider for AsmWorkerCtx {
                     WorkerError::MissingL1Block(*blockid)
                 })
                 .and_then(|height| {
-                    L1Height::try_from(height).map_err(|e| WorkerError::BtcRpc(anyhow!(e)))
+                    L1Height::try_from(height).map_err(|_| WorkerError::HeightOutOfRange { height })
                 })
         })
     }
