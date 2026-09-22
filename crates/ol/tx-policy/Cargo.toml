@@ -14,6 +14,7 @@ strata-codec.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-stf-v1.workspace = true
 strata-ol-tx-types-v1.workspace = true
+
 thiserror.workspace = true
 
 [dev-dependencies]
