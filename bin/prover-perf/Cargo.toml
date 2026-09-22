@@ -12,13 +12,13 @@ zkaleido.workspace = true
 # proof programs
 strata-proofimpl-checkpoint.workspace = true
 
-strata-codec.workspace = true
-strata-da-framework.workspace = true
+strata-acct-types.workspace = true
 strata-identifiers.workspace = true
-strata-ol-chain-types-v1.workspace = true
-strata-ol-da-types-v1.workspace = true
-strata-ol-state-types.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-state-support-types.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
+strata-predicate.workspace = true
+strata-proofimpl-predicate-keys = { workspace = true, features = ["sp1"] }
 strata-zkvm-hosts.workspace = true
 
 # sp1
@@ -31,10 +31,11 @@ num-format = "0.4.4"
 reqwest.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tracing.workspace = true
 
 [dev-dependencies]
-strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-codec.workspace = true
+strata-ol-da-types-v1.workspace = true
+strata-ol-state-types.workspace = true
 
 [features]
 default = ["sp1"]
