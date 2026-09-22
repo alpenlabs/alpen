@@ -21,7 +21,7 @@ use strata_ol_tx_types_v1::*;
 use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
-use crate::checkpoint_size::LogMetrics;
+use crate::checkpoint_size::{CheckpointLimit, LogMetrics};
 use crate::context::BlockAssemblyAnchorContext;
 use crate::epoch_sealing::{
     EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
@@ -835,6 +835,20 @@ where
                     }
                 }
             }
+            Err(ExecError::EpochLogBudget(error)) => {
+                let limit = match error {
+                    EpochLogBudgetError::LogCount { .. } => CheckpointLimit::LogCount,
+                    EpochLogBudgetError::LogPayloadBytes { .. } => CheckpointLimit::LogPayloadBytes,
+                };
+                debug!(?txid, %error, "remaining epoch log budget exceeded, deferring tx");
+                staging_state = DaAccumulatingState::new_with_accumulator(
+                    WriteTrackingState::new(parent_state, backup_batch),
+                    backup_accumulator,
+                );
+                deferred_limits
+                    .record_checkpoint_limit(limit, EpochSealingLimitAction::RejectCandidate);
+                block_successors(account_seqno, &mut blocked_sequences);
+            }
             Err(e) => {
                 #[cfg(test)]
                 eprintln!("TX EXECUTION FAILED: {e:?}");
@@ -1141,6 +1155,7 @@ mod tests {
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_snark_acct_types::OutputMessage;
 
     use super::*;
     use crate::test_utils::*;
@@ -2854,11 +2869,7 @@ mod tests {
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let oversized = MempoolSnarkTxBuilder::new(account1)
-            .with_withdrawals(
-                500,
-                CHECKPOINT_MSG_VALUE_SATS,
-                make_p2wpkh_bosd_descriptor(0x14),
-            )
+            .with_withdrawals(173, CHECKPOINT_MSG_VALUE_SATS, vec![0; 81])
             .build();
         let oversized_id = oversized.compute_txid();
         let successor = MempoolSnarkTxBuilder::new(account1).with_seq_no(1).build();
@@ -2903,7 +2914,7 @@ mod tests {
         let independent = MempoolSnarkTxBuilder::new(account2).build();
         let independent_id = independent.compute_txid();
 
-        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 2);
+        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
         let control = env
             .construct_block_with_da(
                 [(independent_id, independent.clone())],
@@ -2971,11 +2982,15 @@ mod tests {
                 .await;
             let mut env = TestEnv::from_fixture(fixture, parent_commitment);
             // Each update's inbox writes fit a fresh checkpoint; together they exceed DA capacity.
+            let message = OutputMessage::new(
+                account3,
+                MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![0; 1024]).unwrap(),
+            );
             let first = MempoolSnarkTxBuilder::new(account1)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(vec![message.clone(); 128])
                 .build();
             let deferred = MempoolSnarkTxBuilder::new(account2)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(vec![message; 128])
                 .build();
             let deferred_id = deferred.compute_txid();
             let successor = MempoolSnarkTxBuilder::new(account2).with_seq_no(1).build();
@@ -3063,7 +3078,14 @@ mod tests {
             .await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
         let deferred = MempoolSnarkTxBuilder::new(account1)
-            .with_outputs(vec![(account2, 0); 6_000])
+            .with_output_messages(vec![
+                OutputMessage::new(
+                    account2,
+                    MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![0; 4096])
+                        .unwrap(),
+                );
+                64
+            ])
             .build();
         let deferred_id = deferred.compute_txid();
         let mut resource_state = EpochResourceState::new_empty();
@@ -3162,12 +3184,6 @@ mod tests {
     /// Tests that a tx producing logs which would overflow the remaining block
     /// budget triggers a soft-break: the tx is not included, not marked invalid,
     /// and remains available for future blocks.
-    ///
-    /// Note: `TxEffects::MAX_MESSAGES` and `MAX_LOGS_PER_BLOCK` are both 65,536,
-    /// and a tx emits one log of its own on top of its message logs, so a single
-    /// maximal tx now sits one log over the cap. Pre-filling the block output
-    /// buffer keeps this test cheap either way: a small tx triggers the same
-    /// soft-break without having to build a 65k-message tx.
     async fn build_process_transactions_preamble(
         env: &TestEnv,
         timestamp: u64,
@@ -3206,6 +3222,71 @@ mod tests {
             accumulated_batch,
             output_buffer,
         )
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stf_epoch_log_deferral_rolls_back_and_allows_independent_update() {
+        let account1 = test_account_id(1);
+        let account2 = test_account_id(2);
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_account(TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE))
+            .with_account(TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE))
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        // Leave space for B's one update log, but not A's update and withdrawal.
+        for (count, bytes) in [(16_383, 0), (100, 16_374)] {
+            let (parent, header, info, batch, output) =
+                build_process_transactions_preamble(&env, 1_000_001, 1).await;
+            let mut parent = (*parent).clone();
+            parent.set_epoch_log_usage(count, bytes);
+            let context = BlockContext::new(&info, Some(&header));
+            let deferred = MempoolSnarkTxBuilder::new(account1)
+                .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, make_p2wpkh_bosd_descriptor(0x14))
+                .build();
+            let successor = MempoolSnarkTxBuilder::new(account1).with_seq_no(1).build();
+            let independent = MempoolSnarkTxBuilder::new(account2).build();
+            let independent_id = independent.compute_txid();
+            let result = process_transactions(
+                env.ctx(),
+                env.epoch_sealing_policy(),
+                &context,
+                &output,
+                &parent,
+                batch,
+                vec![
+                    (deferred.compute_txid(), deferred),
+                    (successor.compute_txid(), successor),
+                    (independent_id, independent),
+                ]
+                .into_iter(),
+                AccumulatedDaData::new_empty(),
+                0,
+                &OLRuntimeParams::test_default(),
+            );
+            assert_eq!(
+                result
+                    .successful_txs
+                    .iter()
+                    .map(OLTransactionV1::compute_txid)
+                    .collect::<Vec<_>>(),
+                vec![independent_id]
+            );
+            assert_eq!(result.failed_txs, vec![]);
+            assert!(result.sealing_limit_verdict.checkpoint_logs_exceeded());
+            assert_eq!(output.log_count(), 1);
+            let state = WriteTrackingState::new(&parent, result.accumulated_batch);
+            assert_eq!(state.epoch_log_count(), count + 1);
+            assert_eq!(state.epoch_log_payload_bytes(), bytes + 10);
+            assert_eq!(snark_account_state(&state, account1).seqno(), 0.into());
+            assert_eq!(
+                account_balance(&state, account1).to_sat(),
+                DEFAULT_ACCOUNT_BALANCE
+            );
+            assert_eq!(snark_account_state(&state, account2).seqno(), 1.into());
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -3253,6 +3334,9 @@ mod tests {
             out.failed_txs.is_empty(),
             "soft-break should not mark tx invalid"
         );
+        let state = WriteTrackingState::new(parent_state.as_ref(), out.accumulated_batch);
+        assert_eq!(state.epoch_log_count(), 0);
+        assert_eq!(state.epoch_log_payload_bytes(), 0);
     }
 
     /// Tests that when two txs are processed and the first fills the remaining
@@ -3540,7 +3624,7 @@ mod tests {
 
         let out = run_process_transactions_with_seeded_checkpoint_logs(
             account_id,
-            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 1,
             vec![(tx1_id, tx1), (tx2_id, tx2)],
         )
         .await;

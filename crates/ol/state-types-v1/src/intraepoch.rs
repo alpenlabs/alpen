@@ -17,6 +17,19 @@ impl IntraepochStateV1 {
         &self.pending_asm_logs
     }
 
+    pub fn epoch_log_count(&self) -> u32 {
+        self.epoch_log_count
+    }
+
+    pub fn epoch_log_payload_bytes(&self) -> u32 {
+        self.epoch_log_payload_bytes
+    }
+
+    pub fn set_epoch_log_usage(&mut self, count: u32, payload_bytes: u32) {
+        self.epoch_log_count = count;
+        self.epoch_log_payload_bytes = payload_bytes;
+    }
+
     /// Attempts to append a new pending log entry to the buffer.
     ///
     /// # Errors
@@ -35,6 +48,7 @@ impl IntraepochStateV1 {
 
     /// Clears the intraepoch state. Called at the epoch boundary.
     pub fn reset(&mut self) {
+        self.set_epoch_log_usage(0, 0);
         self.pending_asm_logs = VariableList::empty();
     }
 }
@@ -55,6 +69,8 @@ impl From<PendingAsmLog> for PendingAsmLogEntryV1 {
 impl Default for IntraepochStateV1 {
     fn default() -> Self {
         Self {
+            epoch_log_count: 0,
+            epoch_log_payload_bytes: 0,
             pending_asm_logs: VariableList::empty(),
         }
     }

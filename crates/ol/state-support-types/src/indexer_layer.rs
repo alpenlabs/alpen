@@ -412,6 +412,14 @@ impl<S: IStateAccessor> IStateAccessor for IndexerState<S> {
         self.inner.pending_asm_logs_len()
     }
 
+    fn epoch_log_count(&self) -> u32 {
+        self.inner.epoch_log_count()
+    }
+
+    fn epoch_log_payload_bytes(&self) -> u32 {
+        self.inner.epoch_log_payload_bytes()
+    }
+
     fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
         self.inner.get_pending_asm_log(idx)
     }
@@ -533,6 +541,10 @@ where
 
     fn reset_intraepoch_state(&mut self) {
         self.inner.reset_intraepoch_state();
+    }
+
+    fn set_epoch_log_usage(&mut self, count: u32, payload_bytes: u32) {
+        self.inner.set_epoch_log_usage(count, payload_bytes);
     }
 }
 

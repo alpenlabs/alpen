@@ -96,6 +96,7 @@ pub fn process_epoch_terminal<S: IStateAccessorMut>(
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     let terminating_epoch = state.cur_epoch();
+    let start_log = context.output().log_count();
 
     // 1. Snapshot the buffered ASM logs into a local list so we can apply their
     // effects and then reset the buffer without index/borrow hazards. The
@@ -112,6 +113,9 @@ pub fn process_epoch_terminal<S: IStateAccessorMut>(
     for entry in &pending {
         process_asm_log(state, entry.log(), entry.height(), context)?;
     }
+
+    // Include terminal outputs in the epoch budget before resetting its counters.
+    context.output().record_epoch_logs(state, start_log)?;
 
     // 3. Reset the now-consumed intraepoch buffer.
     state.reset_intraepoch_state();

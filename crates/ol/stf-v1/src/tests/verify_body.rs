@@ -2,8 +2,10 @@
 
 use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MAX_MESSAGES};
 use strata_identifiers::Buf32;
-use strata_ol_chain_types_v1::MAX_LOGS_PER_BLOCK;
-use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_chain_types_v1::{OLBlockBodyV1, OLTxSegmentV1};
+use strata_ol_state_types::{
+    EpochLogBudgetError, IAccountState, ISnarkAccountState, IStateAccessor,
+};
 
 use crate::assembly::BlockComponents;
 use crate::context::BlockInfo;
@@ -305,10 +307,11 @@ fn test_verify_empty_block_logs_root() {
 }
 
 #[test]
-fn test_verify_block_allows_max_withdrawal_logs() {
+fn test_verify_block_enforces_epoch_log_payload_limit() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let initial_balance =
-        WITHDRAWAL_LOG_AMOUNT * withdrawal_log_message_count(MAX_LOGS_PER_BLOCK as usize);
+    // Two SAUs emit 467 withdrawals plus two update logs: 467 * 35 + 20 = 16,365.
+    let log_count = 469;
+    let initial_balance = WITHDRAWAL_LOG_AMOUNT * withdrawal_log_message_count(log_count);
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
@@ -321,16 +324,14 @@ fn test_verify_block_allows_max_withdrawal_logs() {
     let genesis = fixture.last_completed_block().clone();
     let mut verify_state = fixture.state().clone();
     let block = fixture.child_block();
-    let block = with_withdrawal_log_saus(block, snark_acct_id, MAX_LOGS_PER_BLOCK as usize);
+    let block = with_withdrawal_log_saus(block, snark_acct_id, log_count);
     let output = block.execute_with_outputs();
     let block = output.completed_block();
 
-    assert_eq!(
-        output.log_count(),
-        MAX_LOGS_PER_BLOCK as usize,
-        "Block should emit the maximum allowed log count"
-    );
+    assert_eq!(output.log_count(), log_count);
+    assert_eq!(fixture.state().epoch_log_payload_bytes(), 16_365);
 
+    let mut overflow_state = verify_state.clone();
     assert_verification_succeeds(
         &mut verify_state,
         block.header(),
@@ -346,15 +347,40 @@ fn test_verify_block_allows_max_withdrawal_logs() {
     );
     assert_eq!(
         *account_state.seqno().inner(),
-        withdrawal_log_tx_count(MAX_LOGS_PER_BLOCK as usize),
+        withdrawal_log_tx_count(log_count),
         "Verified state should increment sequence number once per SAU"
+    );
+
+    let extra_update =
+        SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone())
+            .try_with_extra_data(vec![0; 10])
+            .unwrap()
+            .build(snark_acct_id, make_state_root(20), make_proof(20));
+    let mut txs = block.body().tx_segment().unwrap().txs().to_vec();
+    txs.push(extra_update);
+    let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(txs).unwrap());
+    let header = tamper_body_root(block.header(), body.compute_hash_commitment());
+    assert_verification_fails_with(
+        &mut overflow_state,
+        &header,
+        Some(genesis.header().clone()),
+        &body,
+        |error| {
+            matches!(
+                error.base(),
+                ExecError::EpochLogBudget(EpochLogBudgetError::LogPayloadBytes {
+                    actual: 16_385,
+                    limit: 16_384
+                })
+            )
+        },
     );
 }
 
 #[test]
-fn test_assemble_rejects_withdrawal_logs_over_limit() {
+fn test_assemble_rejects_epoch_log_payload_over_limit() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let log_count = MAX_LOGS_PER_BLOCK as usize + 1;
+    let log_count = 470;
     let initial_balance = WITHDRAWAL_LOG_AMOUNT * log_count as u64;
 
     let mut fixture = OLStfFixture::builder()
@@ -368,11 +394,11 @@ fn test_assemble_rejects_withdrawal_logs_over_limit() {
     let block = fixture.child_block();
     let block = with_withdrawal_log_saus(block, snark_acct_id, log_count);
     match block.execute_err().into_base() {
-        ExecError::LogsOverflow { count, max } => {
-            assert_eq!(count, log_count);
-            assert_eq!(max, MAX_LOGS_PER_BLOCK as usize);
+        ExecError::EpochLogBudget(EpochLogBudgetError::LogPayloadBytes { actual, limit }) => {
+            assert_eq!(actual, 16_400);
+            assert_eq!(limit, 16_384);
         }
-        err => panic!("Expected LogsOverflow, got: {err:?}"),
+        err => panic!("Expected epoch log payload overflow, got: {err:?}"),
     }
 }
 

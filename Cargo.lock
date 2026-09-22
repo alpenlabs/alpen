@@ -9832,7 +9832,6 @@ name = "strata-ol-tx-policy"
 version = "0.1.0"
 dependencies = [
  "strata-acct-types",
- "strata-asm-checkpoint-types",
  "strata-bridge-params",
  "strata-codec",
  "strata-ol-chain-types-v1",
@@ -9936,6 +9935,7 @@ dependencies = [
  "k256",
  "ssz",
  "ssz_primitives",
+ "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-manifest-types",
  "strata-codec",

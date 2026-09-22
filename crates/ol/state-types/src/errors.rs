@@ -99,6 +99,15 @@ pub enum StateError {
 /// Execution result error.
 pub type ExecResult<T> = Result<T, ExecError>;
 
+/// An epoch's emitted OL logs exceed a checkpoint log budget.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum EpochLogBudgetError {
+    #[error("epoch emits {actual} logs, exceeding limit {limit}")]
+    LogCount { actual: usize, limit: usize },
+    #[error("epoch emits {actual} log payload bytes, exceeding limit {limit}")]
+    LogPayloadBytes { actual: usize, limit: usize },
+}
+
 /// Error from executing/validating the block.
 #[derive(Debug, Error)]
 pub enum ExecError {
@@ -204,6 +213,9 @@ pub enum ExecError {
 
     #[error("block logs exceeded limit (count {count}, max {max})")]
     LogsOverflow { count: usize, max: usize },
+
+    #[error(transparent)]
+    EpochLogBudget(#[from] EpochLogBudgetError),
 
     /// Wrapper to provide additional context about tx processing.
     #[error("tx {0} at idx {1} processing failed: {2}")]

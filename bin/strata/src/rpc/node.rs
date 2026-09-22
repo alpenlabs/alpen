@@ -34,7 +34,8 @@ use tracing::{error, info};
 
 use crate::rpc::errors::{
     block_history_unavailable_error, db_error, internal_error, invalid_params_error,
-    map_mempool_error_to_rpc, not_available_on_node_error, not_found_error,
+    map_mempool_error_to_rpc, map_tx_conversion_error_to_rpc, not_available_on_node_error,
+    not_found_error,
 };
 
 /// Whether this node serves OL block body/data over RPC.
@@ -1177,9 +1178,7 @@ const MAX_RAW_BLOCKS_RANGE: usize = 5000;
 impl<P: OLRpcProvider> OLSubmitRpcServer for OLRpcServer<P> {
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
         // Convert RPC transaction to mempool transaction
-        let mempool_tx: OLTransactionV1 = tx
-            .try_into()
-            .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
+        let mempool_tx: OLTransactionV1 = tx.try_into().map_err(map_tx_conversion_error_to_rpc)?;
         let target = mempool_tx
             .target()
             .expect("all OL payload variants must have a target");
