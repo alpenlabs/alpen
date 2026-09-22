@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use strata_acct_types::AccountId;
+use strata_ol_tx_policy::TxLogBudgetError;
 pub use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_ol_tx_types_v1::TransactionPayloadV1;
 
@@ -276,6 +277,9 @@ impl OLMempoolStats {
 /// Note: This does not include non-rejection errors like Database or Serialization.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub enum OLMempoolRejectReason {
+    /// Rejected because its logs cannot fit a checkpoint's standalone budget.
+    LogBudgetExceeded,
+
     /// Rejected due to mempool size limit exceeded.
     MempoolFull,
 
@@ -309,6 +313,7 @@ impl OLMempoolRejectReason {
     /// Returns the stable label value for metrics.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::LogBudgetExceeded => "log_budget_exceeded",
             Self::MempoolFull => "mempool_full",
             Self::AccountDoesNotExist => "account_does_not_exist",
             Self::AccountTypeMismatch => "account_type_mismatch",
@@ -334,6 +339,10 @@ impl OLMempoolRejectReason {
     /// separately during idempotent submission.
     pub fn from_error(error: &OLMempoolError) -> Option<Self> {
         match error {
+            OLMempoolError::LogBudget(
+                TxLogBudgetError::LogCount { .. } | TxLogBudgetError::LogPayloadBytes { .. },
+            ) => Some(Self::LogBudgetExceeded),
+            OLMempoolError::LogBudget(TxLogBudgetError::Encoding(_)) => None,
             OLMempoolError::MempoolFull { .. } => Some(Self::MempoolFull),
             OLMempoolError::MempoolByteLimitExceeded { .. } => Some(Self::MempoolFull),
             OLMempoolError::AccountDoesNotExist { .. } => Some(Self::AccountDoesNotExist),

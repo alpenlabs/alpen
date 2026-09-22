@@ -12,7 +12,7 @@ use strata_ol_chain_types_v1::MAX_SEALING_MANIFEST_COUNT;
 
 use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict};
 
-/// Resource stats used by sealing-limit rules.
+/// Resource stats used by the epoch sealing policy.
 ///
 /// All values are epoch-cumulative for the candidate state being checked.
 /// Block assembly builds this snapshot incrementally before admitting a
@@ -72,23 +72,14 @@ impl EpochSealingLimitAction {
     }
 }
 
-/// Epoch sealing limit identifiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EpochSealingLimit {
-    /// Estimated checkpoint payload or sidecar size.
-    CheckpointSize,
-
-    /// Epoch-cumulative ASM manifest count.
-    ManifestCount,
-}
-
 /// Verdict from checking candidate values against sealing limits.
 ///
 /// The verdict preserves checkpoint-size and manifest-count actions separately
 /// so multiple crossed limits can be observed together.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EpochSealingLimitVerdict {
-    actions: Vec<(EpochSealingLimit, EpochSealingLimitAction)>,
+    checkpoint_size: EpochSealingLimitAction,
+    manifest_count: EpochSealingLimitAction,
 }
 
 impl EpochSealingLimitVerdict {
@@ -97,37 +88,10 @@ impl EpochSealingLimitVerdict {
         Self::default()
     }
 
-    fn from_actions(
-        actions: impl IntoIterator<Item = (EpochSealingLimit, EpochSealingLimitAction)>,
-    ) -> Self {
-        let mut verdict = Self::within_limits();
-        for (limit, action) in actions {
-            verdict.record(limit, action);
-        }
-        verdict
-    }
-
-    fn record(&mut self, limit: EpochSealingLimit, action: EpochSealingLimitAction) {
-        if action == EpochSealingLimitAction::Continue {
-            return;
-        }
-
-        if let Some((_, existing)) = self
-            .actions
-            .iter_mut()
-            .find(|(existing_limit, _)| *existing_limit == limit)
-        {
-            *existing = (*existing).max(action);
-        } else {
-            self.actions.push((limit, action));
-        }
-    }
-
     /// Merges another verdict into this one, keeping the stricter action for each limit.
     pub(crate) fn merge(&mut self, other: Self) {
-        for (limit, action) in other.actions {
-            self.record(limit, action);
-        }
+        self.checkpoint_size = self.checkpoint_size.max(other.checkpoint_size);
+        self.manifest_count = self.manifest_count.max(other.manifest_count);
     }
 
     fn should_seal(&self) -> bool {
@@ -136,31 +100,17 @@ impl EpochSealingLimitVerdict {
 
     /// Returns the checkpoint-size limit action.
     pub(crate) fn checkpoint_size_action(&self) -> EpochSealingLimitAction {
-        self.action_for(EpochSealingLimit::CheckpointSize)
+        self.checkpoint_size
     }
 
     /// Returns the manifest-count limit action.
     #[cfg(test)]
     pub(crate) fn manifest_count_action(&self) -> EpochSealingLimitAction {
-        self.action_for(EpochSealingLimit::ManifestCount)
-    }
-
-    fn action_for(&self, limit: EpochSealingLimit) -> EpochSealingLimitAction {
-        self.actions
-            .iter()
-            .find_map(|(id, action)| (*id == limit).then_some(*action))
-            .unwrap_or_default()
-    }
-
-    fn actions(&self) -> impl Iterator<Item = (EpochSealingLimit, EpochSealingLimitAction)> + '_ {
-        self.actions.iter().copied()
+        self.manifest_count
     }
 
     pub(crate) fn most_restrictive_action(&self) -> EpochSealingLimitAction {
-        self.actions()
-            .map(|(_, action)| action)
-            .max()
-            .unwrap_or_default()
+        self.checkpoint_size.max(self.manifest_count)
     }
 
     fn seal_trigger(&self) -> Option<EpochSealTrigger> {
@@ -201,99 +151,6 @@ pub trait CadencePolicy: Send + Sync + Debug + 'static {
     fn seals_at_slot(&self, slot: Slot) -> bool;
 }
 
-/// Trait for a concrete sealing-limit rule.
-pub(crate) trait SealingLimitRule: Send + Sync + Debug + 'static {
-    /// Returns the limit checked by this rule.
-    fn limit(&self) -> EpochSealingLimit;
-
-    /// Checks the resource stats against this rule.
-    fn check(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitAction;
-}
-
-/// Checkpoint-size sealing limit rule.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct CheckpointSizeRule;
-
-impl SealingLimitRule for CheckpointSizeRule {
-    fn limit(&self) -> EpochSealingLimit {
-        EpochSealingLimit::CheckpointSize
-    }
-
-    fn check(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitAction {
-        match checkpoint_size_verdict(stats.da_diff_size(), stats.log()) {
-            CheckpointSizeVerdict::WithinLimits => EpochSealingLimitAction::Continue,
-            CheckpointSizeVerdict::SoftLimitReached => EpochSealingLimitAction::SealAfterAdmit,
-            CheckpointSizeVerdict::HardLimitExceeded => EpochSealingLimitAction::RejectCandidate,
-        }
-    }
-}
-
-/// Epoch-cumulative ASM manifest-count sealing limit rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ManifestCountRule {
-    max_epoch_manifests: u32,
-}
-
-impl ManifestCountRule {
-    /// Creates a new manifest-count rule.
-    ///
-    /// `max_epoch_manifests` is a sealing budget, not the per-block SSZ
-    /// container bound. The default currently uses the same numeric value until
-    /// a separate configured budget is introduced.
-    fn new(max_epoch_manifests: u32) -> Self {
-        Self {
-            max_epoch_manifests,
-        }
-    }
-}
-
-impl Default for ManifestCountRule {
-    fn default() -> Self {
-        Self::new(MAX_SEALING_MANIFEST_COUNT as u32)
-    }
-}
-
-impl SealingLimitRule for ManifestCountRule {
-    fn limit(&self) -> EpochSealingLimit {
-        EpochSealingLimit::ManifestCount
-    }
-
-    fn check(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitAction {
-        match stats.manifest_count().cmp(&self.max_epoch_manifests) {
-            Ordering::Less => EpochSealingLimitAction::Continue,
-            Ordering::Equal => EpochSealingLimitAction::SealAfterAdmit,
-            Ordering::Greater => EpochSealingLimitAction::RejectCandidate,
-        }
-    }
-}
-
-/// Construction-time context for sealing limit checks.
-#[derive(Debug)]
-struct EpochSealingPolicyContext {
-    limits: Vec<Box<dyn SealingLimitRule>>,
-}
-
-impl Default for EpochSealingPolicyContext {
-    fn default() -> Self {
-        Self {
-            limits: vec![
-                Box::new(CheckpointSizeRule),
-                Box::new(ManifestCountRule::default()),
-            ],
-        }
-    }
-}
-
-impl EpochSealingPolicyContext {
-    fn check_limits(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitVerdict {
-        EpochSealingLimitVerdict::from_actions(
-            self.limits
-                .iter()
-                .map(|rule| (rule.limit(), rule.check(stats))),
-        )
-    }
-}
-
 /// Trait for deciding when to seal an epoch.
 pub trait EpochSealingPolicy: Send + Sync + Debug + 'static {
     /// Checks candidate resource stats against sealing limits.
@@ -307,27 +164,43 @@ pub trait EpochSealingPolicy: Send + Sync + Debug + 'static {
     ) -> EpochSealingDecision;
 }
 
-/// Sealing policy that combines a cadence policy with sealing-limit rules.
+/// Sealing policy that checks checkpoint size, manifest count, and cadence.
 #[derive(Debug)]
 pub struct LimitAwareSealing<C: CadencePolicy> {
     cadence: C,
-    context: EpochSealingPolicyContext,
 }
 
 impl<C: CadencePolicy> LimitAwareSealing<C> {
-    /// Creates a limit-aware policy with default sealing-limit rules.
+    /// Creates a sealing policy with the given cadence.
     pub fn new(cadence: C) -> Self {
-        Self::with_context(cadence, EpochSealingPolicyContext::default())
-    }
-
-    fn with_context(cadence: C, context: EpochSealingPolicyContext) -> Self {
-        Self { cadence, context }
+        Self { cadence }
     }
 }
 
 impl<C: CadencePolicy> EpochSealingPolicy for LimitAwareSealing<C> {
     fn check_limits(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitVerdict {
-        self.context.check_limits(stats)
+        let checkpoint_size_action =
+            match checkpoint_size_verdict(stats.da_diff_size(), stats.log()) {
+                CheckpointSizeVerdict::WithinLimits => EpochSealingLimitAction::Continue,
+                CheckpointSizeVerdict::SoftLimitReached => EpochSealingLimitAction::SealAfterAdmit,
+                CheckpointSizeVerdict::HardLimitExceeded => {
+                    EpochSealingLimitAction::RejectCandidate
+                }
+            };
+
+        // The epoch manifest budget currently uses the same numeric value as
+        // the per-block SSZ container bound.
+        let max_epoch_manifests = MAX_SEALING_MANIFEST_COUNT as u32;
+        let manifest_count_action = match stats.manifest_count().cmp(&max_epoch_manifests) {
+            Ordering::Less => EpochSealingLimitAction::Continue,
+            Ordering::Equal => EpochSealingLimitAction::SealAfterAdmit,
+            Ordering::Greater => EpochSealingLimitAction::RejectCandidate,
+        };
+
+        EpochSealingLimitVerdict {
+            checkpoint_size: checkpoint_size_action,
+            manifest_count: manifest_count_action,
+        }
     }
 
     fn should_seal_epoch(
@@ -453,10 +326,10 @@ mod fixed_slot_sealing_tests {
             verdict.checkpoint_size_action(),
             EpochSealingLimitAction::RejectCandidate
         );
-        assert!(verdict.actions().any(|(limit, action)| {
-            limit == EpochSealingLimit::ManifestCount
-                && action == EpochSealingLimitAction::SealAfterAdmit
-        }));
+        assert_eq!(
+            verdict.manifest_count_action(),
+            EpochSealingLimitAction::SealAfterAdmit
+        );
 
         let decision = sealing.should_seal_epoch(1, &verdict);
         assert_eq!(
@@ -466,35 +339,38 @@ mod fixed_slot_sealing_tests {
     }
 
     #[test]
-    fn test_manifest_count_rule_actions() {
-        let rule = ManifestCountRule::new(3);
+    fn test_manifest_count_limit_actions() {
+        let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
+        let max_manifests = MAX_SEALING_MANIFEST_COUNT as u32;
 
-        assert_eq!(
-            rule.check(&EpochSealingResourceStats::new(0, LogMetrics::default(), 2)),
-            EpochSealingLimitAction::Continue
-        );
-        assert_eq!(
-            rule.check(&EpochSealingResourceStats::new(0, LogMetrics::default(), 3)),
-            EpochSealingLimitAction::SealAfterAdmit
-        );
-        assert_eq!(
-            rule.check(&EpochSealingResourceStats::new(0, LogMetrics::default(), 4)),
-            EpochSealingLimitAction::RejectCandidate
-        );
+        for (manifest_count, expected_action) in [
+            (max_manifests - 1, EpochSealingLimitAction::Continue),
+            (max_manifests, EpochSealingLimitAction::SealAfterAdmit),
+            (max_manifests + 1, EpochSealingLimitAction::RejectCandidate),
+        ] {
+            let stats = EpochSealingResourceStats::new(0, LogMetrics::default(), manifest_count);
+            let verdict = sealing.check_limits(&stats);
+
+            assert_eq!(
+                verdict.manifest_count_action(),
+                expected_action,
+                "manifest count: {manifest_count}"
+            );
+        }
     }
 
     #[test]
-    fn test_duplicate_limit_action_keeps_most_restrictive() {
-        let verdict = EpochSealingLimitVerdict::from_actions([
-            (
-                EpochSealingLimit::CheckpointSize,
-                EpochSealingLimitAction::SealAfterAdmit,
-            ),
-            (
-                EpochSealingLimit::CheckpointSize,
-                EpochSealingLimitAction::RejectCandidate,
-            ),
-        ]);
+    fn test_merge_keeps_stricter_checkpoint_action() {
+        let mut verdict = EpochSealingLimitVerdict {
+            checkpoint_size: EpochSealingLimitAction::RejectCandidate,
+            ..Default::default()
+        };
+        let weaker = EpochSealingLimitVerdict {
+            checkpoint_size: EpochSealingLimitAction::SealAfterAdmit,
+            ..Default::default()
+        };
+
+        verdict.merge(weaker);
 
         assert_eq!(
             verdict.checkpoint_size_action(),
@@ -504,14 +380,14 @@ mod fixed_slot_sealing_tests {
 
     #[test]
     fn test_merge_preserves_distinct_limits() {
-        let mut tx_verdict = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::CheckpointSize,
-            EpochSealingLimitAction::SealAfterAdmit,
-        )]);
-        let manifest_verdict = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::ManifestCount,
-            EpochSealingLimitAction::RejectCandidate,
-        )]);
+        let mut tx_verdict = EpochSealingLimitVerdict {
+            checkpoint_size: EpochSealingLimitAction::SealAfterAdmit,
+            ..Default::default()
+        };
+        let manifest_verdict = EpochSealingLimitVerdict {
+            manifest_count: EpochSealingLimitAction::RejectCandidate,
+            ..Default::default()
+        };
 
         tx_verdict.merge(manifest_verdict);
 
@@ -527,15 +403,15 @@ mod fixed_slot_sealing_tests {
     }
 
     #[test]
-    fn test_merge_keeps_most_restrictive_duplicate_limit() {
-        let mut verdict = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::ManifestCount,
-            EpochSealingLimitAction::SealAfterAdmit,
-        )]);
-        let stricter = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::ManifestCount,
-            EpochSealingLimitAction::RejectCandidate,
-        )]);
+    fn test_merge_keeps_stricter_manifest_action() {
+        let mut verdict = EpochSealingLimitVerdict {
+            manifest_count: EpochSealingLimitAction::SealAfterAdmit,
+            ..Default::default()
+        };
+        let stricter = EpochSealingLimitVerdict {
+            manifest_count: EpochSealingLimitAction::RejectCandidate,
+            ..Default::default()
+        };
 
         verdict.merge(stricter);
 

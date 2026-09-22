@@ -1,0 +1,22 @@
+[package]
+name = "strata-ol-tx-policy"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-acct-types.workspace = true
+strata-asm-checkpoint-types.workspace = true
+strata-bridge-params.workspace = true
+strata-codec.workspace = true
+strata-ol-chain-types-v1.workspace = true
+strata-ol-stf-v1.workspace = true
+strata-ol-tx-types-v1.workspace = true
+
+thiserror.workspace = true
+
+[dev-dependencies]
+strata-bridge-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
