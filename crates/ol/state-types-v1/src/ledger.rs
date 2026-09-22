@@ -6,9 +6,7 @@ use ssz_types::VariableList;
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
 use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
 
-use crate::ssz_generated::ssz::state::{
-    OLAccountStateV1, TsnlAccountEntryV1, TsnlLedgerAccountsTableV1,
-};
+use crate::{OLAccountStateV1, TsnlAccountEntryV1, TsnlLedgerAccountsTableV1};
 
 impl TsnlLedgerAccountsTableV1 {
     /// Creates a new empty table.
@@ -102,7 +100,7 @@ impl TsnlLedgerAccountsTableV1 {
             .accounts
             .iter()
             .try_fold(0u64, |acc, entry| {
-                acc.checked_add(entry.state.balance.to_sat())
+                acc.checked_add(entry.state.balance().to_sat())
             })
             .ok_or(StateError::TotalFundsOverflow)?;
         BitcoinAmount::try_from(total_sats).map_err(|_| StateError::TotalFundsOverflow)

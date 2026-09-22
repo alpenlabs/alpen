@@ -45,6 +45,7 @@ mod stable_container_tests;
 pub mod test_utils;
 
 // Re-export SSZ-generated types that are used publicly
+pub use account::OLAccountStateV1;
 pub use batch_application::*;
 pub use constants::*;
 pub use epochal::EpochalStateV1;
@@ -52,12 +53,12 @@ pub use global::GlobalStateV1;
 pub use intraepoch::IntraepochStateV1;
 pub use protocol::ProtocolStateV1;
 pub use serial_map::*;
+pub use snark_account::OLSnarkAccountStateV1;
 pub use ssz_generated::ssz::state::{
-    MAX_ACCOUNT_SERIALS, MAX_LEDGER_ACCOUNTS, MAX_PENDING_ASM_LOGS, OLAccountStateV1,
-    OLAccountStateV1Ref, OLAccountTypeStateV1, OLAccountTypeStateV1Ref, OLSnarkAccountStateV1,
-    OLSnarkAccountStateV1Ref, PendingAsmLogEntryV1, PendingAsmLogEntryV1Ref, ProofStateV1,
-    ProofStateV1Ref, SnarkRef, TsnlAccountEntryV1, TsnlAccountEntryV1Ref,
-    TsnlLedgerAccountsTableV1, TsnlLedgerAccountsTableV1Ref,
+    MAX_ACCOUNT_SERIALS, MAX_LEDGER_ACCOUNTS, MAX_PENDING_ASM_LOGS, OLAccountTypeStateV1,
+    OLAccountTypeStateV1Ref, PendingAsmLogEntryV1, PendingAsmLogEntryV1Ref, ProofStateV1,
+    ProofStateV1Ref, TsnlAccountEntryV1, TsnlAccountEntryV1Ref, TsnlLedgerAccountsTableV1,
+    TsnlLedgerAccountsTableV1Ref,
 };
 pub use toplevel::OLStateV1;
 pub use write_batch::*;

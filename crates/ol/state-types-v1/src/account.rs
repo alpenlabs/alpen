@@ -1,11 +1,50 @@
+use ssz::DecodeError;
+use ssz_types::Optional;
+use ssz_types::view::ToOwnedSsz;
 use strata_acct_types::*;
-use strata_identifiers::AccountSerial;
+use strata_identifiers::{AccountSerial, SszDelegate, impl_ssz_via_delegate};
 use strata_ol_state_types::*;
 
-use crate::ssz_generated::ssz::state::{
-    OLAccountStateV1, OLAccountTypeStateV1, OLSnarkAccountStateV1,
-};
+use crate::required_fields::require_present;
+use crate::ssz_generated::ssz::state::OLAccountStateV1Ssz;
 use crate::write_batch::AccountStateWrite;
+use crate::{OLAccountTypeStateV1, OLSnarkAccountStateV1};
+
+/// Account state with all mandatory V1 fields present.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OLAccountStateV1 {
+    serial: AccountSerial,
+    balance: BitcoinAmount,
+    state: OLAccountTypeStateV1,
+}
+
+impl SszDelegate for OLAccountStateV1 {
+    type Delegate = OLAccountStateV1Ssz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        OLAccountStateV1Ssz {
+            serial: Optional::Some(self.serial),
+            balance: Optional::Some(self.balance),
+            state: Optional::Some(self.state),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            serial: require_present(delegate.serial, "account.serial")?,
+            balance: require_present(delegate.balance, "account.balance")?,
+            state: require_present(delegate.state, "account.state")?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(OLAccountStateV1);
+
+impl ToOwnedSsz<OLAccountStateV1> for OLAccountStateV1 {
+    fn to_owned(&self) -> OLAccountStateV1 {
+        self.clone()
+    }
+}
 
 impl OLAccountStateV1 {
     /// Creates a new account state.

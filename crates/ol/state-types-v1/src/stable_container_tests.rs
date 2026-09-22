@@ -1,16 +1,19 @@
 use ssz::{Decode, DecodeError, Encode};
-use ssz_types::{BitVector, Optional};
-use strata_identifiers::Slot;
+use ssz_types::{BitVector, Optional, VariableList};
+use strata_acct_types::{AccountId, BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+use strata_identifiers::{AccountSerial, Buf32, Slot};
 use strata_ol_state_types::OLSpecId;
+use strata_predicate::PredicateKey;
 use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::state::{
-    EpochalStateV1Ssz, GlobalStateV1Ssz, IntraepochStateV1Ssz, ProtocolStateV1Ssz,
+    EpochalStateV1Ssz, GlobalStateV1Ssz, IntraepochStateV1Ssz, OLSnarkAccountStateV1Ssz,
+    ProtocolStateV1Ssz,
 };
 use crate::test_utils::create_test_genesis_state;
 use crate::{
-    EpochalStateV1, GlobalStateV1, IntraepochStateV1, OLStateV1, ProtocolStateV1,
-    TsnlLedgerAccountsTableV1, WriteBatch,
+    EpochalStateV1, GlobalStateV1, IntraepochStateV1, MAX_LEDGER_ACCOUNTS, OLAccountStateV1,
+    OLAccountTypeStateV1, OLSnarkAccountStateV1, OLStateV1, ProtocolStateV1, WriteBatch,
 };
 
 // Keeps nested wire fields permissive so tests can construct malformed encodings
@@ -21,8 +24,41 @@ struct TestStateSsz {
     epoch: Optional<EpochalStateV1Ssz>,
     global: Optional<GlobalStateV1Ssz>,
     intraepoch: Optional<IntraepochStateV1Ssz>,
-    ledger: Optional<TsnlLedgerAccountsTableV1>,
+    ledger: Optional<TestLedgerSsz>,
     protocol_state: Optional<ProtocolStateV1Ssz>,
+}
+
+#[derive(ssz_derive::Encode, ssz_derive::Decode)]
+struct TestLedgerSsz {
+    accounts: VariableList<TestAccountEntrySsz, { MAX_LEDGER_ACCOUNTS as usize }>,
+}
+
+#[derive(ssz_derive::Encode, ssz_derive::Decode)]
+struct TestAccountEntrySsz {
+    id: AccountId,
+    state: TestAccountSsz,
+}
+
+#[derive(ssz_derive::Encode, ssz_derive::Decode)]
+#[ssz(struct_behaviour = "stable_container", max_fields = 8)]
+struct TestAccountSsz {
+    serial: Optional<AccountSerial>,
+    balance: Optional<BitcoinAmount>,
+    state: Optional<TestAccountTypeSsz>,
+}
+
+#[derive(ssz_derive::Encode, ssz_derive::Decode)]
+#[ssz(enum_behaviour = "union")]
+enum TestAccountTypeSsz {
+    Empty,
+    Snark(OLSnarkAccountStateV1Ssz),
+}
+
+fn fixture_snark_mut(account: &mut TestAccountSsz) -> &mut OLSnarkAccountStateV1Ssz {
+    match fixture_field_mut(&mut account.state) {
+        TestAccountTypeSsz::Snark(snark) => snark,
+        TestAccountTypeSsz::Empty => panic!("fixture uses a snark account"),
+    }
 }
 
 // Only the permissive test wire representation can contain absent nested fields.
@@ -107,6 +143,93 @@ fn test_public_state_decode_rejects_each_missing_v1_field() {
         )));
         assert_eq!(<OLStateV1 as Decode>::from_ssz_bytes(&bytes), expected);
         assert_eq!(<OLStateV1 as DecodeView>::from_ssz_bytes(&bytes), expected);
+    }
+}
+
+#[test]
+fn test_account_fields_are_required_through_nested_public_decoding() {
+    use ssz::view::DecodeView;
+
+    let snark = OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), Buf32::zero());
+    let account = OLAccountStateV1::new(
+        AccountSerial::new(SYSTEM_RESERVED_ACCTS),
+        BitcoinAmount::try_from(0).unwrap(),
+        OLAccountTypeStateV1::Snark(snark.clone()),
+    );
+    assert_eq!(account.as_ssz_bytes()[0], 0b0000_0111);
+    assert_eq!(&snark.as_ssz_bytes()[..2], &[0b0000_1111, 0]);
+    let mut state = create_test_genesis_state();
+    state
+        .ledger_mut()
+        .create_account(AccountId::from([1; 32]), account)
+        .unwrap();
+    let valid_bytes = state.as_ssz_bytes();
+    assert_eq!(
+        <OLStateV1 as Decode>::from_ssz_bytes(&valid_bytes).unwrap(),
+        state
+    );
+    assert_eq!(
+        <OLStateV1 as DecodeView>::from_ssz_bytes(&valid_bytes).unwrap(),
+        state
+    );
+
+    type RemoveField = fn(&mut TestAccountSsz);
+    let cases: &[(&str, RemoveField)] = &[
+        ("account.serial", |account| account.serial = Optional::None),
+        ("account.balance", |account| {
+            account.balance = Optional::None
+        }),
+        ("account.state", |account| account.state = Optional::None),
+        ("snark_account.update_vk", |account| {
+            fixture_snark_mut(account).update_vk = Optional::None
+        }),
+        ("snark_account.seqno", |account| {
+            fixture_snark_mut(account).seqno = Optional::None
+        }),
+        ("snark_account.proof_state", |account| {
+            fixture_snark_mut(account).proof_state = Optional::None
+        }),
+        ("snark_account.inbox_mmr", |account| {
+            fixture_snark_mut(account).inbox_mmr = Optional::None
+        }),
+    ];
+
+    for (field, remove) in cases {
+        let mut wire = TestStateSsz::from_ssz_bytes(&valid_bytes).unwrap();
+        assert_eq!(wire.as_ssz_bytes(), valid_bytes);
+        let account = &mut fixture_field_mut(&mut wire.ledger).accounts[0].state;
+        remove(account);
+        let expected =
+            DecodeError::BytesInvalid(format!("missing required OL state field: {field}"));
+        let account_bytes = account.as_ssz_bytes();
+        assert_eq!(
+            <OLAccountStateV1 as Decode>::from_ssz_bytes(&account_bytes),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            <OLAccountStateV1 as DecodeView>::from_ssz_bytes(&account_bytes),
+            Err(expected.clone())
+        );
+        if field.starts_with("snark_account.") {
+            let snark_bytes = fixture_snark_mut(account).as_ssz_bytes();
+            assert_eq!(
+                <OLSnarkAccountStateV1 as Decode>::from_ssz_bytes(&snark_bytes),
+                Err(expected.clone())
+            );
+            assert_eq!(
+                <OLSnarkAccountStateV1 as DecodeView>::from_ssz_bytes(&snark_bytes),
+                Err(expected.clone())
+            );
+        }
+        let bytes = wire.as_ssz_bytes();
+        assert_eq!(
+            <OLStateV1 as Decode>::from_ssz_bytes(&bytes),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            <OLStateV1 as DecodeView>::from_ssz_bytes(&bytes),
+            Err(expected)
+        );
     }
 }
 

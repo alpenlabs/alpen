@@ -34,7 +34,7 @@ impl MemoryStateBaseLayer {
             .ledger()
             .accounts
             .iter()
-            .map(|a| (a.state.serial, a.id))
+            .map(|a| (a.state.serial(), a.id))
             .collect();
 
         assert_eq!(

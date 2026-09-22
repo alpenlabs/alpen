@@ -8,6 +8,8 @@ import epochal
 import global
 import intraepoch
 import protocol
+import account
+import snark_account
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
@@ -56,18 +58,18 @@ class TsnlAccountEntryV1(Container):
     id: strata_acct_types.AccountId
 
     ### Account state
-    state: OLAccountStateV1
+    state: account.OLAccountStateV1
 
-### Account state
-class OLAccountStateV1(Container):
+### Account state with five reserved positions for future fields.
+class OLAccountStateV1Ssz(StableContainer[8]):
     ### Account serial number
-    serial: strata_identifiers.AccountSerial
+    serial: Optional[strata_identifiers.AccountSerial]
 
     ### Account balance
-    balance: strata_acct_types.BitcoinAmount
+    balance: Optional[strata_acct_types.BitcoinAmount]
 
     ### Account type-specific state
-    state: OLAccountTypeStateV1
+    state: Optional[OLAccountTypeStateV1]
 
 ### Account type state as union
 class OLAccountTypeStateV1(Union):
@@ -75,23 +77,23 @@ class OLAccountTypeStateV1(Union):
     Empty
 
     ### Snark account
-    Snark: OLSnarkAccountStateV1
+    Snark: snark_account.OLSnarkAccountStateV1
 
-### Snark account state
-class OLSnarkAccountStateV1(Container):
+### Snark account state with twelve reserved positions for future fields.
+class OLSnarkAccountStateV1Ssz(StableContainer[16]):
     ### Verifying Key used to verify updates
     #~# external_kind: container
-    update_vk: strata_predicate.PredicateKey
+    update_vk: Optional[strata_predicate.PredicateKey]
 
     ### Sequence number
-    seqno: strata_snark_acct_types.Seqno
+    seqno: Optional[strata_snark_acct_types.Seqno]
 
     ### Proof state
-    proof_state: ProofStateV1
+    proof_state: Optional[ProofStateV1]
 
     ### Inbox MMR
     #~# external_kind: container
-    inbox_mmr: strata_acct_types.Mmr64
+    inbox_mmr: Optional[strata_acct_types.Mmr64]
 
 
 ### Proof state for snark accounts

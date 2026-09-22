@@ -1,11 +1,55 @@
+use ssz::DecodeError;
+use ssz_types::Optional;
+use ssz_types::view::ToOwnedSsz;
 use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{Hash, MessageEntry, Mmr64, StrataHasher};
+use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
 use strata_ol_state_types::*;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
-use crate::ssz_generated::ssz::state::{OLSnarkAccountStateV1, ProofStateV1};
+use crate::required_fields::require_present;
+use crate::ssz_generated::ssz::state::{OLSnarkAccountStateV1Ssz, ProofStateV1};
+
+/// Snark account state with all mandatory V1 fields present.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OLSnarkAccountStateV1 {
+    update_vk: PredicateKey,
+    seqno: Seqno,
+    proof_state: ProofStateV1,
+    inbox_mmr: Mmr64,
+}
+
+impl SszDelegate for OLSnarkAccountStateV1 {
+    type Delegate = OLSnarkAccountStateV1Ssz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        OLSnarkAccountStateV1Ssz {
+            update_vk: Optional::Some(self.update_vk),
+            seqno: Optional::Some(self.seqno),
+            proof_state: Optional::Some(self.proof_state),
+            inbox_mmr: Optional::Some(self.inbox_mmr),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            update_vk: require_present(delegate.update_vk, "snark_account.update_vk")?,
+            seqno: require_present(delegate.seqno, "snark_account.seqno")?,
+            proof_state: require_present(delegate.proof_state, "snark_account.proof_state")?,
+            inbox_mmr: require_present(delegate.inbox_mmr, "snark_account.inbox_mmr")?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(OLSnarkAccountStateV1);
+
+impl ToOwnedSsz<OLSnarkAccountStateV1> for OLSnarkAccountStateV1 {
+    fn to_owned(&self) -> OLSnarkAccountStateV1 {
+        self.clone()
+    }
+}
 
 impl OLSnarkAccountStateV1 {
     /// Creates an account instance with specific values.
