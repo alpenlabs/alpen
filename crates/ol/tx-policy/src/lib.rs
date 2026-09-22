@@ -1,7 +1,10 @@
-//! Sequencer admission policy for transaction log budgets.
+//! Standalone transaction log-budget checks.
 //!
-//! These checks retain the assembler's exclusive checkpoint thresholds. They
-//! constrain admission, not consensus validity, and do not establish DA fit.
+//! Checks a transaction's log usage independently of remaining epoch capacity,
+//! for use during mempool admission and block assembly.
+//!
+//! These checks retain the assembler's exclusive checkpoint thresholds and
+//! do not establish consensus validity or DA fit.
 
 #[cfg(test)]
 mod tests;
@@ -32,9 +35,11 @@ pub enum TxLogBudgetError {
     /// The emitted log count exceeds the inclusive per-update limit.
     #[error("update emits {actual} logs, exceeding limit {limit}")]
     LogCount { actual: usize, limit: usize },
+
     /// The encoded log payloads exceed the inclusive per-update byte limit.
     #[error("update emits {actual} log payload bytes, exceeding limit {limit}")]
     LogPayloadBytes { actual: usize, limit: usize },
+
     /// A typed log could not be encoded.
     #[error("cannot encode transaction log: {0}")]
     Encoding(#[from] CodecError),
@@ -121,8 +126,7 @@ pub fn check_tx_log_budget(
     for message in tx.data().effects().messages_iter() {
         if message.dest() != BRIDGE_GATEWAY_ACCT_ID {
             // Non-bridge messages emit no additional OL logs; the account-update
-            // log is already counted above. Inter-EE inbox writes contribute to
-            // checkpoint DA.
+            // log is already counted above.
             continue;
         }
         if let Ok(log) = parse_bridge_withdrawal(
