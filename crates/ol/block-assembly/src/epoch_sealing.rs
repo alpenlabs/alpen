@@ -72,23 +72,14 @@ impl EpochSealingLimitAction {
     }
 }
 
-/// Epoch sealing limit identifiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EpochSealingLimit {
-    /// Estimated checkpoint payload or sidecar size.
-    CheckpointSize,
-
-    /// Epoch-cumulative ASM manifest count.
-    ManifestCount,
-}
-
 /// Verdict from checking candidate values against sealing limits.
 ///
 /// The verdict preserves checkpoint-size and manifest-count actions separately
 /// so multiple crossed limits can be observed together.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EpochSealingLimitVerdict {
-    actions: Vec<(EpochSealingLimit, EpochSealingLimitAction)>,
+    checkpoint_size: EpochSealingLimitAction,
+    manifest_count: EpochSealingLimitAction,
 }
 
 impl EpochSealingLimitVerdict {
@@ -97,37 +88,10 @@ impl EpochSealingLimitVerdict {
         Self::default()
     }
 
-    fn from_actions(
-        actions: impl IntoIterator<Item = (EpochSealingLimit, EpochSealingLimitAction)>,
-    ) -> Self {
-        let mut verdict = Self::within_limits();
-        for (limit, action) in actions {
-            verdict.record(limit, action);
-        }
-        verdict
-    }
-
-    fn record(&mut self, limit: EpochSealingLimit, action: EpochSealingLimitAction) {
-        if action == EpochSealingLimitAction::Continue {
-            return;
-        }
-
-        if let Some((_, existing)) = self
-            .actions
-            .iter_mut()
-            .find(|(existing_limit, _)| *existing_limit == limit)
-        {
-            *existing = (*existing).max(action);
-        } else {
-            self.actions.push((limit, action));
-        }
-    }
-
     /// Merges another verdict into this one, keeping the stricter action for each limit.
     pub(crate) fn merge(&mut self, other: Self) {
-        for (limit, action) in other.actions {
-            self.record(limit, action);
-        }
+        self.checkpoint_size = self.checkpoint_size.max(other.checkpoint_size);
+        self.manifest_count = self.manifest_count.max(other.manifest_count);
     }
 
     fn should_seal(&self) -> bool {
@@ -136,31 +100,17 @@ impl EpochSealingLimitVerdict {
 
     /// Returns the checkpoint-size limit action.
     pub(crate) fn checkpoint_size_action(&self) -> EpochSealingLimitAction {
-        self.action_for(EpochSealingLimit::CheckpointSize)
+        self.checkpoint_size
     }
 
     /// Returns the manifest-count limit action.
     #[cfg(test)]
     pub(crate) fn manifest_count_action(&self) -> EpochSealingLimitAction {
-        self.action_for(EpochSealingLimit::ManifestCount)
-    }
-
-    fn action_for(&self, limit: EpochSealingLimit) -> EpochSealingLimitAction {
-        self.actions
-            .iter()
-            .find_map(|(id, action)| (*id == limit).then_some(*action))
-            .unwrap_or_default()
-    }
-
-    fn actions(&self) -> impl Iterator<Item = (EpochSealingLimit, EpochSealingLimitAction)> + '_ {
-        self.actions.iter().copied()
+        self.manifest_count
     }
 
     pub(crate) fn most_restrictive_action(&self) -> EpochSealingLimitAction {
-        self.actions()
-            .map(|(_, action)| action)
-            .max()
-            .unwrap_or_default()
+        self.checkpoint_size.max(self.manifest_count)
     }
 
     fn seal_trigger(&self) -> Option<EpochSealTrigger> {
@@ -247,10 +197,10 @@ impl<C: CadencePolicy> EpochSealingPolicy for LimitAwareSealing<C> {
             Ordering::Greater => EpochSealingLimitAction::RejectCandidate,
         };
 
-        EpochSealingLimitVerdict::from_actions([
-            (EpochSealingLimit::CheckpointSize, checkpoint_size_action),
-            (EpochSealingLimit::ManifestCount, manifest_count_action),
-        ])
+        EpochSealingLimitVerdict {
+            checkpoint_size: checkpoint_size_action,
+            manifest_count: manifest_count_action,
+        }
     }
 
     fn should_seal_epoch(
@@ -376,10 +326,10 @@ mod fixed_slot_sealing_tests {
             verdict.checkpoint_size_action(),
             EpochSealingLimitAction::RejectCandidate
         );
-        assert!(verdict.actions().any(|(limit, action)| {
-            limit == EpochSealingLimit::ManifestCount
-                && action == EpochSealingLimitAction::SealAfterAdmit
-        }));
+        assert_eq!(
+            verdict.manifest_count_action(),
+            EpochSealingLimitAction::SealAfterAdmit
+        );
 
         let decision = sealing.should_seal_epoch(1, &verdict);
         assert_eq!(
@@ -410,17 +360,17 @@ mod fixed_slot_sealing_tests {
     }
 
     #[test]
-    fn test_duplicate_limit_action_keeps_most_restrictive() {
-        let verdict = EpochSealingLimitVerdict::from_actions([
-            (
-                EpochSealingLimit::CheckpointSize,
-                EpochSealingLimitAction::SealAfterAdmit,
-            ),
-            (
-                EpochSealingLimit::CheckpointSize,
-                EpochSealingLimitAction::RejectCandidate,
-            ),
-        ]);
+    fn test_merge_keeps_stricter_checkpoint_action() {
+        let mut verdict = EpochSealingLimitVerdict {
+            checkpoint_size: EpochSealingLimitAction::RejectCandidate,
+            ..Default::default()
+        };
+        let weaker = EpochSealingLimitVerdict {
+            checkpoint_size: EpochSealingLimitAction::SealAfterAdmit,
+            ..Default::default()
+        };
+
+        verdict.merge(weaker);
 
         assert_eq!(
             verdict.checkpoint_size_action(),
@@ -430,14 +380,14 @@ mod fixed_slot_sealing_tests {
 
     #[test]
     fn test_merge_preserves_distinct_limits() {
-        let mut tx_verdict = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::CheckpointSize,
-            EpochSealingLimitAction::SealAfterAdmit,
-        )]);
-        let manifest_verdict = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::ManifestCount,
-            EpochSealingLimitAction::RejectCandidate,
-        )]);
+        let mut tx_verdict = EpochSealingLimitVerdict {
+            checkpoint_size: EpochSealingLimitAction::SealAfterAdmit,
+            ..Default::default()
+        };
+        let manifest_verdict = EpochSealingLimitVerdict {
+            manifest_count: EpochSealingLimitAction::RejectCandidate,
+            ..Default::default()
+        };
 
         tx_verdict.merge(manifest_verdict);
 
@@ -453,15 +403,15 @@ mod fixed_slot_sealing_tests {
     }
 
     #[test]
-    fn test_merge_keeps_most_restrictive_duplicate_limit() {
-        let mut verdict = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::ManifestCount,
-            EpochSealingLimitAction::SealAfterAdmit,
-        )]);
-        let stricter = EpochSealingLimitVerdict::from_actions([(
-            EpochSealingLimit::ManifestCount,
-            EpochSealingLimitAction::RejectCandidate,
-        )]);
+    fn test_merge_keeps_stricter_manifest_action() {
+        let mut verdict = EpochSealingLimitVerdict {
+            manifest_count: EpochSealingLimitAction::SealAfterAdmit,
+            ..Default::default()
+        };
+        let stricter = EpochSealingLimitVerdict {
+            manifest_count: EpochSealingLimitAction::RejectCandidate,
+            ..Default::default()
+        };
 
         verdict.merge(stricter);
 
