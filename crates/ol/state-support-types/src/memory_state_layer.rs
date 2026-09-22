@@ -28,10 +28,10 @@ impl MemoryStateBaseLayer {
     ///
     /// # Panics
     ///
-    /// If the state's accounts have duplicated serials.
+    /// Panics if the state's accounts have duplicated serials.
     pub fn new(state: OLStateV1) -> Self {
         let serials: BTreeMap<_, _> = state
-            .ledger
+            .ledger()
             .accounts
             .iter()
             .map(|a| (a.state.serial, a.id))
@@ -39,7 +39,7 @@ impl MemoryStateBaseLayer {
 
         assert_eq!(
             serials.len(),
-            state.ledger.accounts.len(),
+            state.ledger().accounts.len(),
             "ol/state-support: state has duplicated serials"
         );
 
@@ -62,40 +62,48 @@ impl MemoryStateBaseLayer {
 impl IStateAccessor for MemoryStateBaseLayer {
     type AccountState = OLAccountStateV1;
 
+    fn active_version(&self) -> OLSpecId {
+        self.state.active_version()
+    }
+
+    fn expected_version(&self) -> OLSpecId {
+        self.state.expected_version()
+    }
+
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {
-        self.state.global.get_cur_slot()
+        self.state.global_state().get_cur_slot()
     }
 
     fn limbo_funds(&self) -> BitcoinAmount {
-        self.state.global.limbo_funds()
+        self.state.global_state().limbo_funds()
     }
 
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
-        self.state.epoch.cur_epoch()
+        self.state.epoch_state().cur_epoch()
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
-        self.state.epoch.last_l1_blkid()
+        self.state.epoch_state().last_l1_blkid()
     }
 
     fn last_l1_height(&self) -> L1Height {
-        self.state.epoch.last_l1_height()
+        self.state.epoch_state().last_l1_height()
     }
 
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
-        self.state.epoch.asm_recorded_epoch()
+        self.state.epoch_state().asm_recorded_epoch()
     }
 
     fn total_ledger_balance(&self) -> BitcoinAmount {
-        self.state.epoch.total_ledger_balance()
+        self.state.epoch_state().total_ledger_balance()
     }
 
     fn l1_block_refs_mmr(&self) -> &Mmr64 {
-        self.state.epoch.l1_block_refs_mmr()
+        self.state.epoch_state().l1_block_refs_mmr()
     }
 
     // ===== Intraepoch state methods =====
@@ -119,11 +127,11 @@ impl IStateAccessor for MemoryStateBaseLayer {
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
-        Ok(self.state.ledger.get_account_state(&id).is_some())
+        Ok(self.state.ledger().get_account_state(&id).is_some())
     }
 
     fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
-        Ok(self.state.ledger.get_account_state(&id))
+        Ok(self.state.ledger().get_account_state(&id))
     }
 
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
@@ -131,7 +139,7 @@ impl IStateAccessor for MemoryStateBaseLayer {
     }
 
     fn next_account_serial(&self) -> AccountSerial {
-        self.state.global.get_next_avail_serial()
+        self.state.global_state().get_next_avail_serial()
     }
 
     fn compute_state_root(&self) -> StateResult<Buf32> {
@@ -143,11 +151,11 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
     type AccountStateMut = OLAccountStateV1;
 
     fn set_cur_slot(&mut self, slot: u64) {
-        self.state.global.set_cur_slot(slot);
+        self.state.global_state_mut().set_cur_slot(slot);
     }
 
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
-        let cur = self.state.global.limbo_funds();
+        let cur = self.state.global_state().limbo_funds();
         let amt = coin.amt();
         let new_limbo_funds = cur
             .to_sat()
@@ -160,34 +168,36 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
             coin.safely_consume_unchecked();
             return Err(StateError::LimboFundsOverflow { cur, add: amt });
         }
-        self.state.global.add_limbo_funds_coin(coin);
+        self.state.global_state_mut().add_limbo_funds_coin(coin);
         Ok(())
     }
 
     fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
         self.state
-            .global
+            .global_state_mut()
             .take_limbo_funds_coin(amt)
             .ok_or(StateError::InsufficientLimboFunds {
                 need: amt,
-                have: self.state.global.limbo_funds(),
+                have: self.state.global_state().limbo_funds(),
             })
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {
-        self.state.epoch.set_cur_epoch(epoch);
+        self.state.epoch_state_mut().set_cur_epoch(epoch);
     }
 
     fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
-        self.state.epoch.append_l1_block_rec(height, rec);
+        self.state
+            .epoch_state_mut()
+            .append_l1_block_rec(height, rec);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.state.epoch.set_asm_recorded_epoch(epoch);
+        self.state.epoch_state_mut().set_asm_recorded_epoch(epoch);
     }
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.state.epoch.set_total_ledger_balance(amt);
+        self.state.epoch_state_mut().set_total_ledger_balance(amt);
     }
 
     fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
@@ -207,7 +217,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
     {
         let acct = self
             .state
-            .ledger
+            .ledger_mut()
             .get_account_state_mut(&id)
             .ok_or(StateError::MissingAccount(id))?;
         Ok(f(acct))
@@ -218,7 +228,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial> {
-        let serial = self.state.global.get_next_avail_serial();
+        let serial = self.state.global_state().get_next_avail_serial();
         self.state.create_new_account(id, serial, new_acct_data)?;
         self.serials.insert(serial, id);
         Ok(serial)

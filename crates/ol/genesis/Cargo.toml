@@ -17,5 +17,8 @@ strata-ol-stf-v1.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true

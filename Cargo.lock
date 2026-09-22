@@ -9531,6 +9531,7 @@ dependencies = [
 name = "strata-ol-genesis"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "strata-acct-types",
  "strata-checkpoint-types",
  "strata-identifiers",

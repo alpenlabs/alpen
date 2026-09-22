@@ -2,12 +2,78 @@
 //!
 //! This can be completely omitted from DA.
 
+use ssz::DecodeError;
+use ssz_types::Optional;
+use ssz_types::view::ToOwnedSsz;
 use strata_acct_types::{BitcoinAmount, L1BlockRecord, Mmr64, append_l1_block_rec_to_mmr};
-use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
+use strata_identifiers::{
+    Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, SszDelegate,
+    impl_ssz_via_delegate,
+};
 
-use crate::ssz_generated::ssz::state::EpochalStateV1;
+use crate::required_fields::require_present;
+use crate::ssz_generated::ssz::state::EpochalStateV1Ssz;
+
+/// Epochal OL state with all mandatory V1 fields present.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EpochalStateV1 {
+    total_ledger_funds: BitcoinAmount,
+    cur_epoch: u32,
+    last_l1_block: L1BlockCommitment,
+    checkpointed_epoch: EpochCommitment,
+    l1_block_refs_mmr: Mmr64,
+}
+
+impl SszDelegate for EpochalStateV1 {
+    type Delegate = EpochalStateV1Ssz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        EpochalStateV1Ssz {
+            total_ledger_funds: Optional::Some(self.total_ledger_funds),
+            cur_epoch: Optional::Some(self.cur_epoch),
+            last_l1_block: Optional::Some(self.last_l1_block),
+            checkpointed_epoch: Optional::Some(self.checkpointed_epoch),
+            l1_block_refs_mmr: Optional::Some(self.l1_block_refs_mmr),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            total_ledger_funds: require_present(
+                delegate.total_ledger_funds,
+                "epoch.total_ledger_funds",
+            )?,
+            cur_epoch: require_present(delegate.cur_epoch, "epoch.cur_epoch")?,
+            last_l1_block: require_present(delegate.last_l1_block, "epoch.last_l1_block")?,
+            checkpointed_epoch: require_present(
+                delegate.checkpointed_epoch,
+                "epoch.checkpointed_epoch",
+            )?,
+            l1_block_refs_mmr: require_present(
+                delegate.l1_block_refs_mmr,
+                "epoch.l1_block_refs_mmr",
+            )?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(EpochalStateV1);
+
+impl ToOwnedSsz<EpochalStateV1> for EpochalStateV1 {
+    fn to_owned(&self) -> EpochalStateV1 {
+        self.clone()
+    }
+}
 
 impl EpochalStateV1 {
+    pub(crate) fn set_last_l1_block(&mut self, block: L1BlockCommitment) {
+        self.last_l1_block = block;
+    }
+
+    pub(crate) fn set_l1_block_refs_mmr(&mut self, mmr: Mmr64) {
+        self.l1_block_refs_mmr = mmr;
+    }
+
     /// Create a new epochal state for testing.
     pub fn new(
         total_ledger_funds: BitcoinAmount,

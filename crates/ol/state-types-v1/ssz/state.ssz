@@ -3,6 +3,11 @@ import strata_identifiers
 import strata_asm_manifest_types
 import strata_predicate
 import strata_snark_acct_types
+import strata_ol_state_types
+import epochal
+import global
+import intraepoch
+import protocol
 
 MAX_LEDGER_ACCOUNTS = 1 << 24
 MAX_ACCOUNT_SERIALS = 1 << 24
@@ -11,21 +16,34 @@ MAX_ACCOUNT_SERIALS = 1 << 24
 ### 2048 ASM manifests with up to 128 logs each, i.e. 2048 * 128 = 1 << 18 pending logs.
 MAX_PENDING_ASM_LOGS = 1 << 18
 
-### Top-level OL state
-class OLStateV1(Container):
+### Top-level OL state.
+###
+### Field positions and capacities are permanent protocol choices. Append fields;
+### never renumber or reuse retired positions. Public Rust domain types enforce
+### mandatory V1 fields during decoding and store those fields directly.
+### Nested fields use those types so ordinary decoding checks them too.
+class OLStateV1Ssz(StableContainer[32]):
     ### Epochal state
-    epoch: EpochalStateV1
+    epoch: Optional[epochal.EpochalStateV1]
 
     ### Global state
-    global: GlobalStateV1
+    global: Optional[global.GlobalStateV1]
 
     ### Transient state that exists within an epoch.
     ###
     ### Reset at the end.
-    intraepoch: IntraepochStateV1
+    intraepoch: Optional[intraepoch.IntraepochStateV1]
 
     ### Ledger accounts table
-    ledger: TsnlLedgerAccountsTableV1
+    ledger: Optional[TsnlLedgerAccountsTableV1]
+
+    ### Dormant protocol versions; both remain V1 until upgrade handling is added.
+    protocol_state: Optional[protocol.ProtocolStateV1]
+
+### Committed OL protocol versions with reserved extension capacity.
+class ProtocolStateV1Ssz(StableContainer[8]):
+    active_version: Optional[strata_ol_state_types.OLSpecId]
+    expected_version: Optional[strata_ol_state_types.OLSpecId]
 
 ### Ledger accounts table
 class TsnlLedgerAccountsTableV1(Container):
@@ -85,9 +103,9 @@ class ProofStateV1(Container):
     next_msg_read_idx: uint64
 
 
-class IntraepochStateV1(Container):
+class IntraepochStateV1Ssz(StableContainer[8]):
     #~# external_kind: container
-    pending_asm_logs: List[PendingAsmLogEntryV1, MAX_PENDING_ASM_LOGS]
+    pending_asm_logs: Optional[List[PendingAsmLogEntryV1, MAX_PENDING_ASM_LOGS]]
 
 
 class PendingAsmLogEntryV1(Container):
@@ -97,20 +115,20 @@ class PendingAsmLogEntryV1(Container):
 
 
 ### Epoch-level state
-class EpochalStateV1(Container):
+class EpochalStateV1Ssz(StableContainer[16]):
     ### Total funds in the ledger
-    total_ledger_funds: strata_acct_types.BitcoinAmount
+    total_ledger_funds: Optional[strata_acct_types.BitcoinAmount]
 
     ### Current epoch number
-    cur_epoch: strata_identifiers.Epoch
+    cur_epoch: Optional[strata_identifiers.Epoch]
 
     ### Last L1 block commitment
     #~# external_kind: container
-    last_l1_block: strata_identifiers.L1BlockCommitment
+    last_l1_block: Optional[strata_identifiers.L1BlockCommitment]
 
     ### Checkpointed epoch commitment
     #~# external_kind: container
-    checkpointed_epoch: strata_identifiers.EpochCommitment
+    checkpointed_epoch: Optional[strata_identifiers.EpochCommitment]
 
     ### L1 block refs MMR
     ###
@@ -119,15 +137,15 @@ class EpochalStateV1(Container):
     ### real appended L1 block ref (for genesis_l1_height + 1) lands at the
     ### correct height-indexed position.
     #~# external_kind: container
-    l1_block_refs_mmr: strata_acct_types.Mmr64
+    l1_block_refs_mmr: Optional[strata_acct_types.Mmr64]
 
 ### Global state tracking current slot
-class GlobalStateV1(Container):
+class GlobalStateV1Ssz(StableContainer[16]):
     ### Current slot number
-    cur_slot: strata_identifiers.Slot
+    cur_slot: Optional[strata_identifiers.Slot]
 
     ### Next available serial we can assign to an account.
-    next_avail_serial: uint64
+    next_avail_serial: Optional[uint64]
 
     ### Funds in limbo, measured in satoshis.
-    limbo_funds_sats: uint64
+    limbo_funds_sats: Optional[uint64]

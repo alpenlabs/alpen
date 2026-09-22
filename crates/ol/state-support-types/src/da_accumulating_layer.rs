@@ -681,6 +681,14 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
 impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
     type AccountState = S::AccountState;
 
+    fn active_version(&self) -> OLSpecId {
+        self.inner.active_version()
+    }
+
+    fn expected_version(&self) -> OLSpecId {
+        self.inner.expected_version()
+    }
+
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {

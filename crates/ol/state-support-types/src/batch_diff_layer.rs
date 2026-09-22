@@ -8,7 +8,7 @@ use std::fmt;
 
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ol_state_types::{IStateAccessor, PendingAsmLog, StateResult};
+use strata_ol_state_types::{IStateAccessor, OLSpecId, PendingAsmLog, StateResult};
 use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLAccountStateV1, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
@@ -101,6 +101,14 @@ where
     S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
 {
     type AccountState = S::AccountState;
+
+    fn active_version(&self) -> OLSpecId {
+        self.base.active_version()
+    }
+
+    fn expected_version(&self) -> OLSpecId {
+        self.base.expected_version()
+    }
 
     // ===== Global state methods =====
 

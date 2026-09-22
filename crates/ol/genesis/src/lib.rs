@@ -1,5 +1,8 @@
 //! Pure helpers for constructing OL genesis artifacts.
 
+#[cfg(test)]
+mod tests;
+
 use std::result::Result as StdResult;
 
 use strata_acct_types::AcctError;

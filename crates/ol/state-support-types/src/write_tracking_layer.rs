@@ -80,6 +80,14 @@ where
 {
     type AccountState = S::AccountState;
 
+    fn active_version(&self) -> OLSpecId {
+        self.base.active_version()
+    }
+
+    fn expected_version(&self) -> OLSpecId {
+        self.base.expected_version()
+    }
+
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {

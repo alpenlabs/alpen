@@ -36,7 +36,7 @@ pub(crate) fn init_ol_genesis(
     // Genesis epoch is finalized at boot, so its commitment is known here;
     // no per-account updates or inbox writes at genesis.
     let created_accounts = ol_state
-        .ledger
+        .ledger()
         .accounts
         .iter()
         .map(|entry| {

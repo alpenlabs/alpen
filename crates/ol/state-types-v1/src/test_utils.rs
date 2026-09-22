@@ -1,17 +1,18 @@
 //! Test utilities and proptest strategies for OL state types.
 
 use proptest::prelude::*;
-use ssz_types::VariableList;
+use ssz_types::{Optional, VariableList};
 use strata_acct_types::BitcoinAmount;
 use strata_identifiers::test_utils::{
     account_id_strategy, account_serial_strategy, buf32_strategy,
 };
-use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId};
+use strata_identifiers::{EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId, SszDelegate};
 use strata_merkle::Mmr64B32;
 use strata_ol_params::OLParams;
 use strata_predicate::PredicateKey;
 
-use crate::ssz_generated::ssz::state::*;
+use crate::ssz_generated::ssz::state::GlobalStateV1Ssz;
+use crate::*;
 
 const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
 
@@ -29,11 +30,12 @@ pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
 
 pub fn global_state_strategy() -> impl Strategy<Value = GlobalStateV1> {
     any::<(u64, u64, u64)>().prop_map(|(cur_slot, next_avail_serial, limbo_funds_sats)| {
-        GlobalStateV1 {
-            cur_slot,
-            next_avail_serial,
-            limbo_funds_sats,
-        }
+        GlobalStateV1::from_delegate(GlobalStateV1Ssz {
+            cur_slot: Optional::Some(cur_slot),
+            next_avail_serial: Optional::Some(next_avail_serial),
+            limbo_funds_sats: Optional::Some(limbo_funds_sats),
+        })
+        .expect("all required global fields are present")
     })
 }
 
@@ -44,22 +46,18 @@ pub fn epochal_state_strategy() -> impl Strategy<Value = EpochalStateV1> {
         buf32_strategy(),
         (any::<u32>(), any::<u64>(), buf32_strategy()),
     )
-        .prop_map(
-            |(funds, epoch, l1_blkid, (cp_epoch, cp_slot, cp_blkid))| EpochalStateV1 {
-                total_ledger_funds: funds,
-                cur_epoch: epoch,
-                last_l1_block: L1BlockCommitment::new(0, L1BlockId::from(l1_blkid)),
-                checkpointed_epoch: EpochCommitment::new(
-                    cp_epoch,
-                    cp_slot,
-                    OLBlockId::from(cp_blkid),
-                ),
-                l1_block_refs_mmr: Mmr64B32 {
+        .prop_map(|(funds, epoch, l1_blkid, (cp_epoch, cp_slot, cp_blkid))| {
+            EpochalStateV1::new(
+                funds,
+                epoch,
+                L1BlockCommitment::new(0, L1BlockId::from(l1_blkid)),
+                EpochCommitment::new(cp_epoch, cp_slot, OLBlockId::from(cp_blkid)),
+                Mmr64B32 {
                     entries: 0,
                     roots: Default::default(),
                 },
-            },
-        )
+            )
+        })
 }
 
 pub fn proof_state_strategy() -> impl Strategy<Value = ProofStateV1> {
@@ -134,10 +132,13 @@ pub fn ol_state_strategy() -> impl Strategy<Value = OLStateV1> {
         global_state_strategy(),
         tsnl_ledger_accounts_table_strategy(),
     )
-        .prop_map(|(epoch, global, ledger)| OLStateV1 {
-            epoch,
-            global,
-            intraepoch: IntraepochStateV1::default(),
-            ledger,
+        .prop_map(|(epoch, global, ledger)| {
+            OLStateV1::from_parts(
+                epoch,
+                global,
+                IntraepochStateV1::default(),
+                ledger,
+                ProtocolStateV1::genesis(),
+            )
         })
 }
