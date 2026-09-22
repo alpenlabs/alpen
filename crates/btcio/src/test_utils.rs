@@ -41,7 +41,7 @@ use musig2::secp256k1::SECP256K1;
 use rand::{rngs::OsRng, RngCore};
 use strata_csm_types::L1Payload;
 use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
-use strata_l1_envelope_fmt::builder::build_envelope_script;
+use strata_l1_envelope_fmt::build_envelope_script;
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
 use crate::{

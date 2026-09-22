@@ -16,7 +16,7 @@ use arbitrary::Arbitrary;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_bytes::ByteBuf;
 use strata_identifiers::Buf32;
-use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
+use strata_l1_envelope_fmt::MAX_ENVELOPE_PAYLOAD_SIZE;
 use strata_l1_txfmt::TagData;
 
 /// DA destination identifier. This will eventually be used to enable storing

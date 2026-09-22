@@ -30,7 +30,7 @@ use strata_asm_proto_admin_txs::{
     test_utils::create_signature_set,
 };
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;
 

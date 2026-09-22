@@ -171,7 +171,7 @@ mod tests {
     use strata_asm_proto_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
     use strata_codec::encode_to_vec;
     use strata_codec_utils::CodecSsz;
-    use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+    use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils_checkpoint::CheckpointTestHarness;
 

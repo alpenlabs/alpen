@@ -9,6 +9,7 @@ use std::{
 
 use bitcoin::{secp256k1::PublicKey, Network, XOnlyPublicKey};
 use serde::Serialize;
+use strata_asm_admin_threshold_sig::{CompressedPublicKey, ThresholdConfig};
 use strata_asm_admin_types::ConfirmationDepths;
 use strata_asm_bridge_types::SafeHarbourAddress;
 use strata_asm_params::{
@@ -16,10 +17,7 @@ use strata_asm_params::{
     SubprotocolInstance,
 };
 use strata_btc_types::BitcoinAmount;
-use strata_crypto::{
-    aggregate_schnorr_keys, keys::compressed::CompressedPublicKey,
-    threshold_signature::ThresholdConfig, EvenPublicKey,
-};
+use strata_crypto::{aggregate_schnorr_keys, EvenPublicKey};
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
