@@ -465,7 +465,7 @@ mod tests {
 
         // If generation ran again, this would fail. Cached reuse must short-circuit before mempool
         // fetch.
-        mempool.set_fail_mode(MockMempoolFailMode::GetTransactions);
+        mempool.set_fail_mode(MockMempoolFailMode::GetCandidates);
         let second = generate_block_template(&mut state, config)
             .await
             .expect("second generation should return cached template");
@@ -828,7 +828,7 @@ mod tests {
             .expect("persisted block should be recorded for template after storage succeeds");
 
         // If generation tries to rebuild, this fail mode makes the test fail.
-        mempool.set_fail_mode(MockMempoolFailMode::GetTransactions);
+        mempool.set_fail_mode(MockMempoolFailMode::GetCandidates);
         let err = generate_block_template(&mut state, config)
             .await
             .expect_err("completed parent should not generate a fresh template");
