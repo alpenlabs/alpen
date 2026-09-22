@@ -14,6 +14,6 @@ pub(crate) mod test_utils;
 pub use bundler::{BundlerBuilder, PendingIntent};
 pub use chunked_envelope::{create_chunked_envelope_task, ChunkedEnvelopeHandle};
 pub use context::{EnvelopeSigningMode, EnvelopeSigningModeProvider, WriterContext};
-pub use fees::{resolve_fee_rate, FeeRateError};
+pub use fees::{resolve_fee_rate, FeeRateError, FeeRateResolutionTimeouts};
 pub use handle::EnvelopeHandle;
 pub use watcher::WatcherBuilder;

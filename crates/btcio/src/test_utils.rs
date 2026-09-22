@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, VecDeque},
     str::FromStr,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use bitcoin::{
@@ -43,6 +44,7 @@ use strata_csm_types::L1Payload;
 use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
 use strata_l1_envelope_fmt::builder::build_envelope_script;
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
+use tokio::time::sleep;
 
 use crate::{
     tx_entry::L1TxEntryExt,
@@ -64,6 +66,8 @@ pub struct TestBitcoinClient {
     pub utxo_amount_sats: u64,
     /// Result returned from `estimate_smart_fee`.
     pub estimate_smart_fee_result: ClientResult<EstimateSmartFee>,
+    /// Optional delay before returning from `estimate_smart_fee`.
+    pub estimate_smart_fee_delay: Option<Duration>,
     /// Confirmation targets received by `estimate_smart_fee`.
     pub estimate_smart_fee_targets: Arc<Mutex<Vec<u16>>>,
     /// Result returned from `wallet_process_psbt`.
@@ -106,6 +110,7 @@ impl TestBitcoinClient {
                 errors: None,
                 blocks: 1,
             }),
+            estimate_smart_fee_delay: None,
             estimate_smart_fee_targets: Arc::new(Mutex::new(Vec::new())),
             wallet_process_psbt_result: Arc::new(Mutex::new(default_wallet_process_psbt_result())),
             wallet_process_psbt_calls: Arc::new(Mutex::new(Vec::new())),
@@ -140,6 +145,11 @@ impl TestBitcoinClient {
 
     pub fn with_estimate_smart_fee_error(mut self, error: ClientError) -> Self {
         self.estimate_smart_fee_result = Err(error);
+        self
+    }
+
+    pub fn with_estimate_smart_fee_delay(mut self, delay: Duration) -> Self {
+        self.estimate_smart_fee_delay = Some(delay);
         self
     }
 
@@ -235,6 +245,9 @@ impl Reader for TestBitcoinClient {
             .lock()
             .expect("test: estimate_smart_fee_targets lock")
             .push(conf_target);
+        if let Some(delay) = self.estimate_smart_fee_delay {
+            sleep(delay).await;
+        }
         self.estimate_smart_fee_result.clone()
     }
 
