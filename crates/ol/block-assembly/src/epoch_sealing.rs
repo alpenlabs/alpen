@@ -10,7 +10,9 @@ use std::fmt::Debug;
 use strata_identifiers::Slot;
 use strata_ol_chain_types_v1::MAX_SEALING_MANIFEST_COUNT;
 
-use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict};
+use crate::checkpoint_size::{
+    CheckpointLimit, CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict,
+};
 
 /// Resource stats used by the epoch sealing policy.
 ///
@@ -62,7 +64,7 @@ pub(crate) enum EpochSealingLimitAction {
     /// Admit the candidate and seal this block.
     SealAfterAdmit,
 
-    /// Reject the candidate and seal with the state before it.
+    /// Exclude the candidate; assembly decides whether its deferral requests a seal.
     RejectCandidate,
 }
 
@@ -74,11 +76,14 @@ impl EpochSealingLimitAction {
 
 /// Verdict from checking candidate values against sealing limits.
 ///
-/// The verdict preserves checkpoint-size and manifest-count actions separately
+/// The verdict preserves individual checkpoint-size and manifest-count actions
 /// so multiple crossed limits can be observed together.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EpochSealingLimitVerdict {
-    checkpoint_size: EpochSealingLimitAction,
+    da_diff: EpochSealingLimitAction,
+    log_count: EpochSealingLimitAction,
+    log_payload_bytes: EpochSealingLimitAction,
+    envelope: EpochSealingLimitAction,
     manifest_count: EpochSealingLimitAction,
 }
 
@@ -90,7 +95,10 @@ impl EpochSealingLimitVerdict {
 
     /// Merges another verdict into this one, keeping the stricter action for each limit.
     pub(crate) fn merge(&mut self, other: Self) {
-        self.checkpoint_size = self.checkpoint_size.max(other.checkpoint_size);
+        self.da_diff = self.da_diff.max(other.da_diff);
+        self.log_count = self.log_count.max(other.log_count);
+        self.log_payload_bytes = self.log_payload_bytes.max(other.log_payload_bytes);
+        self.envelope = self.envelope.max(other.envelope);
         self.manifest_count = self.manifest_count.max(other.manifest_count);
     }
 
@@ -98,9 +106,18 @@ impl EpochSealingLimitVerdict {
         self.most_restrictive_action().should_seal()
     }
 
-    /// Returns the checkpoint-size limit action.
+    /// Returns the strictest action across checkpoint DA, log, and envelope limits.
     pub(crate) fn checkpoint_size_action(&self) -> EpochSealingLimitAction {
-        self.checkpoint_size
+        self.da_diff
+            .max(self.log_count)
+            .max(self.log_payload_bytes)
+            .max(self.envelope)
+    }
+
+    /// Returns whether checkpoint log count or payload bytes reached a hard limit.
+    pub(crate) fn checkpoint_logs_exceeded(&self) -> bool {
+        self.log_count == EpochSealingLimitAction::RejectCandidate
+            || self.log_payload_bytes == EpochSealingLimitAction::RejectCandidate
     }
 
     /// Returns the manifest-count limit action.
@@ -110,7 +127,7 @@ impl EpochSealingLimitVerdict {
     }
 
     pub(crate) fn most_restrictive_action(&self) -> EpochSealingLimitAction {
-        self.checkpoint_size.max(self.manifest_count)
+        self.checkpoint_size_action().max(self.manifest_count)
     }
 
     fn seal_trigger(&self) -> Option<EpochSealTrigger> {
@@ -179,8 +196,8 @@ impl<C: CadencePolicy> LimitAwareSealing<C> {
 
 impl<C: CadencePolicy> EpochSealingPolicy for LimitAwareSealing<C> {
     fn check_limits(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitVerdict {
-        let checkpoint_size_action =
-            match checkpoint_size_verdict(stats.da_diff_size(), stats.log()) {
+        let checkpoint_action =
+            |limit| match checkpoint_size_verdict(limit, stats.da_diff_size(), stats.log()) {
                 CheckpointSizeVerdict::WithinLimits => EpochSealingLimitAction::Continue,
                 CheckpointSizeVerdict::SoftLimitReached => EpochSealingLimitAction::SealAfterAdmit,
                 CheckpointSizeVerdict::HardLimitExceeded => {
@@ -198,7 +215,10 @@ impl<C: CadencePolicy> EpochSealingPolicy for LimitAwareSealing<C> {
         };
 
         EpochSealingLimitVerdict {
-            checkpoint_size: checkpoint_size_action,
+            da_diff: checkpoint_action(CheckpointLimit::DaDiff),
+            log_count: checkpoint_action(CheckpointLimit::LogCount),
+            log_payload_bytes: checkpoint_action(CheckpointLimit::LogPayloadBytes),
+            envelope: checkpoint_action(CheckpointLimit::Envelope),
             manifest_count: manifest_count_action,
         }
     }
@@ -249,7 +269,8 @@ impl CadencePolicy for FixedSlotSealing {
 
 #[cfg(test)]
 mod fixed_slot_sealing_tests {
-    use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+    use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
+    use strata_ol_tx_policy::MAX_TOTAL_LOG_PAYLOAD_BYTES;
 
     use super::*;
 
@@ -339,6 +360,65 @@ mod fixed_slot_sealing_tests {
     }
 
     #[test]
+    fn test_checkpoint_resources_preserve_hard_and_soft_actions() {
+        let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
+        let stats = EpochSealingResourceStats::new(
+            OL_DA_DIFF_MAX_SIZE as usize,
+            LogMetrics {
+                count: MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10,
+                total_payload: MAX_TOTAL_LOG_PAYLOAD_BYTES,
+                ssz_size: 0,
+            },
+            0,
+        );
+        let verdict = sealing.check_limits(&stats);
+
+        assert_eq!(
+            verdict,
+            EpochSealingLimitVerdict {
+                da_diff: EpochSealingLimitAction::RejectCandidate,
+                log_count: EpochSealingLimitAction::SealAfterAdmit,
+                log_payload_bytes: EpochSealingLimitAction::RejectCandidate,
+                ..Default::default()
+            }
+        );
+        assert!(verdict.checkpoint_logs_exceeded());
+        assert_eq!(
+            sealing.should_seal_epoch(1, &verdict),
+            EpochSealingDecision::Seal(EpochSealTrigger::Limits(verdict))
+        );
+    }
+
+    #[test]
+    fn test_da_failure_does_not_count_as_hard_log_failure() {
+        let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
+        let stats =
+            EpochSealingResourceStats::new(OL_DA_DIFF_MAX_SIZE as usize, LogMetrics::default(), 0);
+        let verdict = sealing.check_limits(&stats);
+
+        assert_eq!(verdict.da_diff, EpochSealingLimitAction::RejectCandidate);
+        assert!(!verdict.checkpoint_logs_exceeded());
+    }
+
+    #[test]
+    fn test_envelope_failure_does_not_count_as_hard_log_failure() {
+        let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
+        let stats = EpochSealingResourceStats::new(
+            200_000,
+            LogMetrics {
+                count: 16_000,
+                total_payload: 0,
+                ssz_size: 16_000 * 12,
+            },
+            0,
+        );
+        let verdict = sealing.check_limits(&stats);
+
+        assert_eq!(verdict.envelope, EpochSealingLimitAction::RejectCandidate);
+        assert!(!verdict.checkpoint_logs_exceeded());
+    }
+
+    #[test]
     fn test_manifest_count_limit_actions() {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
         let max_manifests = MAX_SEALING_MANIFEST_COUNT as u32;
@@ -362,11 +442,11 @@ mod fixed_slot_sealing_tests {
     #[test]
     fn test_merge_keeps_stricter_checkpoint_action() {
         let mut verdict = EpochSealingLimitVerdict {
-            checkpoint_size: EpochSealingLimitAction::RejectCandidate,
+            log_count: EpochSealingLimitAction::RejectCandidate,
             ..Default::default()
         };
         let weaker = EpochSealingLimitVerdict {
-            checkpoint_size: EpochSealingLimitAction::SealAfterAdmit,
+            log_count: EpochSealingLimitAction::SealAfterAdmit,
             ..Default::default()
         };
 
@@ -381,7 +461,7 @@ mod fixed_slot_sealing_tests {
     #[test]
     fn test_merge_preserves_distinct_limits() {
         let mut tx_verdict = EpochSealingLimitVerdict {
-            checkpoint_size: EpochSealingLimitAction::SealAfterAdmit,
+            log_count: EpochSealingLimitAction::SealAfterAdmit,
             ..Default::default()
         };
         let manifest_verdict = EpochSealingLimitVerdict {
