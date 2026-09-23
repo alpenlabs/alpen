@@ -9,9 +9,15 @@ use strata_asm_checkpoint_types::{
 };
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
-use strata_gchain_executor::{ArtifactCache, ProcContextImpl};
+use strata_gchain_executor::{
+    ArtifactCache, GExecError, LinearExecutor, LinkOutcome, MemExecutorStore, PipelineBuilder,
+    ProcContextImpl,
+};
 use strata_gchain_types::*;
-use strata_identifiers::{Buf32, Buf64, L1BlockCommitment, L1Height, OLBlockCommitment};
+use strata_identifiers::{
+    Buf32, Buf64, Epoch, EpochCommitment, L1BlockCommitment, L1Height, OLBlockCommitment,
+    OLBlockId, Slot,
+};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, SignedOLBlockHeaderV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, IndexerWrites, MemoryStateBaseLayer};
@@ -109,6 +115,86 @@ impl OLIndexStore for MemIndexStore {
     fn revert_index_writes(&self, lref: &OLLinkRef) -> Result<(), ProcError> {
         self.applied.lock().unwrap().retain(|(l, _)| l != lref);
         Ok(())
+    }
+}
+
+/// The chain graph as the provider sees it: every block of the fixture plus
+/// whichever checkpoints a test adds.
+#[derive(Default)]
+struct MemChainStore {
+    blocks: BTreeMap<OLBlockId, OLBlockV1>,
+    summaries: BTreeMap<EpochCommitment, EpochSummary>,
+    payloads: BTreeMap<EpochCommitment, CheckpointPayload>,
+}
+
+impl MemChainStore {
+    fn from_chain(chain: &Chain) -> Self {
+        let mut store = Self::default();
+        for block in &chain.blocks {
+            let block = to_ol_block(block);
+            let blkid = *block.header().compute_block_commitment().blkid();
+            store.blocks.insert(blkid, block);
+        }
+        store.add_summary(chain.genesis_summary());
+        store
+    }
+
+    fn add_summary(&mut self, summary: EpochSummary) {
+        self.summaries
+            .insert(summary.get_epoch_commitment(), summary);
+    }
+
+    fn add_checkpoint(&mut self, link: &OLLink) {
+        let OLLink::Checkpoint(ckpt) = link else {
+            panic!("test: not a checkpoint link");
+        };
+        self.payloads.insert(
+            ckpt.summary().get_epoch_commitment(),
+            ckpt.payload().clone(),
+        );
+        self.add_summary(*ckpt.summary());
+    }
+}
+
+impl OLChainStore for MemChainStore {
+    fn fetch_block(&self, blkid: &OLBlockId) -> Result<Option<OLBlockV1>, ProviderError> {
+        Ok(self.blocks.get(blkid).cloned())
+    }
+
+    fn fetch_header(&self, blkid: &OLBlockId) -> Result<Option<OLBlockHeaderV1>, ProviderError> {
+        Ok(self.blocks.get(blkid).map(|b| b.header().clone()))
+    }
+
+    fn fetch_blocks_at_slot(&self, slot: Slot) -> Result<Vec<OLBlockId>, ProviderError> {
+        Ok(self
+            .blocks
+            .iter()
+            .filter(|(_, b)| b.header().slot() == slot)
+            .map(|(id, _)| *id)
+            .collect())
+    }
+
+    fn fetch_epoch_summary(
+        &self,
+        epoch: &EpochCommitment,
+    ) -> Result<Option<EpochSummary>, ProviderError> {
+        Ok(self.summaries.get(epoch).cloned())
+    }
+
+    fn fetch_epoch_summaries_at(&self, epoch: Epoch) -> Result<Vec<EpochSummary>, ProviderError> {
+        Ok(self
+            .summaries
+            .values()
+            .filter(|s| s.epoch() == epoch)
+            .cloned()
+            .collect())
+    }
+
+    fn fetch_checkpoint_payload(
+        &self,
+        epoch: &EpochCommitment,
+    ) -> Result<Option<CheckpointPayload>, ProviderError> {
+        Ok(self.payloads.get(epoch).cloned())
     }
 }
 
@@ -221,6 +307,21 @@ impl Chain {
             summary.get_epoch_commitment().into(),
             OLLink::Checkpoint(OLCheckpointLink::new(summary, payload)),
             MemManifests(manifests),
+        )
+    }
+
+    /// The summary of the genesis epoch, which a checkpoint for epoch 1
+    /// departs from.
+    fn genesis_summary(&self) -> EpochSummary {
+        let post_genesis = self.state_after(0);
+        let l1_height = post_genesis.last_l1_height();
+        let l1_blkid = *post_genesis.last_l1_blkid();
+        EpochSummary::new(
+            0,
+            self.commitment(0),
+            OLBlockCommitment::null(),
+            L1BlockCommitment::new(l1_height, l1_blkid),
+            *self.header(0).state_root(),
         )
     }
 
@@ -445,7 +546,7 @@ fn test_checkpoint_after_uncommitted_blocks_uses_path_state() {
 }
 
 #[test]
-fn test_index_stage_follows_exec_and_skips_invalid_links() {
+fn test_index_stage_follows_exec_and_refuses_rejected_links() {
     let mut h = Harness::new(Chain::build(3));
     let (lref, link, manifests) = h.chain.checkpoint_for_epoch(1);
     let exec = h.exec_proc(MemManifests(manifests.0.clone()));
@@ -458,15 +559,16 @@ fn test_index_stage_follows_exec_and_skips_invalid_links() {
         "terminal manifests must produce L1 block record writes"
     );
 
-    // A link exec rejected produces nothing to index.
+    // The executor never runs the index stage on a link exec rejected, so
+    // being asked to is a missing dep rather than something to index.
     let bad_lref: OLLinkRef = OLBlockCommitment::new(9, Default::default()).into();
     h.cache.insert_artifact(
         bad_lref,
         proc_id("exec"),
         Arc::new(OLExecArtifact::Invalid("nope".into())),
     );
-    let skipped = h.run(&index, "index", &bad_lref, &link).expect("index");
-    assert!(skipped.writes().is_empty());
+    let err = h.run(&index, "index", &bad_lref, &link).unwrap_err();
+    assert!(matches!(err, ProcError::MissingDep(id) if id == proc_id("exec")));
 }
 
 #[test]
@@ -497,4 +599,124 @@ fn test_artifacts_roundtrip_through_buf() {
     let invalid = OLExecArtifact::Invalid("reason".into());
     let decoded = OLExecArtifact::from_buf(&invalid.to_buf().unwrap()).unwrap();
     assert_eq!(decoded.invalid_reason(), Some("reason"));
+}
+
+/// Runs both OL stages under the real executor: blocks of epoch 1 are
+/// processed and committed, the checkpoint for epoch 2 departs from that
+/// committed node, and the commit is then rolled back.
+#[test]
+fn test_linear_executor_drives_ol_stages() {
+    let chain = Chain::build(5);
+    let state_store = Arc::new(MemStateStore::default());
+    state_store
+        .states
+        .lock()
+        .unwrap()
+        .insert(chain.node(0), chain.post_genesis.clone());
+
+    let mut chain_store = MemChainStore::from_chain(&chain);
+    let mut manifests = MemManifests::default();
+    let mut ckpt_refs = Vec::new();
+    for epoch in [1, 2] {
+        let (lref, link, epoch_manifests) = chain.checkpoint_for_epoch(epoch);
+        chain_store.add_checkpoint(&link);
+        manifests.0.extend(epoch_manifests.0);
+        ckpt_refs.push(lref);
+    }
+    let manifests = Arc::new(manifests);
+
+    let exec_proc = OLExecProc::new(
+        OLRuntimeParams::test_default(),
+        Arc::clone(&state_store),
+        Arc::clone(&manifests),
+    );
+    let index_proc = OLIndexProc::new(
+        proc_id("exec"),
+        OLRuntimeParams::test_default(),
+        Arc::clone(&state_store),
+        manifests,
+        MemIndexStore::default(),
+    );
+    let index_deps = index_proc.deps();
+    let pipeline = PipelineBuilder::new()
+        .add_stage(
+            proc_id("exec"),
+            exec_proc,
+            ProcDeps::new(Vec::new(), vec![proc_id("exec")]),
+        )
+        .expect("add exec")
+        .add_stage(proc_id("index"), index_proc, index_deps)
+        .expect("add index")
+        .build();
+
+    let (mut exec, report) = LinearExecutor::open(
+        pipeline,
+        Arc::new(OLChainProvider::new(chain_store)),
+        Arc::new(MemExecutorStore::new()),
+        chain.node(0),
+    )
+    .expect("open");
+    assert_eq!(report.initialized(), &[proc_id("exec"), proc_id("index")]);
+
+    let block_refs: Vec<OLLinkRef> = (1..=2).map(|s| chain.commitment(s).into()).collect();
+    for lref in &block_refs {
+        assert_eq!(
+            exec.process_link(lref).expect("process block"),
+            LinkOutcome::Accepted
+        );
+    }
+    assert!(
+        exec.get_artifact::<OLIndexArtifact>(&block_refs[1], proc_id("index"))
+            .is_some(),
+        "index stage must have run after exec"
+    );
+
+    exec.commit_through(&block_refs[1]).expect("commit blocks");
+    assert_eq!(exec.committed_node(), &chain.node(2));
+    assert_eq!(
+        state_store
+            .fetch_state(&chain.node(2))
+            .unwrap()
+            .map(|s| s.compute_state_root().unwrap()),
+        Some(*chain.header(2).state_root()),
+        "committed state must match direct execution"
+    );
+
+    // The epoch 2 checkpoint departs from the committed node.
+    assert_eq!(
+        exec.process_link(&ckpt_refs[1])
+            .expect("process checkpoint"),
+        LinkOutcome::Accepted
+    );
+    exec.commit_through(&ckpt_refs[1])
+        .expect("commit checkpoint");
+    assert_eq!(exec.committed_node(), &chain.node(4));
+    assert_eq!(
+        state_store.terminal_headers.lock().unwrap().as_slice(),
+        &[chain.header(4).clone()],
+        "checkpoint commit must persist the reconstructed header"
+    );
+
+    exec.uncommit_to(&chain.node(2)).expect("uncommit");
+    assert_eq!(exec.committed_node(), &chain.node(2));
+    assert!(
+        state_store.fetch_state(&chain.node(4)).unwrap().is_none(),
+        "uncommit must drop the derived state"
+    );
+    assert!(
+        exec.is_processed(&ckpt_refs[1]),
+        "the undone link stays processed"
+    );
+
+    // The epoch 1 checkpoint converges on the committed node from below, so
+    // it isn't reachable until the blocks are uncommitted too.
+    let err = exec.process_link(&ckpt_refs[0]).unwrap_err();
+    assert!(matches!(err, GExecError::OriginUnreachable(_)));
+    exec.uncommit_to(&chain.node(0))
+        .expect("uncommit to genesis");
+    assert_eq!(
+        exec.process_link(&ckpt_refs[0])
+            .expect("process checkpoint"),
+        LinkOutcome::Accepted
+    );
 }
