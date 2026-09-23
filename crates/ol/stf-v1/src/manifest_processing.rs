@@ -25,7 +25,7 @@ use crate::context::BasicExecContext;
 use crate::errors::{ExecError, ExecResult};
 use crate::msg_payload_coin::MsgPayloadCoin;
 
-/// Reports events observed while successfully buffering ASM manifests.
+/// Reports events observed while successfully processing ASM manifests.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ManifestProcessingOutcome {
     checkpoint_enactment_height: Option<L1Height>,
@@ -84,7 +84,7 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
     Ok(outcome)
 }
 
-/// Validates and buffers one ASM manifest, returning events observed during processing.
+/// Validates one ASM manifest and buffers its logs, returning events observed during processing.
 ///
 /// The manifest must immediately follow the state's last accepted L1 height and
 /// contain at most one checkpoint predicate enactment. Assembly calls this only

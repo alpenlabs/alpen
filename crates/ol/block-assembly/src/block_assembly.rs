@@ -347,7 +347,7 @@ where
         manifests: selected_asm_manifests,
         checkpoint_enactment_height,
         sealing_limit_verdict: manifest_limit_verdict,
-    } = fetch_and_buffer_asm_manifests_for_block(
+    } = fetch_and_process_asm_manifests_for_block(
         ctx,
         epoch_sealing_policy,
         &mut manifest_state,
@@ -421,7 +421,9 @@ where
     })
 }
 
-/// Fetches and buffers ASM manifests for a block using [`BlockAssemblyAnchorContext`].
+/// Fetches and processes ASM manifests for a block using [`BlockAssemblyAnchorContext`].
+///
+/// Buffers the selected manifests' logs in intraepoch state.
 ///
 /// Each block may include a contiguous sequence of buried manifests after the
 /// parent state's last accepted L1 height. The sequence is capped by the per-block
@@ -429,7 +431,7 @@ where
 ///
 /// `epoch_cumulative_manifest_count` is the number of ASM manifests already carried
 /// by preceding blocks in the current epoch.
-async fn fetch_and_buffer_asm_manifests_for_block<C, E, S>(
+async fn fetch_and_process_asm_manifests_for_block<C, E, S>(
     ctx: &C,
     epoch_sealing_policy: &E,
     state: &mut S,
@@ -459,7 +461,7 @@ where
         manifests: selected_asm_manifests,
         sealing_limit_verdict,
         checkpoint_enactment_height,
-    } = select_and_buffer_asm_manifests(
+    } = select_and_process_asm_manifests(
         epoch_sealing_policy,
         state,
         fetched_asm_manifests,
@@ -486,7 +488,7 @@ where
     })
 }
 
-/// Selects and buffers ASM manifests for the candidate OL block.
+/// Selects and processes ASM manifests for the candidate OL block, buffering their logs.
 ///
 /// Pending ASM-log capacity is a hard admission bound only: when the next
 /// manifest would overflow the pending-log queue, selection stops and the block
@@ -502,7 +504,7 @@ where
 /// applies buffered ASM-log drain as state effects only, without OL logs or
 /// checkpoint DA output; if that invariant changes, selection must budget that
 /// output before admitting ASM manifests.
-fn select_and_buffer_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>(
+fn select_and_process_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>(
     epoch_sealing_policy: &E,
     state: &mut S,
     candidate_asm_manifests: Vec<AsmManifest>,
@@ -542,7 +544,7 @@ fn select_and_buffer_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>(
             break;
         }
 
-        // Buffer admitted manifests through the STF and honor its enactment signal.
+        // Process admitted manifests through the STF and honor its enactment signal.
         // Height B ends the old predicate's territory; B+1 belongs to the next epoch.
         checkpoint_enactment_height = process_asm_manifest(state, &candidate_asm_manifest)
             .map_err(BlockAssemblyError::BlockConstruction)?
@@ -830,7 +832,7 @@ where
         manifest_container,
     } = input;
 
-    // Apply the accumulated transaction writes and manifest buffering.
+    // Apply the accumulated transaction writes and ASM manifest processing updates.
     let mut final_state = parent_state.as_ref().clone();
     final_state.apply_write_batch(accumulated_batch)?;
 
@@ -1975,7 +1977,7 @@ mod tests {
     fn test_selection_stops_at_first_predicate_boundary_and_seals_off_cadence() {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
-        let selected = select_and_buffer_asm_manifests(
+        let selected = select_and_process_asm_manifests(
             &policy,
             &mut state,
             vec![
@@ -2013,7 +2015,7 @@ mod tests {
         let mut state = create_test_genesis_state();
         let initial_root = state.compute_state_root().unwrap();
         let height = state.last_l1_height() + 1;
-        let err = select_and_buffer_asm_manifests(
+        let err = select_and_process_asm_manifests(
             &policy,
             &mut state,
             vec![create_l1_manifest_with_logs(
@@ -2036,7 +2038,7 @@ mod tests {
     fn test_unadmitted_predicate_boundary_does_not_force_sealing() {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
-        let selected = select_and_buffer_asm_manifests(
+        let selected = select_and_process_asm_manifests(
             &policy,
             &mut state,
             vec![create_l1_manifest_with_logs(
@@ -2068,7 +2070,7 @@ mod tests {
             let mut state = create_test_genesis_state();
             let initial_height = state.last_l1_height();
             let boundary_height = initial_height + 1;
-            let selected = select_and_buffer_asm_manifests(
+            let selected = select_and_process_asm_manifests(
                 &policy,
                 &mut state,
                 vec![create_l1_manifest_with_logs(
@@ -2130,7 +2132,7 @@ mod tests {
     fn test_pending_asm_log_capacity_limits_selected_manifests() {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
-        let selected = select_and_buffer_asm_manifests(
+        let selected = select_and_process_asm_manifests(
             &policy,
             &mut state,
             vec![
@@ -2163,7 +2165,7 @@ mod tests {
     fn test_full_pending_asm_log_capacity_selects_no_manifests_without_sealing() {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
-        let selected = select_and_buffer_asm_manifests(
+        let selected = select_and_process_asm_manifests(
             &policy,
             &mut state,
             vec![create_l1_manifest_with_logs(2, vec![raw_asm_log(1)])],
