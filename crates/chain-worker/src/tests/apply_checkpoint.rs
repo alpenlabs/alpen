@@ -758,12 +758,12 @@ fn assert_indexer_writes_consistent(block_sync: &IndexerWrites, checkpoint: &Ind
     let mut fs_l1: Vec<_> = block_sync
         .l1_block_records()
         .iter()
-        .map(|m| (m.height, m.record.clone()))
+        .map(|m| (m.height(), m.record().clone()))
         .collect();
     let mut cp_l1: Vec<_> = checkpoint
         .l1_block_records()
         .iter()
-        .map(|m| (m.height, m.record.clone()))
+        .map(|m| (m.height(), m.record().clone()))
         .collect();
     fs_l1.sort_by_key(|(h, _)| *h);
     cp_l1.sort_by_key(|(h, _)| *h);
@@ -1017,7 +1017,7 @@ mod db_idempotency {
             let l1_block_refs = l1_block_records
                 .iter()
                 .map(|write| {
-                    let idx = u64::from(write.height);
+                    let idx = u64::from(write.height());
                     let leaf_hash = l1_block_refs_handle
                         .get_leaf_blocking(idx)
                         .expect("get L1 block ref leaf hash");
@@ -1025,7 +1025,7 @@ mod db_idempotency {
                         .get_blocking(idx)
                         .expect("get L1 block ref preimage");
                     L1BlockRefMirrorEntry {
-                        height: write.height,
+                        height: write.height(),
                         leaf_hash,
                         preimage,
                     }
@@ -1132,7 +1132,7 @@ mod db_idempotency {
         let genesis_l1_height = u64::from(built.prev_summary.new_l1().height());
         let expected_l1_leaf_count = l1_block_records
             .iter()
-            .map(|write| u64::from(write.height) + 1)
+            .map(|write| u64::from(write.height()) + 1)
             .max()
             .unwrap_or(genesis_l1_height + 1);
 
@@ -1159,9 +1159,9 @@ mod db_idempotency {
             "persisted terminal header must match the summary terminal blkid"
         );
         for (actual, expected) in first.l1_block_refs.iter().zip(l1_block_records) {
-            assert_eq!(actual.height, expected.height);
-            assert_eq!(actual.leaf_hash, Some(expected.record.leaf_hash().into()));
-            assert_eq!(actual.preimage, expected.record.as_ssz_bytes());
+            assert_eq!(actual.height, expected.height());
+            assert_eq!(actual.leaf_hash, Some(expected.record().leaf_hash().into()));
+            assert_eq!(actual.preimage, expected.record().as_ssz_bytes());
         }
 
         harness

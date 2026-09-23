@@ -4,6 +4,7 @@
 //! `WriteBatch` references before falling back to a base state. All write
 //! operations are unsupported since this is read-only.
 
+use std::borrow::Borrow;
 use std::fmt;
 
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
@@ -22,18 +23,22 @@ use crate::write_tracking_layer::IComputeStateRootWithWrites;
 /// The batch slice can be empty, making this a read-only wrapper for the base.
 /// This is useful for scenarios where you want to view state with pending
 /// changes applied without modifying anything.
+///
+/// The batches are generic over how they're held (`B`), so a caller that has
+/// them behind `Arc`s or plain references can overlay them without copying.
 #[derive(Clone)]
-pub struct BatchDiffState<'batches, 'base, S: IStateAccessor> {
+pub struct BatchDiffState<'batches, 'base, S: IStateAccessor, B: Borrow<WriteBatch> = WriteBatch> {
     base: &'base S,
-    write_batches: &'batches [WriteBatch],
+    write_batches: &'batches [B],
 
     /// Helper field so that we only have to compute this once.
     new_accounts: usize,
 }
 
-impl<S: IStateAccessor> fmt::Debug for BatchDiffState<'_, '_, S>
+impl<S: IStateAccessor, B: Borrow<WriteBatch>> fmt::Debug for BatchDiffState<'_, '_, S, B>
 where
     S: fmt::Debug,
+    B: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BatchDiffState")
@@ -51,9 +56,19 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     /// back to the base state. An empty batch slice results in a pure read-only
     /// passthrough to the base.
     pub fn new(base: &'base S, batches: &'batches [WriteBatch]) -> Self {
+        Self::new_over(base, batches)
+    }
+}
+
+impl<'batches, 'base, S: IStateAccessor, B: Borrow<WriteBatch>>
+    BatchDiffState<'batches, 'base, S, B>
+{
+    /// Like [`BatchDiffState::new`], but over batches held indirectly, such as
+    /// references or `Arc`s borrowed out of some other structure.
+    pub fn new_over(base: &'base S, batches: &'batches [B]) -> Self {
         let new_accounts = batches
             .iter()
-            .map(|wb| wb.ledger().new_accounts().len())
+            .map(|wb| wb.borrow().ledger().new_accounts().len())
             .sum();
 
         Self {
@@ -69,13 +84,20 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     }
 
     /// Returns a reference to the batch slice.
-    pub fn write_batches(&self) -> &'batches [WriteBatch] {
+    pub fn write_batches(&self) -> &'batches [B] {
         self.write_batches
     }
 
     /// Returns the total number of new accounts added by writes in the layer.
     pub fn new_accounts(&self) -> usize {
         self.new_accounts
+    }
+
+    /// Iterates over the batches oldest-first.
+    fn iter_batches(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &'batches WriteBatch> + ExactSizeIterator {
+        self.write_batches.iter().map(Borrow::borrow)
     }
 
     /// Internal function for helping with lookups.
@@ -87,7 +109,7 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
         on_wb: impl Fn(&'batches WriteBatch) -> Option<T>,
         on_base: impl FnOnce() -> T,
     ) -> T {
-        for wb in self.write_batches.iter().rev() {
+        for wb in self.iter_batches().rev() {
             if let Some(v) = on_wb(wb) {
                 return v;
             }
@@ -96,9 +118,10 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     }
 }
 
-impl<'batches, 'base, S> IStateAccessor for BatchDiffState<'batches, 'base, S>
+impl<'batches, 'base, S, B> IStateAccessor for BatchDiffState<'batches, 'base, S, B>
 where
     S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
+    B: Borrow<WriteBatch>,
 {
     type AccountState = S::AccountState;
 
@@ -165,7 +188,7 @@ where
 
     fn pending_asm_logs_len(&self) -> usize {
         let mut len = self.base.pending_asm_logs_len();
-        for wb in self.write_batches.iter() {
+        for wb in self.iter_batches() {
             if wb.intraepoch_writes().reset {
                 len = 0;
             }
@@ -177,8 +200,7 @@ where
     fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
         // Find the most recent reset; everything before it is hidden.
         let last_reset = self
-            .write_batches
-            .iter()
+            .iter_batches()
             .rposition(|wb| wb.intraepoch_writes().reset);
 
         let (base_len, first_batch) = match last_reset {
@@ -191,7 +213,7 @@ where
         }
 
         let mut remaining = idx - base_len;
-        for wb in self.write_batches.iter().skip(first_batch) {
+        for wb in self.iter_batches().skip(first_batch) {
             let segment = &wb.intraepoch_writes().appended_pending_asm_logs;
             if remaining < segment.len() {
                 return Some(segment[remaining].clone());
@@ -235,20 +257,21 @@ where
 
     fn compute_state_root(&self) -> StateResult<Buf32> {
         self.base
-            .compute_state_root_with_writes(self.write_batches.iter())
+            .compute_state_root_with_writes(self.iter_batches())
     }
 }
 
-impl<'batches, 'base, S> IComputeStateRootWithWrites for BatchDiffState<'batches, 'base, S>
+impl<'batches, 'base, S, B> IComputeStateRootWithWrites for BatchDiffState<'batches, 'base, S, B>
 where
     S: IStateAccessor<AccountState = OLAccountStateV1> + IComputeStateRootWithWrites,
+    B: Borrow<WriteBatch>,
 {
     fn compute_state_root_with_writes<'b>(
         &'b self,
         writes: impl Iterator<Item = &'b WriteBatch>,
     ) -> StateResult<Buf32> {
         self.base
-            .compute_state_root_with_writes(self.write_batches.iter().chain(writes))
+            .compute_state_root_with_writes(self.iter_batches().chain(writes))
     }
 }
 

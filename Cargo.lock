@@ -2096,7 +2096,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -3761,7 +3761,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -5714,7 +5714,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -5734,7 +5734,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5747,7 +5747,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5816,7 +5816,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -5854,7 +5854,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -9237,6 +9237,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-gchain-executor"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "strata-gchain-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "strata-gchain-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "strata-identifiers"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0-rc.2#4e9dedf044e84e78cb3d2c9fbce262777735de09"
@@ -9528,6 +9544,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-gchain-impl"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "ciborium",
+ "serde",
+ "strata-acct-types",
+ "strata-asm-checkpoint-types",
+ "strata-asm-common",
+ "strata-checkpoint-types",
+ "strata-codec",
+ "strata-gchain-executor",
+ "strata-gchain-types",
+ "strata-identifiers",
+ "strata-msg-fmt",
+ "strata-ol-chain-types-v1",
+ "strata-ol-da-types-v1",
+ "strata-ol-params",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-ol-state-types-v1",
+ "strata-ol-stf-v1",
+ "strata-serde-utils",
+ "strata-snark-acct-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "strata-ol-genesis"
 version = "0.1.0"
 dependencies = [
@@ -9731,6 +9774,7 @@ dependencies = [
 name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-manifest-types",
@@ -9743,6 +9787,7 @@ dependencies = [
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-predicate",
+ "strata-serde-utils",
  "strata-snark-acct-types",
  "thiserror 2.0.20",
 ]
@@ -10005,6 +10050,18 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "tracing-opentelemetry",
+]
+
+[[package]]
+name = "strata-serde-utils"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0-rc.2#4e9dedf044e84e78cb3d2c9fbce262777735de09"
+dependencies = [
+ "arbitrary",
+ "hex",
+ "serde",
+ "ssz",
+ "strata-codec",
 ]
 
 [[package]]
@@ -11608,7 +11665,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

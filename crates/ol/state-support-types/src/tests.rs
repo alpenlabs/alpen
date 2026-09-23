@@ -78,8 +78,8 @@ fn test_combined_inbox_message_tracking() {
 
     // Verify IndexerState captured the inbox write
     assert_eq!(indexer_writes.inbox_messages().len(), 1);
-    assert_eq!(indexer_writes.inbox_messages()[0].account_id, account_id);
-    assert_eq!(indexer_writes.inbox_messages()[0].index, 0);
+    assert_eq!(indexer_writes.inbox_messages()[0].account_id(), account_id);
+    assert_eq!(indexer_writes.inbox_messages()[0].index(), 0);
 
     // Verify WriteTrackingState has the modified account in the batch
     assert!(batch.ledger().contains_account(&account_id));
@@ -112,7 +112,7 @@ fn test_combined_manifest_tracking() {
     // Verify IndexerState captured the record write
     let (_, indexer_writes) = indexer.into_parts();
     assert_eq!(indexer_writes.l1_block_records().len(), 1);
-    assert_eq!(indexer_writes.l1_block_records()[0].height, height);
+    assert_eq!(indexer_writes.l1_block_records()[0].height(), height);
 }
 
 /// Test balance modifications through combined layers.
