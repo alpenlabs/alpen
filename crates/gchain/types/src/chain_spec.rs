@@ -18,7 +18,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 pub type NodeRef<S: GChainSpec> = <S as GChainSpec>::NodeRef;
-pub type Node<S: GChainSpec> = <S as GChainSpec>::Node;
 pub type LinkRef<S: GChainSpec> = <S as GChainSpec>::LinkRef;
 pub type LinkHeader<S: GChainSpec> = <S as GChainSpec>::LinkHeader;
 pub type Link<S: GChainSpec> = <S as GChainSpec>::Link;
@@ -26,10 +25,11 @@ pub type Link<S: GChainSpec> = <S as GChainSpec>::Link;
 /// Toplevel trait describing a chain.
 pub trait GChainSpec: 'static {
     /// The chain's node ref type.
+    ///
+    /// Nodes are states at rest and have no data of their own beyond what the
+    /// ref names; everything about a node is reconstructed from the links that
+    /// reach it.
     type NodeRef: GNodeRef;
-
-    /// The chain's node type.
-    type Node: GNode;
 
     /// The chain's link ref type.
     type LinkRef: GLinkRef;
@@ -64,14 +64,6 @@ pub trait GChainSpec: 'static {
 
 /// Describes a reference to a gchain node.
 pub trait GNodeRef: Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {}
-
-/// A node in the chain.
-///
-/// This is an "at rest" state that is one end of a state transitions described by links.
-// TODO do we still need this?
-pub trait GNode: Clone {
-    // TODO
-}
 
 /// A link between two nodes.
 pub trait GLinkRef: Clone + Debug + Eq + PartialEq + Ord + PartialOrd + Hash {
@@ -200,7 +192,6 @@ mod tests {
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct TestLink(u8);
 
-    impl GNode for TestLink {}
     impl GLinkHeader for TestLink {}
 
     impl GLink for TestLink {
@@ -213,7 +204,6 @@ mod tests {
 
     impl GChainSpec for TestSpec {
         type NodeRef = TestRef;
-        type Node = TestLink;
         type LinkRef = TestRef;
         type LinkHeader = TestLink;
         type Link = TestLink;

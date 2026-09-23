@@ -122,17 +122,14 @@ pub trait GChainProc: Sized + 'static {
     /// change would produce a different artifact for the same link.
     fn proc_version(&self) -> ProcVersion;
 
-    /// Called when the processor is first initialized.
+    /// Called when the processor is first initialized, with the node its
+    /// aggregated state is expected to be at.
     ///
     /// This only ever happens once, but this fn may be called multiple times
     /// (like if there's crashes on startup).  Different processor stages may be
-    /// inited on different first node links, such as when opening an older
-    /// database with a newer client version (which added a new processor).
-    fn on_init(
-        &self,
-        cur_node: &NodeRef<Self::Spec>,
-        node: &Node<Self::Spec>,
-    ) -> Result<(), ProcError>;
+    /// inited at different nodes, such as when opening an older database with a
+    /// newer client version (which added a new processor).
+    fn on_init(&self, cur_node: &NodeRef<Self::Spec>) -> Result<(), ProcError>;
 
     /// Processes a link and produces some output from the step.
     ///

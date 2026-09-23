@@ -57,7 +57,7 @@ impl<S: OLStateStore, M: L1ManifestProvider> GChainProc for OLExecProc<S, M> {
         Self::VERSION.into()
     }
 
-    fn on_init(&self, cur_node: &OLStateNode, _node: &OLStateNode) -> Result<(), ProcError> {
+    fn on_init(&self, cur_node: &OLStateNode) -> Result<(), ProcError> {
         // The committed state is the whole aggregated state, so there's nothing
         // to set up beyond making sure it's there to build on.
         load_base_state(self.state_store.as_ref(), cur_node).map(|_| ())

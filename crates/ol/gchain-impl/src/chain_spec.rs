@@ -9,7 +9,6 @@ pub struct OLChainSpec;
 impl GChainSpec for OLChainSpec {
     // actually fine that these are the same here, for now
     type NodeRef = OLStateNode;
-    type Node = OLStateNode;
 
     type LinkRef = OLLinkRef;
     type LinkHeader = OLLinkHeader;

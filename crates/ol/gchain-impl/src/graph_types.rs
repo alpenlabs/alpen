@@ -1,6 +1,6 @@
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_gchain_types::{GLink, GLinkHeader, GLinkRef, GNode, GNodeRef};
+use strata_gchain_types::{GLink, GLinkHeader, GLinkRef, GNodeRef};
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 
@@ -57,7 +57,6 @@ impl OLStateNode {
 // same bytes.  It serves as its own ref until there's state in a node that's
 // too big to carry around.
 impl GNodeRef for OLStateNode {}
-impl GNode for OLStateNode {}
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum OLLinkRef {

@@ -70,7 +70,7 @@ impl<S: OLStateStore, M: L1ManifestProvider, I: OLIndexStore> GChainProc for OLI
         Self::VERSION.into()
     }
 
-    fn on_init(&self, _cur_node: &OLStateNode, _node: &OLStateNode) -> Result<(), ProcError> {
+    fn on_init(&self, _cur_node: &OLStateNode) -> Result<(), ProcError> {
         Ok(())
     }
 
