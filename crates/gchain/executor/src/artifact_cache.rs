@@ -81,42 +81,6 @@ impl<S: GChainSpec> Default for ArtifactCache<S> {
     }
 }
 
-pub struct ProcHistory<P: GChainProc> {
-    base: NodeRef<P::Spec>,
-    steps: Vec<Arc<ProcStepOutput<P>>>,
-}
-
-impl<P: GChainProc> ProcHistory<P> {
-    pub fn new(base: NodeRef<P::Spec>, steps: Vec<Arc<ProcStepOutput<P>>>) -> Self {
-        Self { base, steps }
-    }
-
-    pub fn new_base(base: NodeRef<P::Spec>) -> Self {
-        Self::new(base, Vec::new())
-    }
-
-    /// Pushes a step onto the end of this processing history.
-    pub fn push_step(&mut self, outp: Arc<ProcStepOutput<P>>) {
-        self.steps.push(outp);
-    }
-
-    pub fn base(&self) -> &NodeRef<P::Spec> {
-        &self.base
-    }
-
-    pub fn steps(&self) -> &[Arc<ProcStepOutput<P>>] {
-        &self.steps
-    }
-
-    /// Drops the oldest `count` steps, rebasing the history onto the node they
-    /// ended at.  Used once those steps are committed and can't be rolled back.
-    pub fn drain_committed(&mut self, count: usize, new_base: NodeRef<P::Spec>) {
-        let count = count.min(self.steps.len());
-        self.steps.drain(..count);
-        self.base = new_base;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;

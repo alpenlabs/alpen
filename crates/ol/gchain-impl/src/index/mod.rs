@@ -2,8 +2,9 @@
 //!
 //! Re-runs the STF for each link the exec stage accepted, this time through
 //! the indexer layer, to collect the index writes the link implies.  It
-//! depends on the exec stage both for the link itself (to skip links exec
-//! rejected) and along the path (to build the same pre-state exec used).
+//! depends on the exec stage both for the link itself (the executor only runs
+//! this stage on links exec accepted) and along the path (to build the same
+//! pre-state exec used).
 
 mod artifact;
 mod block;
@@ -13,7 +14,7 @@ use std::sync::Arc;
 
 use strata_gchain_types::*;
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_support_types::{BatchDiffState, IndexerWrites};
+use strata_ol_state_support_types::BatchDiffState;
 
 pub use self::artifact::OLIndexArtifact;
 use self::block::index_block_link;
@@ -80,11 +81,13 @@ impl<S: OLStateStore, M: L1ManifestProvider, I: OLIndexStore> GChainProc for OLI
         link: &OLLink,
         ctx: &impl ProcContext<Self>,
     ) -> Result<OLIndexArtifact, ProcError> {
-        let exec = ctx
+        // The executor stops at the first stage that rejects a link, so exec's
+        // artifact being a rejection means this stage was run out of order.
+        let exec_accepted = ctx
             .get_cur_artifact::<OLExecArtifact>(self.exec_proc_id)
-            .ok_or(ProcError::MissingDep(self.exec_proc_id))?;
-        if exec.output().is_none() {
-            return Ok(OLIndexArtifact::new(IndexerWrites::new()));
+            .is_some_and(|exec| exec.output().is_some());
+        if !exec_accepted {
+            return Err(ProcError::MissingDep(self.exec_proc_id));
         }
 
         let path = ctx

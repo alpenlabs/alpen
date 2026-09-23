@@ -1,6 +1,9 @@
-//! Minimal chain spec and processor stage for exercising the executor.
+//! Minimal chain spec, provider, and processor stages for exercising the
+//! executor.
 
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::mem;
+use std::sync::{Arc, Mutex};
 
 use strata_gchain_types::*;
 
@@ -13,7 +16,6 @@ impl GLinkRef for TestRef {}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TestLink(pub u8);
 
-impl GNode for TestLink {}
 impl GLinkHeader for TestLink {}
 
 impl GLink for TestLink {
@@ -26,7 +28,6 @@ pub(crate) struct TestSpec;
 
 impl GChainSpec for TestSpec {
     type NodeRef = TestRef;
-    type Node = TestLink;
     type LinkRef = TestRef;
     type LinkHeader = TestLink;
     type Link = TestLink;
@@ -37,6 +38,67 @@ impl GChainSpec for TestSpec {
 
     fn get_header_canonical_prev(_lh: &TestLink) -> Option<TestRef> {
         None
+    }
+}
+
+/// Chain provider over links added by hand.  A link's body is just its ref.
+pub(crate) struct TestProvider {
+    links: Mutex<HashMap<TestRef, LinkEndpoints<TestSpec>>>,
+}
+
+impl TestProvider {
+    pub(crate) fn new() -> Self {
+        Self {
+            links: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub(crate) fn add_link(&self, lref: u8, origin: u8, target: u8) {
+        self.links.lock().unwrap().insert(
+            TestRef(lref),
+            LinkEndpoints::new(TestRef(origin), TestRef(target)),
+        );
+    }
+
+    fn links_where(&self, pred: impl Fn(&LinkEndpoints<TestSpec>) -> bool) -> Vec<TestRef> {
+        let mut found: Vec<_> = self
+            .links
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, e)| pred(e))
+            .map(|(l, _)| *l)
+            .collect();
+        found.sort();
+        found
+    }
+}
+
+impl ChainProvider for TestProvider {
+    type Spec = TestSpec;
+
+    fn fetch_link_header(&self, lref: &TestRef) -> Result<Option<TestLink>, ProviderError> {
+        self.fetch_link(lref)
+    }
+
+    fn fetch_link(&self, lref: &TestRef) -> Result<Option<TestLink>, ProviderError> {
+        let known = self.links.lock().unwrap().contains_key(lref);
+        Ok(known.then_some(TestLink(lref.0)))
+    }
+
+    fn fetch_link_endpoints(
+        &self,
+        lref: &TestRef,
+    ) -> Result<Option<LinkEndpoints<TestSpec>>, ProviderError> {
+        Ok(self.links.lock().unwrap().get(lref).cloned())
+    }
+
+    fn fetch_forward_links(&self, nref: &TestRef) -> Result<Vec<TestRef>, ProviderError> {
+        Ok(self.links_where(|e| e.origin() == nref))
+    }
+
+    fn fetch_backward_links(&self, nref: &TestRef) -> Result<Vec<TestRef>, ProviderError> {
+        Ok(self.links_where(|e| e.target() == nref))
     }
 }
 
@@ -76,55 +138,119 @@ impl ProcArtifact for FlagArtifact {
     }
 }
 
-/// Counts the links it's asked to process.
-pub(crate) struct TestProc;
+/// What the executor asked a [`TestProc`] to do, in order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ProcEvent {
+    Init(TestRef),
+    Process(TestRef),
+    Commit(Vec<TestRef>),
+    Uncommit(Vec<TestRef>),
+    Preprune(TestRef),
+    Prune(TestRef),
+}
+
+pub(crate) type EventLog = Arc<Mutex<Vec<ProcEvent>>>;
+
+/// Records every call the executor makes and rejects the links it's told to.
+pub(crate) struct TestProc {
+    version: u32,
+    reject: HashSet<TestRef>,
+    events: EventLog,
+}
 
 impl TestProc {
     pub(crate) const VERSION: u32 = 1;
+
+    pub(crate) fn new() -> Self {
+        Self {
+            version: Self::VERSION,
+            reject: HashSet::new(),
+            events: EventLog::default(),
+        }
+    }
+
+    pub(crate) fn with_version(mut self, version: u32) -> Self {
+        self.version = version;
+        self
+    }
+
+    pub(crate) fn rejecting(mut self, lrefs: impl IntoIterator<Item = u8>) -> Self {
+        self.reject = lrefs.into_iter().map(TestRef).collect();
+        self
+    }
+
+    /// A handle onto the event log that outlives handing the stage to a
+    /// pipeline.
+    pub(crate) fn events(&self) -> EventLog {
+        Arc::clone(&self.events)
+    }
+
+    fn record(&self, event: ProcEvent) {
+        self.events.lock().unwrap().push(event);
+    }
+}
+
+/// Drains the events recorded so far.
+pub(crate) fn take_events(log: &EventLog) -> Vec<ProcEvent> {
+    mem::take(&mut *log.lock().unwrap())
+}
+
+/// Unwraps the error of a result whose success type may not be `Debug`.
+pub(crate) fn expect_err<T, E>(res: Result<T, E>, what: &str) -> E {
+    match res {
+        Ok(_) => panic!("test: expected {what}"),
+        Err(err) => err,
+    }
 }
 
 impl GChainProc for TestProc {
     type Spec = TestSpec;
-    type Artifact = CountArtifact;
+    type Artifact = FlagArtifact;
 
     fn proc_version(&self) -> ProcVersion {
-        Self::VERSION.into()
+        self.version.into()
     }
 
-    fn on_init(&self, _cur_node: &TestRef, _node: &TestLink) -> Result<(), ProcError> {
+    fn on_init(&self, cur_node: &TestRef) -> Result<(), ProcError> {
+        self.record(ProcEvent::Init(*cur_node));
         Ok(())
     }
 
     fn process_link(
         &self,
-        _lref: &TestRef,
-        link: &TestLink,
+        lref: &TestRef,
+        _link: &TestLink,
         _ctx: &impl ProcContext<Self>,
-    ) -> Result<CountArtifact, ProcError> {
-        Ok(CountArtifact(link.0 as u32))
+    ) -> Result<FlagArtifact, ProcError> {
+        self.record(ProcEvent::Process(*lref));
+        Ok(FlagArtifact(!self.reject.contains(lref)))
     }
 
     fn commit_outputs(
         &self,
-        _path: &LinkPath<TestSpec>,
-        _outputs: &[Arc<CountArtifact>],
+        path: &LinkPath<TestSpec>,
+        _outputs: &[Arc<FlagArtifact>],
     ) -> Result<(), ProcError> {
+        self.record(ProcEvent::Commit(path.links().to_vec()));
         Ok(())
     }
 
     fn uncommit_outputs(
         &self,
-        _path: &LinkPath<TestSpec>,
-        _outputs: &[Arc<CountArtifact>],
+        path: &LinkPath<TestSpec>,
+        _outputs: &[Arc<FlagArtifact>],
     ) -> Result<(), ProcError> {
+        self.record(ProcEvent::Uncommit(path.links().to_vec()));
         Ok(())
     }
 
-    fn preprune_artifact(&self, _lref: &TestRef, _output: &CountArtifact) -> Result<(), ProcError> {
+    fn preprune_artifact(&self, lref: &TestRef, _output: &FlagArtifact) -> Result<(), ProcError> {
+        self.record(ProcEvent::Preprune(*lref));
         Ok(())
     }
 
-    fn prune_state_upto(&self, _nref: &TestRef) -> Result<(), ProcError> {
+    fn prune_state_upto(&self, nref: &TestRef) -> Result<(), ProcError> {
+        self.record(ProcEvent::Prune(*nref));
         Ok(())
     }
 }

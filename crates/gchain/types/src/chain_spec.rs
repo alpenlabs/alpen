@@ -14,7 +14,7 @@
 //! Nodes correspond to "at rest" states.  Blocks and checkpoints are different
 //! types of state transitions forming links between nodes.
 
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 
 pub type NodeRef<S: GChainSpec> = <S as GChainSpec>::NodeRef;
@@ -97,7 +97,6 @@ pub trait GLink: Clone {
 /// Not every chain can derive these from a link header alone, so they're fetched
 /// from the provider (see
 /// [`ChainProvider::fetch_link_endpoints`](crate::ChainProvider::fetch_link_endpoints)).
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinkEndpoints<S: GChainSpec> {
     origin: NodeRef<S>,
     target: NodeRef<S>,
@@ -118,6 +117,87 @@ impl<S: GChainSpec> LinkEndpoints<S> {
         &self.target
     }
 }
+
+// Implemented by hand so that the bounds fall on the ref types rather than on
+// the spec type, which is only ever a marker.
+impl<S: GChainSpec> Clone for LinkEndpoints<S> {
+    fn clone(&self) -> Self {
+        Self::new(self.origin.clone(), self.target.clone())
+    }
+}
+
+impl<S: GChainSpec> Debug for LinkEndpoints<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkEndpoints")
+            .field("origin", &self.origin)
+            .field("target", &self.target)
+            .finish()
+    }
+}
+
+impl<S: GChainSpec> PartialEq for LinkEndpoints<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.origin == other.origin && self.target == other.target
+    }
+}
+
+impl<S: GChainSpec> Eq for LinkEndpoints<S> {}
+
+/// Names a path through the node graph by the node it starts at and the links
+/// traversed from there, without checking that they connect.
+///
+/// This is the persisted and transmitted form of a path: it can be written
+/// down and read back without endpoints on hand.  Resolving it against the
+/// links' endpoints (see [`LinkPath::try_push_link`]) is what checks it
+/// actually holds together.
+pub struct PathDesc<S: GChainSpec> {
+    base_node: NodeRef<S>,
+    links: Vec<LinkRef<S>>,
+}
+
+impl<S: GChainSpec> PathDesc<S> {
+    pub fn new(base_node: NodeRef<S>, links: Vec<LinkRef<S>>) -> Self {
+        Self { base_node, links }
+    }
+
+    /// The node the path starts from.
+    pub fn base_node(&self) -> &NodeRef<S> {
+        &self.base_node
+    }
+
+    /// The links making up the path, in traversal order.
+    pub fn links(&self) -> &[LinkRef<S>] {
+        &self.links
+    }
+
+    pub fn into_parts(self) -> (NodeRef<S>, Vec<LinkRef<S>>) {
+        (self.base_node, self.links)
+    }
+}
+
+// Implemented by hand for the same reason as on `LinkEndpoints`.
+impl<S: GChainSpec> Clone for PathDesc<S> {
+    fn clone(&self) -> Self {
+        Self::new(self.base_node.clone(), self.links.clone())
+    }
+}
+
+impl<S: GChainSpec> Debug for PathDesc<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PathDesc")
+            .field("base_node", &self.base_node)
+            .field("links", &self.links)
+            .finish()
+    }
+}
+
+impl<S: GChainSpec> PartialEq for PathDesc<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.base_node == other.base_node && self.links == other.links
+    }
+}
+
+impl<S: GChainSpec> Eq for PathDesc<S> {}
 
 /// Describes a path through the node graph.
 ///
@@ -162,6 +242,11 @@ impl<S: GChainSpec> LinkPath<S> {
 
     pub fn is_empty(&self) -> bool {
         self.links.is_empty()
+    }
+
+    /// Copies out the base node and links, dropping the terminal node.
+    pub fn to_desc(&self) -> PathDesc<S> {
+        PathDesc::new(self.base_node.clone(), self.links.clone())
     }
 
     /// Attempts to add a link onto the end of the path.

@@ -149,6 +149,10 @@ pub trait GChainProc: Sized + 'static {
     ///
     /// The order of the outputs slice matches the order of nodes in the
     /// provided path.
+    ///
+    /// Must be idempotent: the executor records the stage's committed node
+    /// only after this returns, so a crash in between has it called again with
+    /// the same path on reopen.
     fn commit_outputs(
         &self,
         path: &LinkPath<Self::Spec>,
@@ -264,40 +268,14 @@ impl<A: ProcArtifact> DynProcArtifact for A {
     }
 }
 
-/// An artifact a processor stage produced for a particular link.
-///
-/// The artifact is behind an [`Arc`] because the executor hands the same
-/// artifact to the cache, to the commit path, and potentially to later stages
-/// depending on it.
-pub struct ProcStepOutput<P: GChainProc> {
-    lref: LinkRef<P::Spec>,
-    artifact: Arc<P::Artifact>,
-}
-
-impl<P: GChainProc> ProcStepOutput<P> {
-    pub fn new(lref: LinkRef<P::Spec>, artifact: Arc<P::Artifact>) -> Self {
-        Self { lref, artifact }
-    }
-
-    /// The link this artifact was produced for.
-    pub fn lref(&self) -> &LinkRef<P::Spec> {
-        &self.lref
-    }
-
-    /// The artifact produced from processing the link.
-    pub fn artifact(&self) -> &Arc<P::Artifact> {
-        &self.artifact
-    }
-}
-
 /// Describes the dependencies a processing stage has, so that we know which
 /// ways we are allowed to run them in parallel.
 #[derive(Clone, Debug)]
 pub struct ProcDeps {
-    /// Deps on other processors' output for the current node.
+    /// Deps on other processors' output for the current link.
     cur_node: Vec<ProcId>,
 
-    /// Deps on other processors' output for the previous node.
+    /// Deps on other processors' output along the path to the link's origin.
     prev_node: Vec<ProcId>,
 }
 
@@ -309,20 +287,24 @@ impl ProcDeps {
         }
     }
 
-    /// Deps on other processors' output for the current node.
+    /// Deps on other processors' output for the current link.
     ///
-    /// This limits how "widely" we can parallelize processing a single node.
+    /// This limits how "widely" we can parallelize processing a single link:
+    /// the named stages must have accepted the link before this stage runs on
+    /// it.
     pub fn cur_node(&self) -> &[ProcId] {
         &self.cur_node
     }
 
-    /// Deps on other processors' output for the previous node.
+    /// Deps on other processors' output along the path to the link's origin.
     ///
     /// This limits how "deeply" we can parallelize processing a stage across
-    /// many nodes.  A processor that does core validation may depend on its own
-    /// output from the previous node, so we have to process those in-order.
-    /// But some indexing step might not care, so we can process many nodes in
-    /// parallel.
+    /// many links: the named stages must have artifacts for every link from
+    /// their committed node to this link's origin, since that's what the state
+    /// at the origin is reconstructed from.  A processor that does core
+    /// validation depends on its own earlier output this way, so those links
+    /// have to be processed in order.  But some indexing step might not care,
+    /// so we can process many links in parallel.
     pub fn prev_node(&self) -> &[ProcId] {
         &self.prev_node
     }
@@ -337,10 +319,11 @@ impl ProcDeps {
 /// guarantees the ordering the declared deps imply.
 ///
 /// The context is scoped to the link being processed.  The fetches correspond
-/// to the two dep lists: the link currently being processed, and the links we
-/// arrived at its origin node by.  A `prev_node` dep covers both the single
-/// previous link and the whole uncommitted path, since the executor has to
-/// order the stages the same way for either.
+/// to the two dep lists: the link currently being processed, and a path of
+/// links reaching its origin node.  Which path that is when several converge
+/// on the origin is the executor's choice, and a stage must not depend on it:
+/// artifacts describe nodes, so every path from a stage's committed node to
+/// the origin reconstructs the same state there.
 pub trait ProcContext<P: GChainProc> {
     /// The ID the calling stage is registered under.
     ///
@@ -355,16 +338,8 @@ pub trait ProcContext<P: GChainProc> {
     /// the artifact isn't of type `A`.
     fn get_cur_artifact<A: ProcArtifact>(&self, proc_id: ProcId) -> Option<Arc<A>>;
 
-    /// Fetches the artifact another stage produced for the link we arrived at
-    /// this link's origin node by.
-    ///
-    /// Returns `None` if there is no previous link (we're at the base of the
-    /// path), if the stage produced no artifact for it, or if the artifact
-    /// isn't of type `A`.
-    fn get_prev_artifact<A: ProcArtifact>(&self, proc_id: ProcId) -> Option<Arc<A>>;
-
-    /// Fetches the artifacts a stage produced along the whole uncommitted path
-    /// from its committed node to this link's origin node.
+    /// Fetches the artifacts a stage produced along an uncommitted path from
+    /// its committed node to this link's origin node.
     ///
     /// This is what lets a stage reconstruct the state at the origin node
     /// without the executor having committed anything: its aggregated state is

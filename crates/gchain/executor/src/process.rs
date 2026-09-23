@@ -22,7 +22,7 @@ pub trait GChainProcDyn<S: GChainSpec>: 'static {
     fn proc_version(&self) -> ProcVersion;
 
     /// See [`GChainProc::on_init`].
-    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> Result<(), ProcError>;
+    fn on_init(&self, cur_node: &NodeRef<S>) -> Result<(), ProcError>;
 
     /// Processes a link and returns the type-erased artifact.
     ///
@@ -37,6 +37,15 @@ pub trait GChainProcDyn<S: GChainSpec>: 'static {
         link: &Link<S>,
         cache: &ArtifactCache<S>,
         path: &LinkPath<S>,
+    ) -> Result<Arc<dyn DynProcArtifact>, ProcError>;
+
+    /// Decodes a persisted artifact back into the stage's artifact type.
+    ///
+    /// The caller checks the data's version against [`Self::proc_version`]
+    /// first; this only decodes.
+    fn decode_artifact(
+        &self,
+        data: &ProcessorArtifactData,
     ) -> Result<Arc<dyn DynProcArtifact>, ProcError>;
 
     /// See [`GChainProc::commit_outputs`].
@@ -72,8 +81,9 @@ pub struct ProcShim<P: GChainProc> {
 
 impl<P: GChainProc> ProcShim<P> {
     /// Wraps a processor stage under the ID the executor registers it as.
-    // TODO(trey): the stage builder in `config` should own this pairing so the
-    // registered key and the shim's ID can't drift apart
+    ///
+    /// [`PipelineBuilder`](crate::PipelineBuilder) is what pairs the two in
+    /// practice, so the registered key and the shim's ID can't drift apart.
     pub fn new(proc_id: ProcId, proc: P) -> Self {
         Self { proc_id, proc }
     }
@@ -88,8 +98,8 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
         self.proc.proc_version()
     }
 
-    fn on_init(&self, cur_node: &NodeRef<S>, node: &Node<S>) -> Result<(), ProcError> {
-        self.proc.on_init(cur_node, node)
+    fn on_init(&self, cur_node: &NodeRef<S>) -> Result<(), ProcError> {
+        self.proc.on_init(cur_node)
     }
 
     fn process_link(
@@ -101,6 +111,14 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
     ) -> Result<Arc<dyn DynProcArtifact>, ProcError> {
         let ctx = ProcContextImpl::<P>::new(cache, path, lref.clone(), self.proc_id);
         let artifact = self.proc.process_link(lref, link, &ctx)?;
+        Ok(Arc::new(artifact))
+    }
+
+    fn decode_artifact(
+        &self,
+        data: &ProcessorArtifactData,
+    ) -> Result<Arc<dyn DynProcArtifact>, ProcError> {
+        let artifact = data.try_decode_artifact::<P::Artifact>()?;
         Ok(Arc::new(artifact))
     }
 
