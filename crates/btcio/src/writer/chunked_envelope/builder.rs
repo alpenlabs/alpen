@@ -21,7 +21,7 @@ use bitcoin::{
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 use strata_config::btcio::FeeBumpingConfig;
-use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 use strata_l1_txfmt::MagicBytes;
 
 use super::commit_op_return::build_commit_op_return;

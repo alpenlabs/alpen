@@ -19,6 +19,7 @@ hex.workspace = true
 rand_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+strata-asm-admin-threshold-sig.workspace = true
 strata-asm-admin-types.workspace = true
 strata-asm-bridge-types.workspace = true
 strata-asm-params.workspace = true

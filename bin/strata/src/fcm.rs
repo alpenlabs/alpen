@@ -21,6 +21,7 @@ use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLParams;
 use strata_ol_state_types_v1::OLStateV1;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
@@ -216,12 +217,16 @@ pub(crate) fn start(
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
 ) -> Result<FcmServiceHandle> {
     let checkpoint_state_rx = nodectx.status_channel().subscribe_checkpoint_state();
-    let sequencer_predicate = nodectx
+    let sequencer_key = nodectx
         .asm_params()
         .checkpoint_config()
         .ok_or_else(|| anyhow!("ASM checkpoint config required for FCM"))?
-        .sequencer_predicate
-        .clone();
+        .sequencer_key;
+    // TODO(STR-4467): Pass sequencer_key directly through FCM.
+    let sequencer_predicate = PredicateKey::try_new(
+        PredicateTypeId::Bip340Schnorr,
+        sequencer_key.as_ref().to_vec(),
+    )?;
     let fcm_ctx = Arc::new(StrataFcmContext::new(
         nodectx.storage().clone(),
         nodectx.ol_params().clone(),

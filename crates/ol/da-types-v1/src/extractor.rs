@@ -32,7 +32,7 @@ mod tests {
     use bitcoin::{ScriptBuf, Transaction};
     use strata_asm_proto_checkpoint_txs::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
     use strata_asm_proto_txs_test_utils::create_reveal_transaction_stub;
-    use strata_l1_envelope_fmt::parser::parse_envelope_payload;
+    use strata_l1_envelope_fmt::parse_envelope_payload;
 
     use crate::DaExtractorError;
 

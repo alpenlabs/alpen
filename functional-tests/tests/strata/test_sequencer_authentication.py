@@ -1,27 +1,29 @@
-"""Test sequencer block production and checkpoint finalization with CredRule::Unchecked."""
+"""Test sequencer block production and checkpoint finalization with sequencer authentication."""
 
 import logging
 
 import flexitest
 
 from common.base_test import StrataNodeTest
-from common.config import ServiceType
+from common.config import EpochSealingConfig, ServiceType
 from common.wait import wait_until_with_value
-from envconfigs.strata_unchecked import StrataUncheckedEnvConfig
+from envconfigs.strata import StrataEnvConfig
 from tests.checkpoint.helpers import mine_until_finalized_epoch
 
 logger = logging.getLogger(__name__)
 
 
 @flexitest.register
-class TestSequencerUnchecked(StrataNodeTest):
-    """Verify block production and checkpoint finalization without an external signer.
-
-    Uses ``CredRule::Unchecked`` — no strata-signer process is needed.
-    """
+class TestSequencerAuthentication(StrataNodeTest):
+    """Verify signed block production and authenticated checkpoint finalization."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env(StrataUncheckedEnvConfig(pre_generate_blocks=110))
+        ctx.set_env(
+            StrataEnvConfig(
+                pre_generate_blocks=110,
+                epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
+            )
+        )
 
     def main(self, ctx):
         bitcoin = self.get_service(ServiceType.Bitcoin)
@@ -49,7 +51,7 @@ class TestSequencerUnchecked(StrataNodeTest):
             )
 
         logger.info(
-            "sequencer produced %s new blocks with CredRule::Unchecked (height %s -> %s)",
+            "sequencer produced %s new blocks with a signer (height %s -> %s)",
             produced_blocks,
             initial_height,
             final_height,

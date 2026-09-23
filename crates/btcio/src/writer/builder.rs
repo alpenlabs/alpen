@@ -27,7 +27,7 @@ use bitcoind_async_client::{
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeeBumpingConfig;
 use strata_csm_types::L1Payload;
-use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
+use strata_l1_envelope_fmt::{EnvelopeBuildError, EnvelopeScriptBuilder};
 use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
 use strata_primitives::buf::Buf32;
 use thiserror::Error;
