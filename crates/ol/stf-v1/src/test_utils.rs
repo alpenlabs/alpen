@@ -2106,6 +2106,31 @@ pub fn get_snark_state_expect(
     (snark_account, snark_account.as_snark_account().unwrap())
 }
 
+/// Builds a snark account update that consumes `inbox_msg` as the only message
+/// in the [`TEST_SNARK_ACCOUNT_ID`] account's inbox and transfers 1_000_000
+/// sats to [`TEST_RECIPIENT_ID`].
+///
+/// The update starts from the snark account's live state in `state`, so call it
+/// after the block that delivers `inbox_msg` has executed.
+pub fn build_snark_update(
+    state: &MemoryStateBaseLayer,
+    inbox_msg: &MessageEntry,
+) -> OLTransactionV1 {
+    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    // A one-message MMR yields the proof for the only delivered message, which
+    // sits at inbox index 0.
+    let mut inbox_tracker = InboxMmrTracker::new();
+    let proof = inbox_tracker.add_message(inbox_msg);
+
+    let (_, snark_state) = get_snark_state_expect(state, snark_id);
+    SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+        .with_processed_msgs(vec![inbox_msg.clone()])
+        .with_inbox_proofs(vec![proof])
+        .with_transfer(make_account_id(TEST_RECIPIENT_ID), 1_000_000)
+        .build(snark_id, make_state_root(2), vec![0u8; 32])
+}
+
 /// The inbox message a GAM block delivers and a snark update consumes in tests.
 pub fn snark_inbox_msg() -> MessageEntry {
     snark_inbox_msg_with_data(b"inbox msg")

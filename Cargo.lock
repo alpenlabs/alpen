@@ -9812,6 +9812,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-stf"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ol-chain-types-v1",
+ "strata-ol-da-types-v1",
+ "strata-ol-params",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-ol-stf-v1",
+ "strata-ol-tx-types-v1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "strata-ol-stf-v1"
 version = "0.1.0"
 dependencies = [

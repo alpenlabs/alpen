@@ -35,6 +35,7 @@ members = [
   "crates/ol/state-support-types",
   "crates/ol/state-types",
   "crates/ol/state-types-v1",
+  "crates/ol/stf",
   "crates/ol/stf-v1",
   "crates/ol/tx-types-v1",
   "crates/paas",
@@ -130,6 +131,7 @@ strata-ol-state-provider = { path = "crates/ol/state-provider" }
 strata-ol-state-support-types = { path = "crates/ol/state-support-types" }
 strata-ol-state-types = { path = "crates/ol/state-types" }
 strata-ol-state-types-v1 = { path = "crates/ol/state-types-v1" }
+strata-ol-stf = { path = "crates/ol/stf" }
 strata-ol-stf-v1 = { path = "crates/ol/stf-v1" }
 strata-ol-tx-types-v1 = { path = "crates/ol/tx-types-v1" }
 strata-open-rpc = { path = "crates/rpc/open-rpc" }

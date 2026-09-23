@@ -6,7 +6,7 @@
 //! combined, and a bridge withdrawal. Each test builds a multi-block epoch
 //! with empty filler blocks around the meaningful ones.
 
-use strata_acct_types::{BitcoinAmount, MessageEntry};
+use strata_acct_types::BitcoinAmount;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
@@ -20,7 +20,7 @@ use strata_predicate::{PredicateKey, PredicateTypeId};
 use crate::assembly::{BlockComponents, CompletedBlock};
 use crate::test_utils::{
     EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
-    TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
+    TEST_SNARK_ACCOUNT_ID, build_snark_update, epoch_runner_run_block as run_block,
     epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
     epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
     make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state,
@@ -317,24 +317,6 @@ fn run_withdrawal_update_blocks(
         )
         .build(snark_id, make_state_root(2), vec![0u8; 32]);
     run_block(state, blocks, &prev, txs_components(update_tx))
-}
-
-/// Builds a snark account update tx consuming the single inbox message from
-/// `state`'s live snark account.
-fn build_snark_update(state: &MemoryStateBaseLayer, inbox_msg: &MessageEntry) -> OLTransactionV1 {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-
-    // A one-message MMR yields the proof for the message delivered by the GAM;
-    // empty filler blocks do not touch the inbox, so it stays at index 0.
-    let mut inbox_tracker = InboxMmrTracker::new();
-    let proof = inbox_tracker.add_message(inbox_msg);
-
-    let (_, snark_state) = get_snark_state_expect(state, snark_id);
-    SnarkUpdateBuilder::from_snark_state(snark_state.clone())
-        .with_processed_msgs(vec![inbox_msg.clone()])
-        .with_inbox_proofs(vec![proof])
-        .with_transfer(make_account_id(TEST_RECIPIENT_ID), 1_000_000)
-        .build(snark_id, make_state_root(2), vec![0u8; 32])
 }
 
 /// Reconstructs post-epoch OL state from checkpoint DA and the epoch's L1 manifests.
