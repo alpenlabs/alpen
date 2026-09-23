@@ -641,8 +641,8 @@ fn index_l1_block_ref_mmr_writes(
 ) -> WorkerResult<()> {
     let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
     for write in output.indexer_writes().l1_block_records() {
-        let expected_idx = write.height as u64;
-        let l1_block_ref = &write.record;
+        let expected_idx = write.height() as u64;
+        let l1_block_ref = write.record();
         let expected_hash: Hash = l1_block_ref.leaf_hash().into();
         let preimage = l1_block_ref.as_ssz_bytes();
 
@@ -857,7 +857,7 @@ mod tests {
 
     fn l1_block_record_write(height: u32, seed: u8) -> L1BlockRecordWrite {
         let record = L1BlockRecord::new([seed; 32], [seed.wrapping_add(1); 32]);
-        L1BlockRecordWrite { height, record }
+        L1BlockRecordWrite::new(height, record)
     }
 
     fn assert_mmr_entry(
@@ -883,7 +883,7 @@ mod tests {
         write: &L1BlockRecordWrite,
     ) {
         let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-        let l1_block_ref = &write.record;
+        let l1_block_ref = write.record();
         let expected_hash: Hash = l1_block_ref.leaf_hash().into();
         let expected_preimage = l1_block_ref.as_ssz_bytes();
 

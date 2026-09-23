@@ -27,7 +27,8 @@ pub trait GChainProcDyn<S: GChainSpec>: 'static {
     /// Processes a link and returns the type-erased artifact.
     ///
     /// The cache supplies the stage's declared deps, resolved against the link
-    /// being processed and the link we arrived at its origin node by.
+    /// being processed and `path`, the uncommitted path from the committed node
+    /// to the link's origin node.
     ///
     /// See [`GChainProc::process_link`].
     fn process_link(
@@ -35,7 +36,7 @@ pub trait GChainProcDyn<S: GChainSpec>: 'static {
         lref: &LinkRef<S>,
         link: &Link<S>,
         cache: &ArtifactCache<S>,
-        prev_lref: Option<&LinkRef<S>>,
+        path: &LinkPath<S>,
     ) -> Result<Arc<dyn DynProcArtifact>, ProcError>;
 
     /// See [`GChainProc::commit_outputs`].
@@ -96,9 +97,9 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
         lref: &LinkRef<S>,
         link: &Link<S>,
         cache: &ArtifactCache<S>,
-        prev_lref: Option<&LinkRef<S>>,
+        path: &LinkPath<S>,
     ) -> Result<Arc<dyn DynProcArtifact>, ProcError> {
-        let ctx = ProcContextImpl::<P>::new(cache, lref.clone(), prev_lref.cloned());
+        let ctx = ProcContextImpl::<P>::new(cache, path, lref.clone(), self.proc_id);
         let artifact = self.proc.process_link(lref, link, &ctx)?;
         Ok(Arc::new(artifact))
     }

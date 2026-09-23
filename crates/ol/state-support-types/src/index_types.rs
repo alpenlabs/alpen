@@ -5,9 +5,16 @@
 // TODO(STR-3677): make the field names here more consistent, which should also reflect in
 // the spec and state accessor fn/arg names
 
+//
+// These are persisted as processing artifacts by whoever ran the indexing, so
+// they carry serde impls; the SSZ-typed fields go through [`SerdeSsz`] to keep
+// their protocol encoding.
+
+use serde::{Deserialize, Serialize};
 use strata_acct_types::{AccountId, Hash, L1BlockRecord, MessageEntry};
 use strata_identifiers::L1Height;
 use strata_predicate::PredicateKey;
+use strata_serde_utils::SerdeSsz;
 use strata_snark_acct_types::Seqno;
 
 // ============================================================================
@@ -15,23 +22,23 @@ use strata_snark_acct_types::Seqno;
 // ============================================================================
 
 /// A tracked inbox message write.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InboxMessageWrite {
     /// The account that received the message.
-    pub account_id: AccountId,
+    account_id: AccountId,
 
     /// The message entry that was inserted.
-    pub entry: MessageEntry,
+    entry: SerdeSsz<MessageEntry>,
 
     /// The index in the MMR where this entry was inserted.
-    pub index: u64,
+    index: u64,
 }
 
 impl InboxMessageWrite {
     pub fn new(account_id: AccountId, entry: MessageEntry, index: u64) -> Self {
         Self {
             account_id,
-            entry,
+            entry: SerdeSsz::new(entry),
             index,
         }
     }
@@ -41,7 +48,7 @@ impl InboxMessageWrite {
     }
 
     pub fn entry(&self) -> &MessageEntry {
-        &self.entry
+        self.entry.inner()
     }
 
     pub fn index(&self) -> u64 {
@@ -57,7 +64,7 @@ impl InboxMessageWrite {
 ///
 /// Extra data associated with the update is no longer tracked here; it is sourced from the
 /// emitted `SnarkAccountUpdateLogData` logs at indexing time.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SnarkAcctStateUpdate {
     /// The account whose state was updated.
     account_id: AccountId,
@@ -77,7 +84,7 @@ pub struct SnarkAcctStateUpdate {
     next_read_idx: u64,
 
     /// The seqno after the update.
-    seqno: Seqno,
+    seqno: SerdeSsz<Seqno>,
 }
 
 impl SnarkAcctStateUpdate {
@@ -93,7 +100,7 @@ impl SnarkAcctStateUpdate {
             state,
             prev_next_read_idx,
             next_read_idx,
-            seqno,
+            seqno: SerdeSsz::new(seqno),
         }
     }
 
@@ -120,7 +127,7 @@ impl SnarkAcctStateUpdate {
 
     /// Returns the seqno for this update.
     pub fn seqno(&self) -> Seqno {
-        self.seqno
+        *self.seqno.inner()
     }
 
     /// Sets the inner state root.
@@ -134,7 +141,7 @@ impl SnarkAcctStateUpdate {
 // ============================================================================
 
 /// A tracked update to a snark account's predicate (update) verification key.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PredicateKeyUpdate {
     /// The account whose predicate key was updated.
     account_id: AccountId,
@@ -162,13 +169,30 @@ impl PredicateKeyUpdate {
 // ============================================================================
 
 /// A tracked L1 block record write.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct L1BlockRecordWrite {
     /// The L1 block height associated with the record.
-    pub height: L1Height,
+    height: L1Height,
 
     /// The L1 block record that was appended.
-    pub record: L1BlockRecord,
+    record: SerdeSsz<L1BlockRecord>,
+}
+
+impl L1BlockRecordWrite {
+    pub fn new(height: L1Height, record: L1BlockRecord) -> Self {
+        Self {
+            height,
+            record: SerdeSsz::new(record),
+        }
+    }
+
+    pub fn height(&self) -> L1Height {
+        self.height
+    }
+
+    pub fn record(&self) -> &L1BlockRecord {
+        self.record.inner()
+    }
 }
 
 // ============================================================================
@@ -176,7 +200,7 @@ pub struct L1BlockRecordWrite {
 // ============================================================================
 
 /// A tracked account-creation event.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AccountCreatedWrite {
     /// The id of the newly created account.
     account_id: AccountId,
@@ -199,7 +223,7 @@ impl AccountCreatedWrite {
 /// Collection of all tracked writes from the indexer layer.
 ///
 /// This struct is extensible - add new `Vec` fields for future tracked operations.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct IndexerWrites {
     created_accounts: Vec<AccountCreatedWrite>,
     inbox_messages: Vec<InboxMessageWrite>,

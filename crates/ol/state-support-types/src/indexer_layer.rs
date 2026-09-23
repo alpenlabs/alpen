@@ -468,10 +468,8 @@ where
 
     fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
         // Track the L1 block record write.
-        self.writes.push_l1_block_record(L1BlockRecordWrite {
-            height,
-            record: rec.clone(),
-        });
+        self.writes
+            .push_l1_block_record(L1BlockRecordWrite::new(height, rec.clone()));
 
         // Pass through to inner.
         self.inner.append_l1_block_rec(height, rec);
@@ -673,8 +671,8 @@ mod tests {
         // Verify the write was tracked
         let (_, writes) = indexer.into_parts();
         assert_eq!(writes.inbox_messages().len(), 1);
-        assert_eq!(writes.inbox_messages()[0].account_id, account_id);
-        assert_eq!(writes.inbox_messages()[0].index, 0); // First message at index 0
+        assert_eq!(writes.inbox_messages()[0].account_id(), account_id);
+        assert_eq!(writes.inbox_messages()[0].index(), 0); // First message at index 0
     }
 
     #[test]
@@ -706,8 +704,8 @@ mod tests {
 
         // Verify indices are sequential
         for (i, write) in writes.inbox_messages().iter().enumerate() {
-            assert_eq!(write.index, i as u64);
-            assert_eq!(write.account_id, account_id);
+            assert_eq!(write.index(), i as u64);
+            assert_eq!(write.account_id(), account_id);
         }
     }
 
@@ -776,12 +774,12 @@ mod tests {
         assert_eq!(writes.inbox_messages().len(), 2);
 
         // First write should be for account 1
-        assert_eq!(writes.inbox_messages()[0].account_id, account_id_1);
-        assert_eq!(writes.inbox_messages()[0].index, 0);
+        assert_eq!(writes.inbox_messages()[0].account_id(), account_id_1);
+        assert_eq!(writes.inbox_messages()[0].index(), 0);
 
         // Second write should be for account 2
-        assert_eq!(writes.inbox_messages()[1].account_id, account_id_2);
-        assert_eq!(writes.inbox_messages()[1].index, 0);
+        assert_eq!(writes.inbox_messages()[1].account_id(), account_id_2);
+        assert_eq!(writes.inbox_messages()[1].index(), 0);
     }
 
     #[test]
@@ -800,7 +798,7 @@ mod tests {
         // Verify the write was tracked
         let (_, writes) = indexer.into_parts();
         assert_eq!(writes.l1_block_records().len(), 1);
-        assert_eq!(writes.l1_block_records()[0].height, height);
+        assert_eq!(writes.l1_block_records()[0].height(), height);
     }
 
     // =========================================================================
@@ -986,7 +984,7 @@ mod tests {
 
         // Verify writes were tracked
         assert_eq!(writes.inbox_messages().len(), 1);
-        assert_eq!(writes.inbox_messages()[0].index, 0);
+        assert_eq!(writes.inbox_messages()[0].index(), 0);
     }
 
     #[test]
@@ -1062,9 +1060,9 @@ mod tests {
         let (_, writes) = indexer.into_parts();
 
         // Verify indices are the BEFORE-insertion indices (0, 1, 2)
-        assert_eq!(writes.inbox_messages()[0].index, 0);
-        assert_eq!(writes.inbox_messages()[1].index, 1);
-        assert_eq!(writes.inbox_messages()[2].index, 2);
+        assert_eq!(writes.inbox_messages()[0].index(), 0);
+        assert_eq!(writes.inbox_messages()[1].index(), 1);
+        assert_eq!(writes.inbox_messages()[2].index(), 2);
     }
 
     #[test]
@@ -1088,7 +1086,7 @@ mod tests {
             .unwrap();
 
         let (_, writes) = indexer.into_parts();
-        assert_eq!(writes.inbox_messages()[0].account_id, account_id);
+        assert_eq!(writes.inbox_messages()[0].account_id(), account_id);
     }
 
     #[test]

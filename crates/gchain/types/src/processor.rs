@@ -339,11 +339,18 @@ impl ProcDeps {
 /// executor is free to treat any other fetch as missing, since it only
 /// guarantees the ordering the declared deps imply.
 ///
-/// The context is scoped to the link being processed, so the two fetches
-/// correspond to the two dep lists: the link currently being processed, and the
-/// link we arrived at its origin node by.
-// TODO(trey): this is kinda stubby, will fill out more in the future, see `ProcContextImpl`
+/// The context is scoped to the link being processed.  The fetches correspond
+/// to the two dep lists: the link currently being processed, and the links we
+/// arrived at its origin node by.  A `prev_node` dep covers both the single
+/// previous link and the whole uncommitted path, since the executor has to
+/// order the stages the same way for either.
 pub trait ProcContext<P: GChainProc> {
+    /// The ID the calling stage is registered under.
+    ///
+    /// Stages don't know their own ID otherwise, and a stage that builds on its
+    /// own earlier artifacts needs it to fetch them.
+    fn proc_id(&self) -> ProcId;
+
     /// Fetches the artifact another stage produced for the link currently being
     /// processed.
     ///
@@ -358,6 +365,61 @@ pub trait ProcContext<P: GChainProc> {
     /// path), if the stage produced no artifact for it, or if the artifact
     /// isn't of type `A`.
     fn get_prev_artifact<A: ProcArtifact>(&self, proc_id: ProcId) -> Option<Arc<A>>;
+
+    /// Fetches the artifacts a stage produced along the whole uncommitted path
+    /// from its committed node to this link's origin node.
+    ///
+    /// This is what lets a stage reconstruct the state at the origin node
+    /// without the executor having committed anything: its aggregated state is
+    /// at the path's base, and the artifacts along the path are the diffs that
+    /// carry it forward from there.
+    ///
+    /// Returns `None` if the stage has no artifact for some link on the path,
+    /// or if any of them isn't of type `A`.  The path is empty when the origin
+    /// node is the committed node itself.
+    fn get_path_artifacts<A: ProcArtifact>(
+        &self,
+        proc_id: ProcId,
+    ) -> Option<PathArtifacts<P::Spec, A>>;
+}
+
+/// Artifacts one stage produced along a path through the graph, in traversal
+/// order.
+///
+/// The base is the node the path departs from, which for artifacts fetched
+/// through [`ProcContext::get_path_artifacts`] is the stage's committed node.
+pub struct PathArtifacts<S: GChainSpec, A> {
+    base: NodeRef<S>,
+    steps: Vec<(LinkRef<S>, Arc<A>)>,
+}
+
+impl<S: GChainSpec, A> PathArtifacts<S, A> {
+    pub fn new(base: NodeRef<S>, steps: Vec<(LinkRef<S>, Arc<A>)>) -> Self {
+        Self { base, steps }
+    }
+
+    /// The node the path departs from.
+    pub fn base(&self) -> &NodeRef<S> {
+        &self.base
+    }
+
+    /// The links along the path with their artifacts, in traversal order.
+    pub fn steps(&self) -> &[(LinkRef<S>, Arc<A>)] {
+        &self.steps
+    }
+
+    /// Iterates over just the artifacts, in traversal order.
+    pub fn iter_artifacts(&self) -> impl Iterator<Item = &A> {
+        self.steps.iter().map(|(_, a)| a.as_ref())
+    }
+
+    pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
 }
 
 #[cfg(test)]

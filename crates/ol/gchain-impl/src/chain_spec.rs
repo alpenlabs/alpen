@@ -17,7 +17,7 @@ impl GChainSpec for OLChainSpec {
 
     fn get_header_ref(nh: &Self::LinkHeader) -> Self::LinkRef {
         match nh {
-            OLLinkHeader::BlockV1(header) => header.compute_block_commitment().into(),
+            OLLinkHeader::Block(header) => header.compute_block_commitment().into(),
             OLLinkHeader::Checkpoint(ckpt) => ckpt.get_epoch_commitment().into(),
         }
     }
@@ -26,11 +26,11 @@ impl GChainSpec for OLChainSpec {
         match nh {
             // The genesis block is the start of the graph, so it has no
             // predecessor link.
-            OLLinkHeader::BlockV1(header) if header.is_genesis_slot() => None,
+            OLLinkHeader::Block(header) if header.is_genesis_slot() => None,
 
             // Slots are strictly sequential in OL v1, so the parent block is
             // always at the immediately preceding slot.
-            OLLinkHeader::BlockV1(header) => {
+            OLLinkHeader::Block(header) => {
                 let parent = OLBlockCommitment::new(header.slot() - 1, *header.parent_blkid());
                 Some(parent.into())
             }
