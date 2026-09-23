@@ -1,12 +1,62 @@
 //! Global state variables that are always accessible.
 
+use ssz::DecodeError;
+use ssz_types::Optional;
+use ssz_types::view::ToOwnedSsz;
 use strata_acct_types::{AccountSerial, BitcoinAmount};
-use strata_identifiers::Slot;
+use strata_identifiers::{Slot, SszDelegate, impl_ssz_via_delegate};
 use strata_ol_state_types::Coin;
 
-use crate::ssz_generated::ssz::state::GlobalStateV1;
+use crate::required_fields::require_present;
+use crate::ssz_generated::ssz::state::GlobalStateV1Ssz;
+
+/// Global OL state with all mandatory V1 fields present.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GlobalStateV1 {
+    cur_slot: Slot,
+    next_avail_serial: u64,
+    limbo_funds_sats: u64,
+}
+
+impl SszDelegate for GlobalStateV1 {
+    type Delegate = GlobalStateV1Ssz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        GlobalStateV1Ssz {
+            cur_slot: Optional::Some(self.cur_slot),
+            next_avail_serial: Optional::Some(self.next_avail_serial),
+            limbo_funds_sats: Optional::Some(self.limbo_funds_sats),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            cur_slot: require_present(delegate.cur_slot, "global.cur_slot")?,
+            next_avail_serial: require_present(
+                delegate.next_avail_serial,
+                "global.next_avail_serial",
+            )?,
+            limbo_funds_sats: require_present(
+                delegate.limbo_funds_sats,
+                "global.limbo_funds_sats",
+            )?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(GlobalStateV1);
+
+impl ToOwnedSsz<GlobalStateV1> for GlobalStateV1 {
+    fn to_owned(&self) -> GlobalStateV1 {
+        self.clone()
+    }
+}
 
 impl GlobalStateV1 {
+    pub(crate) fn set_limbo_funds_sats(&mut self, sats: u64) {
+        self.limbo_funds_sats = sats;
+    }
+
     /// Create a new global state.
     pub fn new(cur_slot: Slot, next_avail_serial: AccountSerial) -> Self {
         Self {
@@ -61,7 +111,7 @@ impl GlobalStateV1 {
     ///
     /// # Panics
     ///
-    /// If there's balance overflow.
+    /// Panics if there is balance overflow.
     pub fn add_limbo_funds_coin(&mut self, coin: Coin) {
         assert!(
             self.add_limbo_funds(coin.amt()),

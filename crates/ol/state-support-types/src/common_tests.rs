@@ -210,6 +210,8 @@ pub(crate) fn check_account_exists_falls_back_to_base<S: IStateAccessor>(fx: &Fi
 pub(crate) fn reads_all_fields_from_base<S: IStateAccessor>(fx: &Fixture, layer: &S) {
     let base = fx.base();
 
+    assert_eq!(layer.active_version(), base.active_version());
+    assert_eq!(layer.expected_version(), base.expected_version());
     assert_eq!(layer.cur_slot(), base.cur_slot());
     assert_eq!(layer.limbo_funds(), base.limbo_funds());
     assert_eq!(layer.cur_epoch(), base.cur_epoch());

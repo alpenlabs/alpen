@@ -15,6 +15,7 @@ fn main() {
         "strata_asm_manifest_types",
         "strata_snark_acct_types",
         "strata_predicate",
+        "strata_ol_state_types",
     ];
 
     build_ssz_files(

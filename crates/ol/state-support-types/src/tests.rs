@@ -635,6 +635,14 @@ impl TestState {
 impl IStateAccessor for TestState {
     type AccountState = TestAccountState;
 
+    fn active_version(&self) -> OLSpecId {
+        OLSpecId::V1
+    }
+
+    fn expected_version(&self) -> OLSpecId {
+        OLSpecId::V1
+    }
+
     fn cur_slot(&self) -> u64 {
         self.cur_slot
     }

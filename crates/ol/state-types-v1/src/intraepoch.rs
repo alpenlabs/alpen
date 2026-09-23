@@ -1,11 +1,48 @@
 //! Tools for the intraepoch state.
 
-use ssz_types::VariableList;
+use ssz::DecodeError;
+use ssz_types::view::ToOwnedSsz;
+use ssz_types::{Optional, VariableList};
 use strata_asm_manifest_types::AsmLogEntry;
-use strata_identifiers::L1Height;
+use strata_identifiers::{L1Height, SszDelegate, impl_ssz_via_delegate};
 use strata_ol_state_types::{PendingAsmLog, StateError};
 
-use crate::ssz_generated::ssz::state::*;
+use crate::required_fields::require_present;
+use crate::ssz_generated::ssz::state::IntraepochStateV1Ssz;
+use crate::{MAX_PENDING_ASM_LOGS, PendingAsmLogEntryV1};
+
+/// Intraepoch OL state with its required log buffer present.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IntraepochStateV1 {
+    pending_asm_logs: VariableList<PendingAsmLogEntryV1, { MAX_PENDING_ASM_LOGS as usize }>,
+}
+
+impl SszDelegate for IntraepochStateV1 {
+    type Delegate = IntraepochStateV1Ssz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        IntraepochStateV1Ssz {
+            pending_asm_logs: Optional::Some(self.pending_asm_logs),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            pending_asm_logs: require_present(
+                delegate.pending_asm_logs,
+                "intraepoch.pending_asm_logs",
+            )?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(IntraepochStateV1);
+
+impl ToOwnedSsz<IntraepochStateV1> for IntraepochStateV1 {
+    fn to_owned(&self) -> IntraepochStateV1 {
+        self.clone()
+    }
+}
 
 impl IntraepochStateV1 {
     /// Creates a new empty instance.
@@ -13,6 +50,7 @@ impl IntraepochStateV1 {
         Self::default()
     }
 
+    /// Returns the buffered ASM logs.
     pub fn pending_asm_logs(&self) -> &[PendingAsmLogEntryV1] {
         &self.pending_asm_logs
     }

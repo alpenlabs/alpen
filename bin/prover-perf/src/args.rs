@@ -1,8 +1,6 @@
 use argh::FromArgs;
 
-use crate::programs::GuestProgram;
-
-/// Evaluate the performance of SP1 on programs.
+/// Evaluate checkpoint guest execution performance on SP1.
 #[derive(Debug, Clone, FromArgs)]
 pub struct EvalArgs {
     /// whether to post on github or run locally and only log the results
@@ -21,22 +19,7 @@ pub struct EvalArgs {
     #[argh(option, default = "String::from(\"local_commit\")")]
     pub commit_hash: String,
 
-    /// programs to run (comma-delimited and/or repeated),
-    /// e.g. `--programs checkpoint`
-    #[argh(option)]
-    pub programs: Vec<String>,
-}
-
-/// Parses program strings into [`GuestProgram`] variants.
-///
-/// Supports both comma-separated values and repeated options:
-/// - `--programs checkpoint`
-/// - `--programs checkpoint --programs checkpoint`
-pub fn parse_programs(raw: &[String]) -> Result<Vec<GuestProgram>, String> {
-    raw.iter()
-        .flat_map(|s| s.split(','))
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.parse::<GuestProgram>())
-        .collect()
+    /// guest to benchmark (only checkpoint; retained for existing CI commands)
+    #[argh(option, default = "String::from(\"checkpoint\")")]
+    pub programs: String,
 }

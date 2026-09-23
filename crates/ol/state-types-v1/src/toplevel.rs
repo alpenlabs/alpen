@@ -1,12 +1,85 @@
 //! Toplevel state.
 
+use ssz::DecodeError;
+use ssz_types::Optional;
+use ssz_types::view::ToOwnedSsz;
 use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS, StrataHasher};
+use strata_identifiers::{L1BlockCommitment, SszDelegate, impl_ssz_via_delegate};
 use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
-use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
+use strata_ol_state_types::{IAccountState, NewAccountData, OLSpecId, StateError, StateResult};
 
-use crate::ssz_generated::ssz::state::*;
-use crate::{MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeStateV1, OLSnarkAccountStateV1, WriteBatch};
+use crate::required_fields::require_present;
+use crate::ssz_generated::ssz::state::OLStateV1Ssz;
+use crate::{
+    EpochalStateV1, GlobalStateV1, IntraepochStateV1, MAX_PENDING_ASM_LOGS,
+    MMR_SENTINEL_DUMMY_LEAF, OLAccountStateV1, OLAccountTypeStateV1, OLSnarkAccountStateV1,
+    ProtocolStateV1, TsnlLedgerAccountsTableV1, WriteBatch,
+};
+
+/// OL state whose mandatory V1 fields remain present through decoding and mutation.
+///
+/// Required fields cannot be removed through the public API:
+///
+/// ```compile_fail
+/// use ssz_types::Optional;
+/// use strata_ol_state_types_v1::OLStateV1;
+///
+/// fn remove_global(mut state: OLStateV1) {
+///     state.global = Optional::None;
+/// }
+/// ```
+///
+/// Nested mutation exposes domain methods, not optional wire fields:
+///
+/// ```compile_fail
+/// use ssz_types::Optional;
+/// use strata_ol_state_types_v1::OLStateV1;
+///
+/// fn remove_slot(mut state: OLStateV1) {
+///     state.global_state_mut().cur_slot = Optional::None;
+/// }
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OLStateV1 {
+    epoch: EpochalStateV1,
+    global: GlobalStateV1,
+    intraepoch: IntraepochStateV1,
+    ledger: TsnlLedgerAccountsTableV1,
+    protocol_state: ProtocolStateV1,
+}
+
+impl SszDelegate for OLStateV1 {
+    type Delegate = OLStateV1Ssz;
+
+    fn into_delegate(self) -> Self::Delegate {
+        OLStateV1Ssz {
+            epoch: Optional::Some(self.epoch),
+            global: Optional::Some(self.global),
+            intraepoch: Optional::Some(self.intraepoch),
+            ledger: Optional::Some(self.ledger),
+            protocol_state: Optional::Some(self.protocol_state),
+        }
+    }
+
+    fn from_delegate(delegate: Self::Delegate) -> Result<Self, DecodeError> {
+        Ok(Self {
+            epoch: require_present(delegate.epoch, "epoch")?,
+            global: require_present(delegate.global, "global")?,
+            intraepoch: require_present(delegate.intraepoch, "intraepoch")?,
+            ledger: require_present(delegate.ledger, "ledger")?,
+            protocol_state: require_present(delegate.protocol_state, "protocol_state")?,
+        })
+    }
+}
+
+impl_ssz_via_delegate!(OLStateV1);
+
+impl ToOwnedSsz<OLStateV1> for OLStateV1 {
+    fn to_owned(&self) -> OLStateV1 {
+        self.clone()
+    }
+}
 
 impl OLStateV1 {
     /// Creates initial OL state from genesis parameters.
@@ -64,28 +137,79 @@ impl OLStateV1 {
         );
         let intraepoch = IntraepochStateV1::default();
 
-        Ok(Self {
+        Ok(Self::from_parts(
             epoch,
             global,
             intraepoch,
             ledger,
-        })
+            ProtocolStateV1::genesis(),
+        ))
     }
 
+    pub(crate) fn from_parts(
+        epoch: EpochalStateV1,
+        global: GlobalStateV1,
+        intraepoch: IntraepochStateV1,
+        ledger: TsnlLedgerAccountsTableV1,
+        protocol_state: ProtocolStateV1,
+    ) -> Self {
+        Self {
+            epoch,
+            global,
+            intraepoch,
+            ledger,
+            protocol_state,
+        }
+    }
+
+    /// Returns the global state.
     pub fn global_state(&self) -> &GlobalStateV1 {
         &self.global
     }
 
+    /// Returns the global state.
+    pub fn global_state_mut(&mut self) -> &mut GlobalStateV1 {
+        &mut self.global
+    }
+
+    /// Returns the epoch state.
     pub fn epoch_state(&self) -> &EpochalStateV1 {
         &self.epoch
     }
 
+    /// Returns the epoch state.
+    pub fn epoch_state_mut(&mut self) -> &mut EpochalStateV1 {
+        &mut self.epoch
+    }
+
+    /// Returns the intraepoch state.
     pub fn intraepoch_state(&self) -> &IntraepochStateV1 {
         &self.intraepoch
     }
 
+    /// Returns the intraepoch state.
     pub fn intraepoch_state_mut(&mut self) -> &mut IntraepochStateV1 {
         &mut self.intraepoch
+    }
+
+    /// Returns the ledger state.
+    pub fn ledger(&self) -> &TsnlLedgerAccountsTableV1 {
+        &self.ledger
+    }
+
+    /// Returns the ledger state.
+    pub fn ledger_mut(&mut self) -> &mut TsnlLedgerAccountsTableV1 {
+        &mut self.ledger
+    }
+
+    /// Returns the committed active version.
+    pub fn active_version(&self) -> OLSpecId {
+        self.protocol_state.active_version()
+    }
+
+    /// Returns the committed expected version.
+    pub fn expected_version(&self) -> OLSpecId {
+        self.protocol_state.expected_version()
     }
 
     /// Iterates over all snark account ids in account-id order.
@@ -107,7 +231,7 @@ impl OLStateV1 {
     /// we're constructing write batches.
     pub fn check_write_batch_safe(&self, batch: &WriteBatch) -> StateResult<()> {
         // Check serial ordering.
-        let mut next_serial = self.global.get_next_avail_serial();
+        let mut next_serial = self.global_state().get_next_avail_serial();
         for (serial, id) in batch.ledger().iter_new_accounts() {
             let write = batch
                 .ledger()
@@ -132,7 +256,7 @@ impl OLStateV1 {
             }
 
             // Make sure that the account doesn't already exist.
-            if self.ledger.get_account_state(id).is_some() {
+            if self.ledger().get_account_state(id).is_some() {
                 return Err(StateError::AccountExists(*id));
             }
 
@@ -147,7 +271,7 @@ impl OLStateV1 {
             }
 
             let existing = self
-                .ledger
+                .ledger()
                 .get_account_state(id)
                 .ok_or(StateError::AccountSanityCheckFail(*id))?;
             if write.serial() != existing.serial() {
@@ -166,7 +290,7 @@ impl OLStateV1 {
         let starting_logs = if intraepoch_writes.reset {
             0
         } else {
-            self.intraepoch.pending_asm_logs().len() as u64
+            self.intraepoch_state().pending_asm_logs().len() as u64
         };
         let appended_logs = intraepoch_writes.appended_pending_asm_logs.len() as u64;
         ensure_pending_asm_logs_fit(starting_logs, appended_logs)?;
@@ -191,22 +315,22 @@ impl OLStateV1 {
         // Create new accounts and update the serial counter.
         let mut num_new_accounts = 0usize;
         for (account_id, write) in new_accounts {
-            self.ledger
+            self.ledger_mut()
                 .create_account(account_id, write.into_state())
                 .expect("state: failed to create account");
             num_new_accounts += 1;
         }
         if num_new_accounts > 0 {
-            let next_serial = self.global.get_next_avail_serial();
+            let next_serial = self.global_state().get_next_avail_serial();
             let new_serial =
                 AccountSerial::from(next_serial.into_inner() + num_new_accounts as u32);
-            self.global.set_next_avail_serial(new_serial);
+            self.global_state_mut().set_next_avail_serial(new_serial);
         }
 
         // Update existing accounts.
         for (account_id, write) in updated_accounts {
             let existing = self
-                .ledger
+                .ledger_mut()
                 .get_account_state_mut(&account_id)
                 .expect("state: missing expected account");
             existing
@@ -216,16 +340,17 @@ impl OLStateV1 {
 
         // Apply global state writes.
         if let Some(slot) = global_writes.cur_slot {
-            self.global.set_cur_slot(slot);
+            self.global_state_mut().set_cur_slot(slot);
         }
 
         if let Some(limbo_funds_sats) = global_writes.limbo_funds_sats {
-            self.global.limbo_funds_sats = limbo_funds_sats;
+            self.global_state_mut()
+                .set_limbo_funds_sats(limbo_funds_sats);
         }
 
         // Apply epochal state writes.
         if let Some(epoch) = epochal_writes.cur_epoch {
-            self.epoch.set_cur_epoch(epoch);
+            self.epoch_state_mut().set_cur_epoch(epoch);
         }
 
         if let Some(blkid) = epochal_writes.last_l1_blkid {
@@ -233,33 +358,35 @@ impl OLStateV1 {
             // For now, set them individually.
             let height = epochal_writes
                 .last_l1_height
-                .unwrap_or_else(|| self.epoch.last_l1_height());
-            self.epoch.last_l1_block = strata_identifiers::L1BlockCommitment::new(height, blkid);
+                .unwrap_or_else(|| self.epoch_state().last_l1_height());
+            self.epoch_state_mut()
+                .set_last_l1_block(L1BlockCommitment::new(height, blkid));
         } else if let Some(height) = epochal_writes.last_l1_height {
-            self.epoch.last_l1_block =
-                strata_identifiers::L1BlockCommitment::new(height, *self.epoch.last_l1_blkid());
+            let blkid = *self.epoch_state().last_l1_blkid();
+            self.epoch_state_mut()
+                .set_last_l1_block(L1BlockCommitment::new(height, blkid));
         }
 
         if let Some(epoch) = epochal_writes.asm_recorded_epoch {
-            self.epoch.set_asm_recorded_epoch(epoch);
+            self.epoch_state_mut().set_asm_recorded_epoch(epoch);
         }
 
         if let Some(amt) = epochal_writes.total_ledger_balance {
-            self.epoch.set_total_ledger_balance(amt);
+            self.epoch_state_mut().set_total_ledger_balance(amt);
         }
 
         if let Some(mmr) = epochal_writes.l1_block_refs_mmr {
-            self.epoch.l1_block_refs_mmr = mmr;
+            self.epoch_state_mut().set_l1_block_refs_mmr(mmr);
         }
 
         // Apply intraepoch state writes.
         if intraepoch_writes.reset {
-            self.intraepoch.reset();
+            self.intraepoch_state_mut().reset();
         }
         for entry in intraepoch_writes.appended_pending_asm_logs {
             // This panic is safe.
             let ssz_entry = entry.into();
-            self.intraepoch
+            self.intraepoch_state_mut()
                 .try_append_pending_log(ssz_entry)
                 .expect("ol/state: unable to append pending ASM log");
         }
@@ -271,7 +398,7 @@ impl OLStateV1 {
     ///
     /// # Panics
     ///
-    /// If the serial isn't the expected next serial.
+    /// Panics if the serial is not the expected next serial.
     pub fn create_new_account(
         &mut self,
         id: AccountId,
@@ -279,20 +406,20 @@ impl OLStateV1 {
         new_acct_data: NewAccountData,
     ) -> StateResult<()> {
         // Sanity check serials.
-        let exp_serial = self.global.get_next_avail_serial();
+        let exp_serial = self.global_state().get_next_avail_serial();
         debug_assert_eq!(exp_serial, serial, "state: inconsistent serials");
 
-        self.ledger.create_new_account(id, serial, new_acct_data)?;
+        self.ledger_mut()
+            .create_new_account(id, serial, new_acct_data)?;
 
-        // FIXME(STR-3227): conversions
-        self.global.next_avail_serial = serial.incr().into_inner() as u64;
+        self.global_state_mut().set_next_avail_serial(serial.incr());
 
         Ok(())
     }
 
     #[cfg(test)]
     pub fn next_account_serial(&self) -> AccountSerial {
-        self.global.get_next_avail_serial()
+        self.global_state().get_next_avail_serial()
     }
 
     #[cfg(test)]
@@ -301,18 +428,19 @@ impl OLStateV1 {
         self.next_account_serial()
     }
 
+    /// Returns the account state, if the account exists.
     pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountStateV1> {
-        self.ledger.get_account_state(id)
+        self.ledger().get_account_state(id)
     }
 
     /// Iterates over all ledger account states in account-id order.
     pub fn iter_account_states(&self) -> impl Iterator<Item = (AccountId, &OLAccountStateV1)> + '_ {
-        self.ledger.iter_account_states()
+        self.ledger().iter_account_states()
     }
 
     #[cfg(test)]
     pub fn check_account_exists(&self, id: &AccountId) -> Result<(), StateError> {
-        self.ledger
+        self.ledger()
             .get_account_state(id)
             .map(|_| ())
             .ok_or(StateError::MissingAccount(*id))
@@ -357,7 +485,7 @@ mod tests {
 
         state.apply_write_batch(batch).unwrap();
 
-        assert_eq!(state.global.cur_slot, 42);
+        assert_eq!(state.global_state().get_cur_slot(), 42);
     }
 
     #[test]
@@ -370,7 +498,7 @@ mod tests {
 
         state.apply_write_batch(batch).unwrap();
 
-        assert_eq!(state.epoch.cur_epoch, 5);
+        assert_eq!(state.epoch_state().cur_epoch(), 5);
     }
 
     #[test]
@@ -417,7 +545,7 @@ mod tests {
             [0u8; 32].into(),
         );
         state
-            .ledger
+            .ledger_mut()
             .create_new_account(account_id, serial, new_acct)
             .unwrap();
 
@@ -543,8 +671,8 @@ mod tests {
         state.apply_write_batch(batch).unwrap();
 
         // Verify all changes applied.
-        assert_eq!(state.global.cur_slot, 100);
-        assert_eq!(state.epoch.cur_epoch, 10);
+        assert_eq!(state.global_state().get_cur_slot(), 100);
+        assert_eq!(state.epoch_state().cur_epoch(), 10);
         assert!(state.get_account_state(&account_id_1).is_some());
         assert!(state.get_account_state(&account_id_2).is_some());
 
@@ -593,7 +721,7 @@ mod tests {
             [0u8; 32].into(),
         );
         state
-            .ledger
+            .ledger_mut()
             .create_new_account(existing_id, existing_serial, new_acct)
             .expect("test: create_new_account");
 

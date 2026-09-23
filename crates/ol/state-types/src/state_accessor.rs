@@ -3,7 +3,7 @@ use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
 use crate::account::{IAccountState, IAccountStateMut, NewAccountData};
 use crate::errors::StateResult;
-use crate::{Coin, PendingAsmLog};
+use crate::{Coin, OLSpecId, PendingAsmLog};
 
 /// Opaque interface for accessing the chainstate, for all of the parts directly
 /// under the toplevel state.
@@ -13,6 +13,12 @@ use crate::{Coin, PendingAsmLog};
 pub trait IStateAccessor {
     /// Type representing a ledger account's state for read operations.
     type AccountState: IAccountState;
+
+    /// Returns the rules version represented by committed state.
+    fn active_version(&self) -> OLSpecId;
+
+    /// Returns the expected rules version, reserved for future upgrade handling.
+    fn expected_version(&self) -> OLSpecId;
 
     // ===== Global state methods =====
 

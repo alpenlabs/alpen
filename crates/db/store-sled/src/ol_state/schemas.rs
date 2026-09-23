@@ -39,3 +39,18 @@ impl ValueCodec<OLStateSchema> for OLStateV1 {
 
 // WriteBatch uses Codec trait (contains non-SSZ types like BTreeMap, SerialMap)
 impl_codec_value_codec!(OLWriteBatchSchema, WriteBatch);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapshot_decode_rejects_absent_required_fields() {
+        // Valid StableContainer encoding with all fields absent is not valid OL state.
+        let bytes = IVec::from(&[0u8; 4][..]);
+        assert!(matches!(
+            <OLStateV1 as ValueCodec<OLStateSchema>>::decode_value(bytes),
+            Err(CodecError::DeserializationFailed { .. })
+        ));
+    }
+}

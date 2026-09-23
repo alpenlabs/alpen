@@ -10,7 +10,7 @@ use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types::{IStateAccessor, OLSpecId};
 
 use crate::assembly::{BlockComponents, CompletedBlock};
 use crate::test_utils::*;
@@ -117,6 +117,8 @@ fn assert_epoch_root_round_trip(
     result.unwrap_or_else(|e| {
         panic!("epoch root mismatch: {e:?}. expected = {expected_root:?}, actual = {actual_root:?}")
     });
+    assert_eq!(verify_state.active_version(), OLSpecId::V1);
+    assert_eq!(verify_state.expected_version(), OLSpecId::V1);
 }
 
 fn build_non_terminal_blocks(
