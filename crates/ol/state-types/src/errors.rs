@@ -151,6 +151,9 @@ pub enum ExecError {
     #[error("multiple checkpoint predicate enactments at L1 height {height}")]
     DuplicateCheckpointPredicateEnactment { height: L1Height },
 
+    #[error("malformed checkpoint predicate enactment at L1 height {height}")]
+    MalformedCheckpointPredicateEnactment { height: L1Height },
+
     #[error("ASM manifest height overflow")]
     AsmManifestHeightOverflow,
 

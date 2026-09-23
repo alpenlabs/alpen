@@ -2,6 +2,7 @@
 
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::CheckpointPredicateEnacted;
+use strata_asm_logs::constants::AsmLogTypeId;
 use strata_identifiers::{Buf32, Buf64};
 use strata_ol_chain_types_v1::{
     BlockFlagsV1, OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1,
@@ -374,6 +375,141 @@ fn block_verification_and_da_replay_reject_duplicate_enactments() {
     assert!(matches!(
         err.into_base(),
         ExecError::DuplicateCheckpointPredicateEnactment { height: 1 }
+    ));
+    assert_eq!(state.compute_state_root().unwrap(), initial_root);
+}
+
+#[test]
+fn malformed_enactments_are_rejected_before_buffering() {
+    for body in [vec![], vec![0xff]] {
+        let log = AsmLogEntry::from_msg(AsmLogTypeId::CheckpointPredicateEnacted.into(), body)
+            .expect("valid message framing");
+        let fixture = OLStfFixture::builder().execute_genesis();
+        let mut state = fixture.state().clone();
+        let initial_root = state.compute_state_root().unwrap();
+        let manifest = FixtureAsmManifestBuilder::new_at_height(1)
+            .with_log(log.clone())
+            .build();
+        assert!(matches!(
+            process_asm_manifest(&mut state, &manifest),
+            Err(ExecError::MalformedCheckpointPredicateEnactment { height: 1 })
+        ));
+        assert_eq!(state.compute_state_root().unwrap(), initial_root);
+
+        let manifests = [
+            FixtureAsmManifestBuilder::new_at_height(1).build(),
+            FixtureAsmManifestBuilder::new_at_height(2)
+                .with_log(log)
+                .build(),
+            FixtureAsmManifestBuilder::new_at_height(3).build(),
+        ];
+        assert!(matches!(
+            process_block_manifests(&mut state, &manifests),
+            Err(ExecError::MalformedCheckpointPredicateEnactment { height: 2 })
+        ));
+        assert_eq!(state.compute_state_root().unwrap(), initial_root);
+    }
+}
+
+#[test]
+fn malformed_enactment_cannot_hide_boundary_in_nonterminal_block() {
+    let log = AsmLogEntry::from_msg(AsmLogTypeId::CheckpointPredicateEnacted.into(), vec![])
+        .expect("valid message framing");
+    let mut fixture = OLStfFixture::builder().execute_genesis();
+    let initial_root = fixture.state().compute_state_root().unwrap();
+    let err = fixture
+        .child_block()
+        .with_manifest(
+            FixtureAsmManifestBuilder::new_at_height(1)
+                .with_log(log)
+                .build(),
+        )
+        .with_manifest(FixtureAsmManifestBuilder::new_at_height(2).build())
+        .execute_err();
+    assert!(matches!(
+        err.into_base(),
+        ExecError::MalformedCheckpointPredicateEnactment { height: 1 }
+    ));
+    assert_eq!(fixture.state().compute_state_root().unwrap(), initial_root);
+}
+
+#[test]
+fn unregistered_predicate_id_still_creates_boundary() {
+    let predicate = PredicateKey {
+        id: 250,
+        condition: Vec::new().try_into().unwrap(),
+    };
+    let log = AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(predicate))
+        .expect("unregistered predicate ID encodes");
+    let manifest = FixtureAsmManifestBuilder::new_at_height(1)
+        .with_log(log)
+        .build();
+    let fixture = OLStfFixture::builder().execute_genesis();
+    let mut state = fixture.state().clone();
+    let outcome = process_asm_manifest(&mut state, &manifest).unwrap();
+    assert_eq!(outcome.checkpoint_enactment_height(), Some(1));
+}
+
+#[test]
+fn block_verification_and_da_replay_reject_malformed_enactment_before_mutation() {
+    let fixture = OLStfFixture::builder().execute_genesis();
+    let log = AsmLogEntry::from_msg(AsmLogTypeId::CheckpointPredicateEnacted.into(), vec![])
+        .expect("valid message framing");
+    let manifests = vec![
+        FixtureAsmManifestBuilder::new_at_height(1).build(),
+        FixtureAsmManifestBuilder::new_at_height(2)
+            .with_log(log)
+            .build(),
+        FixtureAsmManifestBuilder::new_at_height(3).build(),
+    ];
+    let body = OLBlockBodyV1::new(
+        OLTxSegmentV1::new(vec![]).unwrap(),
+        Some(OLAsmManifestContainerV1::new(manifests.clone()).unwrap()),
+    );
+    let mut flags = BlockFlagsV1::zero();
+    flags.set_is_terminal(true);
+    let header = OLBlockHeaderV1::new(
+        1_001_000,
+        flags,
+        1,
+        1,
+        fixture.parent_header().compute_blkid(),
+        body.compute_hash_commitment(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+    let mut state = fixture.state().clone();
+    let initial_root = state.compute_state_root().unwrap();
+    let runtime_params = OLRuntimeParams::test_default();
+    let err = verify_block(
+        &mut state,
+        &header,
+        Some(fixture.parent_header()),
+        &body,
+        &runtime_params,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err.into_base(),
+        ExecError::MalformedCheckpointPredicateEnactment { height: 2 }
+    ));
+    assert_eq!(state.compute_state_root().unwrap(), initial_root);
+
+    let epoch = EpochInfo::new(
+        BlockInfo::new(1_001_000, 1, 1),
+        fixture.parent_header().compute_block_commitment(),
+    );
+    let err = apply_da_epoch::<_, OLDaSchemeV1>(
+        &mut state,
+        &epoch,
+        OLDaPayloadV1::new(OLStateDiffV1::default()),
+        &manifests,
+        &runtime_params,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err.into_base(),
+        ExecError::MalformedCheckpointPredicateEnactment { height: 2 }
     ));
     assert_eq!(state.compute_state_root().unwrap(), initial_root);
 }

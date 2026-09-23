@@ -123,22 +123,27 @@ fn process_asm_manifest_at_index<S: IStateAccessorMut>(
     })
 }
 
-/// Returns whether a manifest carries a decoded checkpoint predicate enactment.
+/// Returns whether a manifest carries a checkpoint predicate enactment.
 ///
 /// ASM allows at most one OL key rotation per L1 block. A second enactment is
-/// rejected rather than choosing between predicates. Malformed logs are ignored,
-/// matching the other ASM-log handlers.
+/// rejected rather than choosing between predicates. An enactment-tagged log must
+/// decode successfully so a malformed body cannot hide an epoch boundary.
 pub fn has_checkpoint_predicate_enactment(manifest: &AsmManifest) -> ExecResult<bool> {
     let mut enacted = false;
     for log in manifest.logs() {
-        if log.try_into_log::<CheckpointPredicateEnacted>().is_ok() {
-            if enacted {
-                return Err(ExecError::DuplicateCheckpointPredicateEnactment {
-                    height: manifest.height(),
-                });
-            }
-            enacted = true;
+        if log.ty() != Some(AsmLogTypeId::CheckpointPredicateEnacted.into()) {
+            continue;
         }
+        log.try_into_log::<CheckpointPredicateEnacted>()
+            .map_err(|_| ExecError::MalformedCheckpointPredicateEnactment {
+                height: manifest.height(),
+            })?;
+        if enacted {
+            return Err(ExecError::DuplicateCheckpointPredicateEnactment {
+                height: manifest.height(),
+            });
+        }
+        enacted = true;
     }
     Ok(enacted)
 }

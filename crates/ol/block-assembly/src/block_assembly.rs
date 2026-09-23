@@ -1022,6 +1022,7 @@ mod tests {
     use strata_acct_types::*;
     use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_asm_logs::CheckpointPredicateEnacted;
+    use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
@@ -2030,6 +2031,34 @@ mod tests {
         assert!(matches!(
             err,
             BlockAssemblyError::BlockConstruction(ExecError::DuplicateCheckpointPredicateEnactment { height: actual }) if actual == height
+        ));
+        assert_eq!(state.compute_state_root().unwrap(), initial_root);
+    }
+
+    #[test]
+    fn test_selection_rejects_malformed_enactment_without_mutating_state() {
+        let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
+        let mut state = create_test_genesis_state();
+        let initial_root = state.compute_state_root().unwrap();
+        let height = state.last_l1_height() + 1;
+        let err = select_and_process_asm_manifests(
+            &policy,
+            &mut state,
+            vec![create_l1_manifest_with_logs(
+                height,
+                vec![
+                    AsmLogEntry::from_msg(AsmLogTypeId::CheckpointPredicateEnacted.into(), vec![])
+                        .expect("valid message framing"),
+                ],
+            )],
+            2,
+            0,
+        )
+        .err()
+        .expect("malformed enactment must be rejected");
+        assert!(matches!(
+            err,
+            BlockAssemblyError::BlockConstruction(ExecError::MalformedCheckpointPredicateEnactment { height: actual }) if actual == height
         ));
         assert_eq!(state.compute_state_root().unwrap(), initial_root);
     }
