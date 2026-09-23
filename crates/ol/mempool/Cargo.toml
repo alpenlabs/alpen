@@ -14,7 +14,7 @@ strata-identifiers.workspace = true
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-state-provider.workspace = true
 strata-ol-state-types.workspace = true
-strata-ol-stf-v1.workspace = true
+strata-ol-stf.workspace = true
 strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-service.workspace = true
 strata-snark-acct-sys.workspace = true

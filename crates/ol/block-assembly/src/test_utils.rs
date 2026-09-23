@@ -52,8 +52,8 @@ use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::OLStateV1;
-use strata_ol_stf_v1::{
-    BlockComponents, BlockContext, BlockInfo, construct_block as stf_construct_block,
+use strata_ol_stf::{
+    BlockComponents, BlockContext, BlockInfo, OLSpecId, construct_block as stf_construct_block,
 };
 use strata_ol_tx_types_v1::{
     ClaimListV1, OLTransactionDataV1, OLTransactionV1, ProofSatisfierListV1, SauTxLedgerRefsV1,
@@ -660,6 +660,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_v1::OLBlockHe
     let genesis_context = BlockContext::new(&genesis_info, None);
     let genesis_components = BlockComponents::new_empty();
     let genesis_output = stf_construct_block(
+        OLSpecId::V1,
         &mut temp_state,
         genesis_context,
         genesis_components,
@@ -1380,6 +1381,7 @@ impl TestStorageFixtureBuilder {
 
                 let block_context = BlockContext::new(&block_info, None);
                 let construct_output = stf_construct_block(
+                    OLSpecId::V1,
                     &mut state,
                     block_context,
                     components,

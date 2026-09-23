@@ -11,7 +11,7 @@ use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{
     DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
 };
-use strata_ol_stf_v1::execute_block_batch_predrain;
+use strata_ol_stf::{OLSpecId, execute_block_batch_predrain};
 
 use crate::context::BlockAssemblyAnchorContext;
 use crate::resource_state::{
@@ -117,6 +117,7 @@ async fn test_da_incremental_matches_replay() {
     let owned_blocks: Vec<OLBlockV1> = blocks.into_iter().cloned().collect();
     let mut replay_da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(genesis_state));
     let replay_logs = execute_block_batch_predrain(
+        OLSpecId::V1,
         &mut replay_da_state,
         &owned_blocks,
         parent_header,

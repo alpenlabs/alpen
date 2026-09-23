@@ -8,7 +8,7 @@ use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_state_types::StateError;
-use strata_ol_stf_v1::ExecError;
+use strata_ol_stf::ExecError;
 
 /// Errors that can occur during block assembly operations.
 #[derive(Debug, thiserror::Error)]
@@ -148,8 +148,8 @@ pub enum BlockAssemblyError {
 
     /// Snark account update failed pre-validation during proof indexing.
     ///
-    /// This wraps errors from `verify_snark_acct_update_proofs` when using the
-    /// `TxProofIndexer` to discover needed proofs.
+    /// This wraps errors from `index_snark_update_proof_requirements`, which
+    /// lists the proofs an update needs.
     #[error("snark update pre-validation: {0}")]
     SnarkUpdatePreValidation(ExecError),
 

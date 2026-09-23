@@ -10,8 +10,8 @@ use strata_ol_params::OLParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::StateError;
 use strata_ol_state_types_v1::OLStateV1;
-use strata_ol_stf_v1::{
-    BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
+use strata_ol_stf::{
+    BlockComponents, BlockContext, BlockInfo, ExecError, OLSpecId, execute_and_complete_block,
 };
 use thiserror::Error;
 use tracing::{info, instrument};
@@ -73,10 +73,12 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     // terminality is set explicitly via the header flag).
     let genesis_components = BlockComponents::new_manifests(vec![]).as_terminal();
 
-    // Execute genesis block through the OL STF.
+    // Execute genesis block through the OL STF. Genesis always runs under the
+    // genesis rules.
     let block_context = BlockContext::new(&genesis_info, None);
     let runtime_params = params.runtime_params();
     let genesis_block = execute_and_complete_block(
+        OLSpecId::V1,
         &mut ol_state,
         block_context,
         genesis_components,

@@ -34,8 +34,9 @@ use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
 };
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
-use strata_ol_stf::{EpochDaReplayError, OLSpecId, apply_da_epoch};
-use strata_ol_stf_v1::{BlockInfo, EpochInfo, verify_block};
+use strata_ol_stf::{
+    BlockInfo, EpochDaReplayError, EpochInfo, OLSpecId, apply_da_epoch, verify_block,
+};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
@@ -260,9 +261,13 @@ pub(crate) fn exec_block(
     // Fetch block and parent context
     let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
 
+    // TODO(STR-4086): use the spec scheduled for the block's header epoch.
+    let spec = OLSpecId::V1;
+
     // Execute STF and get output and new state
     let (output, new_state) = execute_stf(
         ctx,
+        spec,
         runtime_params,
         &block,
         parent_header.as_ref(),
@@ -331,6 +336,7 @@ fn fetch_block_with_parent(
 #[instrument(
     skip_all,
     fields(
+        ?spec,
         slot = block.header().slot(),
         epoch = block.header().epoch(),
         is_terminal = block.header().is_terminal(),
@@ -340,6 +346,7 @@ fn fetch_block_with_parent(
 )]
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
+    spec: OLSpecId,
     runtime_params: OLRuntimeParams,
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
@@ -353,7 +360,7 @@ fn execute_stf(
 
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) =
-        run_stf_verification(&parent_state, block, parent_header, &runtime_params)?;
+        run_stf_verification(spec, &parent_state, block, parent_header, &runtime_params)?;
 
     // Apply write batch to parent state to get new state
     let mut new_state = parent_state;
@@ -906,6 +913,7 @@ impl ServiceState for ChainWorkerServiceState {
     err,
 )]
 fn run_stf_verification(
+    spec: OLSpecId,
     parent_state: &MemoryStateBaseLayer,
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
@@ -916,6 +924,7 @@ fn run_stf_verification(
     let mut indexer_state = IndexerState::new(tracking_state);
 
     let logs = verify_block(
+        spec,
         &mut indexer_state,
         block.header(),
         parent_header,
