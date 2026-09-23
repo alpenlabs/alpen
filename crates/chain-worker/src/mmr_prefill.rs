@@ -7,13 +7,14 @@ use tokio::task::spawn_blocking;
 
 /// Seeds the DB-side L1 block refs MMR index sentinel range.
 ///
-/// Appends sentinel leaves for indices `0..=genesis_l1_height`, matching the
+/// Batches sentinel leaves for indices `0..=genesis_l1_height`, matching the
 /// in-state L1 block refs MMR genesis prefill so DB leaf index equals L1 height.
 /// The operation is idempotent when the index already has the expected prefix.
 ///
 /// The caller must run this only while no other writer can append to
 /// `L1BlockRefs`. A concurrent append violates the startup-only single-writer
-/// contract and panics if the returned append index is not the expected index.
+/// contract and returns a precondition error. An incomplete prefix must already
+/// contain only sentinel leaves; a peak mismatch returns an error before writing.
 pub async fn prefill_l1_block_refs_mmr(
     mmr_index_mgr: &MmrIndexManager,
     genesis_l1_height: u64,
@@ -32,15 +33,5 @@ pub fn prefill_l1_block_refs_mmr_blocking(
     genesis_l1_height: u64,
 ) -> DbResult<()> {
     let handle = mmr_index_mgr.get_handle(MmrId::L1BlockRefs);
-    let leaf_count = handle.get_leaf_count_blocking()?;
-
-    for expected_idx in leaf_count..=genesis_l1_height {
-        let appended_idx = handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
-        assert_eq!(
-            appended_idx, expected_idx,
-            "L1 block refs MMR index prefill mismatch: expected {expected_idx}, got {appended_idx}"
-        );
-    }
-
-    Ok(())
+    handle.prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, genesis_l1_height + 1)
 }
