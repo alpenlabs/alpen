@@ -110,6 +110,13 @@ Concrete consensus types live in `-v1` crates and carry `V1` type suffixes, such
 `OLBlockV1`, `OLTransactionV1`, and `OLStateV1`. Unsuffixed crates such as
 `ol/state-types` and `ol/da-common` hold version-independent traits and helpers.
 
+STF drivers call the STF through `ol/stf`, passing the `OLSpecId` for the epoch
+being executed. The drivers are block verification, sequencer block assembly and
+its mempool, the checkpoint proof, checkpoint DA replay, epoch DA computation and
+resource rebuild, and genesis. `ol/stf` maps each spec to an STF implementation in
+one place. Outside `ol/stf`, only tests and the prover benchmark's input fixtures
+use `ol/stf-v1` directly.
+
 #### EE Layer (Execution Environment)
 
 The EE provides EVM execution, decoupled from OL. `alpen-ee` owns Alpen Reth, the EE
@@ -158,6 +165,7 @@ Orchestration Layer implementation.
 
 | Crate | Description |
 |-------|-------------|
+| `ol/stf` | Versioned OL STF entry point that dispatches each operation on `OLSpecId` |
 | `ol/stf-v1` | OL state transition function (block, epoch, manifest processing) |
 | `ol/state-types` | Version-independent state traits and ledger entry types |
 | `ol/state-types-v1` | Concrete state structures (toplevel, global, epochal, ledger, snark account) |
