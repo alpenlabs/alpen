@@ -72,6 +72,7 @@ pub enum FeeRateError {
     #[error("mempool explorer fee lookup failed ({explorer}); Bitcoin RPC fallback failed ({bitcoin_rpc})")]
     Fallback {
         explorer: Box<FeeRateError>,
+        #[source]
         bitcoin_rpc: Box<FeeRateError>,
     },
 
