@@ -222,6 +222,7 @@ pub(crate) fn start(
         .checkpoint_config()
         .ok_or_else(|| anyhow!("ASM checkpoint config required for FCM"))?
         .sequencer_key;
+    // TODO(STR-4467): Pass sequencer_key directly through FCM.
     let sequencer_predicate = PredicateKey::try_new(
         PredicateTypeId::Bip340Schnorr,
         sequencer_key.as_ref().to_vec(),

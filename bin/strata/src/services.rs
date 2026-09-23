@@ -191,6 +191,7 @@ mod sequencer_services {
             .checkpoint_config()
             .ok_or_else(|| anyhow!("ASM checkpoint config required for block assembly"))?
             .sequencer_key;
+        // TODO(STR-4467): Pass sequencer_key directly through block assembly.
         let sequencer_predicate = PredicateKey::try_new(
             PredicateTypeId::Bip340Schnorr,
             sequencer_key.as_ref().to_vec(),
