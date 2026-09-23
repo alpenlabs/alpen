@@ -3,39 +3,150 @@
 
 use std::{sync::LazyLock, time::Duration};
 
-use anyhow::Context;
 use bitcoin::FeeRate;
-use bitcoind_async_client::traits::Reader;
-use reqwest::Url;
+use bitcoind_async_client::{error::ClientError, traits::Reader};
+use reqwest::{header::ACCEPT_ENCODING, Url};
 use serde::Deserialize;
 use strata_config::btcio::{
-    fee_rate_from_sat_per_vb, FeePolicy, MempoolExplorerFeePolicy, WriterConfig,
+    fee_rate_from_sat_per_vb, FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy,
 };
+use thiserror::Error;
+use tokio::time::timeout;
 use tracing::warn;
+use url::ParseError;
 
-/// How long a mempool explorer fee lookup may take before it is abandoned.
-///
-/// `resolve_fee_rate` runs on the writer's watcher tick, which also drives the replacement pass, so
-/// an explorer that accepts a connection and then stalls would hold up publication as well as
-/// bumping. `reqwest::Client::new` sets no timeout at all.
-const MEMPOOL_FEE_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// How long the connection itself may take to establish.
-const MEMPOOL_FEE_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const DEFAULT_EXPLORER_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_BITCOIN_RPC_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_EXPLORER_RESPONSE_BYTES: usize = 16 * 1024;
 
 /// Shared HTTP client reused across mempool fee lookups for connection pooling.
-static SHARED_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
-        .timeout(MEMPOOL_FEE_REQUEST_TIMEOUT)
-        .connect_timeout(MEMPOOL_FEE_CONNECT_TIMEOUT)
-        .build()
-        // Only fails when the TLS backend cannot initialise, which an untimed client would hit
-        // just the same. Fall back rather than panic in a `LazyLock`.
-        .unwrap_or_else(|err| {
-            warn!(%err, "falling back to an untimed HTTP client for mempool fee lookups");
-            reqwest::Client::new()
-        })
-});
+static SHARED_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+
+/// Independent timeout budgets for external fee-rate lookups.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FeeRateResolutionTimeouts {
+    explorer: Duration,
+    bitcoin_rpc: Duration,
+}
+
+impl FeeRateResolutionTimeouts {
+    /// Creates timeout budgets for the explorer phase and Bitcoin Core RPC phase.
+    pub const fn new(explorer: Duration, bitcoin_rpc: Duration) -> Self {
+        Self {
+            explorer,
+            bitcoin_rpc,
+        }
+    }
+
+    /// Returns the total budget for the precise and recommended explorer requests.
+    pub const fn explorer(self) -> Duration {
+        self.explorer
+    }
+
+    /// Returns the budget for a Bitcoin Core fee-rate RPC request.
+    pub const fn bitcoin_rpc(self) -> Duration {
+        self.bitcoin_rpc
+    }
+}
+
+impl Default for FeeRateResolutionTimeouts {
+    fn default() -> Self {
+        Self::new(DEFAULT_EXPLORER_TIMEOUT, DEFAULT_BITCOIN_RPC_TIMEOUT)
+    }
+}
+
+/// Errors that can occur while resolving a Bitcoin fee rate.
+#[derive(Debug, Error)]
+pub enum FeeRateError {
+    /// The mempool explorer phase exceeded its configured budget.
+    #[error("mempool explorer fee lookup timed out after {timeout:?}")]
+    ExplorerTimeout { timeout: Duration },
+
+    /// Bitcoin Core's `estimatesmartfee` RPC exceeded its configured budget.
+    #[error(
+        "Bitcoin RPC fee lookup for confirmation target {conf_target} timed out after {timeout:?}"
+    )]
+    BitcoinRpcTimeout { conf_target: u16, timeout: Duration },
+
+    /// Both the mempool explorer phase and its Bitcoin Core fallback failed.
+    #[error("mempool explorer fee lookup failed ({explorer}); Bitcoin RPC fallback failed ({bitcoin_rpc})")]
+    Fallback {
+        explorer: Box<FeeRateError>,
+        #[source]
+        bitcoin_rpc: Box<FeeRateError>,
+    },
+
+    /// The configured mempool explorer URL is invalid.
+    #[error("invalid mempool explorer configuration")]
+    InvalidExplorerConfiguration {
+        #[source]
+        source: ParseError,
+    },
+
+    /// A mempool explorer request failed or returned an invalid response.
+    #[error("invalid response from mempool explorer endpoint `{endpoint}`: {source}")]
+    InvalidExplorerResponse {
+        endpoint: &'static str,
+        #[source]
+        source: reqwest::Error,
+    },
+
+    /// A mempool explorer response exceeded the maximum accepted size.
+    #[error("mempool explorer endpoint `{endpoint}` returned more than {max_bytes} bytes")]
+    ExplorerResponseTooLarge {
+        endpoint: &'static str,
+        max_bytes: usize,
+    },
+
+    /// A mempool explorer response was not valid fee-estimate JSON.
+    #[error("invalid JSON from mempool explorer endpoint `{endpoint}`: {source}")]
+    InvalidExplorerJson {
+        endpoint: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    /// A mempool explorer returned an invalid fee rate.
+    #[error("invalid fee rate in mempool explorer response: {0}")]
+    InvalidExplorerFeeRate(String),
+
+    /// Bitcoin Core's `estimatesmartfee` RPC failed.
+    #[error(
+        "Bitcoin RPC failed while estimating the fee rate for confirmation target {conf_target}"
+    )]
+    BitcoinRpc {
+        conf_target: u16,
+        #[source]
+        source: ClientError,
+    },
+
+    /// Bitcoin Core could not provide a smart-fee estimate.
+    #[error("smart fee estimate unavailable for confirmation target {conf_target}: {errors:?}")]
+    SmartFeeUnavailable {
+        conf_target: u16,
+        errors: Option<Vec<String>>,
+    },
+}
+
+impl FeeRateError {
+    /// Returns whether this error contains an expired explorer or Bitcoin RPC budget.
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            Self::ExplorerTimeout { .. } | Self::BitcoinRpcTimeout { .. } => true,
+            Self::Fallback {
+                explorer,
+                bitcoin_rpc,
+            } => explorer.is_timeout() || bitcoin_rpc.is_timeout(),
+            Self::InvalidExplorerConfiguration { .. }
+            | Self::InvalidExplorerResponse { .. }
+            | Self::ExplorerResponseTooLarge { .. }
+            | Self::InvalidExplorerJson { .. }
+            | Self::InvalidExplorerFeeRate(_)
+            | Self::BitcoinRpc { .. }
+            | Self::SmartFeeUnavailable { .. } => false,
+        }
+    }
+}
 
 /// Represents the response from the mempool explorer recommended fees endpoint.
 #[derive(Debug, Deserialize, PartialEq)]
@@ -54,7 +165,7 @@ pub(crate) struct MempoolRecommendedFees {
 
 impl MempoolRecommendedFees {
     /// Selects the fee rate according to the given policy.
-    fn select(self, policy: MempoolExplorerFeePolicy) -> anyhow::Result<FeeRate> {
+    fn select(self, policy: MempoolExplorerFeePolicy) -> Result<FeeRate, FeeRateError> {
         let fee_rate_sat_per_vb = match policy {
             MempoolExplorerFeePolicy::Fastest => self.fastest_fee,
             MempoolExplorerFeePolicy::HalfHour => self.half_hour_fee,
@@ -62,7 +173,7 @@ impl MempoolRecommendedFees {
             MempoolExplorerFeePolicy::Economy => self.economy_fee,
             MempoolExplorerFeePolicy::Minimum => self.minimum_fee,
         };
-        fee_rate_from_sat_per_vb(fee_rate_sat_per_vb).map_err(anyhow::Error::msg)
+        fee_rate_from_sat_per_vb(fee_rate_sat_per_vb).map_err(FeeRateError::InvalidExplorerFeeRate)
     }
 }
 
@@ -75,9 +186,9 @@ struct MempoolExplorerClient {
 
 impl MempoolExplorerClient {
     /// Creates a new client from a base URL string (e.g. `https://mempool.space/signet`).
-    fn new(base_url: &str) -> anyhow::Result<Self> {
+    fn new(base_url: &str) -> Result<Self, FeeRateError> {
         let mut url = Url::parse(base_url)
-            .with_context(|| format!("invalid mempool_base_url: {base_url}"))?;
+            .map_err(|source| FeeRateError::InvalidExplorerConfiguration { source })?;
 
         if !url.path().ends_with('/') {
             let path = format!("{}/", url.path());
@@ -91,61 +202,102 @@ impl MempoolExplorerClient {
     ///
     /// The path is relative to the configured base URL so callers can try the precise endpoint
     /// first and fall back to the older recommended-fees endpoint when necessary.
-    async fn fetch_fee_estimates(&self, path: &str) -> anyhow::Result<MempoolRecommendedFees> {
+    async fn fetch_fee_estimates(
+        &self,
+        path: &'static str,
+    ) -> Result<MempoolRecommendedFees, FeeRateError> {
         let url = self
             .base_url
             .join(path)
-            .with_context(|| format!("invalid path URL for base: {}", self.base_url))?;
+            .map_err(|source| FeeRateError::InvalidExplorerConfiguration { source })?;
 
-        SHARED_HTTP_CLIENT
+        let mut response = SHARED_HTTP_CLIENT
             .get(url)
+            .header(ACCEPT_ENCODING, "identity")
             .send()
             .await
-            .context("failed to call mempool recommended fees endpoint")?
+            .map_err(|source| FeeRateError::InvalidExplorerResponse {
+                endpoint: path,
+                source: source.without_url(),
+            })?
             .error_for_status()
-            .context("mempool recommended fees endpoint returned an error status")?
-            .json::<MempoolRecommendedFees>()
-            .await
-            .context("failed to decode mempool recommended fees response")
+            .map_err(|source| FeeRateError::InvalidExplorerResponse {
+                endpoint: path,
+                source: source.without_url(),
+            })?;
+
+        let mut body = Vec::new();
+        while let Some(chunk) =
+            response
+                .chunk()
+                .await
+                .map_err(|source| FeeRateError::InvalidExplorerResponse {
+                    endpoint: path,
+                    source: source.without_url(),
+                })?
+        {
+            if body.len().saturating_add(chunk.len()) > MAX_EXPLORER_RESPONSE_BYTES {
+                return Err(FeeRateError::ExplorerResponseTooLarge {
+                    endpoint: path,
+                    max_bytes: MAX_EXPLORER_RESPONSE_BYTES,
+                });
+            }
+            body.extend_from_slice(&chunk);
+        }
+
+        serde_json::from_slice(&body).map_err(|source| FeeRateError::InvalidExplorerJson {
+            endpoint: path,
+            source,
+        })
     }
 
-    /// Fetches the recommended fees from the mempool explorer.
-    async fn fetch_recommended_fees(&self) -> anyhow::Result<MempoolRecommendedFees> {
-        match self.fetch_fee_estimates("api/v1/fees/precise").await {
-            Ok(fees) => Ok(fees),
+    /// Fetches and selects a fee rate from the mempool explorer.
+    async fn fetch_fee_rate(
+        &self,
+        policy: MempoolExplorerFeePolicy,
+    ) -> Result<FeeRate, FeeRateError> {
+        match self
+            .fetch_fee_estimates("api/v1/fees/precise")
+            .await
+            .and_then(|fees| fees.select(policy))
+        {
+            Ok(fee_rate) => Ok(fee_rate),
             Err(err) => {
                 warn!(
                     %err,
                     "mempool precise fee lookup failed, falling back to recommended endpoint"
                 );
-                self.fetch_fee_estimates("api/v1/fees/recommended").await
+                self.fetch_fee_estimates("api/v1/fees/recommended")
+                    .await?
+                    .select(policy)
             }
         }
     }
 }
 
 /// Resolves the fee rate to use for a transaction based on the provided configuration.
-pub(crate) async fn resolve_fee_rate<R: Reader>(
+pub async fn resolve_fee_rate<R: Reader>(
     client: &R,
-    config: &WriterConfig,
-) -> anyhow::Result<FeeRate> {
+    config: &L1FeePolicyConfig,
+    timeouts: FeeRateResolutionTimeouts,
+) -> Result<FeeRate, FeeRateError> {
     let fee_rate = match config.fee_policy() {
-        FeePolicy::BitcoinD { conf_target } => client
-            .estimate_smart_fee(*conf_target)
-            .await
-            .context("failed to estimate smart fee")
-            .and_then(|estimate| {
-                estimate.fee_rate.ok_or_else(|| {
-                    anyhow::anyhow!("smart fee estimate unavailable: {:?}", estimate.errors)
-                })
-            })?,
+        FeePolicy::BitcoinD { conf_target } => {
+            resolve_smart_fee_rate(client, *conf_target, timeouts.bitcoin_rpc()).await?
+        }
         FeePolicy::MempoolExplorer {
             policy,
             mempool_base_url,
             fallback_conf_target,
         } => {
-            resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy)
-                .await?
+            resolve_mempool_fee_rate(
+                client,
+                mempool_base_url,
+                *fallback_conf_target,
+                *policy,
+                timeouts,
+            )
+            .await?
         }
         FeePolicy::Fixed { fee_rate } => *fee_rate,
     };
@@ -160,69 +312,138 @@ async fn resolve_mempool_fee_rate<R: Reader>(
     base_url: &str,
     fallback_conf_target: u16,
     mempool_fee_policy: MempoolExplorerFeePolicy,
-) -> anyhow::Result<FeeRate> {
+    timeouts: FeeRateResolutionTimeouts,
+) -> Result<FeeRate, FeeRateError> {
     let explorer = MempoolExplorerClient::new(base_url)?;
 
-    match explorer.fetch_recommended_fees().await {
-        Ok(fees) => fees.select(mempool_fee_policy),
-        Err(err) => {
-            warn!(
-                %base_url,
-                %err,
-                fallback_conf_target,
-                "mempool fee lookup failed, falling back to bitcoind's estimatesmartfee"
-            );
-            client
-                .estimate_smart_fee(fallback_conf_target)
-                .await
-                .context("failed to estimate smart fee after mempool fallback")
-                .and_then(|estimate| {
-                    estimate.fee_rate.ok_or_else(|| {
-                        anyhow::anyhow!("smart fee estimate unavailable: {:?}", estimate.errors)
-                    })
-                })
-        }
-    }
+    let explorer_error = match timeout(
+        timeouts.explorer(),
+        explorer.fetch_fee_rate(mempool_fee_policy),
+    )
+    .await
+    {
+        Ok(Ok(fee_rate)) => return Ok(fee_rate),
+        Ok(Err(err)) => err,
+        Err(_) => FeeRateError::ExplorerTimeout {
+            timeout: timeouts.explorer(),
+        },
+    };
+
+    warn!(
+        %explorer_error,
+        fallback_conf_target,
+        "mempool fee lookup failed, falling back to bitcoind's estimatesmartfee"
+    );
+    resolve_smart_fee_rate(client, fallback_conf_target, timeouts.bitcoin_rpc())
+        .await
+        .map_err(|bitcoin_rpc| FeeRateError::Fallback {
+            explorer: Box::new(explorer_error),
+            bitcoin_rpc: Box::new(bitcoin_rpc),
+        })
+}
+
+async fn resolve_smart_fee_rate<R: Reader>(
+    client: &R,
+    conf_target: u16,
+    request_timeout: Duration,
+) -> Result<FeeRate, FeeRateError> {
+    let estimate = timeout(request_timeout, client.estimate_smart_fee(conf_target))
+        .await
+        .map_err(|_| FeeRateError::BitcoinRpcTimeout {
+            conf_target,
+            timeout: request_timeout,
+        })?
+        .map_err(|source| FeeRateError::BitcoinRpc {
+            conf_target,
+            source,
+        })?;
+
+    estimate.fee_rate.ok_or(FeeRateError::SmartFeeUnavailable {
+        conf_target,
+        errors: estimate.errors,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{error::Error, future::pending, time::Duration};
 
     use bitcoin::FeeRate;
-    use strata_config::btcio::{
-        FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig,
-    };
+    use bitcoind_async_client::error::ClientError;
+    use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
     };
 
-    use super::{
-        fee_rate_from_sat_per_vb, resolve_fee_rate, MempoolExplorerClient, MempoolRecommendedFees,
+    use super::{fee_rate_from_sat_per_vb, MempoolExplorerClient, MempoolRecommendedFees};
+    use crate::{
+        test_utils::TestBitcoinClient,
+        writer::{resolve_fee_rate, FeeRateError, FeeRateResolutionTimeouts},
     };
-    use crate::test_utils::TestBitcoinClient;
 
-    fn writer_config(l1_fee_policy: L1FeePolicyConfig) -> WriterConfig {
-        WriterConfig {
-            l1_fee_policy_config: l1_fee_policy,
-            ..WriterConfig::default()
-        }
+    fn resolution_timeouts() -> FeeRateResolutionTimeouts {
+        FeeRateResolutionTimeouts::new(Duration::from_secs(10), Duration::from_secs(10))
     }
 
-    fn mempool_writer_config(policy: MempoolExplorerFeePolicy, base_url: String) -> WriterConfig {
-        writer_config(L1FeePolicyConfig::new(FeePolicy::MempoolExplorer {
+    fn mempool_fee_config(policy: MempoolExplorerFeePolicy, base_url: String) -> L1FeePolicyConfig {
+        L1FeePolicyConfig::new(FeePolicy::MempoolExplorer {
             policy,
             mempool_base_url: base_url,
             fallback_conf_target: 1,
-        }))
+        })
     }
 
-    fn bitcoind_writer_config(conf_target: u16) -> WriterConfig {
-        writer_config(L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target }))
+    fn bitcoind_fee_config(conf_target: u16) -> L1FeePolicyConfig {
+        L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target })
+    }
+
+    async fn spawn_owned_response_server(responses: Vec<(&'static str, String)>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener should have local addr");
+
+        tokio::spawn(async move {
+            for (status_line, body) in responses {
+                let (mut stream, _) = listener.accept().await.expect("accept should succeed");
+
+                let mut buf = [0_u8; 1024];
+                let _ = stream
+                    .read(&mut buf)
+                    .await
+                    .expect("request read should succeed");
+                let response = format!(
+                    "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("response write should succeed");
+            }
+        });
+
+        format!("http://{addr}")
+    }
+
+    async fn spawn_response_server(responses: Vec<(&'static str, &'static str)>) -> String {
+        spawn_owned_response_server(
+            responses
+                .into_iter()
+                .map(|(status, body)| (status, body.to_owned()))
+                .collect(),
+        )
+        .await
     }
 
     async fn spawn_single_response_server(status_line: &'static str, body: &'static str) -> String {
+        spawn_response_server(vec![(status_line, body)]).await
+    }
+
+    async fn spawn_stalled_server() -> String {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind");
@@ -232,20 +453,12 @@ mod tests {
 
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.expect("accept should succeed");
-
-            let mut buf = [0_u8; 1024];
-            let _ = stream
-                .read(&mut buf)
+            let mut request = [0_u8; 1024];
+            let _bytes_read = stream
+                .read(&mut request)
                 .await
                 .expect("request read should succeed");
-            let response = format!(
-                "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream
-                .write_all(response.as_bytes())
-                .await
-                .expect("response write should succeed");
+            pending::<()>().await;
         });
 
         format!("http://{addr}")
@@ -303,6 +516,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_mempool_explorer_response_error_strips_url_from_source_chain() {
+        const SECRET: &str = "secret-bearing-password";
+
+        let server = spawn_single_response_server("500 Internal Server Error", "").await;
+        let credential_bearing_url =
+            server.replacen("http://", &format!("http://user:{SECRET}@"), 1);
+        let explorer =
+            MempoolExplorerClient::new(&credential_bearing_url).expect("url should parse");
+
+        let err = explorer
+            .fetch_fee_estimates("api/v1/fees/precise")
+            .await
+            .expect_err("HTTP error should be returned");
+
+        assert!(matches!(
+            &err,
+            FeeRateError::InvalidExplorerResponse {
+                endpoint: "api/v1/fees/precise",
+                source,
+            } if source.url().is_none()
+        ));
+
+        let mut error_chain = Some(&err as &(dyn Error + 'static));
+        while let Some(error) = error_chain {
+            assert!(!error.to_string().contains(SECRET));
+            assert!(!format!("{error:?}").contains(SECRET));
+            error_chain = error.source();
+        }
+    }
+
+    #[tokio::test]
     async fn test_resolve_fee_rate_uses_precise_mempool_fee() {
         let server = spawn_single_response_server(
             "200 OK",
@@ -310,9 +554,9 @@ mod tests {
         )
         .await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
 
-        let fee_rate = resolve_fee_rate(&client, &config)
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect("mempool fee lookup should succeed");
 
@@ -328,9 +572,9 @@ mod tests {
         )
         .await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
 
-        let fee_rate = resolve_fee_rate(&client, &config)
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect("mempool fee lookup should succeed");
 
@@ -345,9 +589,9 @@ mod tests {
         )
         .await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Economy, server);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Economy, server);
 
-        let fee_rate = resolve_fee_rate(&client, &config)
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect("mempool fee lookup should succeed");
 
@@ -355,25 +599,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resolve_fee_rate_falls_back_from_precise_to_recommended_fees() {
+        let server = spawn_response_server(vec![
+            ("500 Internal Server Error", ""),
+            (
+                "200 OK",
+                "{\"fastestFee\":7,\"halfHourFee\":6,\"hourFee\":5,\"economyFee\":4,\"minimumFee\":3}",
+            ),
+        ])
+        .await;
+        let client = TestBitcoinClient::new(1);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
+
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
+            .await
+            .expect("recommended fee fallback should succeed");
+
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(7));
+        assert!(client.estimate_smart_fee_targets().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_falls_back_when_precise_fee_is_invalid() {
+        let server = spawn_response_server(vec![
+            (
+                "200 OK",
+                "{\"fastestFee\":0,\"halfHourFee\":6,\"hourFee\":5,\"economyFee\":4,\"minimumFee\":3}",
+            ),
+            (
+                "200 OK",
+                "{\"fastestFee\":7,\"halfHourFee\":6,\"hourFee\":5,\"economyFee\":4,\"minimumFee\":3}",
+            ),
+        ])
+        .await;
+        let client = TestBitcoinClient::new(1);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
+
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
+            .await
+            .expect("recommended fee fallback should succeed");
+
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(7));
+        assert!(client.estimate_smart_fee_targets().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mempool_explorer_rejects_oversized_response() {
+        let server = spawn_owned_response_server(vec![(
+            "200 OK",
+            "x".repeat(super::MAX_EXPLORER_RESPONSE_BYTES + 1),
+        )])
+        .await;
+        let explorer = MempoolExplorerClient::new(&server).expect("URL should parse");
+
+        let err = explorer
+            .fetch_fee_estimates("api/v1/fees/precise")
+            .await
+            .expect_err("oversized response should be rejected");
+
+        assert!(matches!(
+            err,
+            FeeRateError::ExplorerResponseTooLarge {
+                endpoint: "api/v1/fees/precise",
+                max_bytes: super::MAX_EXPLORER_RESPONSE_BYTES,
+            }
+        ));
+    }
+
+    #[tokio::test]
     async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_invalid_json() {
         let server = spawn_single_response_server("200 OK", "not-json").await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
 
-        let fee_rate = resolve_fee_rate(&client, &config)
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect("smart fee fallback should succeed");
 
         assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3));
+        assert_eq!(client.estimate_smart_fee_targets(), vec![1]);
     }
 
     #[tokio::test]
     async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_http_error() {
         let server = spawn_single_response_server("500 Internal Server Error", "").await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
 
-        let fee_rate = resolve_fee_rate(&client, &config)
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect("smart fee fallback should succeed");
 
@@ -381,24 +694,50 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
+    async fn test_resolve_fee_rate_gives_bitcoind_a_fresh_budget_after_explorer_timeout() {
+        let server = spawn_stalled_server().await;
         let client = TestBitcoinClient::new(1);
-        let config =
-            mempool_writer_config(MempoolExplorerFeePolicy::Fastest, "not a url".to_string());
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
+        let timeouts =
+            FeeRateResolutionTimeouts::new(Duration::from_millis(10), Duration::from_secs(1));
 
-        let err = resolve_fee_rate(&client, &config)
+        let fee_rate = resolve_fee_rate(&client, &config, timeouts)
+            .await
+            .expect("smart fee fallback should get its own timeout budget");
+
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3));
+        assert_eq!(client.estimate_smart_fee_targets(), vec![1]);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
+        const SECRET: &str = "malformed-secret";
+
+        let client = TestBitcoinClient::new(1);
+        let config = mempool_fee_config(
+            MempoolExplorerFeePolicy::Fastest,
+            format!("https://user:{SECRET}@[::1"),
+        );
+
+        let err = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect_err("invalid mempool_base_url should error");
 
-        assert!(err.to_string().contains("invalid mempool_base_url"));
+        assert!(err.source().is_some());
+        assert!(!err.to_string().contains(SECRET));
+        assert!(!format!("{err:?}").contains(SECRET));
+        assert!(matches!(
+            err,
+            FeeRateError::InvalidExplorerConfiguration { .. }
+        ));
     }
 
     #[tokio::test]
     async fn test_resolve_fee_rate_smart_uses_reader_estimate() {
-        let client = Arc::new(TestBitcoinClient::new(1));
-        let config = bitcoind_writer_config(1);
+        let client = TestBitcoinClient::new(1);
+        let config = bitcoind_fee_config(1);
 
-        let fee_rate = resolve_fee_rate(client.as_ref(), &config)
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect("smart fee lookup should succeed");
 
@@ -406,13 +745,119 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_fee_rate_fixed_policy_is_unscaled() {
-        let client = Arc::new(TestBitcoinClient::new(1));
-        let config = writer_config(L1FeePolicyConfig::new(FeePolicy::Fixed {
-            fee_rate: FeeRate::from_sat_per_vb_u32(9),
-        }));
+    async fn test_resolve_fee_rate_preserves_bitcoin_rpc_error() {
+        let source = ClientError::Connection("connection refused".to_string());
+        let client = TestBitcoinClient::new(1).with_estimate_smart_fee_error(source.clone());
+        let config = bitcoind_fee_config(6);
 
-        let fee_rate = resolve_fee_rate(client.as_ref(), &config)
+        let err = resolve_fee_rate(&client, &config, resolution_timeouts())
+            .await
+            .expect_err("Bitcoin RPC failure should be returned");
+
+        assert!(matches!(
+            err,
+            FeeRateError::BitcoinRpc {
+                conf_target: 6,
+                source: error_source,
+            } if error_source == source
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_reports_bitcoin_rpc_timeout() {
+        let client =
+            TestBitcoinClient::new(1).with_estimate_smart_fee_delay(Duration::from_secs(1));
+        let config = bitcoind_fee_config(6);
+        let timeouts =
+            FeeRateResolutionTimeouts::new(Duration::from_secs(1), Duration::from_millis(10));
+
+        let err = resolve_fee_rate(&client, &config, timeouts)
+            .await
+            .expect_err("Bitcoin RPC timeout should be returned");
+
+        assert!(matches!(
+            err,
+            FeeRateError::BitcoinRpcTimeout {
+                conf_target: 6,
+                timeout,
+            } if timeout == Duration::from_millis(10)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_preserves_both_timeout_failures() {
+        let server = spawn_stalled_server().await;
+        let client =
+            TestBitcoinClient::new(1).with_estimate_smart_fee_delay(Duration::from_secs(1));
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
+        let timeout = Duration::from_millis(10);
+
+        let err = resolve_fee_rate(
+            &client,
+            &config,
+            FeeRateResolutionTimeouts::new(timeout, timeout),
+        )
+        .await
+        .expect_err("both timeout failures should be returned");
+
+        assert!(err.is_timeout());
+        assert!(matches!(
+            err,
+            FeeRateError::Fallback {
+                explorer,
+                bitcoin_rpc,
+            } if matches!(*explorer, FeeRateError::ExplorerTimeout { timeout: value } if value == timeout)
+                && matches!(*bitcoin_rpc, FeeRateError::BitcoinRpcTimeout { conf_target: 1, timeout: value } if value == timeout)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_reports_unavailable_smart_fee_estimate() {
+        let errors = Some(vec!["Insufficient data or no feerate found".to_string()]);
+        let client = TestBitcoinClient::new(1).with_unavailable_smart_fee_estimate(errors.clone());
+        let config = bitcoind_fee_config(6);
+
+        let err = resolve_fee_rate(&client, &config, resolution_timeouts())
+            .await
+            .expect_err("unavailable estimate should be returned");
+
+        assert!(matches!(
+            err,
+            FeeRateError::SmartFeeUnavailable {
+                conf_target: 6,
+                errors: estimate_errors,
+            } if estimate_errors == errors
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_invalid_explorer_fee_rate() {
+        let invalid_response =
+            "{\"fastestFee\":0,\"halfHourFee\":6,\"hourFee\":5,\"economyFee\":4,\"minimumFee\":3}";
+        let server = spawn_response_server(vec![
+            ("200 OK", invalid_response),
+            ("200 OK", invalid_response),
+        ])
+        .await;
+        let client = TestBitcoinClient::new(1);
+        let config = mempool_fee_config(MempoolExplorerFeePolicy::Fastest, server);
+
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
+            .await
+            .expect("smart fee fallback should succeed");
+
+        assert_eq!(fee_rate, FeeRate::from_sat_per_vb_u32(3));
+        assert_eq!(client.estimate_smart_fee_targets(), vec![1]);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_fee_rate_fixed_policy_is_unscaled() {
+        let client = TestBitcoinClient::new(1);
+        let config = L1FeePolicyConfig::new(FeePolicy::Fixed {
+            fee_rate: FeeRate::from_sat_per_vb_u32(9),
+        });
+
+        let fee_rate = resolve_fee_rate(&client, &config, resolution_timeouts())
             .await
             .expect("fixed fee policy should resolve");
 

@@ -3,11 +3,19 @@ use std::fmt;
 use anyhow::Error as AnyhowError;
 use bitcoind_async_client::error::ClientError;
 
-use crate::writer::builder::EnvelopeError;
+use crate::writer::{builder::EnvelopeError, FeeRateError};
 
 /// Returns `true` when a Bitcoin RPC error may be resolved by retrying later.
 pub(crate) fn is_retryable_client_error(err: &ClientError) -> bool {
     err.is_retriable() || is_bitcoind_warmup_error(err)
+}
+
+fn is_bitcoin_rpc_timeout(err: &FeeRateError) -> bool {
+    match err {
+        FeeRateError::BitcoinRpcTimeout { .. } => true,
+        FeeRateError::Fallback { bitcoin_rpc, .. } => is_bitcoin_rpc_timeout(bitcoin_rpc),
+        _ => false,
+    }
 }
 
 /// Returns `true` when bitcoind is reachable but still in RPC warmup.
@@ -41,6 +49,14 @@ pub(crate) fn is_retryable_anyhow_error(err: &AnyhowError) -> bool {
         cause
             .downcast_ref::<ClientError>()
             .is_some_and(is_retryable_client_error)
+    }) {
+        return true;
+    }
+
+    if err.chain().any(|cause| {
+        cause
+            .downcast_ref::<FeeRateError>()
+            .is_some_and(is_bitcoin_rpc_timeout)
     }) {
         return true;
     }
@@ -81,6 +97,8 @@ pub(crate) fn retryable_reason(err: impl fmt::Display) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use bitcoind_async_client::error::ClientError;
 
     use super::{
@@ -88,7 +106,17 @@ mod tests {
         is_retryable_anyhow_error, is_retryable_client_error, is_retryable_envelope_error,
         retryable_reason,
     };
-    use crate::writer::builder::EnvelopeError;
+    use crate::writer::{builder::EnvelopeError, FeeRateError};
+
+    fn fallback_prereq_error(bitcoin_rpc: FeeRateError) -> EnvelopeError {
+        let source = FeeRateError::Fallback {
+            explorer: Box::new(FeeRateError::ExplorerTimeout {
+                timeout: Duration::from_secs(1),
+            }),
+            bitcoin_rpc: Box::new(bitcoin_rpc),
+        };
+        EnvelopeError::PrereqFetch(source.into())
+    }
 
     #[test]
     fn client_errors_include_bitcoind_warmup() {
@@ -142,6 +170,36 @@ mod tests {
         let err = EnvelopeError::PrereqFetch(source);
 
         assert!(is_retryable_envelope_error(&err));
+    }
+
+    #[test]
+    fn envelope_prereq_fetch_preserves_fallback_rpc_retry_classification() {
+        let err = fallback_prereq_error(FeeRateError::BitcoinRpc {
+            conf_target: 1,
+            source: ClientError::Connection("connection refused".into()),
+        });
+
+        assert!(is_retryable_envelope_error(&err));
+    }
+
+    #[test]
+    fn envelope_prereq_fetch_retries_fallback_rpc_timeout() {
+        let err = fallback_prereq_error(FeeRateError::BitcoinRpcTimeout {
+            conf_target: 1,
+            timeout: Duration::from_secs(10),
+        });
+
+        assert!(is_retryable_envelope_error(&err));
+    }
+
+    #[test]
+    fn envelope_prereq_fetch_does_not_retry_only_explorer_timeout() {
+        let err = fallback_prereq_error(FeeRateError::SmartFeeUnavailable {
+            conf_target: 1,
+            errors: None,
+        });
+
+        assert!(!is_retryable_envelope_error(&err));
     }
 
     #[test]
