@@ -6,7 +6,9 @@ use strata_acct_types::{
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::constants::AsmLogTypeId;
-use strata_asm_logs::{CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate};
+use strata_asm_logs::{
+    CheckpointPredicateEnacted, CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
+};
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_msg_fmt::{Msg, OwnedMsg};
@@ -23,19 +25,38 @@ use crate::context::BasicExecContext;
 use crate::errors::{ExecError, ExecResult};
 use crate::msg_payload_coin::MsgPayloadCoin;
 
+/// Reports events observed while successfully processing ASM manifests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ManifestProcessingOutcome {
+    checkpoint_enactment_height: Option<L1Height>,
+}
+
+impl ManifestProcessingOutcome {
+    /// Returns the L1 height at which the checkpoint predicate was enacted, if any.
+    pub fn checkpoint_enactment_height(&self) -> Option<L1Height> {
+        self.checkpoint_enactment_height
+    }
+}
+
 /// Buffers the ASM logs carried by a sequence of manifests into the intraepoch
 /// state for later processing at the epoch terminal.
 ///
-/// Manifests may be included in any block within an epoch; this does not imply
-/// the block is an epoch terminal. The manifest heights must be strictly
-/// sequential after the state's `last_l1_height`, which carries the running
-/// cursor across blocks since `append_l1_block_rec` is called eagerly here. The
+/// Manifests may be included in any block within an epoch. A manifest carrying
+/// a checkpoint predicate enactment must be the last manifest of a terminal
+/// block, keeping the epoch entirely within the old predicate's territory.
+/// The manifest heights must be strictly sequential after the state's
+/// `last_l1_height`, which carries the running cursor across blocks since
+/// `append_l1_block_rec` is called eagerly here. The
 /// ASM-log *effects* are deferred to [`process_epoch_terminal`].
 ///
 /// Accepts a plain slice rather than the per-block
 /// [`OLAsmManifestContainerV1`](strata_ol_chain_types_v1::OLAsmManifestContainerV1)
 /// so callers replaying a whole epoch (e.g. checkpoint proving) are not bound
 /// by the per-block `MAX_SEALING_MANIFEST_COUNT` limit.
+///
+/// Rejects duplicate enactments and manifests following an enactment before changing
+/// state. Callers must additionally verify the terminal header flag when executing
+/// a complete block. Returns events observed during successful buffering.
 ///
 /// NOTE: This does not apply any log effects, advance the epoch, or emit OL
 /// logs.
@@ -49,35 +70,102 @@ use crate::msg_payload_coin::MsgPayloadCoin;
 pub fn process_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
-) -> ExecResult<()> {
-    // The state's last seen height is the running cursor; new manifests are
-    // strictly after it, regardless of which block in the epoch they arrive in.
-    let orig_l1_height = state.last_l1_height();
+) -> ExecResult<ManifestProcessingOutcome> {
+    // Header terminality belongs to block structure validation. Here the slice may also
+    // span a whole epoch; in either case no manifest may follow an enactment.
+    verify_manifest_enactments(manifests)?;
 
-    for (i, mf) in manifests.iter().enumerate() {
-        let real_height = next_manifest_height(orig_l1_height, i)?;
-        if mf.height() != real_height {
-            warn!(
-                expected_height = real_height,
-                got_height = mf.height(),
-                index = i,
-                "asm manifest height mismatch",
-            );
-            return Err(ExecError::AsmManifestHeightMismatch {
-                expected: real_height,
-                actual: mf.height(),
-                index: i,
+    let mut outcome = ManifestProcessingOutcome {
+        checkpoint_enactment_height: None,
+    };
+    for (index, manifest) in manifests.iter().enumerate() {
+        outcome = process_asm_manifest_at_index(state, manifest, index)?;
+    }
+    Ok(outcome)
+}
+
+/// Validates one ASM manifest and buffers its logs, returning events observed during processing.
+///
+/// The manifest must immediately follow the state's last accepted L1 height and
+/// contain at most one checkpoint predicate enactment. Assembly calls this only
+/// after resource admission, then uses the outcome to stop selection and seal.
+/// Log effects remain deferred to [`process_epoch_terminal`].
+pub fn process_asm_manifest<S: IStateAccessorMut>(
+    state: &mut S,
+    manifest: &AsmManifest,
+) -> ExecResult<ManifestProcessingOutcome> {
+    process_asm_manifest_at_index(state, manifest, 0)
+}
+
+fn process_asm_manifest_at_index<S: IStateAccessorMut>(
+    state: &mut S,
+    manifest: &AsmManifest,
+    index: usize,
+) -> ExecResult<ManifestProcessingOutcome> {
+    let height = next_manifest_height(state.last_l1_height())?;
+    if manifest.height() != height {
+        return Err(ExecError::AsmManifestHeightMismatch {
+            expected: height,
+            actual: manifest.height(),
+            index,
+        });
+    }
+    let checkpoint_enactment_height =
+        has_checkpoint_predicate_enactment(manifest)?.then_some(height);
+    trace!(
+        height,
+        log_count = manifest.logs().len(),
+        "buffering asm manifest logs"
+    );
+    handle_asm_manifest(state, height, manifest)?;
+    Ok(ManifestProcessingOutcome {
+        checkpoint_enactment_height,
+    })
+}
+
+/// Returns whether a manifest carries a checkpoint predicate enactment.
+///
+/// ASM allows at most one OL key rotation per L1 block. A second enactment is
+/// rejected rather than choosing between predicates. An enactment-tagged log must
+/// decode successfully so a malformed body cannot hide an epoch boundary.
+pub fn has_checkpoint_predicate_enactment(manifest: &AsmManifest) -> ExecResult<bool> {
+    let mut enacted = false;
+    for log in manifest.logs() {
+        if log.ty() != Some(AsmLogTypeId::CheckpointPredicateEnacted.into()) {
+            continue;
+        }
+        log.try_into_log::<CheckpointPredicateEnacted>()
+            .map_err(|_| ExecError::MalformedCheckpointPredicateEnactment {
+                height: manifest.height(),
+            })?;
+        if enacted {
+            return Err(ExecError::DuplicateCheckpointPredicateEnactment {
+                height: manifest.height(),
             });
         }
-        trace!(
-            height = real_height,
-            log_count = mf.logs().len(),
-            "buffering asm manifest logs",
-        );
-        handle_asm_manifest(state, real_height, mf)?;
+        enacted = true;
     }
+    Ok(enacted)
+}
 
-    Ok(())
+/// Checks enactment cardinality and placement without consulting block headers.
+///
+/// The caller checks terminality separately when the slice belongs to a block.
+/// Whole-epoch replay and direct batch buffering share the same placement rule.
+pub(crate) fn verify_manifest_enactments(
+    manifests: &[AsmManifest],
+) -> ExecResult<Option<L1Height>> {
+    for (index, manifest) in manifests.iter().enumerate() {
+        if has_checkpoint_predicate_enactment(manifest)? {
+            if index + 1 != manifests.len() {
+                return Err(ExecError::CheckpointPredicateBoundaryNotLast {
+                    height: manifest.height(),
+                });
+            }
+            return Ok(Some(manifest.height()));
+        }
+    }
+    Ok(None)
 }
 
 /// Processes the epoch terminal: drains all buffered ASM logs (applying their
@@ -131,11 +219,9 @@ pub fn process_epoch_terminal<S: IStateAccessorMut>(
     Ok(())
 }
 
-fn next_manifest_height(last_l1_height: L1Height, index: usize) -> ExecResult<L1Height> {
-    let offset = L1Height::try_from(index).map_err(|_| ExecError::AsmManifestHeightOverflow)?;
+fn next_manifest_height(last_l1_height: L1Height) -> ExecResult<L1Height> {
     last_l1_height
-        .checked_add(offset)
-        .and_then(|height| height.checked_add(1))
+        .checked_add(1)
         .ok_or(ExecError::AsmManifestHeightOverflow)
 }
 
@@ -213,6 +299,12 @@ fn process_asm_log<S: IStateAccessorMut>(
                 return Ok(());
             };
             process_ee_predicate_key_update(state, &data, context)?;
+        }
+
+        Ok(AsmLogTypeId::CheckpointPredicateEnacted) => {
+            // The caller enforces the boundary before the terminal drain. The terminal
+            // still executes under the old rules; fork discovery owns activation
+            // from the next epoch (STR-4086).
         }
 
         Ok(ty) => {
@@ -450,15 +542,15 @@ mod tests {
 
     #[test]
     fn next_manifest_height_rejects_l1_height_overflow() {
-        assert_eq!(next_manifest_height(0, 0).expect("height should fit"), 1);
+        assert_eq!(next_manifest_height(0).expect("height should fit"), 1);
 
         assert!(matches!(
-            next_manifest_height(L1Height::MAX, 0),
+            next_manifest_height(L1Height::MAX),
             Err(ExecError::AsmManifestHeightOverflow)
         ));
-        assert!(matches!(
-            next_manifest_height(L1Height::MAX - 1, 1),
-            Err(ExecError::AsmManifestHeightOverflow)
-        ));
+        assert_eq!(
+            next_manifest_height(L1Height::MAX - 1).unwrap(),
+            L1Height::MAX
+        );
     }
 }

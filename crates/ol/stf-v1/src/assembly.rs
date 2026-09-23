@@ -11,8 +11,11 @@ use strata_ol_tx_types_v1::*;
 
 use crate::context::{BasicExecContext, BlockContext, TxExecContext};
 use crate::errors::ExecResult;
+use crate::manifest_processing::ManifestProcessingOutcome;
 use crate::output::ExecOutputBuffer;
-use crate::verification::{BlockExecInput, verify_block_predrain};
+use crate::verification::{
+    BlockExecInput, verify_block_predrain, verify_checkpoint_predicate_boundaries,
+};
 use crate::{chain_processing, manifest_processing, transaction_processing, verify_block};
 
 /// Block execution outputs.
@@ -101,10 +104,14 @@ pub fn execute_block_tx_segment<S: IStateAccessorMut>(
 }
 
 /// Buffers the ASM logs carried by a block's manifests into intraepoch state.
+///
+/// Returns events observed during successful buffering. Callers must verify the
+/// terminal header flag before executing a complete block, as described by
+/// [`manifest_processing::process_block_manifests`].
 pub fn execute_block_manifest_buffering<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
-) -> ExecResult<()> {
+) -> ExecResult<ManifestProcessingOutcome> {
     manifest_processing::process_block_manifests(state, manifests)
 }
 
@@ -128,6 +135,13 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     block_exec_input: BlockExecInput<'_>,
     runtime_params: &OLRuntimeParams,
 ) -> ExecResult<BlockExecOutputs> {
+    if let Some(manifests) = block_exec_input.manifest_container() {
+        verify_checkpoint_predicate_boundaries(
+            manifests.manifests(),
+            block_exec_input.is_terminal(),
+        )?;
+    }
+
     // 0. Construct the block exec context for tracking verification state
     // across phases.
     let output = ExecOutputBuffer::new_empty();

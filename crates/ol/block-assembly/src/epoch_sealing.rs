@@ -1,13 +1,13 @@
 //! Epoch sealing policy for OL block assembly.
 //!
 //! The sealing policy determines when an epoch should be sealed, i.e. when to
-//! create a terminal block. This is a batch production concern, not an STF
-//! concern.
+//! create a terminal block. Cadence and resource limits govern normal batching;
+//! checkpoint predicate boundaries also require sealing under the OL STF.
 
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
-use strata_identifiers::Slot;
+use strata_identifiers::{L1Height, Slot};
 use strata_ol_chain_types_v1::MAX_SEALING_MANIFEST_COUNT;
 
 use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict};
@@ -84,8 +84,8 @@ pub(crate) enum EpochSealingLimit {
 
 /// Verdict from checking candidate values against sealing limits.
 ///
-/// The verdict preserves checkpoint-size and manifest-count actions separately
-/// so multiple crossed limits can be observed together.
+/// The verdict preserves each resource-limit action so multiple crossed limits
+/// can be observed together.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct EpochSealingLimitVerdict {
     actions: Vec<(EpochSealingLimit, EpochSealingLimitAction)>,
@@ -172,9 +172,11 @@ impl EpochSealingLimitVerdict {
 /// Trigger that requested an epoch seal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EpochSealTrigger {
+    /// An admitted enactment ends the old predicate's territory at this L1 height.
+    CheckpointPredicateBoundary(L1Height),
     /// The configured sealing cadence requested a terminal block.
     Cadence,
-    /// One or more non-cadence limits requested a terminal block.
+    /// One or more resource limits requested a terminal block.
     Limits(EpochSealingLimitVerdict),
 }
 
@@ -299,15 +301,17 @@ pub trait EpochSealingPolicy: Send + Sync + Debug + 'static {
     /// Checks candidate resource stats against sealing limits.
     fn check_limits(&self, stats: &EpochSealingResourceStats) -> EpochSealingLimitVerdict;
 
-    /// Decides whether a terminal block should be created.
+    /// Decides whether to seal, prioritizing an admitted predicate boundary over
+    /// resource limits, then cadence.
     fn should_seal_epoch(
         &self,
         slot: Slot,
+        checkpoint_enactment_height: Option<L1Height>,
         limit_verdict: &EpochSealingLimitVerdict,
     ) -> EpochSealingDecision;
 }
 
-/// Sealing policy that combines a cadence policy with sealing-limit rules.
+/// Sealing policy that prioritizes manifest signals, resource limits, then cadence.
 #[derive(Debug)]
 pub struct LimitAwareSealing<C: CadencePolicy> {
     cadence: C,
@@ -333,9 +337,12 @@ impl<C: CadencePolicy> EpochSealingPolicy for LimitAwareSealing<C> {
     fn should_seal_epoch(
         &self,
         slot: Slot,
+        checkpoint_enactment_height: Option<L1Height>,
         limit_verdict: &EpochSealingLimitVerdict,
     ) -> EpochSealingDecision {
-        if let Some(trigger) = limit_verdict.seal_trigger() {
+        if let Some(height) = checkpoint_enactment_height {
+            EpochSealingDecision::Seal(EpochSealTrigger::CheckpointPredicateBoundary(height))
+        } else if let Some(trigger) = limit_verdict.seal_trigger() {
             EpochSealingDecision::Seal(trigger)
         } else if self.cadence.seals_at_slot(slot) {
             EpochSealingDecision::Seal(EpochSealTrigger::Cadence)
@@ -423,7 +430,7 @@ mod fixed_slot_sealing_tests {
             0,
         );
         let verdict = sealing.check_limits(&stats);
-        let decision = sealing.should_seal_epoch(1, &verdict);
+        let decision = sealing.should_seal_epoch(1, None, &verdict);
 
         assert_eq!(
             verdict.checkpoint_size_action(),
@@ -458,7 +465,7 @@ mod fixed_slot_sealing_tests {
                 && action == EpochSealingLimitAction::SealAfterAdmit
         }));
 
-        let decision = sealing.should_seal_epoch(1, &verdict);
+        let decision = sealing.should_seal_epoch(1, None, &verdict);
         assert_eq!(
             decision,
             EpochSealingDecision::Seal(EpochSealTrigger::Limits(verdict))
@@ -546,10 +553,31 @@ mod fixed_slot_sealing_tests {
     }
 
     #[test]
+    fn test_predicate_signal_precedes_limits_and_cadence() {
+        let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
+        let limit = EpochSealingLimitVerdict::from_actions([(
+            EpochSealingLimit::ManifestCount,
+            EpochSealingLimitAction::SealAfterAdmit,
+        )]);
+        for slot in [1, 10] {
+            for verdict in [EpochSealingLimitVerdict::within_limits(), limit.clone()] {
+                assert_eq!(
+                    sealing.should_seal_epoch(slot, Some(42), &verdict),
+                    EpochSealingDecision::Seal(EpochSealTrigger::CheckpointPredicateBoundary(42))
+                );
+            }
+        }
+        assert_eq!(
+            sealing.should_seal_epoch(10, None, &limit),
+            EpochSealingDecision::Seal(EpochSealTrigger::Limits(limit))
+        );
+    }
+
+    #[test]
     fn test_cadence_seals_through_policy_decision() {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
         let verdict = EpochSealingLimitVerdict::within_limits();
-        let decision = sealing.should_seal_epoch(10, &verdict);
+        let decision = sealing.should_seal_epoch(10, None, &verdict);
 
         assert_eq!(
             decision,
@@ -561,7 +589,7 @@ mod fixed_slot_sealing_tests {
     fn test_policy_decision_non_terminal() {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
         let verdict = EpochSealingLimitVerdict::within_limits();
-        let decision = sealing.should_seal_epoch(1, &verdict);
+        let decision = sealing.should_seal_epoch(1, None, &verdict);
 
         assert_eq!(decision, EpochSealingDecision::Continue);
     }

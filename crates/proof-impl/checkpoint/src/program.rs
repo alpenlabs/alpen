@@ -90,16 +90,23 @@ mod tests {
     use std::panic::catch_unwind;
 
     use strata_asm_checkpoint_types::TerminalHeaderComplement;
+    use strata_asm_logs::CheckpointPredicateEnacted;
+    use strata_asm_manifest_types::AsmLogEntry;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
     use strata_identifiers::Buf64;
-    use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
+    use strata_ol_chain_types_v1::{
+        OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
+    };
     use strata_ol_da_types_v1::{GlobalStateDiffV1, LedgerDiffV1, OLDaPayloadV1, OLStateDiffV1};
     use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::IStateAccessor;
-    use strata_ol_stf_v1::test_utils::{build_empty_chain, make_genesis_state};
+    use strata_ol_stf_v1::test_utils::{
+        FixtureAsmManifestBuilder, OLStfFixture, build_empty_chain, make_genesis_state,
+    };
+    use strata_predicate::PredicateKey;
 
     use crate::program::{CheckpointProgram, CheckpointProverInput};
 
@@ -144,6 +151,74 @@ mod tests {
             parent,
             da_state_diff_bytes,
         }
+    }
+
+    fn prepare_boundary_input() -> CheckpointProverInput {
+        let mut fixture = OLStfFixture::builder().execute_genesis();
+        let start_state = fixture.state().state().clone();
+        let parent = fixture.parent_header().clone();
+        let log = AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(
+            PredicateKey::always_accept(),
+        ))
+        .unwrap();
+        let manifest = FixtureAsmManifestBuilder::new_at_height(1)
+            .with_log(log)
+            .build();
+        let outcome = fixture
+            .child_block()
+            .with_manifest(manifest)
+            .terminal()
+            .execute();
+        let block = outcome.completed_block();
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::new(DaCounter::new_changed(1), DaCounter::new_unchanged()),
+            LedgerDiffV1::default(),
+        );
+        CheckpointProverInput {
+            start_state,
+            blocks: vec![OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(block.header().clone(), Buf64::zero()),
+                block.body().clone(),
+            )],
+            parent,
+            da_state_diff_bytes: encode_to_vec(&OLDaPayloadV1::new(diff)).unwrap(),
+        }
+    }
+
+    #[test]
+    fn test_statements_accept_epoch_ending_at_predicate_boundary() {
+        CheckpointProgram::execute(&prepare_boundary_input(), OLRuntimeParams::test_default())
+            .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointPredicateBoundaryNotLast")]
+    fn test_statements_reject_epoch_straddling_predicate_boundary() {
+        let mut input = prepare_boundary_input();
+        let block = &input.blocks[0];
+        let mut manifests = block.body().manifests().unwrap().manifests().to_vec();
+        manifests.push(FixtureAsmManifestBuilder::new_at_height(2).build());
+        let body = OLBlockBodyV1::new(
+            OLTxSegmentV1::new(vec![]).unwrap(),
+            Some(OLAsmManifestContainerV1::new(manifests).unwrap()),
+        );
+        let mut header = block.header().clone();
+        header.body_root = body.compute_hash_commitment();
+        input.blocks[0] = OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body);
+        // Require the boundary error specifically, before any commitment mismatch.
+        let _ = CheckpointProgram::execute(&input, OLRuntimeParams::test_default());
+    }
+
+    #[test]
+    #[should_panic(expected = "CheckpointPredicateBoundaryNonterminal")]
+    fn test_statements_reject_boundary_in_earlier_nonterminal_block() {
+        let mut input = prepare_input();
+        let boundary = prepare_boundary_input();
+        let body = boundary.blocks[0].body().clone();
+        let mut header = input.blocks[0].header().clone();
+        header.body_root = body.compute_hash_commitment();
+        input.blocks[0] = OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body);
+        let _ = CheckpointProgram::execute(&input, OLRuntimeParams::test_default());
     }
 
     #[test]

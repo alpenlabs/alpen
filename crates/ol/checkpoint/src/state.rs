@@ -213,8 +213,14 @@ mod tests {
     use strata_asm_checkpoint_types::test_utils::{
         checkpoint_sidecar_strategy, create_test_checkpoint_payload,
     };
-    use strata_asm_checkpoint_types::{CheckpointPayload, CheckpointTip};
+    use strata_asm_checkpoint_types::{
+        AsmManifestRangeHash, CheckpointPayload, CheckpointTip, PendingPredicateTransition,
+    };
+    use strata_asm_common::AsmLogEntry;
+    use strata_asm_logs::CheckpointPredicateEnacted;
+    use strata_asm_params::CheckpointInitConfig;
     use strata_checkpoint_types::EpochSummary;
+    use strata_checkpoint_verification::{CheckpointL1Range, CheckpointState, verify_progression};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::test_utils::{
         buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy,
@@ -232,14 +238,16 @@ mod tests {
     use strata_ol_state_types_v1::OLStateV1;
     use strata_ol_stf_v1::BlockComponents;
     use strata_ol_stf_v1::test_utils::{
-        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
-        TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
-        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
-        epoch_runner_seed_accounts as seed_accounts, get_snark_state_expect, make_account_id,
-        make_empty_manifest, make_genesis_state, make_p2wpkh_bosd_descriptor, make_state_root,
-        make_withdrawal_payload, snark_inbox_msg, to_ol_block,
+        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, FixtureAsmManifestBuilder,
+        InboxMmrTracker, OLStfFixture, SnarkUpdateBuilder, TEST_SNARK_ACCOUNT_ID,
+        epoch_runner_run_block as run_block, epoch_runner_run_genesis as run_genesis,
+        epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
+        get_snark_state_expect, make_account_id, make_empty_manifest, make_genesis_state,
+        make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload, snark_inbox_msg,
+        to_ol_block,
     };
     use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
+    use strata_predicate::PredicateKey;
     use strata_primitives::epoch::EpochCommitment;
     use strata_storage::create_node_storage;
 
@@ -625,6 +633,137 @@ mod tests {
             prop_assert_eq!(*sidecar_terminal_subset.body_root(), *terminal_header.body_root());
             prop_assert_eq!(*sidecar_terminal_subset.logs_root(), *terminal_header.logs_root());
             prop_assert!(stored.proof().is_empty());
+        }
+    }
+
+    /// Checks the L1 range produced by OL execution and checkpoint DA replay against ASM.
+    #[test]
+    fn checkpoint_payload_ends_at_predicate_boundary_and_successor_starts_after_it() {
+        let boundary = 2;
+        let new_predicate = PredicateKey::never_accept();
+        let enactment =
+            AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(new_predicate.clone()))
+                .expect("enactment log encodes");
+        let mut fixture = OLStfFixture::builder().execute_genesis();
+        let storage = create_cursor_test_storage();
+        let genesis = fixture.last_completed_block();
+        let genesis_commitment =
+            OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid());
+        let mut previous_terminal = OLBlockCommitment::null();
+
+        // Persist genesis and two terminal blocks with their executed states. The
+        // checkpoint worker replays each epoch from the preceding terminal state.
+        for epoch in 0..=2 {
+            if epoch == 1 {
+                fixture
+                    .child_block()
+                    .with_manifest(FixtureAsmManifestBuilder::new_at_height(1).build())
+                    .with_manifest(
+                        FixtureAsmManifestBuilder::new_at_height(boundary)
+                            .with_logs(vec![enactment.clone()])
+                            .build(),
+                    )
+                    .terminal()
+                    .execute();
+            } else if epoch == 2 {
+                fixture
+                    .child_block()
+                    .with_manifest(FixtureAsmManifestBuilder::new_at_height(boundary + 1).build())
+                    .terminal()
+                    .execute();
+            }
+            let block = fixture.last_completed_block();
+            let header = block.header();
+            let terminal = OLBlockCommitment::new(header.slot(), header.compute_blkid());
+            let state = fixture.state().clone().into_inner();
+            let last_l1 = L1BlockCommitment::new(
+                state.epoch_state().last_l1_height(),
+                *state.epoch_state().last_l1_blkid(),
+            );
+            storage
+                .ol_block()
+                .put_block_data_blocking(to_ol_block(block))
+                .unwrap();
+            storage
+                .ol_state()
+                .put_toplevel_ol_state_blocking(terminal, state)
+                .unwrap();
+            storage
+                .ol_checkpoint()
+                .insert_epoch_summary_blocking(EpochSummary::new(
+                    header.epoch(),
+                    terminal,
+                    previous_terminal,
+                    last_l1,
+                    *header.state_root(),
+                ))
+                .unwrap();
+            previous_terminal = terminal;
+        }
+
+        let mut asm = CheckpointState::init(CheckpointInitConfig {
+            sequencer_key: Buf32::zero(),
+            checkpoint_predicate: PredicateKey::always_accept(),
+            genesis_l1_height: 0,
+            genesis_ol_blkid: *genesis_commitment.blkid(),
+        });
+        asm.queue_predicate_transition(PendingPredicateTransition::new(
+            new_predicate.clone(),
+            boundary,
+        ));
+
+        for epoch in 1..=2 {
+            let ctx = CheckpointWorkerContextImpl::new(
+                Arc::clone(&storage),
+                OLRuntimeParams::test_default(),
+            );
+            let commitment = ctx
+                .get_canonical_epoch_commitment_at(epoch)
+                .unwrap()
+                .unwrap();
+            let payload = process_epoch_and_load_payload(&storage, ctx, commitment);
+            let coverage = verify_progression(
+                asm.verified_tip(),
+                payload.new_tip(),
+                boundary + 2,
+                asm.next_transition(),
+            )
+            .expect("OL-produced checkpoint stays within its predicate territory");
+            if epoch == 1 {
+                assert_eq!(payload.new_tip().l1_height(), boundary);
+                assert_eq!(
+                    coverage,
+                    CheckpointL1Range::Range {
+                        start_height: 1,
+                        end_height: boundary,
+                    }
+                );
+                // Extending this same checkpoint by one L1 block must fail.
+                let crossing_tip =
+                    CheckpointTip::new(epoch, boundary + 1, *payload.new_tip().l2_commitment());
+                assert!(
+                    verify_progression(
+                        asm.verified_tip(),
+                        &crossing_tip,
+                        boundary + 2,
+                        asm.next_transition(),
+                    )
+                    .is_err()
+                );
+                // The old AlwaysAccept key admits the checkpoint ending at B,
+                // then ASM promotes the new key for the following checkpoint.
+                asm.advance(&payload, AsmManifestRangeHash::ZERO).unwrap();
+                assert_eq!(asm.checkpoint_predicate(), &new_predicate);
+                assert!(asm.next_transition().is_none());
+            } else {
+                assert_eq!(
+                    coverage,
+                    CheckpointL1Range::Range {
+                        start_height: boundary + 1,
+                        end_height: boundary + 1,
+                    }
+                );
+            }
         }
     }
 
