@@ -16,6 +16,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{Context, Result};
 use strata_config::{ProverBackend, ProverConfig};
 use strata_identifiers::{Epoch, EpochCommitment};
+use strata_ol_state_types::OLSpecId;
 use strata_paas::{ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult};
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_storage::CheckpointProofDbManager;
@@ -101,7 +102,8 @@ pub(crate) fn start_prover_service(
             .task_store(task_store)
             .receipt_hook(hook)
             .retry(RetryConfig::default())
-            .native(CheckpointProgram::native_host(runtime_params)),
+            // TODO(STR-4082): select the checkpoint program for each epoch's spec.
+            .native(CheckpointProgram::native_host(OLSpecId::V1, runtime_params)),
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
             use strata_zkvm_hosts::sp1::checkpoint_host;

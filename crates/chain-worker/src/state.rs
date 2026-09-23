@@ -26,7 +26,6 @@ use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType,
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
-use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
@@ -35,7 +34,8 @@ use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, StateError, StateResult,
 };
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
-use strata_ol_stf_v1::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
+use strata_ol_stf::{EpochDaReplayError, OLSpecId, apply_da_epoch};
+use strata_ol_stf_v1::{BlockInfo, EpochInfo, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
@@ -494,12 +494,6 @@ pub(crate) fn apply_checkpoint_epoch(
 
     let sidecar = payload.sidecar();
     let terminal = *tip.l2_commitment();
-    let da_payload = decode_ol_da_payload_bytes(sidecar.ol_state_diff()).map_err(|source| {
-        WorkerError::DaPayloadDecode {
-            epoch: epoch.epoch(),
-            source,
-        }
-    })?;
     let (manifests, epoch_info) =
         assemble_da_inputs(ctx, epoch, &base_state, sidecar, tip, prev_terminal)?;
     let runtime_params = ctx.runtime_params();
@@ -517,17 +511,28 @@ pub(crate) fn apply_checkpoint_epoch(
     // `ol_logs`, which records the changes made during the epoch.
     let pre_cursors = collect_pre_snark_account_cursors(&base_state, &ol_logs)?;
 
+    // TODO(STR-4086): use the spec scheduled for this checkpoint's epoch.
+    let spec = OLSpecId::V1;
+
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
     // run apply_da_epoch, then extract the batch and indexer writes.
     let tracking_state = WriteTrackingState::new_empty(&base_state);
     let mut indexer_state = IndexerState::new(tracking_state);
-    apply_da_epoch::<_, OLDaSchemeV1>(
+    apply_da_epoch(
+        spec,
         &mut indexer_state,
         &epoch_info,
-        da_payload,
+        sidecar.ol_state_diff(),
         &manifests,
         &runtime_params,
-    )?;
+    )
+    .map_err(|err| match err {
+        EpochDaReplayError::Decode(source) => WorkerError::DaPayloadDecode {
+            epoch: epoch.epoch(),
+            source,
+        },
+        EpochDaReplayError::Exec(source) => WorkerError::StfExecution(source),
+    })?;
     let indexer_state_root =
         indexer_state
             .compute_state_root()

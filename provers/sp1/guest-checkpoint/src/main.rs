@@ -3,14 +3,18 @@ zkaleido_sp1_guest_env::entrypoint!(main);
 
 use ssz::Decode;
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_types::OLSpecId;
 use strata_proofimpl_checkpoint::process_ol_stf;
 use zkaleido_sp1_guest_env::Sp1ZkVmEnv;
 
 mod runtime_params;
 
+/// The OL spec whose rules this program build proves.
+const PROVED_SPEC: OLSpecId = OLSpecId::V1;
+
 fn main() {
     let runtime_params =
         OLRuntimeParams::from_ssz_bytes(runtime_params::CHECKPOINT_RUNTIME_PARAMS_SSZ)
             .expect("embedded checkpoint runtime params must decode");
-    process_ol_stf(&Sp1ZkVmEnv, &runtime_params)
+    process_ol_stf(&Sp1ZkVmEnv, PROVED_SPEC, &runtime_params)
 }

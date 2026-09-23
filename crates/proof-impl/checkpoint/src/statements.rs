@@ -9,14 +9,13 @@ use strata_asm_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalHeaderC
 use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash};
 use strata_crypto::hash;
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1};
-use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_state_types_v1::OLStateV1;
-use strata_ol_stf_v1::{
-    BlockComponents, BlockContext, BlockInfo, EpochExecExpectations, EpochInfo, construct_block,
-    verify_epoch_with_diff,
+use strata_ol_stf::{
+    BlockComponents, BlockContext, BlockInfo, EpochDaReplayError, EpochExecExpectations, EpochInfo,
+    OLSpecId, construct_block, verify_epoch_with_diff,
 };
 use zkaleido::ZkVmEnv;
 
@@ -25,12 +24,15 @@ use zkaleido::ZkVmEnv;
 /// This function is the main entry point for the OL STF proof program. It handles
 /// zkVM I/O operations: reading inputs and committing outputs.
 ///
+/// `spec` is the OL spec whose rules the program proves. Each program build
+/// fixes its spec; it is never read from the proof input.
+///
 /// # Inputs (read from zkVM)
 ///
 /// - Initial OL state (SSZ-encoded [`OLStateV1`])
 /// - Block batch (SSZ-encoded `Vec<OLBlockV1>`)
 /// - Parent block header (SSZ-encoded [`OLBlockHeaderV1`])
-/// - DA state diff bytes (strata-codec encoded [`strata_ol_da_types_v1::OLDaPayloadV1`])
+/// - DA state diff bytes (the epoch's encoded DA payload under `spec`)
 ///
 /// # Outputs (committed to zkVM)
 ///
@@ -40,7 +42,7 @@ use zkaleido::ZkVmEnv;
 ///
 /// This function panics if any SSZ deserialization fails.
 /// See [`process_ol_stf_core`] for additional panic conditions.
-pub fn process_ol_stf(zkvm: &impl ZkVmEnv, runtime_params: &OLRuntimeParams) {
+pub fn process_ol_stf(zkvm: &impl ZkVmEnv, spec: OLSpecId, runtime_params: &OLRuntimeParams) {
     // Read and deserialize the initial OL state from zkVM input
     let initial_state_ssz_bytes = zkvm.read_buf();
     let state = OLStateV1::from_ssz_bytes(&initial_state_ssz_bytes)
@@ -61,7 +63,14 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv, runtime_params: &OLRuntimeParams) {
     let da_state_diff_bytes = zkvm.read_buf();
 
     // Execute the core STF logic to get the claim
-    let claim = process_ol_stf_core(state, blocks, parent, da_state_diff_bytes, runtime_params);
+    let claim = process_ol_stf_core(
+        spec,
+        state,
+        blocks,
+        parent,
+        da_state_diff_bytes,
+        runtime_params,
+    );
 
     // Serialize and commit the checkpoint claim to the zkVM as public output
     let claim_ssz_bytes = claim.as_ssz_bytes();
@@ -86,7 +95,10 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv, runtime_params: &OLRuntimeParams) {
 /// - The block batch is empty
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
+/// - The DA diff bytes do not decode under `spec`, or replaying them does not reproduce the
+///   terminal header's state root
 pub fn process_ol_stf_core(
+    spec: OLSpecId,
     state: OLStateV1,
     blocks: Vec<OLBlockV1>,
     parent: OLBlockHeaderV1,
@@ -144,7 +156,7 @@ pub fn process_ol_stf_core(
         asm_manifests_hash,
         terminal_header,
         epoch_manifests,
-    } = execute_block_batch(&mut state, &blocks, &parent, runtime_params);
+    } = execute_block_batch(spec, &mut state, &blocks, &parent, runtime_params);
 
     let start = parent.compute_block_commitment();
     let end = terminal_header.compute_block_commitment();
@@ -165,23 +177,27 @@ pub fn process_ol_stf_core(
     // reproduces the intraepoch/MMR/epochal state and the deferred drain
     // effects, which the DA diff does not carry. The reconstructed final state
     // root is checked against the proven terminal header's state root.
-    let payload = decode_ol_da_payload_bytes(&da_state_diff_bytes)
-        .expect("failed to decode OL DA payload bytes with strata_codec");
     let epoch_info = EpochInfo::new(
         BlockInfo::from_header(&terminal_header),
         parent.compute_block_commitment(),
     );
     let mut reconstructed_state = initial_state;
     let exp = EpochExecExpectations::new(*terminal_header.state_root());
-    verify_epoch_with_diff::<MemoryStateBaseLayer, OLDaSchemeV1>(
+    verify_epoch_with_diff(
+        spec,
         &mut reconstructed_state,
         &epoch_info,
-        payload,
+        &da_state_diff_bytes,
         &epoch_manifests,
         &exp,
         runtime_params,
     )
-    .expect("DA witness does not reproduce the authenticated epoch state root");
+    .unwrap_or_else(|err| match err {
+        EpochDaReplayError::Decode(err) => panic!("failed to decode OL DA payload bytes: {err}"),
+        EpochDaReplayError::Exec(err) => {
+            panic!("DA witness does not reproduce the authenticated epoch state root: {err}")
+        }
+    });
     let state_diff_hash = FixedBytes::<32>::from(hash::raw(&da_state_diff_bytes));
 
     // Derive the terminal header subset hash from the proven terminal header.
@@ -256,6 +272,7 @@ struct EpochExecTrace {
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
 fn execute_block_batch(
+    spec: OLSpecId,
     state: &mut MemoryStateBaseLayer,
     blocks: &[OLBlockV1],
     initial_parent: &OLBlockHeaderV1,
@@ -298,7 +315,7 @@ fn execute_block_batch(
         // Execute the block's state transition function.
         // This applies transactions, buffers manifests, and (at the terminal)
         // drains the buffered logs and updates state.
-        let output = construct_block(state, context, components, runtime_params).expect(
+        let output = construct_block(spec, state, context, components, runtime_params).expect(
             "block execution failed; all blocks in proof input must be valid and executable",
         );
 
