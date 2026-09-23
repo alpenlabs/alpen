@@ -1,6 +1,6 @@
 //! Consensus coverage for checkpoint predicate handover boundaries.
 
-use strata_asm_common::{AsmLogEntry, AsmManifest};
+use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::CheckpointPredicateEnacted;
 use strata_asm_logs::constants::AsmLogTypeId;
 use strata_identifiers::{Buf32, Buf64};
@@ -13,26 +13,15 @@ use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::IStateAccessor;
 use strata_predicate::PredicateKey;
 
-use crate::test_utils::{FixtureAsmManifestBuilder, OLStfFixture};
+use crate::test_utils::{
+    FixtureAsmManifestBuilder, OLStfFixture,
+    make_checkpoint_predicate_enactment_manifest as boundary_manifest,
+};
 use crate::{
     BlockInfo, EpochInfo, ExecError, apply_da_epoch, execute_block_batch_predrain,
     has_checkpoint_predicate_enactment, process_asm_manifest, process_block_manifests,
     verify_block, verify_block_structure,
 };
-
-/// Builds a test-only manifest with the requested number of enactment logs.
-///
-/// `AlwaysAccept` supplies a valid log payload; these tests exercise epoch boundaries,
-/// without verifying checkpoint proofs under that predicate.
-fn boundary_manifest(height: u32, log_count: usize) -> AsmManifest {
-    let log = AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(
-        PredicateKey::always_accept(),
-    ))
-    .expect("enactment log encodes");
-    FixtureAsmManifestBuilder::new_at_height(height)
-        .with_logs(vec![log; log_count])
-        .build()
-}
 
 #[test]
 fn boundary_requires_terminal_and_rejects_following_manifests() {

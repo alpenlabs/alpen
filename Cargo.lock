@@ -9430,6 +9430,7 @@ dependencies = [
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-stf",
+ "strata-ol-stf-v1",
  "strata-ol-tx-types-v1",
  "strata-predicate",
  "strata-primitives",

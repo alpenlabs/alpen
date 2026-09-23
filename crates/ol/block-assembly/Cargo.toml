@@ -80,6 +80,7 @@ strata-msg-fmt.workspace = true
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-msg-types.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-predicate.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }

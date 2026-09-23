@@ -5,22 +5,29 @@
 
 use std::sync::Arc;
 
-use strata_identifiers::OLBlockCommitment;
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
+use strata_identifiers::{OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{
     DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
 };
-use strata_ol_stf::{OLSpecId, execute_block_batch_predrain};
+use strata_ol_state_types::{
+    IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState,
+};
+use strata_ol_stf::{
+    BlockInfo, EpochInfo, OLSpecId, apply_da_epoch, execute_block_batch_predrain, verify_block,
+};
+use strata_ol_stf_v1::test_utils::make_deposit_log_for_account;
 
 use crate::context::BlockAssemblyAnchorContext;
 use crate::resource_state::{
     AccumulatedDaData, EpochResourceState, rebuild_epoch_resource_state_upto,
 };
 use crate::test_utils::{
-    DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
-    TestStorageFixtureBuilder, block_and_post_state_from_output, generate_message_entries,
-    included_txids, test_account_id,
+    DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv,
+    TestStorageFixtureBuilder, account_balance, block_and_post_state_from_output,
+    create_test_genesis_state, generate_message_entries, included_txids, test_account_id,
 };
 
 /// Finalizes an accumulator against the given state and returns the encoded DA blob bytes.
@@ -320,5 +327,192 @@ async fn test_rebuild_da_matches_incremental() {
     assert!(
         block_assembled_state.manifest_count() > 0,
         "test fixture should exercise nonzero manifest-count rebuilding"
+    );
+}
+
+/// Predicts the serial the fixture assigns to its first seeded account.
+///
+/// Manifest logs are fixed before the fixture seeds accounts, so a deposit log
+/// needs its target serial in advance. The fixture creates accounts in order
+/// on top of the test genesis state, so creating one account on a fresh
+/// genesis state yields the same serial. Callers check the prediction with
+/// [`TestStorageFixture::account_serial`](crate::test_utils::TestStorageFixture::account_serial).
+fn predict_first_seeded_account_serial(account_id: AccountId) -> AccountSerial {
+    create_test_genesis_state()
+        .create_new_account(
+            account_id,
+            NewAccountData::new_empty(NewAccountTypeState::Empty),
+        )
+        .expect("probe account creation succeeds")
+}
+
+/// Blocks built by the sequencer pipeline must verify under the dispatched
+/// STF, and the sequencer's incrementally accumulated epoch DA must match a
+/// rebuild and reproduce the terminal state root on replay.
+///
+/// The epoch carries a snark account update that needs inbox proofs and a
+/// deposit manifest whose effect only lands at the terminal drain.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_sequencer_epoch_verifies_and_replays_from_da() {
+    let snark_account = test_account_id(1);
+    let messages = generate_message_entries(2, test_account_id(3));
+    let deposit_amount = BitcoinAmount::try_from(150_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
+    let deposit_serial = predict_first_seeded_account_serial(snark_account);
+    let deposit =
+        make_deposit_log_for_account(deposit_serial, SubjectId::from([9u8; 32]), deposit_amount);
+    let (fixture, genesis_commitment) = TestStorageFixtureBuilder::new()
+        .with_parent_slot(0)
+        .with_l1_manifest_height_range(1..=3)
+        .with_l1_manifest_logs(3, [deposit])
+        .with_account(
+            TestAccount::new(snark_account, DEFAULT_ACCOUNT_BALANCE).with_inbox(messages.clone()),
+        )
+        .build_fixture()
+        .await;
+    assert_eq!(
+        fixture.account_serial(snark_account),
+        deposit_serial,
+        "the deposit must target the seeded snark account"
+    );
+    let mut env = TestEnv::from_fixture(fixture, genesis_commitment);
+    let runtime_params = OLRuntimeParams::test_default();
+
+    // Build the epoch: a snark update first, then empty blocks until the
+    // sealing policy ends the epoch.
+    let update_tx = MempoolSnarkTxBuilder::new(snark_account)
+        .with_seq_no(0)
+        .with_processed_messages(messages)
+        .build();
+    let update_txid = update_tx.compute_txid();
+    let mut output = env
+        .construct_block_with_resource_state(
+            [(update_txid, update_tx)],
+            EpochResourceState::new_empty(),
+        )
+        .await
+        .expect("snark update block constructs");
+    assert_eq!(included_txids(&output.template), vec![update_txid]);
+
+    let mut blocks = Vec::new();
+    loop {
+        let (block, _) = block_and_post_state_from_output(&output);
+        let is_terminal = block.header().is_terminal();
+        blocks.push(block);
+        env.persist(&output).await;
+        if is_terminal {
+            break;
+        }
+        assert!(
+            (blocks.len() as u64) < TEST_SLOTS_PER_EPOCH,
+            "the sealing policy must end the epoch within {TEST_SLOTS_PER_EPOCH} blocks"
+        );
+        output = env
+            .construct_empty_block_with_resource_state(output.resource_state)
+            .await
+            .expect("empty block constructs");
+    }
+    let terminal_commitment = env.parent_commitment();
+    let terminal_header = blocks.last().expect("epoch has blocks").header().clone();
+    let epoch_resource_state = output.resource_state;
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.body().manifests().is_some()),
+        "the epoch must carry the deposit manifest"
+    );
+
+    let genesis_state = env
+        .ctx()
+        .fetch_state_for_tip(genesis_commitment)
+        .await
+        .expect("genesis state lookup")
+        .expect("genesis state exists");
+    let genesis_header = env
+        .ctx()
+        .fetch_ol_header(*genesis_commitment.blkid())
+        .await
+        .expect("genesis header lookup")
+        .expect("genesis header exists");
+
+    // Verification reproduces every header, including the logs commitment.
+    let mut verified_state = Arc::unwrap_or_clone(genesis_state.clone());
+    let mut parent = genesis_header.clone();
+    let mut verified_logs = Vec::new();
+    for block in &blocks {
+        let logs = verify_block(
+            OLSpecId::V1,
+            &mut verified_state,
+            block.header(),
+            Some(&parent),
+            block.body(),
+            &runtime_params,
+        )
+        .expect("sequencer block verifies");
+        verified_logs.extend(logs);
+        parent = block.header().clone();
+    }
+    let expected_balance_sats =
+        account_balance(genesis_state.as_ref(), snark_account).to_sat() + deposit_amount.to_sat();
+    assert_eq!(
+        account_balance(&verified_state, snark_account).to_sat(),
+        expected_balance_sats,
+        "the terminal drain must credit exactly the deposit"
+    );
+
+    // The sequencer accumulates DA before the drain. Finalize both
+    // accumulators against the pre-drain epoch state, since new-account
+    // entries read their contents from the supplied state.
+    let mut predrain_state = Arc::unwrap_or_clone(genesis_state.clone());
+    execute_block_batch_predrain(
+        OLSpecId::V1,
+        &mut predrain_state,
+        &blocks,
+        &genesis_header,
+        &runtime_params,
+    )
+    .expect("pre-drain replay succeeds");
+
+    let (incremental_acc, incremental_logs) = epoch_resource_state.da().clone().into_parts();
+    let incremental_blob = finalize_da_to_bytes(incremental_acc, predrain_state.clone());
+    let rebuilt_state = rebuild_epoch_resource_state_upto(
+        terminal_commitment,
+        terminal_header.epoch(),
+        runtime_params,
+        env.ctx(),
+    )
+    .await
+    .expect("epoch resource state rebuilds");
+    let (rebuilt_acc, rebuilt_logs) = rebuilt_state.da().clone().into_parts();
+    let rebuilt_blob = finalize_da_to_bytes(rebuilt_acc, predrain_state);
+
+    assert_eq!(incremental_blob, rebuilt_blob);
+    assert_eq!(incremental_logs, rebuilt_logs);
+    // The drain emits no OL logs, so the pre-drain logs are the block logs.
+    assert_eq!(incremental_logs, verified_logs);
+
+    // Replaying the DA and the epoch's manifests reproduces the terminal root.
+    let manifests: Vec<_> = blocks
+        .iter()
+        .filter_map(|block| block.body().manifests())
+        .flat_map(|container| container.manifests().iter().cloned())
+        .collect();
+    let epoch_info = EpochInfo::new(
+        BlockInfo::from_header(&terminal_header),
+        genesis_header.compute_block_commitment(),
+    );
+    let mut replayed_state = Arc::unwrap_or_clone(genesis_state);
+    apply_da_epoch(
+        OLSpecId::V1,
+        &mut replayed_state,
+        &epoch_info,
+        &incremental_blob,
+        &manifests,
+        &runtime_params,
+    )
+    .expect("sequencer epoch DA replays");
+    assert_eq!(
+        replayed_state.compute_state_root().expect("state root"),
+        *terminal_header.state_root()
     );
 }

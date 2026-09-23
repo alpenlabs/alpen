@@ -7,6 +7,8 @@ mod errors;
 mod handle;
 mod service;
 mod state;
+#[cfg(test)]
+mod tests;
 
 pub use builder::OLCheckpointBuilder;
 pub use context::{ProofNotify, ProverConfig};

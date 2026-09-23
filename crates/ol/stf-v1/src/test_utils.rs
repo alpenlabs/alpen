@@ -70,7 +70,7 @@ use strata_acct_types::{
     RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects,
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_asm_logs::DepositLog;
+use strata_asm_logs::{CheckpointPredicateEnacted, DepositLog};
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
     AccountSerial, BRIDGE_GATEWAY_ACCT_ID, Buf32, Buf64, Epoch, L1_HEIGHT_MMR_PREFILL_LEAF,
@@ -181,6 +181,25 @@ pub fn make_deposit_manifest_for_account(
             dest_subject,
             amount,
         ))
+        .build()
+}
+
+/// Builds a manifest at `height` carrying `log_count` checkpoint predicate
+/// enactment logs.
+///
+/// One log marks `height` as a checkpoint predicate boundary. `AlwaysAccept`
+/// supplies a valid log payload; the enacted predicate is never used to verify
+/// a checkpoint proof.
+pub fn make_checkpoint_predicate_enactment_manifest(
+    height: L1Height,
+    log_count: usize,
+) -> AsmManifest {
+    let log = AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(
+        PredicateKey::always_accept(),
+    ))
+    .expect("enactment log encodes");
+    FixtureAsmManifestBuilder::new_at_height(height)
+        .with_logs(vec![log; log_count])
         .build()
 }
 
