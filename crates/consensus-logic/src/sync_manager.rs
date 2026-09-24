@@ -9,8 +9,8 @@ use strata_asm_params::AsmParams;
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
+use strata_identifiers::{Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_node_context::NodeContext;
-use strata_ol_state_types_v1::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;
@@ -157,6 +157,6 @@ pub fn spawn_asm_worker(
 /// `target_count` entries. It is used to align DB-side MMR leaf indices with
 /// L1 block heights, mirroring the in-memory OL state initialization.
 fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result<()> {
-    handle.prefill_repeated_leaves_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH, target_count)?;
+    handle.prefill_repeated_leaves_blocking(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF), target_count)?;
     Ok(())
 }

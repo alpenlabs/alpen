@@ -1,7 +1,7 @@
 //! Body commitment and round-trip verification tests for the OL STF implementation.
 
-use strata_acct_types::{AccountId, BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MAX_MESSAGES};
-use strata_identifiers::Buf32;
+use strata_acct_types::{AccountId, BitcoinAmount, MAX_MESSAGES};
+use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32};
 use strata_ol_chain_types_v1::MAX_LOGS_PER_BLOCK;
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 

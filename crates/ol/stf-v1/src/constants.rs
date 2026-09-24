@@ -1,6 +1,5 @@
-use strata_acct_types::{
-    AccountId, AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL,
-};
+use strata_acct_types::{AccountId, AccountSerial};
+use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL};
 
 /// ID for sequencer-sent accounts.
 // TODO(STR-3677): make this different, really, it should be the sequencer producing the block
