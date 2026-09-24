@@ -21,7 +21,7 @@ use crate::{
     fcm::{
         context::{FcmContext, FcmStorage},
         pending::PendingBlockCache,
-        ExecutionDeferral,
+        BlockValidationOutcome, ExecutionDeferral,
     },
     ol_mmr_reconcile::OLMmrReconcileTarget,
     unfinalized_tracker::UnfinalizedBlockTracker,
@@ -412,6 +412,8 @@ impl FcmInnerState {
 
 /// Creates the forkchoice manager state from the FCM context and sequencer
 /// predicate.
+///
+/// Waits for stored-valid input authentication before reconciling any indexes.
 pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     sequencer_predicate: PredicateKey,
     fcm_ctx: Arc<C>,
@@ -435,7 +437,9 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     // Populate the unfinalized block tracker.
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
     let startup_replay_candidates = chain_tracker
-        .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref())
+        .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref(), |block| {
+            authenticate_restored_block(fcm_ctx.as_ref(), block)
+        })
         .await?;
 
     let cur_tip_block = determine_start_tip(&chain_tracker, fcm_ctx.as_ref()).await?;
@@ -490,6 +494,28 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         sequencer_predicate,
         fcm_inner,
     ))
+}
+
+/// Waits for temporary authentication failures without discarding the restored chain.
+async fn authenticate_restored_block<C: FcmContext>(
+    ctx: &C,
+    block: OLBlockCommitment,
+) -> anyhow::Result<BlockValidationOutcome> {
+    let mut retry_seconds = 1;
+    loop {
+        match ctx.validate_block_inputs(block).await? {
+            BlockValidationOutcome::Deferred(reason) => {
+                if retry_seconds == 1 {
+                    warn!(%block, ?reason, "waiting for restored block authentication before reconciling indexes");
+                } else {
+                    debug!(%block, ?reason, retry_seconds, "retrying restored block authentication");
+                }
+                sleep(time::Duration::from_secs(retry_seconds)).await;
+                retry_seconds = (retry_seconds * 2).min(32);
+            }
+            outcome => return Ok(outcome),
+        }
+    }
 }
 
 /// Determines the starting chain tip by choosing the highest-slot tip.

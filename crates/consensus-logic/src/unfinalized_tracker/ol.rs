@@ -1,13 +1,17 @@
+use std::{future::Future, time::Duration};
+
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::Slot;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
-use strata_primitives::OLBlockId;
+use strata_primitives::{OLBlockCommitment, OLBlockId};
 use strata_storage::OLBlockManager;
+use tokio::time::sleep;
 use tracing::{debug, error, warn};
 
 use super::UnfinalizedBlockTracker;
-use crate::errors::ChainTipError;
+use crate::{errors::ChainTipError, fcm::BlockValidationOutcome};
 
 #[async_trait]
 pub trait UnfinalizedOLBlockSource: Send + Sync {
@@ -40,10 +44,18 @@ impl UnfinalizedOLBlockSource for OLBlockManager {
 }
 
 impl UnfinalizedBlockTracker {
-    pub async fn load_unfinalized_ol_blocks_async(
+    /// Restores blocks only after their inputs pass the caller's read-only authentication.
+    ///
+    /// The caller must finish this load before publishing or reconciling fork choice.
+    pub async fn load_unfinalized_ol_blocks_async<F, Fut>(
         &mut self,
         source: &(impl UnfinalizedOLBlockSource + ?Sized),
-    ) -> anyhow::Result<Vec<OLBlockId>> {
+        validate: F,
+    ) -> anyhow::Result<Vec<OLBlockId>>
+    where
+        F: Fn(OLBlockCommitment) -> Fut,
+        Fut: Future<Output = anyhow::Result<BlockValidationOutcome>>,
+    {
         let mut height = self.finalized_epoch().last_slot() + 1;
         let mut replay_candidates = Vec::new();
 
@@ -64,7 +76,7 @@ impl UnfinalizedBlockTracker {
             for blkid in blkids {
                 // Check the status so we can skip trying to attach blocks we
                 // don't care about.
-                match source.get_block_status(blkid).await {
+                match read_restored_block_status(source, blkid).await {
                     Ok(Some(BlockStatus::Valid)) => {}
                     Ok(Some(BlockStatus::Unchecked)) => {
                         if source.get_ol_block(blkid).await?.is_some() {
@@ -87,14 +99,31 @@ impl UnfinalizedBlockTracker {
                         continue;
                     }
                     Err(e) => {
-                        error!(%blkid, err = %e, "error loading block status, continuing");
-                        continue;
+                        return Err(e).context("failed to read restored block status");
                     }
                 }
 
                 // Once we've decided if we want to attach a block, we can
                 // continue now.
                 if let Some(block) = source.get_ol_block(blkid).await? {
+                    let validation = validate(block.header().compute_block_commitment())
+                        .await
+                        .with_context(|| {
+                            format!("cannot authenticate restored unfinalized block {blkid}")
+                        })?;
+                    match validation {
+                        BlockValidationOutcome::Authenticated => {}
+                        BlockValidationOutcome::Deferred(reason) => {
+                            warn!(%blkid, ?reason, "queueing stored valid block for authentication retry");
+                            replay_candidates.push(blkid);
+                            continue;
+                        }
+                        BlockValidationOutcome::Rejected(error) => {
+                            return Err(error).with_context(|| {
+                                format!("cannot authenticate restored unfinalized block {blkid}")
+                            });
+                        }
+                    }
                     if let Err(e) = self.attach_block(
                         block.header().slot(),
                         blkid,
@@ -105,14 +134,17 @@ impl UnfinalizedBlockTracker {
                                 warn!(
                                     %blkid,
                                     %parent_blkid,
-                                    "valid block is missing its parent during startup load, skipping"
+                                    "queueing stored valid block whose parent is not restored"
                                 );
                             }
                             err => warn!(%blkid, err = %err, "failed to attach block, continuing"),
                         }
+                        replay_candidates.push(blkid);
                     }
                 } else {
-                    warn!(%blkid, "valid block is indexed but missing block data, skipping");
+                    bail!(
+                        "cannot authenticate restored unfinalized block {blkid}: missing stored valid block data; repair required"
+                    );
                 }
             }
 
@@ -123,24 +155,53 @@ impl UnfinalizedBlockTracker {
     }
 }
 
+/// Retries temporary status-read failures before restoration advances or reconciles indexes.
+async fn read_restored_block_status(
+    source: &(impl UnfinalizedOLBlockSource + ?Sized),
+    blkid: OLBlockId,
+) -> DbResult<Option<BlockStatus>> {
+    let mut retry_seconds = 1;
+    loop {
+        let error = match source.get_block_status(blkid).await {
+            Ok(status) => return Ok(status),
+            Err(error) => error,
+        };
+        if !error.is_retryable() {
+            return Err(error);
+        }
+
+        debug!(%blkid, %error, retry_seconds, "retrying restored block status read");
+        sleep(Duration::from_secs(retry_seconds)).await;
+        retry_seconds = (retry_seconds * 2).min(32);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap};
+    use std::{
+        collections::{BTreeMap, HashMap, VecDeque},
+        io::ErrorKind,
+        sync::Mutex,
+        time::Duration,
+    };
 
     use async_trait::async_trait;
-    use strata_db_types::{ol_block::BlockStatus, DbResult};
+    use strata_db_types::{ol_block::BlockStatus, DbError, DbResult};
     use strata_ol_chain_types_v1::{
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
         SignedOLBlockHeaderV1,
     };
     use strata_primitives::{Buf32, Buf64, EpochCommitment, OLBlockId};
+    use tokio::time::Instant;
 
     use super::{UnfinalizedBlockTracker, UnfinalizedOLBlockSource};
+    use crate::fcm::{BlockValidationOutcome, ExecutionDeferral};
 
     #[derive(Default)]
     struct TestBlockSource {
         blocks_by_slot: BTreeMap<u64, Vec<OLBlockId>>,
         statuses: HashMap<OLBlockId, BlockStatus>,
+        status_read_errors: Mutex<VecDeque<DbError>>,
         blocks: HashMap<OLBlockId, OLBlockV1>,
     }
 
@@ -173,6 +234,9 @@ mod tests {
         }
 
         async fn get_block_status(&self, blkid: OLBlockId) -> DbResult<Option<BlockStatus>> {
+            if let Some(error) = self.status_read_errors.lock().unwrap().pop_front() {
+                return Err(error);
+            }
             Ok(self.statuses.get(&blkid).copied())
         }
 
@@ -200,6 +264,90 @@ mod tests {
         OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body)
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn loader_retries_temporary_status_failures_before_restoring_the_chain() {
+        let genesis_blkid = OLBlockId::from(Buf32::zero());
+        let mut tracker =
+            UnfinalizedBlockTracker::new_empty(EpochCommitment::new(0, 0, genesis_blkid));
+        let mut source = TestBlockSource::default();
+        let parent = source.insert_block(make_block(1, genesis_blkid, 1), Some(BlockStatus::Valid));
+        let child = source.insert_block(make_block(2, parent, 2), Some(BlockStatus::Valid));
+        source.status_read_errors.get_mut().unwrap().extend([
+            DbError::Busy,
+            DbError::Io {
+                kind: ErrorKind::Interrupted,
+                message: "interrupted read".into(),
+            },
+            DbError::Io {
+                kind: ErrorKind::WouldBlock,
+                message: "read would block".into(),
+            },
+            DbError::RetriesExhausted {
+                attempts: 2,
+                last_error: Box::new(DbError::RetriesExhausted {
+                    attempts: 2,
+                    last_error: Box::new(DbError::Busy),
+                }),
+            },
+        ]);
+        let started = Instant::now();
+
+        let replay_candidates = tracker
+            .load_unfinalized_ol_blocks_async(&source, |_| async {
+                Ok(BlockValidationOutcome::Authenticated)
+            })
+            .await
+            .expect("temporary status contention must not abort restoration");
+
+        assert_eq!(started.elapsed(), Duration::from_secs(15));
+        assert!(replay_candidates.is_empty());
+        assert!(tracker.is_seen_block(&parent));
+        assert!(tracker.is_seen_block(&child));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn loader_propagates_permanent_status_failures_without_retrying() {
+        for error in [
+            DbError::Io {
+                kind: ErrorKind::PermissionDenied,
+                message: "storage access denied".into(),
+            },
+            DbError::Corruption("corrupt storage".into()),
+            DbError::CodecError("invalid stored status".into()),
+            DbError::RetriesExhausted {
+                attempts: 2,
+                last_error: Box::new(DbError::CodecError("invalid stored status".into())),
+            },
+        ] {
+            let genesis_blkid = OLBlockId::from(Buf32::zero());
+            let mut tracker =
+                UnfinalizedBlockTracker::new_empty(EpochCommitment::new(0, 0, genesis_blkid));
+            let mut source = TestBlockSource::default();
+            let block =
+                source.insert_block(make_block(1, genesis_blkid, 1), Some(BlockStatus::Valid));
+            source
+                .status_read_errors
+                .get_mut()
+                .unwrap()
+                .push_back(error.clone());
+            let started = Instant::now();
+
+            let actual = tracker
+                .load_unfinalized_ol_blocks_async(&source, |_| async {
+                    panic!("status corruption must fail before authentication")
+                })
+                .await
+                .expect_err("permanent status corruption must abort restoration");
+
+            assert_eq!(
+                actual.downcast_ref::<DbError>().unwrap().to_string(),
+                error.to_string()
+            );
+            assert_eq!(started.elapsed(), Duration::ZERO);
+            assert!(!tracker.is_seen_block(&block));
+        }
+    }
+
     #[tokio::test]
     async fn loader_surfaces_only_unchecked_blocks_with_data() {
         let genesis_blkid = OLBlockId::from(Buf32::zero());
@@ -223,7 +371,9 @@ mod tests {
         source.insert_indexed_id(2, missing_data_blkid, Some(BlockStatus::Unchecked));
 
         let replay_candidates = tracker
-            .load_unfinalized_ol_blocks_async(&source)
+            .load_unfinalized_ol_blocks_async(&source, |_| async {
+                Ok(BlockValidationOutcome::Authenticated)
+            })
             .await
             .expect("loader succeeds");
 
@@ -254,7 +404,9 @@ mod tests {
         source.insert_block(block2, Some(BlockStatus::Unchecked));
 
         let replay_candidates = tracker
-            .load_unfinalized_ol_blocks_async(&source)
+            .load_unfinalized_ol_blocks_async(&source, |_| async {
+                Ok(BlockValidationOutcome::Authenticated)
+            })
             .await
             .expect("loader succeeds");
 
@@ -265,7 +417,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loader_skips_valid_block_with_missing_parent() {
+    async fn loader_replays_valid_block_with_missing_parent() {
         let genesis_blkid = OLBlockId::from(Buf32::zero());
         let finalized_epoch = EpochCommitment::new(0, 0, genesis_blkid);
         let mut tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
@@ -276,11 +428,66 @@ mod tests {
         let valid_orphan_blkid = source.insert_block(valid_orphan, Some(BlockStatus::Valid));
 
         let replay_candidates = tracker
-            .load_unfinalized_ol_blocks_async(&source)
+            .load_unfinalized_ol_blocks_async(&source, |_| async {
+                Ok(BlockValidationOutcome::Authenticated)
+            })
             .await
             .expect("loader succeeds");
 
-        assert!(replay_candidates.is_empty());
+        assert_eq!(replay_candidates, vec![valid_orphan_blkid]);
         assert!(!tracker.is_seen_block(&valid_orphan_blkid));
+    }
+
+    #[tokio::test]
+    async fn loader_queues_temporarily_unauthenticated_valid_chain_in_parent_order() {
+        let genesis_blkid = OLBlockId::from(Buf32::zero());
+        let finalized_epoch = EpochCommitment::new(0, 0, genesis_blkid);
+        let mut tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
+        let mut source = TestBlockSource::default();
+
+        let parent = make_block(1, genesis_blkid, 1);
+        let parent_blkid = source.insert_block(parent, Some(BlockStatus::Valid));
+        let child = make_block(2, parent_blkid, 2);
+        let child_blkid = source.insert_block(child, Some(BlockStatus::Valid));
+
+        let replay_candidates = tracker
+            .load_unfinalized_ol_blocks_async(&source, |commitment| async move {
+                if commitment.blkid() == &parent_blkid {
+                    Ok(BlockValidationOutcome::Deferred(
+                        ExecutionDeferral::Dependency,
+                    ))
+                } else {
+                    Ok(BlockValidationOutcome::Authenticated)
+                }
+            })
+            .await
+            .expect("loader succeeds");
+
+        assert_eq!(replay_candidates, vec![parent_blkid, child_blkid]);
+        assert!(!tracker.is_seen_block(&parent_blkid));
+        assert!(!tracker.is_seen_block(&child_blkid));
+    }
+
+    #[tokio::test]
+    async fn loader_rejects_valid_block_with_missing_data() {
+        let genesis_blkid = OLBlockId::from(Buf32::zero());
+        let finalized_epoch = EpochCommitment::new(0, 0, genesis_blkid);
+        let mut tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
+        let mut source = TestBlockSource::default();
+        let missing_data_blkid = OLBlockId::from(Buf32::from([5; 32]));
+        source.insert_indexed_id(1, missing_data_blkid, Some(BlockStatus::Valid));
+
+        let error = tracker
+            .load_unfinalized_ol_blocks_async(&source, |_| async {
+                Ok(BlockValidationOutcome::Authenticated)
+            })
+            .await
+            .expect_err("missing accepted block data must prevent restoration");
+
+        assert!(error
+            .to_string()
+            .contains("missing stored valid block data"));
+        assert!(error.to_string().contains(&missing_data_blkid.to_string()));
+        assert!(!tracker.is_seen_block(&missing_data_blkid));
     }
 }
