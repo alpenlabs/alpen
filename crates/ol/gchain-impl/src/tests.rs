@@ -705,7 +705,9 @@ fn test_linear_executor_drives_ol_stages() {
         "uncommit must drop the derived state"
     );
     assert!(
-        exec.is_processed(&ckpt_refs[1]).expect("check processed"),
+        exec.get_artifact::<OLExecArtifact>(&ckpt_refs[1], proc_id("exec"))
+            .expect("fetch artifact")
+            .is_some(),
         "the undone link stays processed"
     );
 
