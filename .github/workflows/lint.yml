@@ -182,9 +182,17 @@ jobs:
         with:
           persist-credentials: false
       - name: Install taplo
+        env:
+          TAPLO_VERSION: 0.10.0
+          # taplo publishes no checksums; this is the sha256 of the pinned asset.
+          TAPLO_SHA256: 8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156
         run: |
-          curl -fsSL https://github.com/tamasfe/taplo/releases/latest/download/taplo-full-linux-x86_64.gz \
-            | gzip -d - | install -m 755 /dev/stdin /usr/local/bin/taplo
+          set -euo pipefail
+          curl -fsSLO --proto "=https" --tlsv1.3 "https://github.com/tamasfe/taplo/releases/download/$TAPLO_VERSION/taplo-linux-x86_64.gz"
+          echo "$TAPLO_SHA256  taplo-linux-x86_64.gz" | sha256sum --check
+          gzip -d taplo-linux-x86_64.gz
+          sudo install -m 0755 taplo-linux-x86_64 /usr/local/bin/taplo
+          rm taplo-linux-x86_64
       - name: Print taplo version
         run: |
           taplo --version
