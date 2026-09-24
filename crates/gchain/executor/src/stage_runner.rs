@@ -377,25 +377,6 @@ mod tests {
     }
 
     #[test]
-    fn test_run_hands_back_every_artifact_it_produced() {
-        let mut runner = runner(vec![TestProc::new(), TestProc::new()]);
-
-        let run = runner
-            .run(
-                &TestRef(10),
-                &TestLink(10),
-                &path(1, &[]),
-                &ids(&["a", "b"]),
-            )
-            .expect("test: run stages");
-
-        assert_eq!(run.outcome(), LinkOutcome::Accepted);
-        let produced: Vec<_> = run.produced().iter().map(ArtifactRecord::proc_id).collect();
-        assert_eq!(produced, ids(&["a", "b"]));
-        assert!(runner.missing_stages(&TestRef(10)).is_empty());
-    }
-
-    #[test]
     fn test_rejection_stops_later_stages_and_drops_what_the_run_made() {
         let first = TestProc::new();
         let second = TestProc::new().rejecting([10]);
@@ -443,33 +424,6 @@ mod tests {
     }
 
     #[test]
-    fn test_stage_lifecycle_calls_reach_the_stage() {
-        let proc = TestProc::new();
-        let events = proc.events();
-        let mut runner = runner(vec![proc]);
-
-        runner.init_stage(id("a"), &TestRef(1)).expect("test: init");
-        let path = run_link_10(&mut runner);
-        runner.commit_stage(id("a"), &path).expect("test: commit");
-        runner.check_undoable(&path).expect("test: undoable");
-        runner
-            .uncommit_stage(id("a"), &path)
-            .expect("test: uncommit");
-        runner.prune_upto(&TestRef(2)).expect("test: prune");
-
-        assert_eq!(
-            take_events(&events),
-            vec![
-                ProcEvent::Init(TestRef(1)),
-                ProcEvent::Process(TestRef(10)),
-                ProcEvent::Commit(vec![TestRef(10)]),
-                ProcEvent::Uncommit(vec![TestRef(10)]),
-                ProcEvent::Prune(TestRef(2)),
-            ]
-        );
-    }
-
-    #[test]
     fn test_stale_marks_block_undo_but_only_that_stages_commit() {
         let mut runner = runner(vec![TestProc::new(), TestProc::new()]);
         let path = run_link_10(&mut runner);
@@ -506,24 +460,5 @@ mod tests {
         );
         assert!(take_events(&second_events).is_empty());
         assert_eq!(runner.missing_stages(&TestRef(10)), ids(&["a", "b"]));
-    }
-
-    #[test]
-    fn test_retain_links_drops_everything_else() {
-        let mut runner = runner(vec![TestProc::new()]);
-        run_link_10(&mut runner);
-        runner
-            .run(
-                &TestRef(11),
-                &TestLink(11),
-                &path(1, &[(10, 2)]),
-                &ids(&["a"]),
-            )
-            .expect("test: run stages");
-
-        runner.retain_links(&HashSet::from([TestRef(10)]));
-
-        assert!(runner.missing_stages(&TestRef(10)).is_empty());
-        assert_eq!(runner.missing_stages(&TestRef(11)), ids(&["a"]));
     }
 }

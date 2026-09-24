@@ -20,32 +20,19 @@ use crate::errors::GExecError;
 /// serially.  Every current-link dep points at an earlier stage, so running in
 /// this order always finds them in place.  Built with
 /// [`StageScheduleBuilder`].
-pub struct StageSchedule {
+pub(crate) struct StageSchedule {
     stages: Vec<(ProcId, ProcDeps)>,
     by_id: BTreeMap<ProcId, usize>,
 }
 
 impl StageSchedule {
-    /// The stages in canonical order.
-    pub fn iter(&self) -> impl Iterator<Item = (ProcId, &ProcDeps)> {
-        self.stages.iter().map(|(id, deps)| (*id, deps))
-    }
-
     /// A stage's position in canonical order.
-    pub fn index_of(&self, proc_id: ProcId) -> Option<usize> {
+    pub(crate) fn index_of(&self, proc_id: ProcId) -> Option<usize> {
         self.by_id.get(&proc_id).copied()
     }
 
-    pub fn deps(&self, proc_id: ProcId) -> Option<&ProcDeps> {
+    fn deps(&self, proc_id: ProcId) -> Option<&ProcDeps> {
         self.index_of(proc_id).map(|idx| &self.stages[idx].1)
-    }
-
-    pub fn len(&self) -> usize {
-        self.stages.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.stages.is_empty()
     }
 
     /// Checks that every dep of a stage is covered for a link.
@@ -57,7 +44,11 @@ impl StageSchedule {
     ///
     /// If the stage isn't in the schedule, since an executor only asks about
     /// stages it registered.
-    pub fn check_ready(&self, proc_id: ProcId, coverage: &LinkCoverage) -> Result<(), GExecError> {
+    pub(crate) fn check_ready(
+        &self,
+        proc_id: ProcId,
+        coverage: &LinkCoverage,
+    ) -> Result<(), GExecError> {
         let deps = self
             .deps(proc_id)
             .expect("gchain: readiness check for unregistered stage");
@@ -82,13 +73,13 @@ impl StageSchedule {
 ///
 /// Each stage is validated as it's added, so the builder only ever holds a
 /// consistent prefix of the schedule.
-pub struct StageScheduleBuilder {
+pub(crate) struct StageScheduleBuilder {
     stages: Vec<(ProcId, ProcDeps)>,
     by_id: BTreeMap<ProcId, usize>,
 }
 
 impl StageScheduleBuilder {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             stages: Vec::new(),
             by_id: BTreeMap::new(),
@@ -103,7 +94,11 @@ impl StageScheduleBuilder {
     /// in canonical order.  A path dep may also name the stage itself, which
     /// is the normal case for a validating stage building on its own earlier
     /// output.
-    pub fn add_stage(&mut self, proc_id: ProcId, deps: ProcDeps) -> Result<&mut Self, GExecError> {
+    pub(crate) fn add_stage(
+        &mut self,
+        proc_id: ProcId,
+        deps: ProcDeps,
+    ) -> Result<&mut Self, GExecError> {
         if self.by_id.contains_key(&proc_id) {
             return Err(GExecError::DuplicateProc(proc_id));
         }
@@ -128,7 +123,7 @@ impl StageScheduleBuilder {
         Ok(self)
     }
 
-    pub fn build(self) -> StageSchedule {
+    pub(crate) fn build(self) -> StageSchedule {
         StageSchedule {
             stages: self.stages,
             by_id: self.by_id,
@@ -148,32 +143,32 @@ impl Default for StageScheduleBuilder {
 /// the schedule whether a stage may run.  The link and path are fixed by the
 /// executor, so the coverage only says which stages have handled them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct LinkCoverage {
+pub(crate) struct LinkCoverage {
     cur: BTreeSet<ProcId>,
     path: BTreeSet<ProcId>,
 }
 
 impl LinkCoverage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Records that a stage has accepted the link.
-    pub fn mark_cur(&mut self, proc_id: ProcId) {
+    pub(crate) fn mark_cur(&mut self, proc_id: ProcId) {
         self.cur.insert(proc_id);
     }
 
     /// Records that a stage has artifacts for every link on the path from its
     /// committed node to the link's origin.
-    pub fn mark_path(&mut self, proc_id: ProcId) {
+    pub(crate) fn mark_path(&mut self, proc_id: ProcId) {
         self.path.insert(proc_id);
     }
 
-    pub fn has_cur(&self, proc_id: ProcId) -> bool {
+    pub(crate) fn has_cur(&self, proc_id: ProcId) -> bool {
         self.cur.contains(&proc_id)
     }
 
-    pub fn has_path(&self, proc_id: ProcId) -> bool {
+    pub(crate) fn has_path(&self, proc_id: ProcId) -> bool {
         self.path.contains(&proc_id)
     }
 }
@@ -223,8 +218,7 @@ mod tests {
         ])
         .expect("test: build schedule");
 
-        let ids: Vec<_> = sched.iter().map(|(id, _)| id).collect();
-        assert_eq!(ids, vec![id("exec"), id("index")]);
+        assert_eq!(sched.index_of(id("exec")), Some(0));
         assert_eq!(sched.index_of(id("index")), Some(1));
         assert_eq!(sched.index_of(id("absent")), None);
     }
@@ -242,38 +236,28 @@ mod tests {
         assert!(matches!(err, GExecError::DuplicateProc(p) if p == id("dup")));
     }
 
+    /// A dep has to name a stage added before it: an unknown one can never be
+    /// satisfied, and a current-link dep on a later stage would wait forever
+    /// when stages run in canonical order.  Adding stages one at a time is
+    /// what catches both.
     #[test]
-    fn test_unknown_deps_are_rejected() {
-        let err = expect_err(
-            schedule(&[("a", deps(&["ghost"], &[]))]),
-            "unknown dep to be rejected",
-        );
-        assert!(matches!(err, GExecError::DepNotRegistered { dep, .. } if dep == id("ghost")));
-
-        let err = expect_err(
-            schedule(&[("a", deps(&[], &["ghost"]))]),
-            "unknown path dep to be rejected",
-        );
-        assert!(matches!(err, GExecError::DepNotRegistered { dep, .. } if dep == id("ghost")));
-    }
-
-    /// A current-link dep on a later stage would wait forever when stages run
-    /// in canonical order, and adding stages one at a time is what catches it.
-    #[test]
-    fn test_dep_on_later_stage_is_rejected() {
-        let err = expect_err(
-            schedule(&[("a", deps(&["b"], &[])), ("b", deps(&[], &[]))]),
-            "forward dep to be rejected",
-        );
-        assert!(
-            matches!(err, GExecError::DepNotRegistered { stage, dep } if stage == id("a") && dep == id("b"))
-        );
-
-        let err = expect_err(
-            schedule(&[("a", deps(&[], &["b"])), ("b", deps(&[], &[]))]),
-            "forward path dep to be rejected",
-        );
-        assert!(matches!(err, GExecError::DepNotRegistered { dep, .. } if dep == id("b")));
+    fn test_deps_must_name_earlier_stages() {
+        let cases = [
+            (deps(&["ghost"], &[]), "ghost"),
+            (deps(&[], &["ghost"]), "ghost"),
+            (deps(&["b"], &[]), "b"),
+            (deps(&[], &["b"]), "b"),
+        ];
+        for (a_deps, dep) in cases {
+            let err = expect_err(
+                schedule(&[("a", a_deps), ("b", deps(&[], &[]))]),
+                "dep on a stage not yet added to be rejected",
+            );
+            assert!(
+                matches!(err, GExecError::DepNotRegistered { stage, dep: d } if stage == id("a") && d == id(dep)),
+                "test: got {err:?}"
+            );
+        }
     }
 
     /// A stage that builds on its own earlier output is the normal case for a
@@ -285,39 +269,25 @@ mod tests {
     }
 
     #[test]
-    fn test_ready_when_all_deps_covered() {
+    fn test_check_ready_reports_first_unmet_dep() {
         let sched = schedule(&[
             ("exec", deps(&[], &[])),
             ("index", deps(&["exec"], &["exec"])),
         ])
         .expect("test: build schedule");
 
-        sched
-            .check_ready(id("index"), &coverage(&["exec"], &["exec"]))
-            .expect("test: expected ready");
         sched
             .check_ready(id("exec"), &LinkCoverage::new())
-            .expect("test: expected ready");
-    }
+            .expect("test: no deps is ready");
+        sched
+            .check_ready(id("index"), &coverage(&["exec"], &["exec"]))
+            .expect("test: covered deps are ready");
 
-    #[test]
-    fn test_unmet_deps_reported() {
-        let sched = schedule(&[
-            ("exec", deps(&[], &[])),
-            ("index", deps(&["exec"], &["exec"])),
-        ])
-        .expect("test: build schedule");
-
-        let err = sched
-            .check_ready(id("index"), &coverage(&[], &["exec"]))
-            .unwrap_err();
-        assert!(
-            matches!(err, GExecError::UnmetDep { stage, dep } if stage == id("index") && dep == id("exec"))
-        );
-
-        let err = sched
-            .check_ready(id("index"), &coverage(&["exec"], &[]))
-            .unwrap_err();
-        assert!(matches!(err, GExecError::UnmetDep { dep, .. } if dep == id("exec")));
+        for cov in [coverage(&[], &["exec"]), coverage(&["exec"], &[])] {
+            let err = sched.check_ready(id("index"), &cov).unwrap_err();
+            assert!(
+                matches!(err, GExecError::UnmetDep { stage, dep } if stage == id("index") && dep == id("exec"))
+            );
+        }
     }
 }

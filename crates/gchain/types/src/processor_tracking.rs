@@ -70,3 +70,27 @@ impl ProcessorArtifactData {
         A::from_buf(self.artifact())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessorArtifactData;
+    use crate::test_support::CountArtifact;
+    use crate::version::ProcVersion;
+
+    /// The executor persists artifacts on behalf of stages, so what a stage
+    /// encodes has to come back as the same artifact, tagged with the version
+    /// that produced it.
+    #[test]
+    fn test_artifact_roundtrips_through_stored_data() {
+        let version = ProcVersion::from(3);
+        let data = ProcessorArtifactData::from_artifact(version, &CountArtifact(7))
+            .expect("test: encode artifact");
+
+        assert_eq!(data.exec_version(), version);
+        assert_eq!(
+            data.try_decode_artifact::<CountArtifact>()
+                .expect("test: decode artifact"),
+            CountArtifact(7)
+        );
+    }
+}

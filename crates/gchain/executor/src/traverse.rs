@@ -139,21 +139,15 @@ mod tests {
             .expect("test: find path")
             .expect("test: path exists");
         assert_eq!(path.links(), &refs(&[10, 11]));
-    }
 
-    #[test]
-    fn test_find_path_to_same_node_is_empty() {
-        let path = find_path(&provider(), &TestRef(1), &TestRef(1), usable(&[10]))
+        // A node reaches itself with no links at all.
+        let path = find_path(&provider, &TestRef(1), &TestRef(1), usable(&[]))
             .expect("test: find path")
             .expect("test: path exists");
         assert!(path.is_empty());
         assert_eq!(path.base_node(), &TestRef(1));
-    }
 
-    #[test]
-    fn test_find_path_ignores_unusable_links() {
-        let provider = provider();
-
+        // Links that aren't usable might as well not be there.
         assert!(
             find_path(&provider, &TestRef(1), &TestRef(9), usable(&[10]))
                 .expect("test: find path")

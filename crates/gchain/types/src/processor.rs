@@ -398,8 +398,48 @@ impl<S: GChainSpec, A> PathArtifacts<S, A> {
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
+    use std::sync::Arc;
 
-    use super::{PROC_ID_LEN, ProcId, ProcIdParseError};
+    use super::{DynProcArtifact, PROC_ID_LEN, ProcArtifact, ProcId, ProcIdParseError};
+    use crate::test_support::*;
+
+    /// The executor checks link validity without knowing the concrete artifact
+    /// type, so it has to work through the erased view.
+    #[test]
+    fn test_is_link_valid_visible_through_erasure() {
+        let valid: Arc<dyn DynProcArtifact> = Arc::new(FlagArtifact(true));
+        let invalid: Arc<dyn DynProcArtifact> = Arc::new(FlagArtifact(false));
+        let indifferent: Arc<dyn DynProcArtifact> = Arc::new(CountArtifact(7));
+
+        assert!(valid.is_link_valid());
+        assert!(!invalid.is_link_valid());
+        // Stages not involved in validation get the default.
+        assert!(indifferent.is_link_valid());
+    }
+
+    /// Artifacts are stored type-erased, so the executor encodes them without
+    /// knowing which stage produced them and downcasts them back for it.
+    #[test]
+    fn test_erased_artifact_encodes_and_downcasts() {
+        let artifact: Arc<dyn DynProcArtifact> = Arc::new(CountArtifact(7));
+
+        let buf = artifact.to_buf_dyn().expect("test: encode artifact");
+        assert_eq!(
+            CountArtifact::from_buf(&buf).expect("test: decode artifact"),
+            CountArtifact(7)
+        );
+
+        assert_eq!(
+            artifact.as_any().downcast_ref::<CountArtifact>(),
+            Some(&CountArtifact(7))
+        );
+        assert!(artifact.as_any().downcast_ref::<FlagArtifact>().is_none());
+        let owned = artifact
+            .into_any_arc()
+            .downcast::<CountArtifact>()
+            .expect("test: downcast artifact");
+        assert_eq!(*owned, CountArtifact(7));
+    }
 
     #[test]
     fn test_parse_short_proc_id() {

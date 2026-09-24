@@ -78,11 +78,6 @@ impl<S: GChainSpec> ArtifactCache<S> {
     pub fn retain_links(&mut self, keep: &HashSet<LinkRef<S>>) {
         self.links.retain(|lref, _| keep.contains(lref));
     }
-
-    /// The number of links with artifacts currently cached.
-    pub fn cached_link_count(&self) -> usize {
-        self.links.len()
-    }
 }
 
 impl<S: GChainSpec> Default for ArtifactCache<S> {
@@ -102,172 +97,53 @@ mod tests {
         ProcId::from_str(s).expect("test: parse ProcId")
     }
 
-    #[test]
-    fn test_get_artifact_returns_stored_artifact() {
-        let lref = TestRef(1);
-        let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(lref, proc_id("count"), Arc::new(CountArtifact(7)));
-
-        let fetched = cache
-            .get_artifact::<CountArtifact>(&lref, proc_id("count"))
-            .expect("test: fetch artifact");
-        assert_eq!(*fetched, CountArtifact(7));
+    fn count(cache: &ArtifactCache<TestSpec>, lref: u8, id: &str) -> Option<u32> {
+        cache
+            .get_artifact::<CountArtifact>(&TestRef(lref), proc_id(id))
+            .map(|a| a.0)
     }
 
     /// Two stages may produce artifacts of the same concrete type, so the stage
     /// that produced an artifact has to be what distinguishes them.
     #[test]
-    fn test_get_artifact_separates_procs_sharing_artifact_type() {
-        let lref = TestRef(1);
+    fn test_get_artifact_downcasts_what_each_stage_inserted() {
         let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(lref, proc_id("first"), Arc::new(CountArtifact(7)));
-        cache.insert_artifact(lref, proc_id("second"), Arc::new(CountArtifact(9)));
+        cache.insert_artifact(TestRef(1), proc_id("first"), Arc::new(CountArtifact(7)));
+        cache.insert_artifact(TestRef(1), proc_id("second"), Arc::new(CountArtifact(9)));
 
-        let first = cache
-            .get_artifact::<CountArtifact>(&lref, proc_id("first"))
-            .expect("test: fetch first artifact");
-        let second = cache
-            .get_artifact::<CountArtifact>(&lref, proc_id("second"))
-            .expect("test: fetch second artifact");
-        assert_eq!(*first, CountArtifact(7));
-        assert_eq!(*second, CountArtifact(9));
-    }
-
-    #[test]
-    fn test_get_artifact_with_mismatched_type_returns_none() {
-        let lref = TestRef(1);
-        let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(lref, proc_id("count"), Arc::new(CountArtifact(7)));
-
+        assert_eq!(count(&cache, 1, "first"), Some(7));
+        assert_eq!(count(&cache, 1, "second"), Some(9));
+        assert_eq!(count(&cache, 2, "first"), None);
+        assert_eq!(count(&cache, 1, "absent"), None);
         assert_eq!(
-            cache.get_artifact::<FlagArtifact>(&lref, proc_id("count")),
+            cache.get_artifact::<FlagArtifact>(&TestRef(1), proc_id("first")),
             None
         );
+
+        cache.insert_artifact(TestRef(1), proc_id("first"), Arc::new(CountArtifact(8)));
+        assert_eq!(count(&cache, 1, "first"), Some(8));
     }
 
     #[test]
-    fn test_get_artifact_for_absent_link_or_proc_returns_none() {
-        let lref = TestRef(1);
+    fn test_removals_drop_only_what_they_name() {
         let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(lref, proc_id("count"), Arc::new(CountArtifact(7)));
+        for (lref, id) in [(1, "a"), (1, "b"), (2, "a"), (3, "a")] {
+            cache.insert_artifact(
+                TestRef(lref),
+                proc_id(id),
+                Arc::new(CountArtifact(u32::from(lref))),
+            );
+        }
 
-        assert_eq!(
-            cache.get_artifact::<CountArtifact>(&TestRef(2), proc_id("count")),
-            None
-        );
-        assert_eq!(
-            cache.get_artifact::<CountArtifact>(&lref, proc_id("absent")),
-            None
-        );
-    }
+        cache.remove_artifact(&TestRef(1), proc_id("b"));
+        assert_eq!(count(&cache, 1, "a"), Some(1));
+        assert_eq!(count(&cache, 1, "b"), None);
 
-    /// The executor checks link validity without knowing the concrete artifact
-    /// type, so it has to work through the erased view.
-    #[test]
-    fn test_is_link_valid_visible_through_erasure() {
-        let lref = TestRef(1);
-        let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(lref, proc_id("valid"), Arc::new(FlagArtifact(true)));
-        cache.insert_artifact(lref, proc_id("invalid"), Arc::new(FlagArtifact(false)));
-        cache.insert_artifact(lref, proc_id("count"), Arc::new(CountArtifact(7)));
+        cache.remove_link(&TestRef(2));
+        assert_eq!(count(&cache, 2, "a"), None);
 
-        let is_valid = |id: &str| {
-            cache
-                .get_artifact_dyn(&lref, proc_id(id))
-                .expect("test: fetch artifact")
-                .is_link_valid()
-        };
-        assert!(is_valid("valid"));
-        assert!(!is_valid("invalid"));
-        // Stages not involved in validation get the default.
-        assert!(is_valid("count"));
-    }
-
-    #[test]
-    fn test_insert_artifact_replaces_previous_artifact() {
-        let lref = TestRef(1);
-        let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(lref, proc_id("count"), Arc::new(CountArtifact(7)));
-        cache.insert_artifact(lref, proc_id("count"), Arc::new(CountArtifact(9)));
-
-        let fetched = cache
-            .get_artifact::<CountArtifact>(&lref, proc_id("count"))
-            .expect("test: fetch artifact");
-        assert_eq!(*fetched, CountArtifact(9));
-    }
-
-    #[test]
-    fn test_remove_link_discards_every_artifact_for_it() {
-        let kept = TestRef(1);
-        let removed = TestRef(2);
-        let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(kept, proc_id("count"), Arc::new(CountArtifact(7)));
-        cache.insert_artifact(removed, proc_id("count"), Arc::new(CountArtifact(8)));
-        cache.insert_artifact(removed, proc_id("flag"), Arc::new(FlagArtifact(true)));
-
-        cache.remove_link(&removed);
-
-        assert_eq!(
-            cache.get_artifact::<CountArtifact>(&removed, proc_id("count")),
-            None
-        );
-        assert_eq!(
-            cache.get_artifact::<FlagArtifact>(&removed, proc_id("flag")),
-            None
-        );
-        assert!(
-            cache
-                .get_artifact::<CountArtifact>(&kept, proc_id("count"))
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn test_retain_links_drops_everything_else() {
-        let kept = TestRef(1);
-        let mut cache = ArtifactCache::<TestSpec>::new();
-        cache.insert_artifact(kept, proc_id("count"), Arc::new(CountArtifact(7)));
-        cache.insert_artifact(TestRef(2), proc_id("count"), Arc::new(CountArtifact(8)));
-        cache.insert_artifact(TestRef(3), proc_id("count"), Arc::new(CountArtifact(9)));
-        assert_eq!(cache.cached_link_count(), 3);
-
-        cache.retain_links(&HashSet::from([kept]));
-
-        assert_eq!(cache.cached_link_count(), 1);
-        assert!(
-            cache
-                .get_artifact::<CountArtifact>(&kept, proc_id("count"))
-                .is_some()
-        );
-    }
-
-    /// The executor persists artifacts on behalf of stages, so what a stage
-    /// encodes has to come back as the same artifact.
-    #[test]
-    fn test_artifact_roundtrips_through_stored_data() {
-        let version = ProcVersion::from(TestProc::VERSION);
-        let data = ProcessorArtifactData::from_artifact(version, &CountArtifact(7))
-            .expect("test: encode artifact");
-
-        assert_eq!(data.exec_version(), version);
-        assert_eq!(
-            data.try_decode_artifact::<CountArtifact>()
-                .expect("test: decode artifact"),
-            CountArtifact(7)
-        );
-    }
-
-    /// Artifacts are stored type-erased, so the executor encodes them without
-    /// knowing which stage produced them.
-    #[test]
-    fn test_artifact_encodes_through_erasure() {
-        let artifact: Arc<dyn DynProcArtifact> = Arc::new(CountArtifact(7));
-
-        let buf = artifact.to_buf_dyn().expect("test: encode artifact");
-
-        assert_eq!(
-            CountArtifact::from_buf(&buf).expect("test: decode artifact"),
-            CountArtifact(7)
-        );
+        cache.retain_links(&HashSet::from([TestRef(1)]));
+        assert_eq!(count(&cache, 1, "a"), Some(1));
+        assert_eq!(count(&cache, 3, "a"), None);
     }
 }

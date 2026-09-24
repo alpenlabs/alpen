@@ -8,23 +8,18 @@ use crate::errors::GExecError;
 use crate::process::{GChainProcDyn, ProcShim};
 use crate::schedule::{StageSchedule, StageScheduleBuilder};
 
-/// A processor stage with the exec control data it was registered with.
-pub struct Stage<S: GChainSpec> {
+/// A processor stage as registered in a pipeline.
+pub(crate) struct Stage<S: GChainSpec> {
     chain_proc: Arc<dyn GChainProcDyn<S>>,
-    deps: ProcDeps,
 }
 
 impl<S: GChainSpec> Stage<S> {
-    pub fn proc_id(&self) -> ProcId {
+    pub(crate) fn proc_id(&self) -> ProcId {
         self.chain_proc.proc_id()
     }
 
-    pub fn chain_proc(&self) -> &dyn GChainProcDyn<S> {
+    pub(crate) fn chain_proc(&self) -> &dyn GChainProcDyn<S> {
         self.chain_proc.as_ref()
-    }
-
-    pub fn deps(&self) -> &ProcDeps {
-        &self.deps
     }
 }
 
@@ -40,7 +35,7 @@ pub struct StagePipeline<S: GChainSpec> {
 
 impl<S: GChainSpec> StagePipeline<S> {
     /// Returns an iterator over the stages in canonical order.
-    pub fn iter_stages(&self) -> impl DoubleEndedIterator<Item = &Stage<S>> {
+    pub(crate) fn iter_stages(&self) -> impl DoubleEndedIterator<Item = &Stage<S>> {
         self.stages.iter()
     }
 
@@ -50,28 +45,21 @@ impl<S: GChainSpec> StagePipeline<S> {
     }
 
     /// Looks up a stage by the ID it's registered under.
-    pub fn get_stage(&self, proc_id: ProcId) -> Option<&Stage<S>> {
+    pub(crate) fn get_stage(&self, proc_id: ProcId) -> Option<&Stage<S>> {
         self.schedule.index_of(proc_id).map(|idx| &self.stages[idx])
     }
 
-    pub fn schedule(&self) -> &StageSchedule {
+    pub(crate) fn schedule(&self) -> &StageSchedule {
         &self.schedule
-    }
-
-    pub fn len(&self) -> usize {
-        self.stages.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.stages.is_empty()
     }
 }
 
 /// Assembles a [`StagePipeline`] one stage at a time, in canonical order.
 ///
 /// This is what pairs a stage with the ID it's registered under, so the two
-/// can't drift apart.  Deps are validated as each stage is added (see
-/// [`StageScheduleBuilder::add_stage`]).
+/// can't drift apart.  Deps are validated as each stage is added: IDs must be
+/// unique, and a dep must name a stage already added (or, for a path dep, the
+/// stage itself).
 pub struct PipelineBuilder<S: GChainSpec> {
     stages: Vec<Stage<S>>,
     schedule: StageScheduleBuilder,
@@ -92,10 +80,9 @@ impl<S: GChainSpec> PipelineBuilder<S> {
         proc: impl GChainProc<Spec = S>,
         deps: ProcDeps,
     ) -> Result<Self, GExecError> {
-        self.schedule.add_stage(proc_id, deps.clone())?;
+        self.schedule.add_stage(proc_id, deps)?;
         self.stages.push(Stage {
             chain_proc: Arc::new(ProcShim::new(proc_id, proc)),
-            deps,
         });
         Ok(self)
     }
@@ -129,49 +116,22 @@ mod tests {
         ProcDeps::new(Vec::new(), Vec::new())
     }
 
-    fn proc_ids(pipeline: &StagePipeline<TestSpec>) -> Vec<ProcId> {
-        pipeline.iter_stages().map(Stage::proc_id).collect()
-    }
-
-    fn pipeline(names: &[&str]) -> StagePipeline<TestSpec> {
-        let mut builder = PipelineBuilder::new();
-        for name in names {
-            builder = builder
-                .add_stage(id(name), TestProc::new(), no_deps())
-                .expect("test: add stage");
-        }
-        builder.build()
-    }
-
+    /// The builder is what pairs each stage with its ID and position, and it
+    /// surfaces the schedule's dep checks (which have their own tests).
     #[test]
-    fn test_iter_stages_follows_insertion_order() {
-        let pipeline = pipeline(&["third", "first", "second"]);
-        assert_eq!(
-            proc_ids(&pipeline),
-            vec![id("third"), id("first"), id("second")]
-        );
-    }
+    fn test_builder_registers_stages_in_order_and_checks_deps() {
+        let pipeline = PipelineBuilder::<TestSpec>::new()
+            .add_stage(id("third"), TestProc::new(), no_deps())
+            .expect("test: add stage")
+            .add_stage(id("first"), TestProc::new(), no_deps())
+            .expect("test: add stage")
+            .build();
 
-    #[test]
-    fn test_get_stage_finds_stage_by_id() {
-        let pipeline = pipeline(&["first", "second"]);
-
-        let found = pipeline.get_stage(id("second")).expect("test: find stage");
-        assert_eq!(found.proc_id(), id("second"));
+        let ids: Vec<_> = pipeline.proc_ids().collect();
+        assert_eq!(ids, vec![id("third"), id("first")]);
+        let found = pipeline.get_stage(id("first")).expect("test: find stage");
+        assert_eq!(found.proc_id(), id("first"));
         assert!(pipeline.get_stage(id("absent")).is_none());
-    }
-
-    /// The builder validates each stage against the ones added before it.
-    #[test]
-    fn test_add_stage_rejects_bad_deps() {
-        let err = expect_err(
-            PipelineBuilder::<TestSpec>::new()
-                .add_stage(id("dup"), TestProc::new(), no_deps())
-                .expect("test: add stage")
-                .add_stage(id("dup"), TestProc::new(), no_deps()),
-            "duplicate to be rejected",
-        );
-        assert!(matches!(err, GExecError::DuplicateProc(p) if p == id("dup")));
 
         let err = expect_err(
             PipelineBuilder::<TestSpec>::new().add_stage(

@@ -156,16 +156,6 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
         self.tracking.committed_path()
     }
 
-    pub fn pipeline(&self) -> &StagePipeline<S> {
-        self.stages.pipeline()
-    }
-
-    /// Whether every stage has accepted a link, committed or not.
-    pub fn is_processed(&mut self, lref: &LinkRef<S>) -> Result<bool, GExecError> {
-        // FIXME(trey): what's the purpose of this fn if we can eta-reduce it?
-        self.is_usable(lref)
-    }
-
     /// The artifact a stage produced for a processed link.
     pub fn get_artifact<A: ProcArtifact>(
         &mut self,
@@ -219,7 +209,7 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
         if self.tracking.is_committed(lref) {
             return Err(GExecError::LinkOnCommittedPath(format!("{lref:?}")));
         }
-        if !self.is_usable(lref)? {
+        if !self.check_usable(lref)? {
             return Err(GExecError::LinkNotProcessed(format!("{lref:?}")));
         }
 
@@ -267,7 +257,7 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
         if self.tracking.is_committed(lref) {
             return Err(GExecError::LinkOnCommittedPath(format!("{lref:?}")));
         }
-        if !self.is_present(lref)? {
+        if !self.check_present(lref)? {
             return Err(GExecError::LinkNotProcessed(format!("{lref:?}")));
         }
 
@@ -335,15 +325,15 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
     }
 
     /// Whether every stage has a current artifact for a link, which is what
-    /// lets a path run through it.
-    fn is_usable(&mut self, lref: &LinkRef<S>) -> Result<bool, GExecError> {
-        // FIXME(trey): this fn seems cheap but is actually expensive since it might do IO
+    /// lets a path run through it.  Loads the link's artifacts on the way if
+    /// they aren't loaded yet.
+    fn check_usable(&mut self, lref: &LinkRef<S>) -> Result<bool, GExecError> {
         self.hydrate_link(lref)?;
         Ok(self.stages.missing_stages(lref).is_empty())
     }
 
     /// Whether the store has anything at all for a link, without loading it.
-    fn is_present(&mut self, lref: &LinkRef<S>) -> Result<bool, GExecError> {
+    fn check_present(&mut self, lref: &LinkRef<S>) -> Result<bool, GExecError> {
         match self.loaded.get(lref) {
             Some(present) => Ok(*present),
             None => self
@@ -362,8 +352,10 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
     ) -> Result<LinkPath<S>, GExecError> {
         let provider = Arc::clone(&self.provider);
         let committed = self.committed_node().clone();
-        find_path(provider.as_ref(), &committed, origin, |l| self.is_usable(l))?
-            .ok_or_else(|| GExecError::OriginUnreachable(format!("{lref:?}")))
+        find_path(provider.as_ref(), &committed, origin, |l| {
+            self.check_usable(l)
+        })?
+        .ok_or_else(|| GExecError::OriginUnreachable(format!("{lref:?}")))
     }
 
     /// Forgets every link that's reachable from a node but no longer from the
@@ -371,8 +363,8 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
     fn sweep_from(&mut self, node: &NodeRef<S>) -> Result<Vec<LinkRef<S>>, GExecError> {
         let provider = Arc::clone(&self.provider);
         let base = self.committed_path().base_node().clone();
-        let keep = find_reachable_links(provider.as_ref(), &base, |l| self.is_present(l))?;
-        let candidates = find_reachable_links(provider.as_ref(), node, |l| self.is_present(l))?;
+        let keep = find_reachable_links(provider.as_ref(), &base, |l| self.check_present(l))?;
+        let candidates = find_reachable_links(provider.as_ref(), node, |l| self.check_present(l))?;
 
         let doomed: Vec<_> = candidates
             .into_iter()
@@ -522,9 +514,12 @@ mod tests {
         assert_eq!(outcome, LinkOutcome::Accepted, "test: link {lref}");
     }
 
-    fn is_processed(exec: &mut Exec, lref: u8) -> bool {
-        exec.is_processed(&TestRef(lref))
-            .expect("test: check processed")
+    /// Whether stage "a" has a current artifact for a link, which is how the
+    /// tests tell a processed link from one that isn't.
+    fn has_artifact(exec: &mut Exec, lref: u8) -> bool {
+        exec.get_artifact::<FlagArtifact>(&TestRef(lref), id("a"))
+            .expect("test: fetch artifact")
+            .is_some()
     }
 
     fn tracking(store: &MemExecutorStore<TestSpec>) -> TrackingState<TestSpec> {
@@ -558,7 +553,9 @@ mod tests {
 
         accept(&mut exec, 10);
         accept(&mut exec, 11);
-        assert!(is_processed(&mut exec, 11));
+        // Processing a recorded link again is a no-op.
+        accept(&mut exec, 11);
+        assert!(has_artifact(&mut exec, 11));
         assert!(exec.committed_path().is_empty());
 
         exec.commit_through(&TestRef(11)).expect("test: commit");
@@ -577,24 +574,7 @@ mod tests {
         assert_eq!(stored.get_stage_node(id("a")), Some(&TestRef(3)));
         assert_eq!(stored.committed_path().links(), &refs(&[10, 11]));
         // Committed links keep their artifacts so the commit can be undone.
-        assert!(
-            exec.get_artifact::<FlagArtifact>(&TestRef(10), id("a"))
-                .expect("test: fetch artifact")
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn test_processing_recorded_link_again_is_noop() {
-        let proc = TestProc::new();
-        let events = proc.events();
-        let (mut exec, _, _) = fresh(vec![proc]);
-        take_events(&events);
-
-        accept(&mut exec, 10);
-        accept(&mut exec, 10);
-
-        assert_eq!(take_events(&events), vec![ProcEvent::Process(TestRef(10))]);
+        assert!(has_artifact(&mut exec, 10));
     }
 
     #[test]
@@ -614,7 +594,7 @@ mod tests {
             vec![ProcEvent::Process(TestRef(10))]
         );
         assert!(take_events(&second_events).is_empty());
-        assert!(!is_processed(&mut exec, 10));
+        assert!(!has_artifact(&mut exec, 10));
         assert!(!has_stored(&store, 10));
     }
 
@@ -650,7 +630,7 @@ mod tests {
         );
         assert_eq!(exec.committed_path().links(), &refs(&[20, 12]));
         // The block links are still around, just not on the committed path.
-        assert!(is_processed(&mut exec, 11));
+        assert!(has_artifact(&mut exec, 11));
     }
 
     #[test]
@@ -732,21 +712,15 @@ mod tests {
             .collect();
         prepruned.sort();
         assert_eq!(prepruned, refs(&[10, 11, 30]));
-        assert!(is_processed(&mut exec, 20));
+        assert!(has_artifact(&mut exec, 20));
         assert!(!has_stored(&store, 11));
         assert!(has_stored(&store, 20));
 
         let err = exec.discard_link(&TestRef(10)).unwrap_err();
         assert!(matches!(err, GExecError::LinkNotProcessed(_)));
-    }
 
-    #[test]
-    fn test_discard_refuses_committed_link() {
-        let (mut exec, _, _) = fresh(vec![TestProc::new()]);
-        accept(&mut exec, 10);
-        exec.commit_through(&TestRef(10)).expect("test: commit");
-
-        let err = exec.discard_link(&TestRef(10)).unwrap_err();
+        exec.commit_through(&TestRef(20)).expect("test: commit");
+        let err = exec.discard_link(&TestRef(20)).unwrap_err();
         assert!(matches!(err, GExecError::LinkOnCommittedPath(_)));
     }
 
@@ -772,7 +746,7 @@ mod tests {
         assert_eq!(exec.committed_node(), &TestRef(3));
         assert_eq!(exec.committed_path().base_node(), &TestRef(3));
         assert!(exec.committed_path().is_empty());
-        assert!(is_processed(&mut exec, 12));
+        assert!(has_artifact(&mut exec, 12));
         assert!(!has_stored(&store, 10));
         let stored = tracking(&store);
         assert_eq!(stored.committed_path().base_node(), &TestRef(3));
@@ -805,13 +779,8 @@ mod tests {
         assert!(report.stale_committed().is_empty());
         assert_eq!(exec.committed_node(), &TestRef(2));
         assert_eq!(exec.committed_path().links(), &refs(&[10]));
-        assert!(is_processed(&mut exec, 11));
-        assert!(is_processed(&mut exec, 30));
-        assert!(
-            exec.get_artifact::<FlagArtifact>(&TestRef(11), id("a"))
-                .expect("test: fetch artifact")
-                .is_some()
-        );
+        assert!(has_artifact(&mut exec, 11));
+        assert!(has_artifact(&mut exec, 30));
 
         accept(&mut exec, 12);
         exec.commit_through(&TestRef(12)).expect("test: commit");
@@ -932,9 +901,9 @@ mod tests {
         // The checkpoint reaches node 3 on its own, so it survives with its
         // old artifacts until it's processed again.
         assert!(has_stored(&store, 20));
-        assert!(!is_processed(&mut exec, 20));
+        assert!(!has_artifact(&mut exec, 20));
         accept(&mut exec, 20);
-        assert!(is_processed(&mut exec, 20));
+        assert!(has_artifact(&mut exec, 20));
     }
 
     #[test]
@@ -976,7 +945,7 @@ mod tests {
         exec.commit_through(&TestRef(10)).expect("test: commit");
 
         assert_eq!(exec.loaded.keys().collect::<Vec<_>>(), vec![&TestRef(10)]);
-        assert!(is_processed(&mut exec, 30));
+        assert!(has_artifact(&mut exec, 30));
         assert!(exec.loaded.contains_key(&TestRef(30)));
     }
 }

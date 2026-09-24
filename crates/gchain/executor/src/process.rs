@@ -14,7 +14,7 @@ use crate::errors::GExecError;
 /// name neither their concrete types nor their artifact types.  This trait
 /// erases both, moving artifacts around as [`DynProcArtifact`] and downcasting
 /// them back to the stage's own artifact type inside [`ProcShim`].
-pub trait GChainProcDyn<S: GChainSpec>: 'static {
+pub(crate) trait GChainProcDyn<S: GChainSpec>: 'static {
     /// The ID the wrapped processor stage is registered under.
     fn proc_id(&self) -> ProcId;
 
@@ -74,7 +74,7 @@ pub trait GChainProcDyn<S: GChainSpec>: 'static {
 }
 
 /// Generic processor shim wrapper to expose as `dyn`-safe object.
-pub struct ProcShim<P: GChainProc> {
+pub(crate) struct ProcShim<P: GChainProc> {
     proc_id: ProcId,
     proc: P,
 }
@@ -84,7 +84,7 @@ impl<P: GChainProc> ProcShim<P> {
     ///
     /// [`PipelineBuilder`](crate::PipelineBuilder) is what pairs the two in
     /// practice, so the registered key and the shim's ID can't drift apart.
-    pub fn new(proc_id: ProcId, proc: P) -> Self {
+    pub(crate) fn new(proc_id: ProcId, proc: P) -> Self {
         Self { proc_id, proc }
     }
 }

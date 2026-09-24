@@ -164,11 +164,9 @@ pub(crate) struct TestProc {
 }
 
 impl TestProc {
-    pub(crate) const VERSION: u32 = 1;
-
     pub(crate) fn new() -> Self {
         Self {
-            version: Self::VERSION,
+            version: 1,
             reject: HashSet::new(),
             events: EventLog::default(),
         }

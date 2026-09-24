@@ -17,6 +17,8 @@ mod errors;
 mod graph;
 mod processor;
 mod processor_tracking;
+#[cfg(test)]
+mod test_support;
 mod version;
 
 pub use chain_provider::*;
