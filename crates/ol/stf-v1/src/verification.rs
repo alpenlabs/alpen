@@ -413,6 +413,17 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
 /// Use this only when the diff has already been verified to bind the post-state root via an
 /// upstream proof — e.g. the CSM-verified `CheckpointPayload` path that drives checkpoint sync.
 /// Do not use with peer-supplied or RPC-supplied diffs.
+///
+/// # Spec versions
+///
+/// The DA diff does not carry the root state's spec versions; replay derives
+/// them. Starting from the previous terminal state `(cur, staged)`, epoch
+/// initial processing promotes the staged spec, and the terminal drain of an
+/// epoch that processes a checkpoint predicate enactment stages its successor:
+/// `(v, v)` becomes `(v, v + 1)` at that terminal and `(v + 1, v + 1)` at the
+/// first block of the next epoch. Replaying the epoch once from the
+/// authenticated previous terminal state therefore reproduces both versions
+/// exactly. The versions are constant until STR-4086 adds these writes.
 pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,

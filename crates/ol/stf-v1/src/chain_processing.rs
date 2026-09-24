@@ -33,6 +33,13 @@ pub fn process_epoch_initial<S: IStateAccessor>(
         // TODO(STR-3677): insert into MMR
     }
 
+    // 4. Promote the staged spec to the current spec. The epoch runs under the
+    // spec its predecessor's terminal state staged, and DA replay reproduces
+    // the promotion by calling this function, so the DA diff never carries
+    // the spec versions.
+    // TODO(STR-4086): set `cur_spec_version = staged_spec_version` here, which
+    // needs an `IStateAccessorMut` bound.
+
     Ok(())
 }
 
