@@ -2113,6 +2113,10 @@ name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
@@ -2121,6 +2125,7 @@ dependencies = [
  "strata-snark-acct-types",
  "thiserror",
  "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
