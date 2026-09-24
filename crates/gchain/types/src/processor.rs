@@ -29,6 +29,7 @@ use thiserror::Error as ThisError;
 
 use crate::chain_spec::*;
 use crate::errors::ProcError;
+use crate::graph::*;
 use crate::version::ProcVersion;
 
 /// Maximum length of a [`ProcId`], in bytes.

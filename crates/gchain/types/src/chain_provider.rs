@@ -1,11 +1,12 @@
 use crate::chain_spec::*;
 use crate::errors::ProviderError;
+use crate::graph::*;
 
 /// Provider that exposes the graph nodes for processing and topological
 /// information about the graph for traversal.
 ///
-/// A query with no answer returns `Ok(None)`; [`ProviderError`] means the
-/// provider itself failed.
+/// A query with no answer returns `Ok(None)`.  [`ProviderError`] means the
+/// provider itself failed, which should probably bubble up.
 pub trait ChainProvider {
     /// The chain spec this provider works for.
     type Spec: GChainSpec;

@@ -14,6 +14,7 @@
 mod chain_provider;
 mod chain_spec;
 mod errors;
+mod graph;
 mod processor;
 mod processor_tracking;
 mod version;
@@ -21,6 +22,7 @@ mod version;
 pub use chain_provider::*;
 pub use chain_spec::*;
 pub use errors::*;
+pub use graph::*;
 pub use processor::*;
 pub use processor_tracking::*;
 pub use version::*;
