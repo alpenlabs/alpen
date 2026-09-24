@@ -58,6 +58,16 @@ impl<S: GChainSpec> ArtifactCache<S> {
         Arc::clone(artifact).into_any_arc().downcast::<A>().ok()
     }
 
+    /// Discards the artifact one stage stored for a link.
+    pub fn remove_artifact(&mut self, lref: &LinkRef<S>, proc_id: ProcId) {
+        if let Some(atbl) = self.links.get_mut(lref) {
+            atbl.remove(&proc_id);
+            if atbl.is_empty() {
+                self.links.remove(lref);
+            }
+        }
+    }
+
     /// Discards every artifact stored for a link.
     pub fn remove_link(&mut self, lref: &LinkRef<S>) {
         self.links.remove(lref);

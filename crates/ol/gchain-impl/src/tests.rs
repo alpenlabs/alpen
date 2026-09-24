@@ -667,6 +667,7 @@ fn test_linear_executor_drives_ol_stages() {
     }
     assert!(
         exec.get_artifact::<OLIndexArtifact>(&block_refs[1], proc_id("index"))
+            .expect("fetch artifact")
             .is_some(),
         "index stage must have run after exec"
     );
@@ -704,7 +705,7 @@ fn test_linear_executor_drives_ol_stages() {
         "uncommit must drop the derived state"
     );
     assert!(
-        exec.is_processed(&ckpt_refs[1]),
+        exec.is_processed(&ckpt_refs[1]).expect("check processed"),
         "the undone link stays processed"
     );
 

@@ -44,6 +44,11 @@ impl<S: GChainSpec> StagePipeline<S> {
         self.stages.iter()
     }
 
+    /// The stages' IDs in canonical order.
+    pub fn proc_ids(&self) -> impl DoubleEndedIterator<Item = ProcId> {
+        self.stages.iter().map(Stage::proc_id)
+    }
+
     /// Looks up a stage by the ID it's registered under.
     pub fn get_stage(&self, proc_id: ProcId) -> Option<&Stage<S>> {
         self.schedule.index_of(proc_id).map(|idx| &self.stages[idx])

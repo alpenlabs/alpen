@@ -1,100 +1,93 @@
 //! Persistence the executor relies on.
+//!
+//! The executor is the only thing that talks to the store, and it keeps
+//! little in memory beyond what's here: the tracking state is mirrored whole,
+//! and artifacts are loaded per link as they're needed.  The tracking state is
+//! written as one unit so its parts can never disagree; artifacts are written
+//! only once every stage has accepted their link.
+//!
+//! A store should only be used by one executor at a time.
 
 use strata_gchain_types::*;
 
-/// A processed link as the store records it: the ref and the nodes it
-/// connects.
-///
-/// The endpoints are what let an executor rebuild its graph of processed links
-/// without consulting the chain provider.
-pub struct LinkRecord<S: GChainSpec> {
+use crate::tracking::TrackingState;
+
+/// An artifact with the link and stage it belongs to, as the store keeps it.
+pub struct ArtifactRecord<S: GChainSpec> {
     lref: LinkRef<S>,
-    endpoints: LinkEndpoints<S>,
+    proc_id: ProcId,
+    data: ProcessorArtifactData,
 }
 
-impl<S: GChainSpec> LinkRecord<S> {
-    pub fn new(lref: LinkRef<S>, endpoints: LinkEndpoints<S>) -> Self {
-        Self { lref, endpoints }
+impl<S: GChainSpec> ArtifactRecord<S> {
+    pub fn new(lref: LinkRef<S>, proc_id: ProcId, data: ProcessorArtifactData) -> Self {
+        Self {
+            lref,
+            proc_id,
+            data,
+        }
     }
 
     pub fn lref(&self) -> &LinkRef<S> {
         &self.lref
     }
 
-    pub fn endpoints(&self) -> &LinkEndpoints<S> {
-        &self.endpoints
+    pub fn proc_id(&self) -> ProcId {
+        self.proc_id
     }
 
-    pub fn into_parts(self) -> (LinkRef<S>, LinkEndpoints<S>) {
-        (self.lref, self.endpoints)
+    pub fn data(&self) -> &ProcessorArtifactData {
+        &self.data
+    }
+
+    pub fn into_parts(self) -> (LinkRef<S>, ProcId, ProcessorArtifactData) {
+        (self.lref, self.proc_id, self.data)
+    }
+}
+
+// Bounds fall on the ref type, not the marker spec type.
+impl<S: GChainSpec> Clone for ArtifactRecord<S> {
+    fn clone(&self) -> Self {
+        Self {
+            lref: self.lref.clone(),
+            proc_id: self.proc_id,
+            data: self.data.clone(),
+        }
     }
 }
 
 /// Storage for what an executor tracks between runs.
 ///
 /// Artifacts are persisted by the executor rather than by the stages that
-/// produced them, and alongside them the executor keeps enough about the graph
-/// to pick up where it left off: which links it has processed and where they
-/// sit, the path it has committed, and how far each stage has committed.  Each
-/// method persists one of those independently; the executor orders its writes
-/// so a crash between them leaves at worst something it knows how to discard.
-///
-/// Should only be used by one executor at a time.
+/// produced them, and they're also the executor's record of which links it
+/// has processed: a link is known iff some artifact is stored for it.
 pub trait ExecutorStore {
     /// The chain spec this store tracks.
     type Spec: GChainSpec;
 
+    /// Records where the pipeline stands, replacing what was there.
+    fn store_tracking(&self, state: &TrackingState<Self::Spec>) -> Result<(), BoxedError>;
+
+    /// Loads where the pipeline stands, if it has ever been initialized.
+    fn load_tracking(&self) -> Result<Option<TrackingState<Self::Spec>>, BoxedError>;
+
     /// Persists the artifact a stage produced for a link, replacing any it had
     /// already stored for it.
-    fn store_artifact(
-        &self,
-        lref: &LinkRef<Self::Spec>,
-        proc_id: ProcId,
-        data: &ProcessorArtifactData,
-    ) -> Result<(), BoxedError>;
+    fn store_artifact(&self, record: &ArtifactRecord<Self::Spec>) -> Result<(), BoxedError>;
 
-    /// Loads the artifact a stage previously produced for a link, if it's still
-    /// stored.
+    /// Loads every artifact stored for a link.
     ///
-    /// The caller checks [`ProcessorArtifactData::exec_version`] against the
-    /// stage's current version before trusting the contents.
-    fn load_artifact(
+    /// The executor checks each [`ProcessorArtifactData::exec_version`]
+    /// against the stage's current version before trusting the contents.
+    fn load_link_artifacts(
         &self,
         lref: &LinkRef<Self::Spec>,
-        proc_id: ProcId,
-    ) -> Result<Option<ProcessorArtifactData>, BoxedError>;
+    ) -> Result<Vec<ArtifactRecord<Self::Spec>>, BoxedError>;
 
-    /// Discards every stage's artifact for a link.
+    /// Whether any artifact is stored for a link, without loading them.
+    fn has_link_artifacts(&self, lref: &LinkRef<Self::Spec>) -> Result<bool, BoxedError>;
+
+    /// Discards every stage's artifact for a link, which also forgets the
+    /// link.
     fn discard_link_artifacts(&self, lref: &LinkRef<Self::Spec>) -> Result<(), BoxedError>;
-
-    /// Records a link as processed.
-    fn store_link(&self, record: &LinkRecord<Self::Spec>) -> Result<(), BoxedError>;
-
-    /// Forgets a processed link.  Its artifacts are discarded separately.
-    fn discard_link(&self, lref: &LinkRef<Self::Spec>) -> Result<(), BoxedError>;
-
-    /// Loads every processed link.
-    fn load_links(&self) -> Result<Vec<LinkRecord<Self::Spec>>, BoxedError>;
-
-    /// Records the node a stage has committed its aggregated state up to.
-    fn store_committed_node(
-        &self,
-        proc_id: ProcId,
-        node: &NodeRef<Self::Spec>,
-    ) -> Result<(), BoxedError>;
-
-    /// Loads the node a stage has committed up to, if it has ever been
-    /// initialized.
-    fn load_committed_node(
-        &self,
-        proc_id: ProcId,
-    ) -> Result<Option<NodeRef<Self::Spec>>, BoxedError>;
-
-    /// Records the path the pipeline has committed: the links from the oldest
-    /// node it can still roll back to, in traversal order, ending at the
-    /// committed node.
-    fn store_committed_path(&self, path: &PathDesc<Self::Spec>) -> Result<(), BoxedError>;
-
-    /// Loads the committed path, if the pipeline has ever been initialized.
-    fn load_committed_path(&self) -> Result<Option<PathDesc<Self::Spec>>, BoxedError>;
 }

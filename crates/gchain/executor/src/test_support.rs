@@ -3,9 +3,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use strata_gchain_types::*;
+
+use crate::config::{PipelineBuilder, StagePipeline};
+use crate::mem_store::MemExecutorStore;
+use crate::store::ExecutorStore;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct TestRef(pub u8);
@@ -188,6 +193,41 @@ impl TestProc {
     fn record(&self, event: ProcEvent) {
         self.events.lock().unwrap().push(event);
     }
+}
+
+/// A pipeline of the given stages under the IDs "a", "b", ... in order, with
+/// no deps between them.
+pub(crate) fn pipeline_of(procs: Vec<TestProc>) -> StagePipeline<TestSpec> {
+    let mut builder = PipelineBuilder::new();
+    for (idx, proc) in procs.into_iter().enumerate() {
+        let name = char::from(b'a' + idx as u8).to_string();
+        let proc_id = ProcId::from_str(&name).expect("test: parse ProcId");
+        builder = builder
+            .add_stage(proc_id, proc, ProcDeps::new(Vec::new(), Vec::new()))
+            .expect("test: add stage");
+    }
+    builder.build()
+}
+
+/// The artifact a stage has stored for a link.
+pub(crate) fn stored_artifact(
+    store: &MemExecutorStore<TestSpec>,
+    lref: TestRef,
+    proc_id: ProcId,
+) -> Option<ProcessorArtifactData> {
+    store
+        .load_link_artifacts(&lref)
+        .expect("test: load artifacts")
+        .into_iter()
+        .find(|record| record.proc_id() == proc_id)
+        .map(|record| record.into_parts().2)
+}
+
+/// Whether the store holds any artifact for a link.
+pub(crate) fn has_stored(store: &MemExecutorStore<TestSpec>, lref: u8) -> bool {
+    store
+        .has_link_artifacts(&TestRef(lref))
+        .expect("test: check artifacts")
 }
 
 /// Drains the events recorded so far.

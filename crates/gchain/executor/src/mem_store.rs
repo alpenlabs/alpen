@@ -5,7 +5,8 @@ use std::sync::Mutex;
 
 use strata_gchain_types::*;
 
-use crate::store::{ExecutorStore, LinkRecord};
+use crate::store::{ArtifactRecord, ExecutorStore};
+use crate::tracking::TrackingState;
 
 /// In-memory [`ExecutorStore`], for tests and executors that don't need to
 /// survive a restart.
@@ -15,9 +16,7 @@ pub struct MemExecutorStore<S: GChainSpec> {
 
 struct MemStoreInner<S: GChainSpec> {
     artifacts: BTreeMap<(LinkRef<S>, ProcId), ProcessorArtifactData>,
-    links: BTreeMap<LinkRef<S>, LinkEndpoints<S>>,
-    committed_nodes: BTreeMap<ProcId, NodeRef<S>>,
-    committed_path: Option<PathDesc<S>>,
+    tracking: Option<TrackingState<S>>,
 }
 
 impl<S: GChainSpec> MemExecutorStore<S> {
@@ -25,9 +24,7 @@ impl<S: GChainSpec> MemExecutorStore<S> {
         Self {
             inner: Mutex::new(MemStoreInner {
                 artifacts: BTreeMap::new(),
-                links: BTreeMap::new(),
-                committed_nodes: BTreeMap::new(),
-                committed_path: None,
+                tracking: None,
             }),
         }
     }
@@ -50,70 +47,37 @@ impl<S: GChainSpec> Default for MemExecutorStore<S> {
 impl<S: GChainSpec> ExecutorStore for MemExecutorStore<S> {
     type Spec = S;
 
-    fn store_artifact(
-        &self,
-        lref: &LinkRef<S>,
-        proc_id: ProcId,
-        data: &ProcessorArtifactData,
-    ) -> Result<(), BoxedError> {
+    fn store_tracking(&self, state: &TrackingState<S>) -> Result<(), BoxedError> {
+        self.with_inner(|inner| inner.tracking = Some(state.clone()))
+    }
+
+    fn load_tracking(&self) -> Result<Option<TrackingState<S>>, BoxedError> {
+        self.with_inner(|inner| inner.tracking.clone())
+    }
+
+    fn store_artifact(&self, record: &ArtifactRecord<S>) -> Result<(), BoxedError> {
+        self.with_inner(|inner| {
+            let key = (record.lref().clone(), record.proc_id());
+            inner.artifacts.insert(key, record.data().clone());
+        })
+    }
+
+    fn load_link_artifacts(&self, lref: &LinkRef<S>) -> Result<Vec<ArtifactRecord<S>>, BoxedError> {
         self.with_inner(|inner| {
             inner
                 .artifacts
-                .insert((lref.clone(), proc_id), data.clone());
-        })
-    }
-
-    fn load_artifact(
-        &self,
-        lref: &LinkRef<S>,
-        proc_id: ProcId,
-    ) -> Result<Option<ProcessorArtifactData>, BoxedError> {
-        self.with_inner(|inner| inner.artifacts.get(&(lref.clone(), proc_id)).cloned())
-    }
-
-    fn discard_link_artifacts(&self, lref: &LinkRef<S>) -> Result<(), BoxedError> {
-        self.with_inner(|inner| inner.artifacts.retain(|(l, _), _| l != lref))
-    }
-
-    fn store_link(&self, record: &LinkRecord<S>) -> Result<(), BoxedError> {
-        self.with_inner(|inner| {
-            inner
-                .links
-                .insert(record.lref().clone(), record.endpoints().clone());
-        })
-    }
-
-    fn discard_link(&self, lref: &LinkRef<S>) -> Result<(), BoxedError> {
-        self.with_inner(|inner| {
-            inner.links.remove(lref);
-        })
-    }
-
-    fn load_links(&self) -> Result<Vec<LinkRecord<S>>, BoxedError> {
-        self.with_inner(|inner| {
-            inner
-                .links
                 .iter()
-                .map(|(l, e)| LinkRecord::new(l.clone(), e.clone()))
+                .filter(|((l, _), _)| l == lref)
+                .map(|((l, proc_id), data)| ArtifactRecord::new(l.clone(), *proc_id, data.clone()))
                 .collect()
         })
     }
 
-    fn store_committed_node(&self, proc_id: ProcId, node: &NodeRef<S>) -> Result<(), BoxedError> {
-        self.with_inner(|inner| {
-            inner.committed_nodes.insert(proc_id, node.clone());
-        })
+    fn has_link_artifacts(&self, lref: &LinkRef<S>) -> Result<bool, BoxedError> {
+        self.with_inner(|inner| inner.artifacts.keys().any(|(l, _)| l == lref))
     }
 
-    fn load_committed_node(&self, proc_id: ProcId) -> Result<Option<NodeRef<S>>, BoxedError> {
-        self.with_inner(|inner| inner.committed_nodes.get(&proc_id).cloned())
-    }
-
-    fn store_committed_path(&self, path: &PathDesc<S>) -> Result<(), BoxedError> {
-        self.with_inner(|inner| inner.committed_path = Some(path.clone()))
-    }
-
-    fn load_committed_path(&self) -> Result<Option<PathDesc<S>>, BoxedError> {
-        self.with_inner(|inner| inner.committed_path.clone())
+    fn discard_link_artifacts(&self, lref: &LinkRef<S>) -> Result<(), BoxedError> {
+        self.with_inner(|inner| inner.artifacts.retain(|(l, _), _| l != lref))
     }
 }

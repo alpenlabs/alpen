@@ -85,11 +85,6 @@ pub enum GExecError {
     #[error("proc {proc_id} committed at {node}, which is not on the committed path")]
     StageDiverged { proc_id: ProcId, node: String },
 
-    /// The persisted committed path doesn't hold together with the persisted
-    /// link records.
-    #[error("committed path is inconsistent at link {0}")]
-    CorruptCommittedPath(String),
-
     /// The executor's own tracking or artifact storage failed.
     #[error("executor storage failure: {0}")]
     Storage(#[source] BoxedError),

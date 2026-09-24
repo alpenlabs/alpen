@@ -17,6 +17,8 @@
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
+use crate::{ChainProvider, ProviderError};
+
 pub type NodeRef<S: GChainSpec> = <S as GChainSpec>::NodeRef;
 pub type LinkRef<S: GChainSpec> = <S as GChainSpec>::LinkRef;
 pub type LinkHeader<S: GChainSpec> = <S as GChainSpec>::LinkHeader;
@@ -143,70 +145,17 @@ impl<S: GChainSpec> PartialEq for LinkEndpoints<S> {
 
 impl<S: GChainSpec> Eq for LinkEndpoints<S> {}
 
-/// Names a path through the node graph by the node it starts at and the links
-/// traversed from there, without checking that they connect.
-///
-/// This is the persisted and transmitted form of a path: it can be written
-/// down and read back without endpoints on hand.  Resolving it against the
-/// links' endpoints (see [`LinkPath::try_push_link`]) is what checks it
-/// actually holds together.
-pub struct PathDesc<S: GChainSpec> {
-    base_node: NodeRef<S>,
-    links: Vec<LinkRef<S>>,
-}
-
-impl<S: GChainSpec> PathDesc<S> {
-    pub fn new(base_node: NodeRef<S>, links: Vec<LinkRef<S>>) -> Self {
-        Self { base_node, links }
-    }
-
-    /// The node the path starts from.
-    pub fn base_node(&self) -> &NodeRef<S> {
-        &self.base_node
-    }
-
-    /// The links making up the path, in traversal order.
-    pub fn links(&self) -> &[LinkRef<S>] {
-        &self.links
-    }
-
-    pub fn into_parts(self) -> (NodeRef<S>, Vec<LinkRef<S>>) {
-        (self.base_node, self.links)
-    }
-}
-
-// Implemented by hand for the same reason as on `LinkEndpoints`.
-impl<S: GChainSpec> Clone for PathDesc<S> {
-    fn clone(&self) -> Self {
-        Self::new(self.base_node.clone(), self.links.clone())
-    }
-}
-
-impl<S: GChainSpec> Debug for PathDesc<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PathDesc")
-            .field("base_node", &self.base_node)
-            .field("links", &self.links)
-            .finish()
-    }
-}
-
-impl<S: GChainSpec> PartialEq for PathDesc<S> {
-    fn eq(&self, other: &Self) -> bool {
-        self.base_node == other.base_node && self.links == other.links
-    }
-}
-
-impl<S: GChainSpec> Eq for PathDesc<S> {}
-
 /// Describes a path through the node graph.
 ///
-/// The path always knows the node it currently ends at, so appending to it can
-/// check that the new link actually continues from there instead of jumping to
-/// an unrelated part of the graph.
+/// The path records every node it passes through, so appending to it can
+/// check that the new link actually continues from where it ends instead of
+/// jumping to an unrelated part of the graph, and any node along it can be
+/// addressed without the links' endpoints on hand.  That makes it
+/// self-contained enough to persist as is.
 pub struct LinkPath<S: GChainSpec> {
-    base_node: NodeRef<S>,
-    terminal_node: NodeRef<S>,
+    /// The nodes along the path from the base to the terminal, so always one
+    /// more than there are links.
+    nodes: Vec<NodeRef<S>>,
     links: Vec<LinkRef<S>>,
 }
 
@@ -214,26 +163,52 @@ impl<S: GChainSpec> LinkPath<S> {
     /// Creates a path rooted at a node with no links traversed yet.
     pub fn new_at(base_node: NodeRef<S>) -> Self {
         Self {
-            terminal_node: base_node.clone(),
-            base_node,
+            nodes: vec![base_node],
             links: Vec::new(),
         }
+    }
+
+    /// Lays a path down from a base node through steps of a link and the
+    /// node it reaches, trusting that each link departs from the node before
+    /// it.
+    pub fn from_steps(
+        base_node: NodeRef<S>,
+        steps: impl IntoIterator<Item = (LinkRef<S>, NodeRef<S>)>,
+    ) -> Self {
+        let mut path = Self::new_at(base_node);
+        for (lref, target) in steps {
+            path.links.push(lref);
+            path.nodes.push(target);
+        }
+        path
     }
 
     /// The node the path starts from.  Traversing `links` in order starting
     /// here reaches the path's terminal node.
     pub fn base_node(&self) -> &NodeRef<S> {
-        &self.base_node
+        &self.nodes[0]
     }
 
     /// The node the path currently ends at.
     pub fn terminal_node(&self) -> &NodeRef<S> {
-        &self.terminal_node
+        self.nodes
+            .last()
+            .expect("gchain: path always has its base node")
+    }
+
+    /// The nodes along the path, from the base to the terminal.
+    pub fn nodes(&self) -> &[NodeRef<S>] {
+        &self.nodes
     }
 
     /// The links making up the path, in traversal order.
     pub fn links(&self) -> &[LinkRef<S>] {
         &self.links
+    }
+
+    /// Each link with the node it reaches, in traversal order.
+    pub fn steps(&self) -> impl Iterator<Item = (&LinkRef<S>, &NodeRef<S>)> {
+        self.links.iter().zip(&self.nodes[1..])
     }
 
     pub fn len(&self) -> usize {
@@ -244,9 +219,25 @@ impl<S: GChainSpec> LinkPath<S> {
         self.links.is_empty()
     }
 
-    /// Copies out the base node and links, dropping the terminal node.
-    pub fn to_desc(&self) -> PathDesc<S> {
-        PathDesc::new(self.base_node.clone(), self.links.clone())
+    /// A node's position along the path, counting the base as zero.
+    pub fn get_node_index(&self, node: &NodeRef<S>) -> Option<usize> {
+        self.nodes.iter().position(|n| n == node)
+    }
+
+    /// The part of the path between two of its node positions.
+    ///
+    /// # Panics
+    ///
+    /// If `from > to` or `to` is past the terminal node.
+    pub fn slice(&self, from: usize, to: usize) -> Self {
+        assert!(
+            from <= to && to < self.nodes.len(),
+            "gchain: path slice out of range"
+        );
+        Self {
+            nodes: self.nodes[from..=to].to_vec(),
+            links: self.links[from..to].to_vec(),
+        }
     }
 
     /// Attempts to add a link onto the end of the path.
@@ -254,15 +245,90 @@ impl<S: GChainSpec> LinkPath<S> {
     /// Returns `false` without modifying the path if the link doesn't depart
     /// from the node the path currently ends at.
     pub fn try_push_link(&mut self, lref: LinkRef<S>, endpoints: &LinkEndpoints<S>) -> bool {
-        if *endpoints.origin() != self.terminal_node {
+        if endpoints.origin() != self.terminal_node() {
             return false;
         }
 
         self.links.push(lref);
-        self.terminal_node = endpoints.target().clone();
+        self.nodes.push(endpoints.target().clone());
         true
     }
+
+    /// Attempts to add a whole path onto the end of this one.
+    ///
+    /// Returns `false` without modifying the path if the other doesn't start
+    /// from the node this one currently ends at.
+    pub fn try_extend(&mut self, other: &Self) -> bool {
+        if other.base_node() != self.terminal_node() {
+            return false;
+        }
+
+        self.links.extend(other.links.iter().cloned());
+        self.nodes.extend(other.nodes[1..].iter().cloned());
+        true
+    }
+
+    /// Checks that the path is shaped like one: a base node followed by one
+    /// node per link.
+    ///
+    /// Paths built through this type always are; this is for one read back
+    /// from somewhere it was persisted.
+    pub fn sanity_check(&self) -> bool {
+        self.nodes.len() == self.links.len() + 1
+    }
+
+    /// Checks against the provider that each link really connects the nodes
+    /// on either side of it.
+    ///
+    /// Returns `Ok(false)` if the path is misshapen, a link is unknown to the
+    /// provider, or a link sits somewhere else in the graph.
+    pub fn sanity_check_against(
+        &self,
+        provider: &impl ChainProvider<Spec = S>,
+    ) -> Result<bool, ProviderError> {
+        if !self.sanity_check() {
+            return Ok(false);
+        }
+
+        for (idx, lref) in self.links.iter().enumerate() {
+            let Some(endpoints) = provider.fetch_link_endpoints(lref)? else {
+                return Ok(false);
+            };
+            if *endpoints.origin() != self.nodes[idx] || *endpoints.target() != self.nodes[idx + 1]
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 }
+
+// Implemented by hand for the same reason as on `LinkEndpoints`.
+impl<S: GChainSpec> Clone for LinkPath<S> {
+    fn clone(&self) -> Self {
+        Self {
+            nodes: self.nodes.clone(),
+            links: self.links.clone(),
+        }
+    }
+}
+
+impl<S: GChainSpec> Debug for LinkPath<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LinkPath")
+            .field("nodes", &self.nodes)
+            .field("links", &self.links)
+            .finish()
+    }
+}
+
+impl<S: GChainSpec> PartialEq for LinkPath<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.nodes == other.nodes && self.links == other.links
+    }
+}
+
+impl<S: GChainSpec> Eq for LinkPath<S> {}
 
 #[cfg(test)]
 mod tests {
@@ -354,5 +420,113 @@ mod tests {
 
         assert_eq!(via_block.terminal_node(), via_ckpt.terminal_node());
         assert_ne!(via_block.links(), via_ckpt.links());
+    }
+
+    #[test]
+    fn test_path_records_every_node_it_passes() {
+        let path = LinkPath::<TestSpec>::from_steps(
+            TestRef(1),
+            [(TestRef(10), TestRef(2)), (TestRef(11), TestRef(3))],
+        );
+
+        assert_eq!(path.nodes(), &[TestRef(1), TestRef(2), TestRef(3)]);
+        assert_eq!(path.get_node_index(&TestRef(2)), Some(1));
+        assert_eq!(path.get_node_index(&TestRef(9)), None);
+        let steps: Vec<_> = path.steps().map(|(l, n)| (*l, *n)).collect();
+        assert_eq!(
+            steps,
+            vec![(TestRef(10), TestRef(2)), (TestRef(11), TestRef(3))]
+        );
+
+        let tail = path.slice(1, 2);
+        assert_eq!(tail.base_node(), &TestRef(2));
+        assert_eq!(tail.links(), &[TestRef(11)]);
+        let empty = path.slice(1, 1);
+        assert!(empty.is_empty());
+        assert_eq!(empty.terminal_node(), &TestRef(2));
+
+        let mut head = path.slice(0, 1);
+        assert!(head.try_extend(&tail));
+        assert_eq!(head, path);
+        assert!(!head.try_extend(&tail));
+    }
+
+    /// Endpoints keyed by link, standing in for a chain provider.
+    struct MapProvider(HashMap<TestRef, LinkEndpoints<TestSpec>>);
+
+    impl ChainProvider for MapProvider {
+        type Spec = TestSpec;
+
+        fn fetch_link_header(&self, lref: &TestRef) -> Result<Option<TestLink>, ProviderError> {
+            Ok(self.0.contains_key(lref).then_some(TestLink(lref.0)))
+        }
+
+        fn fetch_link(&self, lref: &TestRef) -> Result<Option<TestLink>, ProviderError> {
+            self.fetch_link_header(lref)
+        }
+
+        fn fetch_link_endpoints(
+            &self,
+            lref: &TestRef,
+        ) -> Result<Option<LinkEndpoints<TestSpec>>, ProviderError> {
+            Ok(self.0.get(lref).cloned())
+        }
+
+        fn fetch_forward_links(&self, nref: &TestRef) -> Result<Vec<TestRef>, ProviderError> {
+            Ok(self
+                .0
+                .iter()
+                .filter(|(_, e)| e.origin() == nref)
+                .map(|(l, _)| *l)
+                .collect())
+        }
+
+        fn fetch_backward_links(&self, nref: &TestRef) -> Result<Vec<TestRef>, ProviderError> {
+            Ok(self
+                .0
+                .iter()
+                .filter(|(_, e)| e.target() == nref)
+                .map(|(l, _)| *l)
+                .collect())
+        }
+    }
+
+    #[test]
+    fn test_sanity_checks_catch_misshapen_and_misplaced_paths() {
+        let provider = MapProvider(HashMap::from([
+            (TestRef(10), endpoints(1, 2)),
+            (TestRef(11), endpoints(2, 3)),
+        ]));
+        let steps = |lrefs: &[u8], nodes: &[u8]| LinkPath::<TestSpec> {
+            nodes: nodes.iter().map(|n| TestRef(*n)).collect(),
+            links: lrefs.iter().map(|l| TestRef(*l)).collect(),
+        };
+
+        let good = steps(&[10, 11], &[1, 2, 3]);
+        assert!(good.sanity_check());
+        assert!(good.sanity_check_against(&provider).expect("test: check"));
+
+        let misshapen = steps(&[10, 11], &[1, 2]);
+        assert!(!misshapen.sanity_check());
+        assert!(
+            !misshapen
+                .sanity_check_against(&provider)
+                .expect("test: check")
+        );
+
+        let misplaced = steps(&[11, 10], &[1, 2, 3]);
+        assert!(misplaced.sanity_check());
+        assert!(
+            !misplaced
+                .sanity_check_against(&provider)
+                .expect("test: check")
+        );
+
+        let unknown = steps(&[99], &[1, 2]);
+        assert!(
+            !unknown
+                .sanity_check_against(&provider)
+                .expect("test: check")
+        );
     }
 }
