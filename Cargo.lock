@@ -9742,6 +9742,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-state-container"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "proptest",
+ "serde",
+ "serde_bytes",
+ "ssz",
+ "strata-acct-types",
+ "strata-identifiers",
+ "strata-ol-state-types",
+ "strata-ol-state-types-v1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "strata-ol-state-provider"
 version = "0.1.0"
 dependencies = [
