@@ -14,6 +14,7 @@ use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, EpochDaReplayError, EpochExecExpectations, EpochInfo,
     ExecError, OLSpecId, apply_da_epoch, construct_block, verify_block, verify_epoch_with_diff,
@@ -33,7 +34,7 @@ struct BuiltBlock {
 
 /// One epoch of built blocks and the state it started from.
 struct BuiltEpoch {
-    pre_epoch_state: MemoryStateBaseLayer,
+    pre_epoch_state: MemoryStateBaseLayer<OLStateV1>,
     previous_terminal: OLBlockHeaderV1,
     blocks: Vec<BuiltBlock>,
 }
@@ -72,7 +73,7 @@ impl BuiltEpoch {
 
 /// Builds a chain through [`construct_block`], tracking epoch boundaries.
 struct ChainBuilder {
-    state: MemoryStateBaseLayer,
+    state: MemoryStateBaseLayer<OLStateV1>,
     runtime_params: OLRuntimeParams,
     genesis: BuiltBlock,
     epochs: Vec<BuiltEpoch>,
@@ -81,7 +82,7 @@ struct ChainBuilder {
 
 impl ChainBuilder {
     /// Executes genesis on top of `pre_genesis_state`.
-    fn new(pre_genesis_state: MemoryStateBaseLayer) -> Self {
+    fn new(pre_genesis_state: MemoryStateBaseLayer<OLStateV1>) -> Self {
         let mut state = pre_genesis_state;
         let runtime_params = OLRuntimeParams::test_default();
         let genesis_info = BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP);
@@ -169,7 +170,7 @@ fn manifest_components(manifest: AsmManifest, is_terminal: bool) -> BlockCompone
 /// Builds three epochs covering inbox delivery, a snark account update, a
 /// deposit, a manifest in a non-terminal block, and a checkpoint predicate
 /// boundary at an epoch terminal.
-fn build_chain() -> (MemoryStateBaseLayer, ChainBuilder) {
+fn build_chain() -> (MemoryStateBaseLayer<OLStateV1>, ChainBuilder) {
     let mut pre_genesis_state = make_genesis_state();
     let snark_serial = epoch_runner_seed_accounts(&mut pre_genesis_state);
     let mut chain = ChainBuilder::new(pre_genesis_state.clone());

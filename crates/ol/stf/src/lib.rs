@@ -18,7 +18,7 @@
 //! The caller chooses the spec from the epoch being executed: a block runs
 //! under its header's epoch, and an epoch's terminal block, including the
 //! drain that advances state to the next epoch, runs under the spec of the
-//! epoch it ends. Genesis always runs under [`OLSpecId::V1`].
+//! epoch it ends. Genesis always runs under [`OLSpecId::GENESIS`].
 //!
 //! # Unknown specs
 //!

@@ -102,6 +102,16 @@ where
 {
     type AccountState = S::AccountState;
 
+    // ===== Root state methods =====
+
+    fn cur_spec_version(&self) -> u32 {
+        self.base.cur_spec_version()
+    }
+
+    fn staged_spec_version(&self) -> u32 {
+        self.base.staged_spec_version()
+    }
+
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {

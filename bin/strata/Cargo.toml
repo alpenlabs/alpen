@@ -74,6 +74,7 @@ strata-ol-params.workspace = true
 strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
+strata-ol-state-container.workspace = true
 strata-ol-state-provider = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
@@ -108,7 +109,6 @@ toml.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
-tree_hash.workspace = true
 zkaleido = { workspace = true, optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
@@ -121,6 +121,7 @@ strata-storage = { workspace = true, features = ["test-utils"] }
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-state-container = { workspace = true, features = ["test-utils"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }

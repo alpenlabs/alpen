@@ -17,8 +17,8 @@ use strata_ol_mmr_index::{
     build_mmr_index_reconcile_plan, MmrIndexEntry, MmrIndexReconcilePlan, MmrIndexTruncation,
     OLMmrIndexError,
 };
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types_v1::OLStateV1;
 use strata_storage::MmrIndexManager;
 use tokio::runtime::Runtime;
 
@@ -392,15 +392,15 @@ fn get_mmr_leaf_data(
 /// It performs only reads; mutation is a separate step.
 pub(crate) fn build_mmr_index_revert_plan(
     db: &impl DatabaseBackend,
-    target_state: &OLStateV1,
+    target_state: &OLStateContainer,
 ) -> Result<MmrIndexReconcilePlan, DisplayedError> {
     with_mmr_index_manager(db, |mmr_index_manager| {
-        let target_state_accessor = MemoryStateBaseLayer::new(target_state.clone());
+        let target_state_accessor = MemoryStateBaseLayer::from_container(target_state.clone());
         let records = get_mmr_index_entries(db, mmr_index_manager)?;
         build_mmr_index_reconcile_plan(
             &target_state_accessor,
             records,
-            target_state.iter_snark_account_ids(),
+            target_state_accessor.chainstate().iter_snark_account_ids(),
         )
         .map_err(|err| {
             if matches!(&err, OLMmrIndexError::BehindTarget { .. }) {
@@ -674,7 +674,8 @@ mod tests {
     use strata_identifiers::{AccountId, Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
     use strata_merkle::MmrState;
     use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::WriteBatch;
+    use strata_ol_state_container::test_utils::genesis_container;
+    use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
     use strata_storage::{MmrIndexHandle, MmrIndexManager};
     use tokio::runtime::Runtime;
 
@@ -778,7 +779,8 @@ mod tests {
     fn test_revert_plan_skips_asm() {
         let db = get_test_sled_backend();
         let target_state = genesis_target_state();
-        let target_state_accessor = MemoryStateBaseLayer::new(target_state.clone());
+        let target_state_accessor =
+            MemoryStateBaseLayer::from_container(genesis_container(target_state.clone()));
         let account_id = AccountId::new([0x22; 32]);
         let runtime = Runtime::new().expect("create runtime");
         let manager = MmrIndexManager::new(runtime.handle().clone(), db.mmr_index_db());
@@ -827,7 +829,7 @@ mod tests {
         let db = get_test_sled_backend();
         let target_state = genesis_target_state();
 
-        let err = build_mmr_index_revert_plan(db.as_ref(), &target_state)
+        let err = build_mmr_index_revert_plan(db.as_ref(), &genesis_container(target_state))
             .expect_err("behind target should fail");
 
         let DisplayedError::UserError(message, _) = err else {
@@ -846,7 +848,7 @@ mod tests {
             .apply_update(batch)
             .expect("seed invalid namespace");
 
-        let err = build_mmr_index_revert_plan(db.as_ref(), &target_state)
+        let err = build_mmr_index_revert_plan(db.as_ref(), &genesis_container(target_state))
             .expect_err("invalid namespace should fail");
 
         assert!(err
@@ -865,7 +867,7 @@ mod tests {
             .append_leaf_blocking(Hash::from([0x11; 32]))
             .expect("append non-target L1 sentinel slot");
 
-        let err = build_mmr_index_revert_plan(db.as_ref(), &target_state)
+        let err = build_mmr_index_revert_plan(db.as_ref(), &genesis_container(target_state))
             .expect_err("same-count state mismatch should fail");
 
         let DisplayedError::InternalError(message, _) = err else {
@@ -897,7 +899,8 @@ mod tests {
             .expect("append snark leaf");
 
         let plan =
-            build_mmr_index_revert_plan(db.as_ref(), &target_state).expect("build revert plan");
+            build_mmr_index_revert_plan(db.as_ref(), &genesis_container(target_state.clone()))
+                .expect("build revert plan");
         assert_eq!(plan.truncation_count(), 2);
         assert_eq!(plan.leaves_to_remove_count(), 3);
 
@@ -939,8 +942,8 @@ mod tests {
             .append_leaf_blocking(Hash::from([0x22; 32]))
             .expect("append extra L1 leaf");
 
-        let plan =
-            build_mmr_index_revert_plan(db.as_ref(), &target_state).expect("build revert plan");
+        let plan = build_mmr_index_revert_plan(db.as_ref(), &genesis_container(target_state))
+            .expect("build revert plan");
         assert_eq!(plan.truncation_count(), 1);
         let truncation = plan.truncations().first().expect("index to truncate");
         assert_eq!(truncation.index_leaf_count(), 2);
@@ -973,7 +976,8 @@ mod tests {
             .expect("append extra L1 leaf");
 
         let plan =
-            build_mmr_index_revert_plan(db.as_ref(), &target_state).expect("build revert plan");
+            build_mmr_index_revert_plan(db.as_ref(), &genesis_container(target_state.clone()))
+                .expect("build revert plan");
         assert_eq!(plan.truncation_count(), 1);
         assert_eq!(plan.leaves_to_remove_count(), 2);
         let truncation = plan.truncations().first().expect("index to truncate");

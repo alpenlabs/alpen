@@ -1,36 +1,82 @@
-//! Base state layer for [`OLStateV1`].
+//! Base state layer over a fully materialized chainstate.
 
 use std::collections::BTreeMap;
 
-use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
+use strata_ol_params::OLParams;
+use strata_ol_state_container::{OLStateContainer, OLStateSeries};
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
 
-/// Base layer wrapping [`OLStateV1`].
+/// Base layer holding a fully materialized chainstate in memory, together with
+/// the spec versions of its [`OLRootState`].
+///
+/// The layer is generic over the chainstate layout `S` and implements the
+/// state accessor traits once per layout, so rules code can use the concrete
+/// account types of that layout. [`OLStateV1`] is the only layout today.
+///
+/// The layer never stores `chainstate_root`. [`IStateAccessor::compute_state_root`]
+/// recomputes it from the chainstate, and [`Self::into_container`] computes it
+/// once, so no mutation can leave a stale root behind. States enter and leave
+/// the layer as [`OLStateContainer`]s, which keeps the spec versions; only
+/// [`Self::new_genesis`] assigns versions.
 #[derive(Clone, Debug)]
-pub struct MemoryStateBaseLayer {
-    /// The fully-materialized state in memory.
+pub struct MemoryStateBaseLayer<S> {
+    /// Spec the chainstate was produced under.
+    ///
+    /// Always a spec whose layout is `S`.
+    cur_spec: OLSpecId,
+
+    /// Raw spec version the next epoch runs under, which may name a spec this
+    /// binary does not know.
+    staged_spec_version: u32,
+
+    /// The fully-materialized chainstate in memory.
     ///
     /// This includes the transitional embedded accounts table.
-    state: OLStateV1,
+    chainstate: S,
 
     /// Stored lookup table of account serials to account IDs so we don't have
     /// to traverse the accounts list.
     serials: BTreeMap<AccountSerial, AccountId>,
 }
 
-impl MemoryStateBaseLayer {
-    /// Constructs a new instance.  Indexes the serials in the process.
+impl MemoryStateBaseLayer<OLStateV1> {
+    /// Constructs the genesis layer for `params`: the genesis chainstate, with
+    /// both spec versions at [`OLSpecId::GENESIS`].
+    ///
+    /// This is the only constructor that assigns versions, and it only accepts
+    /// genesis parameters, so no other state can be given genesis versions by
+    /// accident. Every other state must be built with [`Self::from_container`]
+    /// so it carries its own versions.
+    pub fn new_genesis(params: &OLParams) -> StateResult<Self> {
+        let chainstate = OLStateV1::from_genesis_params(params)?;
+        Ok(Self::from_parts(
+            OLSpecId::GENESIS,
+            OLSpecId::GENESIS.into(),
+            chainstate,
+        ))
+    }
+
+    /// Constructs a layer from a container, keeping its spec versions.
     ///
     /// # Panics
     ///
     /// If the state's accounts have duplicated serials.
-    pub fn new(state: OLStateV1) -> Self {
-        let serials: BTreeMap<_, _> = state
+    pub fn from_container(container: OLStateContainer) -> Self {
+        let cur_spec = container.cur_spec();
+        let staged_spec_version = container.staged_spec_version();
+        let (_, chainstate) = container.into_parts();
+        let OLStateSeries::V1(chainstate) = chainstate;
+        Self::from_parts(cur_spec, staged_spec_version, chainstate)
+    }
+
+    /// Indexes the serials of `chainstate`.
+    fn from_parts(cur_spec: OLSpecId, staged_spec_version: u32, chainstate: OLStateV1) -> Self {
+        let serials: BTreeMap<_, _> = chainstate
             .ledger
             .accounts
             .iter()
@@ -39,73 +85,111 @@ impl MemoryStateBaseLayer {
 
         assert_eq!(
             serials.len(),
-            state.ledger.accounts.len(),
+            chainstate.ledger.accounts.len(),
             "ol/state-support: state has duplicated serials"
         );
 
-        Self { state, serials }
+        Self {
+            cur_spec,
+            staged_spec_version,
+            chainstate,
+            serials,
+        }
     }
 
-    pub fn state(&self) -> &OLStateV1 {
-        &self.state
+    /// Converts the layer into a container, computing the chainstate root.
+    pub fn into_container(self) -> OLStateContainer {
+        OLStateContainer::new(
+            self.cur_spec,
+            self.staged_spec_version,
+            OLStateSeries::V1(self.chainstate),
+        )
     }
 
-    pub fn state_mut(&mut self) -> &mut OLStateV1 {
-        &mut self.state
+    /// Builds a container from a copy of the layer's state, computing the
+    /// chainstate root.
+    pub fn to_container(&self) -> OLStateContainer {
+        OLStateContainer::new(
+            self.cur_spec,
+            self.staged_spec_version,
+            OLStateSeries::V1(self.chainstate.clone()),
+        )
     }
 
-    pub fn into_inner(self) -> OLStateV1 {
-        self.state
+    /// Returns the chainstate.
+    pub fn chainstate(&self) -> &OLStateV1 {
+        &self.chainstate
+    }
+
+    /// Computes the protocol state root for `chainstate` under this layer's
+    /// spec versions.
+    fn compute_root_for(&self, chainstate: &OLStateV1) -> Buf32 {
+        OLRootState::new(
+            self.cur_spec.into(),
+            self.staged_spec_version,
+            chainstate.compute_chainstate_root(),
+        )
+        .compute_state_root()
     }
 }
 
-impl IStateAccessor for MemoryStateBaseLayer {
+impl IStateAccessor for MemoryStateBaseLayer<OLStateV1> {
     type AccountState = OLAccountStateV1;
+
+    // ===== Root state methods =====
+
+    fn cur_spec_version(&self) -> u32 {
+        self.cur_spec.into()
+    }
+
+    fn staged_spec_version(&self) -> u32 {
+        self.staged_spec_version
+    }
 
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {
-        self.state.global.get_cur_slot()
+        self.chainstate.global.get_cur_slot()
     }
 
     fn limbo_funds(&self) -> BitcoinAmount {
-        self.state.global.limbo_funds()
+        self.chainstate.global.limbo_funds()
     }
 
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
-        self.state.epoch.cur_epoch()
+        self.chainstate.epoch.cur_epoch()
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
-        self.state.epoch.last_l1_blkid()
+        self.chainstate.epoch.last_l1_blkid()
     }
 
     fn last_l1_height(&self) -> L1Height {
-        self.state.epoch.last_l1_height()
+        self.chainstate.epoch.last_l1_height()
     }
 
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
-        self.state.epoch.asm_recorded_epoch()
+        self.chainstate.epoch.asm_recorded_epoch()
     }
 
     fn total_ledger_balance(&self) -> BitcoinAmount {
-        self.state.epoch.total_ledger_balance()
+        self.chainstate.epoch.total_ledger_balance()
     }
 
     fn l1_block_refs_mmr(&self) -> &Mmr64 {
-        self.state.epoch.l1_block_refs_mmr()
+        self.chainstate.epoch.l1_block_refs_mmr()
     }
 
     // ===== Intraepoch state methods =====
 
     fn pending_asm_logs_len(&self) -> usize {
-        self.state.intraepoch_state().pending_asm_logs().len()
+        self.chainstate.intraepoch_state().pending_asm_logs().len()
     }
 
     fn get_pending_asm_log(&self, idx: usize) -> Option<PendingAsmLog> {
-        self.state
+        self.chainstate
             .intraepoch_state()
             .pending_asm_logs()
             .get(idx)
@@ -113,17 +197,17 @@ impl IStateAccessor for MemoryStateBaseLayer {
     }
 
     fn pending_asm_logs_full(&self) -> bool {
-        self.state.intraepoch_state().is_pending_logs_full()
+        self.chainstate.intraepoch_state().is_pending_logs_full()
     }
 
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
-        Ok(self.state.ledger.get_account_state(&id).is_some())
+        Ok(self.chainstate.ledger.get_account_state(&id).is_some())
     }
 
     fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
-        Ok(self.state.ledger.get_account_state(&id))
+        Ok(self.chainstate.ledger.get_account_state(&id))
     }
 
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
@@ -131,23 +215,23 @@ impl IStateAccessor for MemoryStateBaseLayer {
     }
 
     fn next_account_serial(&self) -> AccountSerial {
-        self.state.global.get_next_avail_serial()
+        self.chainstate.global.get_next_avail_serial()
     }
 
     fn compute_state_root(&self) -> StateResult<Buf32> {
-        Ok(TreeHash::tree_hash_root::<Sha256Hasher>(&self.state).into())
+        Ok(self.compute_root_for(&self.chainstate))
     }
 }
 
-impl IStateAccessorMut for MemoryStateBaseLayer {
+impl IStateAccessorMut for MemoryStateBaseLayer<OLStateV1> {
     type AccountStateMut = OLAccountStateV1;
 
     fn set_cur_slot(&mut self, slot: u64) {
-        self.state.global.set_cur_slot(slot);
+        self.chainstate.global.set_cur_slot(slot);
     }
 
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
-        let cur = self.state.global.limbo_funds();
+        let cur = self.chainstate.global.limbo_funds();
         let amt = coin.amt();
         let new_limbo_funds = cur
             .to_sat()
@@ -160,45 +244,44 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
             coin.safely_consume_unchecked();
             return Err(StateError::LimboFundsOverflow { cur, add: amt });
         }
-        self.state.global.add_limbo_funds_coin(coin);
+        self.chainstate.global.add_limbo_funds_coin(coin);
         Ok(())
     }
 
     fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
-        self.state
-            .global
-            .take_limbo_funds_coin(amt)
-            .ok_or(StateError::InsufficientLimboFunds {
+        self.chainstate.global.take_limbo_funds_coin(amt).ok_or(
+            StateError::InsufficientLimboFunds {
                 need: amt,
-                have: self.state.global.limbo_funds(),
-            })
+                have: self.chainstate.global.limbo_funds(),
+            },
+        )
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {
-        self.state.epoch.set_cur_epoch(epoch);
+        self.chainstate.epoch.set_cur_epoch(epoch);
     }
 
     fn append_l1_block_rec(&mut self, height: L1Height, rec: L1BlockRecord) {
-        self.state.epoch.append_l1_block_rec(height, rec);
+        self.chainstate.epoch.append_l1_block_rec(height, rec);
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.state.epoch.set_asm_recorded_epoch(epoch);
+        self.chainstate.epoch.set_asm_recorded_epoch(epoch);
     }
 
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.state.epoch.set_total_ledger_balance(amt);
+        self.chainstate.epoch.set_total_ledger_balance(amt);
     }
 
     fn try_append_pending_asm_log(&mut self, entry: PendingAsmLog) -> StateResult<()> {
         let ssz_entry = entry.into();
-        self.state
+        self.chainstate
             .intraepoch_state_mut()
             .try_append_pending_log(ssz_entry)
     }
 
     fn reset_intraepoch_state(&mut self) {
-        self.state.intraepoch_state_mut().reset();
+        self.chainstate.intraepoch_state_mut().reset();
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
@@ -206,7 +289,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
         let acct = self
-            .state
+            .chainstate
             .ledger
             .get_account_state_mut(&id)
             .ok_or(StateError::MissingAccount(id))?;
@@ -218,14 +301,15 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial> {
-        let serial = self.state.global.get_next_avail_serial();
-        self.state.create_new_account(id, serial, new_acct_data)?;
+        let serial = self.chainstate.global.get_next_avail_serial();
+        self.chainstate
+            .create_new_account(id, serial, new_acct_data)?;
         self.serials.insert(serial, id);
         Ok(serial)
     }
 }
 
-impl IStateBatchApplicable for MemoryStateBaseLayer {
+impl IStateBatchApplicable for MemoryStateBaseLayer<OLStateV1> {
     fn apply_write_batch(&mut self, batch: WriteBatch) -> StateResult<()> {
         // Validate serial bookkeeping before mutating any state so that an
         // error leaves both the inner state and the serials index untouched.
@@ -242,7 +326,7 @@ impl IStateBatchApplicable for MemoryStateBaseLayer {
             new_accounts.push((serial, *id));
         }
 
-        self.state.apply_write_batch(batch)?;
+        self.chainstate.apply_write_batch(batch)?;
 
         for (serial, id) in new_accounts {
             self.serials.insert(serial, id);
@@ -252,19 +336,21 @@ impl IStateBatchApplicable for MemoryStateBaseLayer {
     }
 }
 
-impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
+impl IComputeStateRootWithWrites for MemoryStateBaseLayer<OLStateV1> {
     fn compute_state_root_with_writes<'b>(
         &self,
         writes: impl Iterator<Item = &'b WriteBatch>,
     ) -> StateResult<Buf32> {
-        let mut state = self.state.clone();
+        let mut chainstate = self.chainstate.clone();
 
         for wb in writes {
             // Maybe we can avoid this clone?
-            state.apply_write_batch(wb.clone())?;
+            chainstate.apply_write_batch(wb.clone())?;
         }
 
-        Ok(TreeHash::tree_hash_root::<Sha256Hasher>(&state).into())
+        // Write batches carry no spec versions, so the root keeps this
+        // layer's versions.
+        Ok(self.compute_root_for(&chainstate))
     }
 }
 
@@ -299,7 +385,7 @@ mod tests {
     /// freshly-allocated serial is reachable via `find_account_id_by_serial`.
     #[test]
     fn test_apply_write_batch_indexes_new_account_serials() {
-        let mut layer = MemoryStateBaseLayer::new(create_test_genesis_state());
+        let mut layer = create_test_base_layer();
 
         let account_id = test_account_id(7);
         let serial = layer.next_account_serial();

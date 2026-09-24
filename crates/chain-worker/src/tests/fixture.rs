@@ -22,6 +22,7 @@ use strata_identifiers::{
 use strata_ol_chain_types_v1::{MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_da_types_v1::OLDaPayloadV1;
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
@@ -129,7 +130,7 @@ pub struct BuiltEpoch {
     /// Terminal block commitment of the previous (genesis) epoch.
     pub prev_terminal: OLBlockCommitment,
     /// Toplevel state at the start of the epoch (post-genesis).
-    pub pre_epoch_state: OLStateV1,
+    pub pre_epoch_state: OLStateContainer,
     /// Number of ASM logs buffered immediately before the epoch terminal executes.
     pub pre_terminal_pending_asm_logs: usize,
     /// ASM manifests of the epoch keyed by their L1 height.
@@ -165,7 +166,8 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     let snark_serial = seed_accounts(&mut state);
 
     let genesis = run_genesis(&mut state);
-    let pre_epoch_state = state.clone().into_inner();
+    let pre_epoch_state = state.to_container();
+    let pre_epoch_layer = state.clone();
 
     // Build ordinary blocks first. Manifests may appear in any block; the
     // explicit terminal below is what applies their buffered L1 logs.
@@ -194,7 +196,6 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     let terminal_header = terminal_block.header().clone();
 
     // Run the epoch through the block-sync STF to capture reference values.
-    let pre_epoch_layer = MemoryStateBaseLayer::new(pre_epoch_state.clone());
     let BlockSyncResult {
         state: block_sync_state,
         state_root: block_sync_state_root,
@@ -205,10 +206,9 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     // Genesis commitment / summary for epoch 0.
     let genesis_commitment =
         OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid());
-    let genesis_epoch_state = pre_epoch_state.epoch_state();
     let genesis_l1 = L1BlockCommitment::new(
-        genesis_epoch_state.last_l1_height(),
-        *genesis_epoch_state.last_l1_blkid(),
+        pre_epoch_layer.last_l1_height(),
+        *pre_epoch_layer.last_l1_blkid(),
     );
     let prev_summary = EpochSummary::new(
         0,
@@ -228,11 +228,7 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     );
 
     // Full-sync epoch summary, sourced the way `build_epoch_summary` does.
-    let post_epoch_state = &block_sync_state;
-    let post_epoch_l1 = L1BlockCommitment::new(
-        post_epoch_state.epoch_state().last_l1_height(),
-        *post_epoch_state.epoch_state().last_l1_blkid(),
-    );
+    let post_epoch_l1 = block_sync_state.chainstate().last_l1_block();
     let block_sync_summary = EpochSummary::new(
         terminal_header.epoch(),
         terminal_commitment,
@@ -297,7 +293,7 @@ fn make_feature_manifest(
 
 /// Mutable context used while materializing an [`EpochPlan`].
 struct PlannedBlockExecutor<'a> {
-    state: &'a mut MemoryStateBaseLayer,
+    state: &'a mut MemoryStateBaseLayer<OLStateV1>,
     blocks: &'a mut Vec<OLBlockV1>,
     snark_serial: AccountSerial,
     inbox_tracker: InboxMmrTracker,
@@ -376,7 +372,7 @@ fn assemble_checkpoint_payload(
 
 /// Reference values captured from a block-sync run of an epoch.
 struct BlockSyncResult {
-    state: OLStateV1,
+    state: OLStateContainer,
     state_root: Buf32,
     indexer_writes: IndexerWrites,
     logs: Vec<OLLog>,
@@ -385,7 +381,7 @@ struct BlockSyncResult {
 /// Runs the epoch's blocks through the block-sync STF, accumulating the write
 /// batch, indexer writes, and emitted logs across all blocks into a single pass.
 fn run_block_sync(
-    pre_epoch_state: &MemoryStateBaseLayer,
+    pre_epoch_state: &MemoryStateBaseLayer<OLStateV1>,
     blocks: &[OLBlockV1],
     genesis_header: &OLBlockHeaderV1,
 ) -> BlockSyncResult {
@@ -419,7 +415,7 @@ fn run_block_sync(
         .expect("block-sync state root");
 
     BlockSyncResult {
-        state: new_state.into_inner(),
+        state: new_state.into_container(),
         state_root,
         indexer_writes,
         logs,
@@ -429,7 +425,7 @@ fn run_block_sync(
 /// Rebuilds the epoch DA blob and per-update OL logs via the checkpoint-builder
 /// preseal path.
 fn rebuild_da_and_logs(
-    pre_epoch_state: &MemoryStateBaseLayer,
+    pre_epoch_state: &MemoryStateBaseLayer<OLStateV1>,
     blocks: &[OLBlockV1],
     genesis_header: &OLBlockHeaderV1,
 ) -> (Vec<u8>, Vec<CheckpointOLLog>) {
@@ -469,7 +465,7 @@ pub enum UpdateEffect {
 /// The epoch-scoped `tracker` mirrors every message the live snark inbox has
 /// accepted, so proofs remain valid across multiple planned update blocks.
 fn run_snark_update_blocks(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     blocks: &mut Vec<OLBlockV1>,
     genesis_header: &OLBlockHeaderV1,
     effects: &[UpdateEffect],

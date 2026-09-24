@@ -27,6 +27,7 @@ use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::*;
+use strata_ol_state_container::{OLStateContainer, test_utils::genesis_container};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1, WriteBatch};
@@ -81,7 +82,7 @@ struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlockV1>,
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
     history_base: Option<EpochCommitment>,
-    states: HashMap<OLBlockCommitment, Arc<OLStateV1>>,
+    states: HashMap<OLBlockCommitment, Arc<OLStateContainer>>,
     write_batches: HashMap<OLBlockCommitment, WriteBatch>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
@@ -127,7 +128,7 @@ impl MockProvider {
         self
     }
 
-    fn with_block_and_state(mut self, block: &OLBlockV1, state: OLStateV1) -> Self {
+    fn with_block_and_state(mut self, block: &OLBlockV1, state: OLStateContainer) -> Self {
         let blkid = block.header().compute_blkid();
         let slot = block.header().slot();
         let commitment = OLBlockCommitment::new(slot, blkid);
@@ -182,7 +183,7 @@ impl MockProvider {
         self
     }
 
-    fn with_state_at(mut self, commitment: OLBlockCommitment, state: OLStateV1) -> Self {
+    fn with_state_at(mut self, commitment: OLBlockCommitment, state: OLStateContainer) -> Self {
         self.states.insert(commitment, Arc::new(state));
         self
     }
@@ -389,7 +390,7 @@ impl OLRpcProvider for MockProvider {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLStateV1>>> {
+    ) -> DbResult<Option<Arc<OLStateContainer>>> {
         Ok(self.states.get(&commitment).cloned())
     }
 
@@ -621,11 +622,11 @@ fn make_block_with_gam_tx(
     OLBlockV1::new(signed, body)
 }
 
-fn genesis_ol_state() -> OLStateV1 {
+fn genesis_ol_state() -> OLStateContainer {
     let params = OLParams::builder(OLRuntimeParams::test_default())
         .genesis_l1_block(test_l1_commitment())
         .build();
-    OLStateV1::from_genesis_params(&params).expect("genesis state")
+    genesis_container(OLStateV1::from_genesis_params(&params).expect("genesis state"))
 }
 
 fn ol_state_with_snark_account(
@@ -633,7 +634,7 @@ fn ol_state_with_snark_account(
     slot: Slot,
     seq_no: u64,
     next_inbox_msg_idx: u64,
-) -> OLStateV1 {
+) -> OLStateContainer {
     ol_state_with_snark_account_and_inbox_entries(account_id, slot, seq_no, next_inbox_msg_idx, &[])
 }
 
@@ -643,9 +644,9 @@ fn ol_state_with_snark_account_and_inbox_entries(
     seq_no: u64,
     next_inbox_msg_idx: u64,
     inbox_messages: &[MessageEntry],
-) -> OLStateV1 {
+) -> OLStateContainer {
     let base = genesis_ol_state();
-    let mut state = MemoryStateBaseLayer::new(base);
+    let mut state = MemoryStateBaseLayer::from_container(base);
     state.set_cur_slot(slot);
     let new_acct = NewAccountData::new(
         BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
@@ -664,19 +665,19 @@ fn ol_state_with_snark_account_and_inbox_entries(
             }
         })
         .unwrap();
-    state.into_inner()
+    state.into_container()
 }
 
-fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLStateV1 {
+fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLStateContainer {
     let base = genesis_ol_state();
-    let mut state = MemoryStateBaseLayer::new(base);
+    let mut state = MemoryStateBaseLayer::from_container(base);
     state.set_cur_slot(slot);
     let new_acct = NewAccountData::new(
         BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Empty,
     );
     state.create_new_account(account_id, new_acct).unwrap();
-    state.into_inner()
+    state.into_container()
 }
 
 fn empty_account_state(serial: u32, balance_sats: u64) -> OLAccountStateV1 {
@@ -2022,13 +2023,13 @@ async fn blocks_summaries_snark_vs_non_snark() {
     let blkid = block.header().compute_blkid();
 
     let snark_state = ol_state_with_snark_account(snark_id, 0, 42, DEFAULT_NEXT_INBOX_MSG_IDX);
-    let mut state = MemoryStateBaseLayer::new(snark_state);
+    let mut state = MemoryStateBaseLayer::from_container(snark_state);
     let empty_acct = NewAccountData::new(
         BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
         NewAccountTypeState::Empty,
     );
     state.create_new_account(empty_id, empty_acct).unwrap();
-    let state = state.into_inner();
+    let state = state.into_container();
 
     let tip = OLBlockCommitment::new(0, blkid);
     let provider = MockProvider::new()

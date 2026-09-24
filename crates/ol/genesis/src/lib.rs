@@ -7,9 +7,9 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, OLBlockCommitment};
 use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
 use strata_ol_params::OLParams;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::StateError;
-use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, ExecError, OLSpecId, execute_and_complete_block,
 };
@@ -19,8 +19,9 @@ use tracing::{info, instrument};
 /// In-memory artifacts created during OL genesis construction.
 #[derive(Debug)]
 pub struct GenesisArtifacts {
-    /// The initial OL state.
-    pub ol_state: OLStateV1,
+    /// The OL state after executing the genesis block, with both spec
+    /// versions at [`OLSpecId::GENESIS`](strata_ol_state_types::OLSpecId::GENESIS).
+    pub ol_state: OLStateContainer,
 
     /// The genesis OL block.
     pub ol_block: OLBlockV1,
@@ -58,9 +59,10 @@ pub type Result<T> = StdResult<T, GenesisError>;
 pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
-    // Create initial OL state (uses genesis params).
-    let ol_state_raw = OLStateV1::from_genesis_params(params)?;
-    let mut ol_state = MemoryStateBaseLayer::new(ol_state_raw);
+    // Create initial OL state (uses genesis params). This is the only place a
+    // state receives the genesis spec versions; every later state inherits
+    // them from its parent.
+    let mut ol_state = MemoryStateBaseLayer::new_genesis(params)?;
 
     // Create genesis block info.
     let genesis_ts = params.genesis_params().header().timestamp;
@@ -73,18 +75,23 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     // terminality is set explicitly via the header flag).
     let genesis_components = BlockComponents::new_manifests(vec![]).as_terminal();
 
-    // Execute genesis block through the OL STF. Genesis always runs under the
-    // genesis rules.
+    // Execute genesis block through the OL STF, under the same spec the
+    // genesis state versions name.
     let block_context = BlockContext::new(&genesis_info, None);
     let runtime_params = params.runtime_params();
     let genesis_block = execute_and_complete_block(
-        OLSpecId::V1,
+        OLSpecId::GENESIS,
         &mut ol_state,
         block_context,
         genesis_components,
         &runtime_params,
     )?;
-    let ol_state = ol_state.into_inner();
+    let ol_state = ol_state.into_container();
+    debug_assert_eq!(
+        ol_state.compute_state_root(),
+        *genesis_block.header().state_root(),
+        "ol/genesis: container root must match the genesis header"
+    );
 
     // Create signed header (genesis uses zero signature).
     let signed_header = SignedOLBlockHeaderV1::new(genesis_block.header().clone(), Buf64::zero());

@@ -12,6 +12,7 @@ use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_params::OLParams;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{
@@ -183,12 +184,6 @@ pub(crate) fn with_max_slot(tx: OLTransactionV1, max_slot: Option<Slot>) -> OLTr
     with_constraints(tx, constraints)
 }
 
-/// Creates a genesis OLStateV1 using minimal empty parameters.
-pub(crate) fn create_test_genesis_state() -> OLStateV1 {
-    let params = OLParams::test_default();
-    OLStateV1::from_genesis_params(&params).expect("valid params")
-}
-
 /// Create a test OLStateV1 with an empty account for the given account ID.
 ///
 /// Returns a state with an empty account for the given account ID at the specified slot.
@@ -196,9 +191,9 @@ pub(crate) fn create_test_genesis_state() -> OLStateV1 {
 pub(crate) fn create_test_ol_state_with_account(
     account_id: AccountId,
     slot: u64,
-) -> MemoryStateBaseLayer {
-    let state = create_test_genesis_state();
-    let mut layer = MemoryStateBaseLayer::new(state);
+) -> MemoryStateBaseLayer<OLStateV1> {
+    let mut layer =
+        MemoryStateBaseLayer::new_genesis(&OLParams::test_default()).expect("valid params");
     layer.set_cur_slot(slot);
     // Create an empty account so it exists for validation
     let new_acct = NewAccountData::new(
@@ -222,9 +217,9 @@ pub(crate) fn create_test_ol_state_with_snark_account(
     account_id: AccountId,
     seq_no: u64,
     slot: u64,
-) -> MemoryStateBaseLayer {
-    let state = create_test_genesis_state();
-    let mut layer = MemoryStateBaseLayer::new(state);
+) -> MemoryStateBaseLayer<OLStateV1> {
+    let mut layer =
+        MemoryStateBaseLayer::new_genesis(&OLParams::test_default()).expect("valid params");
     layer.set_cur_slot(slot);
     // Create a fresh snark account, then update its sequence number
     let new_acct = NewAccountData::new(
@@ -392,9 +387,9 @@ pub(crate) fn create_test_state_provider(tip: OLBlockCommitment) -> InMemoryStat
 /// Create a test OL state at a given slot with Snark accounts.
 ///
 /// Creates a genesis state with Snark accounts for test account IDs (0-255).
-pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLStateV1 {
-    let state = create_test_genesis_state();
-    let mut layer = MemoryStateBaseLayer::new(state);
+pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLStateContainer {
+    let mut layer =
+        MemoryStateBaseLayer::new_genesis(&OLParams::test_default()).expect("valid params");
     layer.set_cur_slot(slot);
 
     // Create Snark accounts for common test account IDs (0-255)
@@ -415,7 +410,7 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLStateV1 {
         }
     }
 
-    layer.into_inner()
+    layer.into_container()
 }
 
 /// Create a test generic account message transaction for a specific account.
@@ -441,12 +436,12 @@ pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLTransactio
 /// Stores states in a `HashMap` for quick lookup. Thread-safe via `RwLock`.
 #[derive(Debug)]
 pub(crate) struct InMemoryStateProvider {
-    states: RwLock<HashMap<OLBlockCommitment, OLStateV1>>,
+    states: RwLock<HashMap<OLBlockCommitment, OLStateContainer>>,
 }
 
 impl InMemoryStateProvider {
     /// Create a provider with an initial state at the given tip.
-    pub(crate) fn from_initial_state(tip: OLBlockCommitment, state: OLStateV1) -> Self {
+    pub(crate) fn from_initial_state(tip: OLBlockCommitment, state: OLStateContainer) -> Self {
         let mut states = HashMap::new();
         states.insert(tip, state);
         Self {
@@ -455,7 +450,7 @@ impl InMemoryStateProvider {
     }
 
     /// Insert a state at the given tip (useful for test setup).
-    pub(crate) fn insert_state(&self, tip: OLBlockCommitment, state: OLStateV1) {
+    pub(crate) fn insert_state(&self, tip: OLBlockCommitment, state: OLStateContainer) {
         let mut states = self.states.write().unwrap();
         states.insert(tip, state);
     }
@@ -464,7 +459,7 @@ impl InMemoryStateProvider {
     pub(crate) async fn get_state_for_tip_async_inner(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<OLStateV1>, InMemoryStateProviderError> {
+    ) -> Result<Option<OLStateContainer>, InMemoryStateProviderError> {
         let states = self
             .states
             .read()
@@ -476,7 +471,7 @@ impl InMemoryStateProvider {
     pub(crate) fn get_state_for_tip_blocking_inner(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<OLStateV1>, InMemoryStateProviderError> {
+    ) -> Result<Option<OLStateContainer>, InMemoryStateProviderError> {
         let states = self
             .states
             .read()
@@ -494,7 +489,7 @@ pub(crate) enum InMemoryStateProviderError {
 
 #[expect(clippy::manual_async_fn, reason = "forced by trait")]
 impl StateProvider for InMemoryStateProvider {
-    type State = MemoryStateBaseLayer;
+    type State = MemoryStateBaseLayer<OLStateV1>;
     type Error = InMemoryStateProviderError;
 
     fn get_state_for_tip_async(
@@ -505,7 +500,7 @@ impl StateProvider for InMemoryStateProvider {
             Ok(self
                 .get_state_for_tip_async_inner(tip)
                 .await?
-                .map(MemoryStateBaseLayer::new))
+                .map(MemoryStateBaseLayer::from_container))
         }
     }
 
@@ -515,6 +510,6 @@ impl StateProvider for InMemoryStateProvider {
     ) -> Result<Option<Self::State>, Self::Error> {
         Ok(self
             .get_state_for_tip_blocking_inner(tip)?
-            .map(MemoryStateBaseLayer::new))
+            .map(MemoryStateBaseLayer::from_container))
     }
 }

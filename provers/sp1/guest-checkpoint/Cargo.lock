@@ -1341,6 +1341,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_bytes"
+version = "0.11.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
+dependencies = [
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2092,6 +2102,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-state-container"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_bytes",
+ "ssz",
+ "strata-identifiers",
+ "strata-ol-state-types",
+ "strata-ol-state-types-v1",
+ "thiserror",
+]
+
+[[package]]
 name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
@@ -2101,6 +2124,8 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-da-common",
  "strata-ol-da-types-v1",
+ "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-predicate",
@@ -2242,8 +2267,8 @@ dependencies = [
  "strata-crypto",
  "strata-ol-chain-types-v1",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
- "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-stf",
  "strata-predicate",

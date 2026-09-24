@@ -36,9 +36,9 @@ use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog as ChainOLLog,
 };
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
-use strata_ol_state_types_v1::OLStateV1;
 
 use super::fixture::{BlockPlan, BuiltEpoch, EpochPlan, UpdateEffect, build_epoch};
 use crate::{
@@ -58,7 +58,7 @@ struct MockChainWorkerContext {
     /// Epoch summaries keyed by epoch index.
     epoch_summaries: HashMap<Epoch, Vec<EpochSummary>>,
     /// OL states keyed by block commitment.
-    ol_states: HashMap<OLBlockCommitment, OLStateV1>,
+    ol_states: HashMap<OLBlockCommitment, OLStateContainer>,
     /// ASM manifests keyed by L1 height.
     manifests: HashMap<u32, AsmManifest>,
 }
@@ -95,7 +95,10 @@ impl ChainWorkerContext for MockChainWorkerContext {
             .cloned())
     }
 
-    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>> {
+    fn fetch_ol_state(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> WorkerResult<Option<OLStateContainer>> {
         Ok(self.ol_states.get(&commitment).cloned())
     }
 
@@ -149,7 +152,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
     fn store_toplevel_state(
         &self,
         _commitment: OLBlockCommitment,
-        _state: OLStateV1,
+        _state: OLStateContainer,
     ) -> WorkerResult<()> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
@@ -730,11 +733,27 @@ fn assert_state_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts
         "reconstructed state root must equal block-sync root"
     );
     assert_eq!(
-        MemoryStateBaseLayer::new(artifacts.new_state.clone())
+        artifacts.new_state.compute_state_root(),
+        built.block_sync_state_root,
+        "reconstructed state must hash to the block-sync root"
+    );
+    assert_eq!(
+        MemoryStateBaseLayer::from_container(artifacts.new_state.clone())
             .compute_state_root()
             .expect("reconstructed root"),
         built.block_sync_state_root,
-        "reconstructed state must hash to the block-sync root"
+        "reconstructed state accessor must hash to the block-sync root"
+    );
+    assert_eq!(
+        (
+            artifacts.new_state.cur_spec_version(),
+            artifacts.new_state.staged_spec_version()
+        ),
+        (
+            built.pre_epoch_state.cur_spec_version(),
+            built.pre_epoch_state.staged_spec_version()
+        ),
+        "reconstruction must carry the spec versions through"
     );
     assert_eq!(
         &artifacts.summary, &built.block_sync_summary,
@@ -1011,7 +1030,7 @@ mod db_idempotency {
                 .get_toplevel_ol_state_blocking(terminal)
                 .expect("get_toplevel_ol_state")
                 .map(|arc| {
-                    MemoryStateBaseLayer::new((*arc).clone())
+                    MemoryStateBaseLayer::from_container((*arc).clone())
                         .compute_state_root()
                         .expect("compute_state_root")
                 });

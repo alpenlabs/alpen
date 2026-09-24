@@ -13,6 +13,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-state-container = { workspace = true, features = ["test-utils"] }
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types-v1.workspace = true
 strata-predicate.workspace = true

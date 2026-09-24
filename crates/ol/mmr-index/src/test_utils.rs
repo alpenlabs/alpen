@@ -3,6 +3,7 @@ use strata_db_types::MmrId;
 use strata_identifiers::{AccountId, Buf32, Hash, L1BlockCommitment, L1BlockId};
 use strata_merkle::{Mmr, MmrState};
 use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams, OLRuntimeParams};
+use strata_ol_state_container::test_utils::genesis_container;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{IAccountStateMut, ISnarkAccountStateMut};
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
@@ -106,6 +107,8 @@ pub(crate) fn build_target_index_entry(target_state: &OLStateV1, mmr_id: MmrId) 
     MmrIndexEntry::new(mmr_id, target)
 }
 
-pub(crate) fn build_target_state_accessor(target_state: &OLStateV1) -> MemoryStateBaseLayer {
-    MemoryStateBaseLayer::new(target_state.clone())
+pub(crate) fn build_target_state_accessor(
+    target_state: &OLStateV1,
+) -> MemoryStateBaseLayer<OLStateV1> {
+    MemoryStateBaseLayer::from_container(genesis_container(target_state.clone()))
 }

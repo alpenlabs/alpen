@@ -234,9 +234,9 @@ mod tests {
         SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData,
     };
     use strata_ol_params::OLRuntimeParams;
+    use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IAccountState, IStateAccessor};
-    use strata_ol_state_types_v1::OLStateV1;
     use strata_ol_stf_v1::BlockComponents;
     use strata_ol_stf_v1::test_utils::{
         EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, FixtureAsmManifestBuilder,
@@ -353,7 +353,7 @@ mod tests {
         fn get_ol_state(
             &self,
             commitment: &OLBlockCommitment,
-        ) -> anyhow::Result<Option<OLStateV1>> {
+        ) -> anyhow::Result<Option<OLStateContainer>> {
             self.inner.get_ol_state(commitment)
         }
 
@@ -676,11 +676,11 @@ mod tests {
             let block = fixture.last_completed_block();
             let header = block.header();
             let terminal = OLBlockCommitment::new(header.slot(), header.compute_blkid());
-            let state = fixture.state().clone().into_inner();
             let last_l1 = L1BlockCommitment::new(
-                state.epoch_state().last_l1_height(),
-                *state.epoch_state().last_l1_blkid(),
+                fixture.state().last_l1_height(),
+                *fixture.state().last_l1_blkid(),
             );
+            let state = fixture.state().to_container();
             storage
                 .ol_block()
                 .put_block_data_blocking(to_ol_block(block))
@@ -780,7 +780,9 @@ mod tests {
         let mut sim_state = make_genesis_state();
         seed_accounts(&mut sim_state);
         let genesis = run_genesis(&mut sim_state);
-        let pre_epoch_state = sim_state.clone().into_inner();
+        let pre_epoch_state = sim_state.to_container();
+        let genesis_l1 =
+            L1BlockCommitment::new(sim_state.last_l1_height(), *sim_state.last_l1_blkid());
 
         let mut blocks = Vec::new();
         let inbox_msg = snark_inbox_msg();
@@ -821,7 +823,9 @@ mod tests {
             make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
         );
 
-        let post_epoch_state = sim_state.into_inner();
+        let post_epoch_l1 =
+            L1BlockCommitment::new(sim_state.last_l1_height(), *sim_state.last_l1_blkid());
+        let post_epoch_state = sim_state.into_container();
         let terminal_header = terminal.header().clone();
 
         // The real replay reads the genesis terminal block and its state plus
@@ -850,11 +854,6 @@ mod tests {
             .put_toplevel_ol_state_blocking(genesis_commitment, pre_epoch_state.clone())
             .expect("insert pre-epoch state");
 
-        let genesis_epoch_state = pre_epoch_state.epoch_state();
-        let genesis_l1 = L1BlockCommitment::new(
-            genesis_epoch_state.last_l1_height(),
-            *genesis_epoch_state.last_l1_blkid(),
-        );
         let genesis_summary = EpochSummary::new(
             0,
             genesis_commitment,
@@ -868,10 +867,6 @@ mod tests {
 
         let terminal_commitment =
             OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
-        let post_epoch_l1 = L1BlockCommitment::new(
-            post_epoch_state.epoch_state().last_l1_height(),
-            *post_epoch_state.epoch_state().last_l1_blkid(),
-        );
         let summary = EpochSummary::new(
             terminal_header.epoch(),
             terminal_commitment,
@@ -912,7 +907,7 @@ mod tests {
 
         // The withdrawal must have debited the account, not routed to limbo.
         assert_eq!(
-            MemoryStateBaseLayer::new(post_epoch_state.clone())
+            MemoryStateBaseLayer::from_container(post_epoch_state.clone())
                 .get_account_state(snark_id)
                 .unwrap()
                 .unwrap()
