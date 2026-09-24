@@ -29,8 +29,10 @@ use strata_asm_checkpoint_types::{
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
+use strata_db_types::DbResult;
 use strata_identifiers::{
-    BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId,
+    BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Epoch, EpochCommitment, L1Height, OLBlockCommitment,
+    OLBlockId,
 };
 use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog as ChainOLLog,
@@ -76,6 +78,16 @@ impl MockChainWorkerContext {
 }
 
 impl ChainWorkerContext for MockChainWorkerContext {
+    fn l1_reorg_safe_depth(&self) -> u32 {
+        1
+    }
+    fn canonical_l1_tip_height(&self) -> DbResult<Option<L1Height>> {
+        Ok(self.manifests.keys().max().copied())
+    }
+    fn canonical_manifest(&self, height: L1Height) -> DbResult<Option<AsmManifest>> {
+        Ok(self.manifests.get(&height).cloned())
+    }
+
     fn runtime_params(&self) -> OLRuntimeParams {
         self.runtime_params
     }

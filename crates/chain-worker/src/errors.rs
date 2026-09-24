@@ -3,7 +3,7 @@
 use strata_acct_types::AccountSerial;
 use strata_codec::CodecError;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{AccountId, Buf32, Epoch, L1Height, OLBlockCommitment, OLBlockId};
 use strata_ol_state_types::StateError;
 use strata_primitives::epoch::EpochCommitment;
 use strata_snark_acct_types::Seqno;
@@ -12,9 +12,28 @@ use thiserror::Error;
 /// Return type for worker messages.
 pub type WorkerResult<T> = Result<T, WorkerError>;
 
+/// Explains why canonical ASM provenance cannot yet be established.
+#[derive(Clone, Copy, Debug)]
+pub enum ManifestPendingReason {
+    MissingTip,
+    NotBuried,
+    MissingManifest,
+}
+
 /// Errors that can occur during chain worker operations.
 #[derive(Debug, Error)]
 pub enum WorkerError {
+    /// Canonical L1/ASM data does not yet validate a carried manifest.
+    #[error("ASM manifest at height {height} is pending: {reason:?}")]
+    ManifestPending {
+        height: L1Height,
+        reason: ManifestPendingReason,
+    },
+
+    /// A canonical validation read failed; this is not an invalid block verdict.
+    #[error("failed to read canonical ASM provenance: {0}")]
+    ManifestStorage(#[source] DbError),
+
     /// Block not found in database.
     #[error("missing OL block {0}")]
     MissingOLBlock(OLBlockId),

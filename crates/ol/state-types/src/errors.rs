@@ -157,6 +157,10 @@ pub enum ExecError {
     #[error("ASM manifest height overflow")]
     AsmManifestHeightOverflow,
 
+    /// A carried manifest differs from the buried canonical ASM output.
+    #[error("ASM manifest content mismatch at canonical height {height}")]
+    AsmManifestContentMismatch { height: L1Height },
+
     #[error("epoch overflow")]
     EpochOverflow,
 

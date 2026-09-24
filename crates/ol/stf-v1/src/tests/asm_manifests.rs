@@ -72,6 +72,18 @@ fn test_manifest_processing_rejects_height_gap() {
 }
 
 #[test]
+fn test_manifest_processing_checks_all_heights_before_mutating_state() {
+    let mut state = make_genesis_state();
+    let before = state.compute_state_root().unwrap();
+    let manifests = [make_empty_manifest(1, 1), make_empty_manifest(3, 1)];
+
+    let error = process_block_manifests(&mut state, &manifests).unwrap_err();
+
+    assert_manifest_height_mismatch(error, 2, 3, 1);
+    assert_eq!(state.compute_state_root().unwrap(), before);
+}
+
+#[test]
 fn test_manifest_processing_rejects_current_height_manifest() {
     let mut fixture = OLStfFixture::builder()
         .with_genesis_manifest(make_empty_manifest(1, 1))
