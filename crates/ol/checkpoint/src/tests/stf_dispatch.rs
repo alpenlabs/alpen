@@ -1,10 +1,12 @@
 //! Differential test across the STF drivers that share blocks: block
-//! construction, block verification, and checkpoint DA replay.
+//! construction, block verification, checkpoint DA replay, and the checkpoint
+//! proof program.
 //!
 //! Blocks built through [`construct_block`] must verify through
 //! [`verify_block`] with the same logs and state roots, and each epoch's DA,
 //! computed by [`compute_epoch_da`], must reproduce the epoch's terminal state
-//! root through both [`apply_da_epoch`] and [`verify_epoch_with_diff`].
+//! root through both [`apply_da_epoch`] and [`verify_epoch_with_diff`]. The
+//! checkpoint program must prove each epoch from its start state container.
 
 use std::iter;
 
@@ -21,6 +23,7 @@ use strata_ol_stf::{
 };
 use strata_ol_stf_v1::test_utils::*;
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
+use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 
 use crate::compute_epoch_da;
 
@@ -331,5 +334,40 @@ fn test_epoch_da_replay_reproduces_terminal_roots() {
             err,
             EpochDaReplayError::Exec(ExecError::ChainIntegrity)
         ));
+    }
+}
+
+#[test]
+fn test_checkpoint_program_proves_each_epoch() {
+    let (_, chain) = build_chain();
+
+    for epoch in &chain.epochs {
+        let terminal = epoch.terminal();
+        let blocks = epoch.ol_blocks();
+        let (da_state_diff_bytes, _) = compute_epoch_da(
+            SPEC,
+            epoch.pre_epoch_state.clone(),
+            &blocks,
+            &epoch.previous_terminal,
+            &chain.runtime_params,
+        )
+        .expect("epoch DA computes")
+        .into_parts();
+
+        let input = CheckpointProverInput {
+            start_state: epoch.pre_epoch_state.to_container(),
+            blocks,
+            parent: epoch.previous_terminal.clone(),
+            da_state_diff_bytes,
+        };
+        let claim = CheckpointProgram::execute(&input, SPEC, chain.runtime_params)
+            .expect("checkpoint program proves the epoch");
+        assert_eq!(claim.epoch(), terminal.epoch());
+        assert_eq!(
+            *claim.l2_range().end().blkid(),
+            terminal.compute_blkid(),
+            "epoch {} claim must end at its terminal",
+            terminal.epoch()
+        );
     }
 }

@@ -105,6 +105,7 @@ mod tests {
     };
     use strata_ol_da_types_v1::{GlobalStateDiffV1, LedgerDiffV1, OLDaPayloadV1, OLStateDiffV1};
     use strata_ol_params::OLRuntimeParams;
+    use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::IStateAccessor;
     use strata_ol_stf::OLSpecId;
@@ -227,6 +228,27 @@ mod tests {
         let mut header = input.blocks[0].header().clone();
         header.body_root = body.compute_hash_commitment();
         input.blocks[0] = OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body);
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());
+    }
+
+    #[test]
+    #[should_panic(expected = "does not match initial state root")]
+    fn test_statements_reject_parent_committing_to_legacy_root() {
+        let mut input = prepare_input();
+        // Before the root state existed, headers committed to the bare
+        // chainstate root.
+        input.parent.state_root = input.start_state.chainstate().compute_chainstate_root();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());
+    }
+
+    #[test]
+    #[should_panic(expected = "initial state stages a spec this program does not prove")]
+    fn test_statements_reject_start_state_staging_another_spec() {
+        let mut input = prepare_input();
+        let (_, chainstate) = input.start_state.clone().into_parts();
+        input.start_state = OLStateContainer::new(OLSpecId::V1, 2, chainstate);
+        // Authenticate the altered state so that the spec check is what fails.
+        input.parent.state_root = input.start_state.compute_state_root();
         let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());
     }
 

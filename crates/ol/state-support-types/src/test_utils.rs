@@ -4,6 +4,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload
 use strata_asm_manifest_types::AsmLogEntry;
 use strata_identifiers::{AccountSerial, Epoch, L1Height, Slot};
 use strata_ol_params::{GenesisHeaderParams, OLParams, OLRuntimeParams};
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::{
     ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, PendingAsmLog,
 };
@@ -91,4 +92,23 @@ pub(crate) fn setup_layer_with_snark_account(
 /// Creates a [`MemoryStateBaseLayer`] from genesis.
 pub(crate) fn create_test_base_layer() -> MemoryStateBaseLayer<OLStateV1> {
     MemoryStateBaseLayer::new_genesis(&OLParams::test_default()).expect("valid params")
+}
+
+/// Returns `layer` with `staged_spec_version` staged, keeping its chainstate and
+/// current spec.
+///
+/// A staged version that differs from the current one makes a layer that drops
+/// or defaults the versions report and commit to other values.
+pub(crate) fn with_staged_spec(
+    layer: MemoryStateBaseLayer<OLStateV1>,
+    staged_spec_version: u32,
+) -> MemoryStateBaseLayer<OLStateV1> {
+    let container = layer.into_container();
+    let cur_spec = container.cur_spec();
+    let (_, chainstate) = container.into_parts();
+    MemoryStateBaseLayer::from_container(OLStateContainer::new(
+        cur_spec,
+        staged_spec_version,
+        chainstate,
+    ))
 }

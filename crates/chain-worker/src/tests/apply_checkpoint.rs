@@ -40,7 +40,9 @@ use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
 
-use super::fixture::{BlockPlan, BuiltEpoch, EpochPlan, UpdateEffect, build_epoch};
+use super::fixture::{
+    BlockPlan, BuiltEpoch, EpochPlan, MARKER_STAGED_SPEC_VERSION, UpdateEffect, build_epoch,
+};
 use crate::{
     WorkerError, WorkerResult,
     output::OLBlockExecutionOutput,
@@ -754,6 +756,11 @@ fn assert_state_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts
             built.pre_epoch_state.staged_spec_version()
         ),
         "reconstruction must carry the spec versions through"
+    );
+    assert_eq!(
+        artifacts.new_state.staged_spec_version(),
+        MARKER_STAGED_SPEC_VERSION,
+        "the fixture stages a non-genesis version so defaulted versions are caught"
     );
     assert_eq!(
         &artifacts.summary, &built.block_sync_summary,
