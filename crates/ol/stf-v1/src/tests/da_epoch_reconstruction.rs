@@ -14,6 +14,7 @@ use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
+use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
@@ -258,7 +259,7 @@ fn test_apply_da_epoch_cases_produce_distinct_roots() {
 /// Runs the non-terminal blocks of a snark-update epoch.
 /// Returns the header of the last block, for the terminal to build on.
 fn run_snark_update_blocks(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     blocks: &mut Vec<OLBlockV1>,
     genesis_header: &OLBlockHeaderV1,
 ) -> OLBlockHeaderV1 {
@@ -284,7 +285,7 @@ fn run_snark_update_blocks(
 /// Like [`run_snark_update_blocks`], but the update's output message is a
 /// bridge withdrawal instead of a transfer.
 fn run_withdrawal_update_blocks(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     blocks: &mut Vec<OLBlockV1>,
     genesis_header: &OLBlockHeaderV1,
 ) -> OLBlockHeaderV1 {
@@ -345,7 +346,7 @@ fn reconstruct_post_epoch_state(
 }
 
 fn derive_checkpoint_da_payload(
-    pre_epoch_state: &MemoryStateBaseLayer,
+    pre_epoch_state: &MemoryStateBaseLayer<OLStateV1>,
     previous_terminal: &CompletedBlock,
     blocks: &[OLBlockV1],
 ) -> OLDaPayloadV1 {
@@ -366,8 +367,8 @@ fn derive_checkpoint_da_payload(
 
 /// Asserts the DA-reconstructed root equals the directly-executed root.
 fn assert_reconstruction_matches(
-    state: &MemoryStateBaseLayer,
-    pre_epoch_state: &MemoryStateBaseLayer,
+    state: &MemoryStateBaseLayer<OLStateV1>,
+    pre_epoch_state: &MemoryStateBaseLayer<OLStateV1>,
     previous_terminal: &CompletedBlock,
     terminal: &CompletedBlock,
     blocks: &[OLBlockV1],

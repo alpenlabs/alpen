@@ -16,7 +16,8 @@ use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_mempool::OLMempoolResult;
-use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_types_v1::WriteBatch;
 use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_primitives::epoch::EpochCommitment;
 use strata_primitives::{L1BlockId, OLBlockCommitment};
@@ -41,7 +42,7 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLStateV1>>>;
+    ) -> DbResult<Option<Arc<OLStateContainer>>>;
 
     /// Get the OL state writes produced by a block.
     async fn get_ol_write_batch(

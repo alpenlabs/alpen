@@ -461,6 +461,7 @@ mod tests {
         OLDaPayloadV1, OLDaSchemeV1, OLStateDiffV1,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types_v1::OLStateV1;
 
     use super::*;
     use crate::assembly::BlockExecOutputs;
@@ -478,7 +479,7 @@ mod tests {
         BlockExecOutputs::new(Buf32::zero(), logs).compute_block_logs_root()
     }
 
-    fn setup_epoch1_diff_state() -> (MemoryStateBaseLayer, EpochInfo) {
+    fn setup_epoch1_diff_state() -> (MemoryStateBaseLayer<OLStateV1>, EpochInfo) {
         let fixture = OLStfFixture::builder().execute_genesis();
         let state = fixture.state().clone();
         let terminal_info = BlockInfo::new(1_001_000, 1, state.cur_epoch());
@@ -514,7 +515,7 @@ mod tests {
     }
 
     fn compute_post_epoch_root_after_diff(
-        state: &MemoryStateBaseLayer,
+        state: &MemoryStateBaseLayer<OLStateV1>,
         epoch_info: &EpochInfo,
         state_diff: OLStateDiffV1,
         manifests: &OLAsmManifestContainerV1,

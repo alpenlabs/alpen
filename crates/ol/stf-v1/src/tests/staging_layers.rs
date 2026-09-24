@@ -13,7 +13,7 @@ use strata_ol_state_types::{
     IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut, NewAccountData,
     NewAccountTypeState,
 };
-use strata_ol_state_types_v1::IStateBatchApplicable;
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1};
 
 use crate::context::{BasicExecContext, BlockInfo, TxExecContext};
 use crate::errors::ExecError;
@@ -119,7 +119,7 @@ fn test_process_single_tx_stages_sau_writes() {
 }
 
 fn assert_transfer_staged(
-    tracking: &WriteTrackingState<'_, MemoryStateBaseLayer>,
+    tracking: &WriteTrackingState<'_, MemoryStateBaseLayer<OLStateV1>>,
     snark_acct_id: AccountId,
     recipient_id: AccountId,
     expected_sender_balance: u64,

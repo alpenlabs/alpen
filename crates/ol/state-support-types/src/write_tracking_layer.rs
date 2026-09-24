@@ -80,6 +80,16 @@ where
 {
     type AccountState = S::AccountState;
 
+    // ===== Root state methods =====
+
+    fn cur_spec_version(&self) -> u32 {
+        self.base.cur_spec_version()
+    }
+
+    fn staged_spec_version(&self) -> u32 {
+        self.base.staged_spec_version()
+    }
+
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {
@@ -385,7 +395,6 @@ mod tests {
     use super::*;
     use crate::batch_diff_layer::BatchDiffState;
     use crate::common_tests::{impl_mut_layer_tests, impl_read_layer_tests};
-    use crate::memory_state_layer::MemoryStateBaseLayer;
     use crate::test_utils::*;
 
     /// Builds a [`WriteTrackingState`] directly over the base.
@@ -564,14 +573,12 @@ mod tests {
             .compute_state_root()
             .expect("state root should succeed");
 
-        // Verify it matches what we'd get by applying the batch manually.
-        // (State root is currently a stub that always returns zero, so we just
-        // verify the two paths are consistent rather than checking for a
-        // non-trivial value.)
-        let mut expected = MemoryStateBaseLayer::new(create_test_genesis_state());
+        // Verify it matches what we'd get by applying the batch manually, and
+        // that the write changed the root.
+        let mut expected = create_test_base_layer();
         expected.apply_write_batch(tracking.into_batch()).unwrap();
         assert_eq!(root, expected.compute_state_root().unwrap());
-        let _ = base_root;
+        assert_ne!(root, base_root);
     }
 
     // =========================================================================

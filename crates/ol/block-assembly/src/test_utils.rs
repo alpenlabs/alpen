@@ -66,10 +66,8 @@ use strata_snark_acct_types::*;
 use strata_storage::{NodeStorage, create_node_storage};
 
 /// Creates a genesis OLStateV1 using minimal empty parameters.
-pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::test_default();
-    let state = OLStateV1::from_genesis_params(&params).expect("valid params");
-    MemoryStateBaseLayer::new(state)
+pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer<OLStateV1> {
+    MemoryStateBaseLayer::new_genesis(&OLParams::test_default()).expect("valid params")
 }
 
 use crate::block_assembly::{
@@ -296,7 +294,7 @@ impl MempoolProvider for Arc<MockMempoolProvider> {
 pub(crate) struct FailingStateProvider;
 
 impl StateProvider for FailingStateProvider {
-    type State = MemoryStateBaseLayer;
+    type State = MemoryStateBaseLayer<OLStateV1>;
     type Error = DbError;
 
     #[expect(
@@ -1108,7 +1106,7 @@ impl TestEnv {
     pub(crate) async fn construct_block(
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransactionV1)>,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>> {
         self.construct_block_with_resource_state(txs, EpochResourceState::new_empty())
             .await
     }
@@ -1116,7 +1114,7 @@ impl TestEnv {
     /// Constructs an empty block using current parent commitment and empty epoch resource state.
     pub(crate) async fn construct_empty_block(
         &self,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>> {
         self.construct_block(iter::empty::<(OLTxId, OLTransactionV1)>())
             .await
     }
@@ -1126,7 +1124,7 @@ impl TestEnv {
     pub(crate) async fn construct_empty_block_with_da(
         &self,
         epoch_cumulative_da: AccumulatedDaData,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>> {
         self.construct_empty_block_with_resource_state(EpochResourceState::new(
             epoch_cumulative_da,
             0,
@@ -1140,7 +1138,7 @@ impl TestEnv {
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransactionV1)>,
         epoch_cumulative_da: AccumulatedDaData,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>> {
         self.construct_block_with_resource_state(
             txs,
             EpochResourceState::new(epoch_cumulative_da, 0),
@@ -1153,7 +1151,7 @@ impl TestEnv {
     pub(crate) async fn construct_empty_block_with_resource_state(
         &self,
         resource_state_before_block: EpochResourceState,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>> {
         self.construct_block_with_resource_state(
             iter::empty::<(OLTxId, OLTransactionV1)>(),
             resource_state_before_block,
@@ -1167,7 +1165,7 @@ impl TestEnv {
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransactionV1)>,
         resource_state_before_block: EpochResourceState,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>> {
         let config = self.parent_config();
         assemble_block_with_txs(
             self.ctx(),
@@ -1182,7 +1180,7 @@ impl TestEnv {
     /// Persists assembled output as the next parent block/state and advances parent commitment.
     pub(crate) async fn persist(
         &mut self,
-        output: &ConstructBlockOutput<MemoryStateBaseLayer>,
+        output: &ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>,
     ) -> OLBlockCommitment {
         let header = output.template.header().clone();
         let commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
@@ -1195,7 +1193,7 @@ impl TestEnv {
             .expect("store assembled block");
         self.storage()
             .ol_state()
-            .put_toplevel_ol_state_async(commitment, post_state.into_inner())
+            .put_toplevel_ol_state_async(commitment, post_state.into_container())
             .await
             .expect("store assembled post-state");
 
@@ -1218,8 +1216,8 @@ impl TestEnv {
 
 /// Converts assembled output into persisted artifacts: `(OLBlockV1, post_state)`.
 pub(crate) fn block_and_post_state_from_output(
-    output: &ConstructBlockOutput<MemoryStateBaseLayer>,
-) -> (OLBlockV1, MemoryStateBaseLayer) {
+    output: &ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>,
+) -> (OLBlockV1, MemoryStateBaseLayer<OLStateV1>) {
     let header = output.template.header().clone();
     let signed_header = SignedOLBlockHeaderV1::new(header, Buf64::zero());
     let block = OLBlockV1::new(signed_header, output.template.body().clone());
@@ -1469,7 +1467,7 @@ impl TestStorageFixtureBuilder {
             fixture
                 .storage()
                 .ol_state()
-                .put_toplevel_ol_state_async(commitment, parent_state.into_inner())
+                .put_toplevel_ol_state_async(commitment, parent_state.into_container())
                 .await
                 .expect("Failed to store parent OL state");
 
@@ -1497,7 +1495,7 @@ impl TestStorageFixtureBuilder {
             fixture
                 .storage()
                 .ol_state()
-                .put_toplevel_ol_state_async(null_commitment, state.into_inner())
+                .put_toplevel_ol_state_async(null_commitment, state.into_container())
                 .await
                 .expect("Failed to store genesis OL state at null commitment");
             null_commitment
@@ -1652,7 +1650,7 @@ pub(crate) fn template_state_root(template: &FullBlockTemplate) -> Hash {
 /// so callers can assert on both the originating account and the decoded payload (or surface a
 /// decode failure). Logs whose type id is not a withdrawal intent are skipped.
 pub(crate) fn extract_withdrawal_intents(
-    output: &ConstructBlockOutput<MemoryStateBaseLayer>,
+    output: &ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>,
 ) -> Vec<(
     AccountSerial,
     Result<SimpleWithdrawalIntentLogData, LogDecodeError>,
@@ -1701,7 +1699,7 @@ pub(crate) async fn assemble_block_with_txs(
     config: &BlockGenerationConfig,
     txs: Vec<(OLTxId, OLTransactionV1)>,
     resource_state_before_block: EpochResourceState,
-) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
+) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>> {
     let parent_state = ctx
         .fetch_state_for_tip(config.parent_block_commitment())
         .await?

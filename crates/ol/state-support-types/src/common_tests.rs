@@ -50,6 +50,7 @@ use strata_ol_state_types::{
     Coin, IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
     IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState, StateError,
 };
+use strata_ol_state_types_v1::OLStateV1;
 use strata_snark_acct_types::Seqno;
 
 use crate::memory_state_layer::MemoryStateBaseLayer;
@@ -70,7 +71,7 @@ const FIRST_UNUSED_ACCOUNT_SEED: u8 = 0x40;
 /// layer's read fall-through is exercised by default rather than comparing
 /// genesis defaults against genesis defaults.
 pub(crate) struct Fixture {
-    base: MemoryStateBaseLayer,
+    base: MemoryStateBaseLayer<OLStateV1>,
     account_id: AccountId,
     serial: AccountSerial,
 }
@@ -150,7 +151,7 @@ impl Fixture {
     }
 
     /// The base state that the layer under test is built over.
-    pub(crate) fn base(&self) -> &MemoryStateBaseLayer {
+    pub(crate) fn base(&self) -> &MemoryStateBaseLayer<OLStateV1> {
         &self.base
     }
 

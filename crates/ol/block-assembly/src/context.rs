@@ -449,7 +449,7 @@ mod tests {
         let ctx = create_test_context(fixture.storage().clone());
         let result = ctx.generate_l1_block_ref_proofs(
             &claims,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
         );
 
         assert!(result.is_ok(), "Should succeed with valid claim");
@@ -476,7 +476,7 @@ mod tests {
         let ctx = create_test_context(fixture.storage().clone());
         let result = ctx.generate_l1_block_ref_proofs(
             &claims,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
         );
 
         assert!(result.is_ok(), "Should succeed with multiple valid claims");
@@ -511,7 +511,7 @@ mod tests {
 
         let result = ctx.generate_l1_block_ref_proofs(
             &[claim],
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
         );
 
         assert!(
@@ -559,7 +559,7 @@ mod tests {
 
         let result = ctx.generate_l1_block_ref_proofs(
             &[claim],
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
         );
 
         assert!(result.is_err(), "Should fail with missing index");
@@ -597,7 +597,7 @@ mod tests {
 
         let result = ctx.generate_l1_block_ref_proofs(
             &[claim],
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
         );
 
         assert!(matches!(
@@ -621,8 +621,10 @@ mod tests {
             .expect("stored state missing");
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx
-            .generate_l1_block_ref_proofs(&[], &MemoryStateBaseLayer::new(state.as_ref().clone()));
+        let result = ctx.generate_l1_block_ref_proofs(
+            &[],
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
+        );
 
         assert!(result.is_ok(), "Should succeed with empty claims");
         let proofs = result.unwrap();

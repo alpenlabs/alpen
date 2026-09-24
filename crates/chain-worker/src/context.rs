@@ -25,8 +25,9 @@ use strata_ol_chain_types_v1::{
     SnarkAccountUpdateLogData,
 };
 use strata_ol_params::{OLParams, OLRuntimeParams};
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::SnarkAcctStateUpdate;
-use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::WriteBatch;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
@@ -40,6 +41,7 @@ use crate::{
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
     prefill_l1_block_refs_mmr_blocking,
+    state::merge_epoch_state,
     traits::ChainWorkerContext,
 };
 
@@ -146,7 +148,10 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         }
     }
 
-    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>> {
+    fn fetch_ol_state(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> WorkerResult<Option<OLStateContainer>> {
         let state_opt = self
             .ol_state_mgr
             .get_toplevel_ol_state_blocking(commitment)?;
@@ -195,7 +200,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     fn store_toplevel_state(
         &self,
         commitment: OLBlockCommitment,
-        state: OLStateV1,
+        state: OLStateContainer,
     ) -> WorkerResult<()> {
         self.ol_state_mgr
             .put_toplevel_ol_state_blocking(commitment, state)?;
@@ -257,51 +262,11 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
-        let terminal = *summary.terminal();
-        let prev_terminal = *summary.prev_terminal();
-
-        // Collect canonical chain by walking backwards from terminal via parent pointers.
-        // This ensures we only apply write batches for blocks in the canonical chain,
-        // not fork blocks that may also have write batches stored.
-        let mut chain: Vec<OLBlockCommitment> = Vec::new();
-        let mut current = terminal;
-
-        while current != prev_terminal && !current.is_null() {
-            chain.push(current);
-            // Get header to find parent
-            let header = self
-                .fetch_header(current.blkid())?
-                .ok_or(WorkerError::MissingOLBlock(*current.blkid()))?;
-            let parent_blkid = header.parent_blkid();
-            if parent_blkid.is_null() {
-                break;
-            }
-            current = OLBlockCommitment::new(current.slot().saturating_sub(1), *parent_blkid);
-        }
-
-        // Reverse to get forward order (excluding prev_terminal which is already finalized)
-        chain.reverse();
-
-        // Fetch prev state.
-        let mut cur_state = self
-            .fetch_ol_state(prev_terminal)?
-            .ok_or(WorkerError::MissingPreState(prev_terminal))?;
-
-        // Apply write batches in canonical order.
-        // Every block in the canonical chain must have a write batch - a missing one
-        // indicates data corruption or a bug, so we error out rather than skip.
-        for commitment in chain {
-            let wb = self
-                .fetch_write_batch(commitment)?
-                .ok_or(WorkerError::MissingWriteBatch(commitment))?;
-            cur_state
-                .apply_write_batch(wb)
-                .map_err(|e| WorkerError::Unexpected(format!("failed to apply batch: {e}")))?;
-        }
+        let merged = merge_epoch_state(self, summary)?;
 
         // Store the final merged state at the terminal commitment
         self.ol_state_mgr
-            .put_toplevel_ol_state_blocking(terminal, cur_state)?;
+            .put_toplevel_ol_state_blocking(*summary.terminal(), merged)?;
 
         Ok(())
     }

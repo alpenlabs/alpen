@@ -6,13 +6,32 @@ use crate::errors::StateResult;
 use crate::{Coin, PendingAsmLog};
 
 /// Opaque interface for accessing the chainstate, for all of the parts directly
-/// under the toplevel state.
+/// under the toplevel state, and the spec versions of the root state above it.
 ///
 /// This exists because we want to make this generic across the various
 /// different contexts we'll be manipulating state.
 pub trait IStateAccessor {
     /// Type representing a ledger account's state for read operations.
     type AccountState: IAccountState;
+
+    // ===== Root state methods =====
+
+    /// Gets the raw version of the spec the state was produced under.
+    ///
+    /// This is [`OLRootState::cur_spec_version`](crate::OLRootState::cur_spec_version).
+    /// It selects the chainstate layout. Every block except the first of an
+    /// epoch runs under it.
+    fn cur_spec_version(&self) -> u32;
+
+    /// Gets the raw version of the spec the next epoch runs under.
+    ///
+    /// This is [`OLRootState::staged_spec_version`](crate::OLRootState::staged_spec_version).
+    /// It differs from [`Self::cur_spec_version`] only between the terminal
+    /// block of an epoch that processes a checkpoint predicate enactment and
+    /// the first block of the next epoch, which runs under it. The value may
+    /// name a spec this binary does not know; executing the next epoch must
+    /// then halt.
+    fn staged_spec_version(&self) -> u32;
 
     // ===== Global state methods =====
 
@@ -75,7 +94,11 @@ pub trait IStateAccessor {
     /// Returns the next account serial that will be assigned when creating a new account.
     fn next_account_serial(&self) -> AccountSerial;
 
-    /// Computes the full state root, using whatever things we've updated.
+    /// Computes the protocol state root, using whatever things we've updated.
+    ///
+    /// This is the hash tree root of the [`OLRootState`](crate::OLRootState)
+    /// formed from the spec versions and the chainstate's own root, the value
+    /// block headers and checkpoints commit to.
     fn compute_state_root(&self) -> StateResult<Buf32>;
 }
 

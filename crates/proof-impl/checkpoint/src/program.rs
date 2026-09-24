@@ -3,7 +3,7 @@ use ssz::{Decode, Encode};
 use strata_asm_checkpoint_types::CheckpointClaim;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_stf::OLSpecId;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
@@ -17,7 +17,8 @@ fn test_signing_key() -> SigningKey {
 
 #[derive(Debug)]
 pub struct CheckpointProverInput {
-    pub start_state: OLStateV1,
+    /// Terminal state of the previous epoch, with its spec versions.
+    pub start_state: OLStateContainer,
     pub blocks: Vec<OLBlockV1>,
     pub parent: OLBlockHeaderV1,
     pub da_state_diff_bytes: Vec<u8>,
@@ -43,7 +44,7 @@ impl ZkVmProgram for CheckpointProgram {
         B: zkaleido::ZkVmInputBuilder<'a>,
     {
         let mut input_builder = B::new();
-        input_builder.write_buf(&input.start_state.as_ssz_bytes())?;
+        input_builder.write_serde(&input.start_state)?;
         input_builder.write_buf(&input.blocks.as_ssz_bytes())?;
         input_builder.write_buf(&input.parent.as_ssz_bytes())?;
         input_builder.write_buf(&input.da_state_diff_bytes)?;
@@ -150,7 +151,7 @@ mod tests {
             encode_to_vec(&OLDaPayloadV1::new(da_diff)).expect("encode DA payload");
 
         CheckpointProverInput {
-            start_state: start_state.state().clone(),
+            start_state: start_state.into_container(),
             blocks,
             parent,
             da_state_diff_bytes,
@@ -159,7 +160,7 @@ mod tests {
 
     fn prepare_boundary_input() -> CheckpointProverInput {
         let mut fixture = OLStfFixture::builder().execute_genesis();
-        let start_state = fixture.state().state().clone();
+        let start_state = fixture.state().to_container();
         let parent = fixture.parent_header().clone();
         let log = AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(
             PredicateKey::always_accept(),
@@ -282,7 +283,7 @@ mod tests {
     fn test_statements_fail_on_da_diff_mismatch() {
         let mut input = prepare_input();
         let terminal_header = input.blocks.last().expect("non-empty block list").header();
-        let start_state_layer = MemoryStateBaseLayer::new(input.start_state.clone());
+        let start_state_layer = MemoryStateBaseLayer::from_container(input.start_state.clone());
         let slot_delta = terminal_header.slot() - start_state_layer.cur_slot();
         let bad_delta = u16::try_from(slot_delta.saturating_sub(1))
             .expect("slot delta exceeds u16::MAX; epoch too long");

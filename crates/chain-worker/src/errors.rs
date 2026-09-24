@@ -81,12 +81,10 @@ pub enum WorkerError {
         source: CodecError,
     },
 
-    /// Failed to compute a state root during reconstruction.
-    /// `stage` discriminates the call site (e.g. "indexer", "final").
-    #[error("compute state root at epoch {epoch} ({stage}): {source}")]
+    /// Failed to compute the indexer-derived state root during reconstruction.
+    #[error("compute indexer state root at epoch {epoch}: {source}")]
     StateRootCompute {
         epoch: Epoch,
-        stage: &'static str,
         #[source]
         source: StateError,
     },

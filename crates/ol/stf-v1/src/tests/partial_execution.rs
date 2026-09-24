@@ -6,6 +6,7 @@ use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLT
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_tx_types_v1::{
     GamTxPayloadV1, OLTransactionDataV1, OLTransactionV1, TransactionPayloadV1, TxProofsV1,
 };
@@ -17,7 +18,7 @@ use crate::test_utils::*;
 use crate::verify_block;
 
 fn assert_mid_block_failure_state(
-    state: &MemoryStateBaseLayer,
+    state: &MemoryStateBaseLayer<OLStateV1>,
     snark_acct_id: AccountId,
     recipient_ok: AccountId,
     recipient_not_executed: AccountId,

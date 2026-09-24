@@ -1045,6 +1045,7 @@ mod tests {
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types_v1::OLStateV1;
     use strata_predicate::PredicateKey;
 
     use super::*;
@@ -1135,7 +1136,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1180,7 +1181,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1222,7 +1223,7 @@ mod tests {
         let err = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         )
         .expect_err("missing target account should fail");
@@ -1253,7 +1254,7 @@ mod tests {
         let out_tx = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         )
         .expect("GAM tx should pass through unchanged");
@@ -1307,7 +1308,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
         assert!(result.is_err(), "Should fail with hash mismatch");
@@ -1352,7 +1353,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1397,7 +1398,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1497,7 +1498,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1547,7 +1548,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1608,7 +1609,7 @@ mod tests {
         let tx = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         )
         .expect("proof generation should succeed");
@@ -3040,7 +3041,7 @@ mod tests {
         timestamp: u64,
         slot_offset: u64,
     ) -> (
-        Arc<MemoryStateBaseLayer>,
+        Arc<MemoryStateBaseLayer<OLStateV1>>,
         OLBlockHeaderV1,
         BlockInfo,
         OLWriteBatch,

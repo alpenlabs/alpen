@@ -1,7 +1,8 @@
 use strata_db_types::DbResult;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_types_v1::WriteBatch;
 
 use super::schemas::{OLStateSchema, OLWriteBatchSchema};
 use crate::define_sled_database;
@@ -18,7 +19,7 @@ impl OLStateDatabase for OLStateDBSled {
     fn put_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-        state: OLStateV1,
+        state: OLStateContainer,
     ) -> DbResult<()> {
         self.config
             .with_retry((&self.state_tree,), |(state_tree,)| {
@@ -28,11 +29,16 @@ impl OLStateDatabase for OLStateDBSled {
         Ok(())
     }
 
-    fn get_toplevel_ol_state(&self, commitment: OLBlockCommitment) -> DbResult<Option<OLStateV1>> {
+    fn get_toplevel_ol_state(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<Option<OLStateContainer>> {
         self.state_tree.get(&commitment).map_err(conv_sled_err)
     }
 
-    fn get_latest_toplevel_ol_state(&self) -> DbResult<Option<(OLBlockCommitment, OLStateV1)>> {
+    fn get_latest_toplevel_ol_state(
+        &self,
+    ) -> DbResult<Option<(OLBlockCommitment, OLStateContainer)>> {
         // Relying on the lexicographical order of OLBlockCommitment (slot + block ID).
         // The last entry should be the one with the highest slot.
         self.state_tree.last().map_err(conv_sled_err)

@@ -3,8 +3,6 @@
 use argh::FromArgs;
 use strata_checkpoint_types::reconstruct_terminal_header;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::IStateAccessor;
 use strata_storage::NodeStorage;
 
 use crate::{
@@ -128,11 +126,9 @@ fn build_terminal_header_backfill_report(
             .get_toplevel_ol_state_blocking(terminal)
             .internal_error(format!("Failed to read terminal OL state at epoch {epoch}"))?
         {
-            let stored_state_root = MemoryStateBaseLayer::new((*state).clone())
-                .compute_state_root()
-                .internal_error(format!(
-                    "Failed to compute stored terminal OL state root at epoch {epoch}"
-                ))?;
+            // Decoding checked the chainstate against the committed root, so
+            // the container root is the stored state's protocol root.
+            let stored_state_root = state.compute_state_root();
             if &stored_state_root != summary.final_state() {
                 return Err(DisplayedError::UserError(
                     format!(
@@ -169,8 +165,7 @@ mod tests {
         Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
     };
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
-    use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::OLStateV1;
+    use strata_ol_state_container::test_utils::create_test_genesis_container;
     use strata_storage::create_node_storage;
     use tokio::runtime::{Handle, Runtime};
 
@@ -388,11 +383,8 @@ mod tests {
         let fixture = epoch_fixture(1, 10, 1);
         insert_fixture(&storage, &fixture, true);
 
-        let stored_state = OLStateV1::from_genesis_params(&OLParams::test_default())
-            .expect("create stored terminal state");
-        let stored_state_root = MemoryStateBaseLayer::new(stored_state.clone())
-            .compute_state_root()
-            .expect("compute stored terminal state root");
+        let stored_state = create_test_genesis_container();
+        let stored_state_root = stored_state.compute_state_root();
         assert_ne!(stored_state_root, *fixture.summary.final_state());
         storage
             .ol_state()

@@ -6,7 +6,6 @@ use strata_db_types::{
     ol_state::OLStateDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
-use strata_primitives::l1::L1BlockCommitment;
 
 use super::{
     checkpoint::{
@@ -76,7 +75,8 @@ pub(crate) fn get_syncinfo(
             )
         })?;
 
-    let current_epoch = top_level_state.epoch_state().cur_epoch();
+    let chainstate = top_level_state.chainstate();
+    let current_epoch = chainstate.cur_epoch();
     let previous_epoch_num = current_epoch.saturating_sub(1);
     let previous_epoch = if previous_epoch_num == 0 {
         EpochCommitment::null()
@@ -93,16 +93,13 @@ pub(crate) fn get_syncinfo(
             .map(|status| status.as_str().to_string());
     let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
         .unwrap_or_else(EpochCommitment::null);
-    let current_slot = top_level_state.global_state().get_cur_slot();
+    let current_slot = chainstate.cur_slot();
     let ol_finalized_block_id = *finalized_epoch.last_blkid();
     let previous_block = OLBlockCommitment::new(
         ol_tip_block.header().slot().saturating_sub(1),
         *ol_tip_block.header().parent_blkid(),
     );
-    let safe_block = L1BlockCommitment::new(
-        top_level_state.epoch_state().last_l1_height(),
-        *top_level_state.epoch_state().last_l1_blkid(),
-    );
+    let safe_block = chainstate.last_l1_block();
 
     // Create the output data structure
     let sync_info = SyncInfo {

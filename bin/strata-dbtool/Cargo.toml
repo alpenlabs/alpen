@@ -28,9 +28,8 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-mmr-index.workspace = true
+strata-ol-state-container.workspace = true
 strata-ol-state-support-types.workspace = true
-strata-ol-state-types.workspace = true
-strata-ol-state-types-v1.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
 strata-storage.workspace = true
@@ -41,3 +40,5 @@ zkaleido.workspace = true
 [dev-dependencies]
 strata-merkle.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-state-container = { workspace = true, features = ["test-utils"] }
+strata-ol-state-types-v1.workspace = true

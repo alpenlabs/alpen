@@ -27,6 +27,7 @@ use strata_ol_chain_types_v1::{
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
 };
@@ -37,7 +38,7 @@ use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf::{
     BlockInfo, EpochDaReplayError, EpochInfo, OLSpecId, apply_da_epoch, verify_block,
 };
-use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
+use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
 use strata_snark_acct_types::Seqno;
 use tracing::*;
@@ -351,12 +352,13 @@ fn execute_stf(
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
     parent_commitment: OLBlockCommitment,
-) -> WorkerResult<(OLBlockExecutionOutput, OLStateV1)> {
-    // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
+) -> WorkerResult<(OLBlockExecutionOutput, OLStateContainer)> {
+    // Fetch parent state and build its state accessor, keeping its spec
+    // versions.
     let parent_state_raw = ctx
         .fetch_ol_state(parent_commitment)?
         .ok_or(WorkerError::MissingPreState(parent_commitment))?;
-    let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
+    let parent_state = MemoryStateBaseLayer::from_container(parent_state_raw);
 
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) =
@@ -370,11 +372,16 @@ fn execute_stf(
             commitment: parent_commitment,
             source,
         })?;
-    let new_state = new_state.into_inner();
+    let new_state = new_state.into_container();
 
     // Use the state root from the header (verify_block validated it).
     // Note: logs are validated internally by verify_block via the logs_root commitment.
     let computed_state_root = *block.header().state_root();
+    debug_assert_eq!(
+        new_state.compute_state_root(),
+        computed_state_root,
+        "chain-worker: stored state must reproduce the verified header root"
+    );
 
     Ok((
         OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes, logs),
@@ -391,7 +398,7 @@ fn persist_execution_output(
     block: &OLBlockV1,
     block_commitment: OLBlockCommitment,
     output: &OLBlockExecutionOutput,
-    new_state: OLStateV1,
+    new_state: OLStateContainer,
 ) -> WorkerResult<()> {
     match ctx.store_block_output(block, block_commitment, output) {
         Ok(()) => {}
@@ -432,7 +439,7 @@ fn handle_terminal_block_exec_post_ops(
     ctx: &impl ChainWorkerContext,
     block: &OLBlockV1,
     last_block_output: &OLBlockExecutionOutput,
-    new_state: &OLStateV1,
+    new_state: &OLStateContainer,
 ) -> WorkerResult<()> {
     let completed_epoch = block.header().epoch();
 
@@ -446,6 +453,60 @@ fn handle_terminal_block_exec_post_ops(
     ctx.store_summary(summary)?;
 
     Ok(())
+}
+
+/// Rebuilds an epoch's terminal state by applying the write batches of its
+/// canonical blocks, in order, to the previous terminal state.
+///
+/// The merged state keeps the previous terminal state's spec versions, since
+/// it goes through the base layer rather than a bare chainstate.
+pub(crate) fn merge_epoch_state(
+    ctx: &impl ChainWorkerContext,
+    summary: &EpochSummary,
+) -> WorkerResult<OLStateContainer> {
+    let terminal = *summary.terminal();
+    let prev_terminal = *summary.prev_terminal();
+
+    // Collect canonical chain by walking backwards from terminal via parent pointers.
+    // This ensures we only apply write batches for blocks in the canonical chain,
+    // not fork blocks that may also have write batches stored.
+    let mut chain: Vec<OLBlockCommitment> = Vec::new();
+    let mut current = terminal;
+
+    while current != prev_terminal && !current.is_null() {
+        chain.push(current);
+        // Get header to find parent
+        let header = ctx
+            .fetch_header(current.blkid())?
+            .ok_or(WorkerError::MissingOLBlock(*current.blkid()))?;
+        let parent_blkid = header.parent_blkid();
+        if parent_blkid.is_null() {
+            break;
+        }
+        current = OLBlockCommitment::new(current.slot().saturating_sub(1), *parent_blkid);
+    }
+
+    // Reverse to get forward order (excluding prev_terminal which is already finalized)
+    chain.reverse();
+
+    let prev_state = ctx
+        .fetch_ol_state(prev_terminal)?
+        .ok_or(WorkerError::MissingPreState(prev_terminal))?;
+    let mut cur_state = MemoryStateBaseLayer::from_container(prev_state);
+
+    // Apply write batches in canonical order.
+    // Every block in the canonical chain must have a write batch - a missing one
+    // indicates data corruption or a bug, so we error out rather than skip.
+    for commitment in chain {
+        let wb = ctx
+            .fetch_write_batch(commitment)?
+            .ok_or(WorkerError::MissingWriteBatch(commitment))?;
+        cur_state
+            .apply_write_batch(wb)
+            .map_err(|e| WorkerError::Unexpected(format!("failed to apply batch: {e}")))?;
+    }
+
+    Ok(cur_state.into_container())
 }
 
 /// Gets the terminal commitment of the epoch before `cur_epoch`.
@@ -497,7 +558,7 @@ pub(crate) fn apply_checkpoint_epoch(
     let base_state_raw = ctx
         .fetch_ol_state(prev_terminal)?
         .ok_or(WorkerError::MissingPreState(prev_terminal))?;
-    let base_state = MemoryStateBaseLayer::new(base_state_raw);
+    let base_state = MemoryStateBaseLayer::from_container(base_state_raw);
 
     let sidecar = payload.sidecar();
     let terminal = *tip.l2_commitment();
@@ -545,7 +606,6 @@ pub(crate) fn apply_checkpoint_epoch(
             .compute_state_root()
             .map_err(|source| WorkerError::StateRootCompute {
                 epoch: epoch.epoch(),
-                stage: "indexer",
                 source,
             })?;
 
@@ -574,25 +634,19 @@ pub(crate) fn apply_checkpoint_epoch(
     verify_snark_seqno_invariant(&new_state, &derived_seqnos)?;
 
     indexer_writes.set_snark_acct_state_updates(recons_data.updates);
-    let final_state_root =
-        new_state
-            .compute_state_root()
-            .map_err(|source| WorkerError::StateRootCompute {
-                epoch: epoch.epoch(),
-                stage: "final",
-                source,
-            })?;
+
+    // The container keeps the base state's spec versions; its root is the
+    // reconstructed protocol state root.
+    let new_state = new_state.into_container();
+    let final_state_root = new_state.compute_state_root();
+
+    // L1 info comes from the reconstructed post-state, the same source
+    // `build_epoch_summary` uses for block sync.
+    let new_l1 = new_state.chainstate().last_l1_block();
 
     // Now verify.
     let terminal_header =
         verify_reconstruction(epoch, tip, sidecar, indexer_state_root, final_state_root)?;
-
-    let new_state = new_state.into_inner();
-
-    // L1 info comes from the reconstructed post-state's epochal state, the same
-    // source FCM's `build_epoch_summary` uses.
-    let epoch_state = new_state.epoch_state();
-    let new_l1 = L1BlockCommitment::new(epoch_state.last_l1_height(), *epoch_state.last_l1_blkid());
 
     let summary = EpochSummary::new(
         epoch.epoch(),
@@ -621,7 +675,7 @@ pub(crate) fn apply_checkpoint_epoch(
 fn assemble_da_inputs(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
-    base_state: &MemoryStateBaseLayer,
+    base_state: &MemoryStateBaseLayer<OLStateV1>,
     sidecar: &CheckpointSidecar,
     tip: &CheckpointTip,
     prev_terminal: OLBlockCommitment,
@@ -877,7 +931,7 @@ fn acct_read_err(stage: &'static str) -> impl FnOnce(StateError) -> WorkerError 
 #[derive(Debug)]
 pub(crate) struct AppliedEpochArtifacts {
     /// Reconstructed post-epoch toplevel state.
-    pub(crate) new_state: OLStateV1,
+    pub(crate) new_state: OLStateContainer,
     /// Unsigned terminal block header reconstructed from checkpoint data.
     pub(crate) terminal_header: OLBlockHeaderV1,
     /// Epoch summary built from the reconstructed state.
@@ -914,7 +968,7 @@ impl ServiceState for ChainWorkerServiceState {
 )]
 fn run_stf_verification(
     spec: OLSpecId,
-    parent_state: &MemoryStateBaseLayer,
+    parent_state: &MemoryStateBaseLayer<OLStateV1>,
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
     runtime_params: &OLRuntimeParams,
@@ -948,7 +1002,7 @@ fn run_stf_verification(
 fn build_epoch_summary(
     block_header: &OLBlockHeaderV1,
     last_block_output: &OLBlockExecutionOutput,
-    new_state: &OLStateV1,
+    new_state: &OLStateContainer,
     prev_terminal: OLBlockCommitment,
 ) -> EpochSummary {
     let completed_epoch = block_header.epoch();
@@ -956,9 +1010,7 @@ fn build_epoch_summary(
 
     // Read L1 info from the post-state. The write batch only stores diffs, so it
     // may not contain a last_l1_* update if the terminal block had no new manifests.
-    let epoch_state = new_state.epoch_state();
-    let new_l1_block =
-        L1BlockCommitment::new(epoch_state.last_l1_height(), *epoch_state.last_l1_blkid());
+    let new_l1_block = new_state.chainstate().last_l1_block();
 
     let epoch_final_state = *last_block_output.computed_state_root();
 
@@ -976,8 +1028,10 @@ mod tests {
     use strata_acct_types::Hash;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
+    use strata_ol_state_container::test_utils::genesis_container;
     use strata_ol_state_support_types::IndexerWrites;
     use strata_ol_state_types_v1::{WriteBatch, test_utils::create_test_genesis_state};
+    use strata_ol_stf_v1::test_utils::make_genesis_state;
 
     use super::*;
     use crate::OLBlockExecutionOutput;
@@ -1026,6 +1080,7 @@ mod tests {
             Buf32::zero(),
         );
 
+        let new_state = genesis_container(new_state);
         let summary = build_epoch_summary(&header, &output, &new_state, OLBlockCommitment::null());
 
         assert_eq!(
@@ -1044,14 +1099,13 @@ mod tests {
     #[test]
     fn rebuild_snark_records_stamps_terminal_root_only() {
         use strata_acct_types::BitcoinAmount;
-        use strata_ol_state_support_types::MemoryStateBaseLayer;
         use strata_ol_state_types::{IStateAccessorMut, NewAccountData, NewAccountTypeState};
         use strata_predicate::PredicateKey;
 
         let account_id = AccountId::from([7u8; 32]);
         let final_root = Hash::from([9u8; 32]);
 
-        let mut state = MemoryStateBaseLayer::new(create_test_genesis_state());
+        let mut state = make_genesis_state();
         let serial = state
             .create_new_account(
                 account_id,
