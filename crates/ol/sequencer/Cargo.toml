@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bitcoin.workspace = true
 strata-asm-checkpoint-types.workspace = true
+strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
+strata-btc-types.workspace = true
+strata-btcio.workspace = true
 strata-codec.workspace = true
 strata-codec-utils.workspace = true
 strata-common.workspace = true
@@ -14,6 +18,8 @@ strata-crypto.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-l1-envelope-fmt.workspace = true
+strata-l1-txfmt.workspace = true
 strata-ol-block-assembly.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-msg-types.workspace = true
@@ -36,6 +42,8 @@ tracing.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
+strata-asm-proto-txs-test-utils.workspace = true
+strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 

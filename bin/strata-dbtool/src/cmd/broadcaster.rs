@@ -45,6 +45,7 @@ pub(crate) fn get_broadcaster_summary(
     let mut confirmed_count = 0;
     let mut finalized_count = 0;
     let mut invalid_inputs_count = 0;
+    let mut abandoned_count = 0;
 
     // Get the next index to determine the range
     let next_idx = broadcast_db
@@ -59,12 +60,15 @@ pub(crate) fn get_broadcaster_summary(
         {
             total_tx_entries += 1;
             match tx_entry.status {
-                L1TxStatus::Unpublished => unpublished_count += 1,
+                L1TxStatus::Queued | L1TxStatus::Unpublished | L1TxStatus::Submitting => {
+                    unpublished_count += 1
+                }
                 L1TxStatus::Published => published_count += 1,
                 L1TxStatus::Confirmed { .. } => confirmed_count += 1,
                 L1TxStatus::Finalized { .. } => finalized_count += 1,
                 L1TxStatus::InvalidInputs => invalid_inputs_count += 1,
                 L1TxStatus::Replaced { .. } => {}
+                L1TxStatus::Abandoned => abandoned_count += 1,
             }
         }
     }
@@ -76,6 +80,7 @@ pub(crate) fn get_broadcaster_summary(
         confirmed_count,
         finalized_count,
         invalid_inputs_count,
+        abandoned_count,
     };
 
     output(&summary, args.output_format)

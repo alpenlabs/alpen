@@ -1,7 +1,7 @@
 use strata_db_types::DbResult;
 use strata_db_types::errors::DbError;
 use strata_db_types::l1_writer::{
-    BundledPayloadEntry, IntentEntry, IntentStatus, L1WriterDatabase,
+    BundledPayloadEntry, IntentEntry, IntentStatus, L1BundleStatus, L1WriterDatabase,
 };
 use strata_primitives::buf::Buf32;
 
@@ -82,6 +82,35 @@ impl L1WriterDatabase for L1WriterDBSled {
                 };
                 it.insert(&intent_id, &bundled_intent_entry)?;
                 Ok(payload_idx)
+            })
+    }
+
+    fn requeue_abandoned_intent(
+        &self,
+        intent_id: Buf32,
+        abandoned_payload_idx: u64,
+        payload_entry: BundledPayloadEntry,
+    ) -> DbResult<Option<u64>> {
+        let next_idx = self.get_next_payload_idx()?;
+        self.config
+            .with_retry((&self.payload_tree, &self.intent_tree), |(pt, it)| {
+                let Some(mut intent) = it.get(&intent_id)? else {
+                    return Ok(None);
+                };
+                if intent.status
+                    != (IntentStatus::Bundled {
+                        bundle_idx: abandoned_payload_idx,
+                    })
+                    || pt.get(&abandoned_payload_idx)?.map(|p| p.status)
+                        != Some(L1BundleStatus::Abandoned)
+                {
+                    return Ok(None);
+                }
+                let idx = find_next_available_id(&pt, next_idx)?;
+                pt.insert(&idx, &payload_entry)?;
+                intent.status = IntentStatus::Bundled { bundle_idx: idx };
+                it.insert(&intent_id, &intent)?;
+                Ok(Some(idx))
             })
     }
 

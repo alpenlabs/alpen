@@ -150,6 +150,8 @@ pub enum ChunkedEnvelopeStatus {
     Finalized,
     /// Input UTXOs were spent; needs fresh signing.
     NeedsResign,
+    /// Publication was deliberately cancelled.
+    Abandoned,
 }
 
 impl fmt::Display for ChunkedEnvelopeStatus {
@@ -162,6 +164,7 @@ impl fmt::Display for ChunkedEnvelopeStatus {
             Self::Confirmed => f.write_str("confirmed"),
             Self::Finalized => f.write_str("finalized"),
             Self::NeedsResign => f.write_str("needs_resign"),
+            Self::Abandoned => f.write_str("abandoned"),
         }
     }
 }

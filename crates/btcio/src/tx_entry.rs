@@ -31,7 +31,7 @@ impl L1TxEntryExt for L1TxEntry {
     fn from_tx_with_fee(tx: &Transaction, fee_rate: FeeRate, fee: Amount) -> Self {
         Self::from_raw_parts(
             serialize(tx),
-            L1TxStatus::Unpublished,
+            L1TxStatus::Queued,
             Some(L1TxRbfInfo {
                 fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
                 fee_sats: fee.to_sat(),

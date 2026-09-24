@@ -1,5 +1,5 @@
 use bitcoin::hashes::Hash;
-use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
+use strata_db_types::l1_broadcast::L1TxEntry;
 use strata_primitives::{buf::Buf32, indexed::Indexed};
 use strata_service::{ServiceState, TickMsg};
 use tracing::*;
@@ -87,28 +87,6 @@ where
         )
         .await?;
 
-        for entry in processed.updated.iter() {
-            let idx = *entry.index();
-
-            // The fee bumper can mark this entry `Replaced` in the DB between the read that
-            // produced our in-memory copy and this write-back. Writing the stale status here
-            // would resurrect a txid that a broadcast replacement has already superseded, so
-            // re-read and leave replaced entries alone. The matching
-            // `NotifyReplacedEntry` message drops it from `unfinalized_entries`.
-            let replaced_concurrently =
-                self.io.get_tx_entry(idx).await?.is_some_and(|persisted| {
-                    matches!(persisted.status, L1TxStatus::Replaced { .. })
-                });
-            if replaced_concurrently {
-                debug!(%idx, "skipping write-back for entry replaced by a fee bump");
-                continue;
-            }
-
-            self.io
-                .put_tx_entry_by_idx(idx, entry.item().clone())
-                .await?;
-        }
-
         update_state(
             &mut self.inner,
             processed.updated.into_iter(),
@@ -189,7 +167,7 @@ mod test {
 
     use super::*;
     use crate::{
-        broadcaster::io::BroadcasterIo,
+        broadcaster::{io::BroadcasterIo, AllowAllPublishPolicy},
         test_utils::{gen_l1_tx_entry_with_status, SendRawTransactionMode, TestBitcoinClient},
     };
 
@@ -215,6 +193,7 @@ mod test {
             Arc::new(client),
             ops,
             FeeRate::from_sat_per_vb(1_000).unwrap(),
+            Arc::new(AllowAllPublishPolicy),
         )
     }
 
@@ -348,7 +327,7 @@ mod test {
         assert_eq!(
             statuses,
             vec![
-                entries[0].1.status.clone(),
+                L1TxStatus::Unpublished,
                 entries[1].1.status.clone(),
                 entries[3].1.status.clone(),
             ],
@@ -545,5 +524,9 @@ mod test {
             ops.get_tx_entry_async(idx).await.unwrap().unwrap().status,
             L1TxStatus::Replaced { .. }
         ));
+        assert!(
+            service_state.inner.unfinalized_entries.is_empty(),
+            "the authoritative stored row must also evict the stale in-memory entry"
+        );
     }
 }

@@ -680,13 +680,13 @@ pub fn proptest_delete_checkpoint_payload_entry(
 }
 
 pub fn proptest_get_last_checkpoint_payload_epoch(db: &impl OLCheckpointDatabase, count: u32) {
-    let mut last_key: Option<EpochCommitment> = None;
+    let mut keys = Vec::new();
     for e in 0..count {
         let payload = payload_for_epoch(e);
         let key = checkpoint_epoch_commitment(&payload);
         db.put_checkpoint_payload_entry(key, payload)
             .expect("test: put payload");
-        last_key = Some(key);
+        keys.push(key);
     }
 
     let last = db
@@ -694,7 +694,15 @@ pub fn proptest_get_last_checkpoint_payload_epoch(db: &impl OLCheckpointDatabase
         .expect("test: get last payload epoch")
         .expect("should have payloads");
 
-    assert_eq!(Some(last), last_key);
+    assert_eq!(Some(last), keys.last().copied());
+    let cutoff = Epoch::from(count / 2);
+    assert_eq!(
+        db.get_checkpoint_payload_commitments_from_epoch(cutoff)
+            .expect("test: scan payload commitments"),
+        keys.into_iter()
+            .filter(|key| key.epoch() >= cutoff)
+            .collect::<Vec<_>>()
+    );
 }
 
 pub fn proptest_get_next_unsigned_checkpoint_epoch(
@@ -908,6 +916,21 @@ pub fn test_del_local_checkpoint_payload_entries_preserves_l1_observations(
         .expect("put l1 observation");
     db.put_checkpoint_signing_entry(observed_key, 10)
         .expect("put signing entry");
+    assert!(!db
+        .del_local_checkpoint_payload_if_unobserved(observed_key)
+        .expect("preserve observed local payload"));
+    assert!(db
+        .get_checkpoint_payload_entry(observed_key)
+        .expect("get preserved local payload")
+        .is_some());
+
+    let unobserved_payload = payload_for_epoch(9);
+    let unobserved_key = checkpoint_epoch_commitment(&unobserved_payload);
+    db.put_checkpoint_payload_entry(unobserved_key, unobserved_payload)
+        .expect("put unobserved local payload");
+    assert!(db
+        .del_local_checkpoint_payload_if_unobserved(unobserved_key)
+        .expect("delete unobserved local payload"));
 
     let unsigned_payload = payload_for_epoch(11);
     let unsigned_key = checkpoint_epoch_commitment(&unsigned_payload);
