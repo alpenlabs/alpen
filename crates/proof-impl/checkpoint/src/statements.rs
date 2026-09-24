@@ -327,3 +327,73 @@ fn execute_block_batch(
         epoch_manifests,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use strata_asm_checkpoint_types::compute_asm_manifests_hash_from_leaves;
+    use strata_identifiers::SubjectId;
+    use strata_ol_stf_v1::test_utils::{
+        epoch_runner_run_genesis, epoch_runner_seed_accounts, execute_block,
+        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state, to_ol_block,
+    };
+
+    use super::*;
+
+    #[test]
+    fn checkpoint_range_binds_complete_manifests_across_nonterminal_and_terminal_blocks() {
+        let mut start = make_genesis_state();
+        let serial = epoch_runner_seed_accounts(&mut start);
+        let genesis = epoch_runner_run_genesis(&mut start);
+        let canonical = [make_empty_manifest(2, 7), make_empty_manifest(3, 8)];
+
+        // This is how ASM binds its independently executed canonical manifest leaves.
+        let leaves: Vec<_> = canonical.iter().map(AsmManifest::compute_hash).collect();
+        let expected = compute_asm_manifests_hash_from_leaves(&leaves);
+
+        let deposit = make_deposit_manifest_for_account(
+            2,
+            7,
+            serial,
+            SubjectId::from([0; 32]),
+            100u64.try_into().unwrap(),
+        );
+        let forged = AsmManifest::new(
+            2,
+            *canonical[0].blkid(),
+            *canonical[0].wtxids_root(),
+            deposit.logs().to_vec(),
+        )
+        .unwrap();
+
+        for (first, authentic) in [(canonical[0].clone(), true), (forged, false)] {
+            let mut state = start.clone();
+
+            let nonterminal = execute_block(
+                &mut state,
+                &BlockInfo::new(1_001_000, 1, 1),
+                Some(genesis.header()),
+                BlockComponents::new_manifests(vec![first]),
+            )
+            .unwrap();
+
+            let terminal = execute_block(
+                &mut state,
+                &BlockInfo::new(1_002_000, 2, 1),
+                Some(nonterminal.header()),
+                BlockComponents::new_manifests(vec![canonical[1].clone()]).as_terminal(),
+            )
+            .unwrap();
+
+            let blocks = vec![to_ol_block(&nonterminal), to_ol_block(&terminal)];
+            let trace = execute_block_batch(
+                &mut start.clone(),
+                &blocks,
+                genesis.header(),
+                &OLRuntimeParams::test_default(),
+            );
+
+            assert_eq!(trace.epoch_manifests.len(), 2);
+            assert_eq!(trace.asm_manifests_hash == expected, authentic);
+        }
+    }
+}
