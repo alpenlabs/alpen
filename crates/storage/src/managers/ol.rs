@@ -1,8 +1,9 @@
 //! High-level OL block interface.
 
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
+use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase, StatusScanStart};
 use strata_db_types::DbResult;
 use strata_identifiers::{EpochCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
@@ -42,6 +43,15 @@ impl OLBlockManager {
         self.ops.put_block_data_blocking(block)?;
         self.block_cache.purge_blocking(&block_id);
         Ok(())
+    }
+
+    /// Reads a bounded page of block statuses for pending-block recovery.
+    pub async fn scan_block_statuses_async(
+        &self,
+        start: StatusScanStart,
+        limit: NonZeroUsize,
+    ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>> {
+        self.ops.scan_block_statuses_async(start, limit).await
     }
 
     /// Gets the block high-watermark.

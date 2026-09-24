@@ -129,6 +129,7 @@ impl<C: FcmContext> AsyncService for FcmService<C> {
         match &input {
             FcmEvent::NewFcmMsg(m) => process_fc_message(m, fcm_state).await?,
             FcmEvent::NewStateUpdate => handle_new_state_update(fcm_state).await?,
+            FcmEvent::RetryTick => {}
             FcmEvent::Abort => return Ok(Response::ShouldExit),
         };
         Ok(Response::Continue)
@@ -801,12 +802,16 @@ async fn revert_ol_state_to_block<C: FcmContext>(
 mod tests {
     use std::{
         collections::{BTreeMap, BTreeSet, HashMap},
+        num::NonZeroUsize,
         sync::{Arc, Mutex},
     };
 
     use async_trait::async_trait;
     use strata_asm_common::AsmManifest;
-    use strata_db_types::{ol_block::BlockStatus, DbResult};
+    use strata_db_types::{
+        ol_block::{BlockStatus, StatusScanStart},
+        DbResult,
+    };
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
     use strata_ol_chain_types_v1::{
         test_utils::{schnorr_predicate, test_schnorr_keypair},
@@ -840,6 +845,7 @@ mod tests {
 
     #[derive(Default)]
     struct StubFcmStorageInner {
+        status_scans: usize,
         blocks: HashMap<OLBlockId, OLBlockV1>,
         headers: HashMap<OLBlockId, OLBlockHeaderV1>,
         statuses: HashMap<OLBlockId, BlockStatus>,
@@ -1039,6 +1045,35 @@ mod tests {
 
     #[async_trait]
     impl FcmStorage for StubFcmStorage {
+        async fn scan_block_statuses(
+            &self,
+            start: StatusScanStart,
+            limit: NonZeroUsize,
+        ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>> {
+            let mut inner = self.inner.lock().unwrap();
+            inner.status_scans += 1;
+            let mut rows: Vec<_> = inner
+                .blocks_by_slot
+                .iter()
+                .flat_map(|(slot, ids)| {
+                    ids.iter().map(move |id| OLBlockCommitment::new(*slot, *id))
+                })
+                .filter(|block| match start {
+                    StatusScanStart::AfterSlot(slot) => block.slot() > slot,
+                    StatusScanStart::AfterBlock(after) => *block > after,
+                })
+                .filter_map(|block| {
+                    inner
+                        .statuses
+                        .get(block.blkid())
+                        .map(|status| (block, *status))
+                })
+                .collect();
+            rows.sort_by_key(|(id, _)| *id);
+            rows.truncate(limit.get());
+            Ok(rows)
+        }
+
         async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
             let mut inner = self.inner.lock().unwrap();
             let block_exists = inner.blocks.contains_key(&blkid);
@@ -1192,6 +1227,14 @@ mod tests {
 
     #[async_trait]
     impl FcmStorage for StubFcmContext {
+        async fn scan_block_statuses(
+            &self,
+            start: StatusScanStart,
+            limit: NonZeroUsize,
+        ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>> {
+            self.storage.scan_block_statuses(start, limit).await
+        }
+
         async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
             self.storage.set_block_status(blkid, status).await
         }

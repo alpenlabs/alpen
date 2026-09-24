@@ -26,5 +26,7 @@ pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Resul
 }
 
 pub fn init_core_dbs(sled_db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Arc<SledBackend>> {
-    SledBackend::new(sled_db, config).map(Arc::new)
+    let backend = SledBackend::new(sled_db, config)?;
+    backend.initialize_status_scan_index()?;
+    Ok(Arc::new(backend))
 }

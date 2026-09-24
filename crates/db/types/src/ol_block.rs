@@ -2,6 +2,8 @@
 
 // TODO(STR-4220): replace OLBlockV1 to a versionable wrapper
 
+use std::num::NonZeroUsize;
+
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
@@ -25,6 +27,17 @@ pub enum BlockStatus {
     /// Block is invalid, for no particular reason.  We'd have to look somewhere
     /// else for that.
     Invalid,
+}
+
+/// Defines the exclusive lower bound for a block-status scan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StatusScanStart {
+    /// Starts after every block at this slot.
+    AfterSlot(Slot),
+    /// Starts after this commitment in slot then block-ID order.
+    ///
+    /// The referenced block need not exist in storage.
+    AfterBlock(OLBlockCommitment),
 }
 
 /// Describes whether a full OL block body is locally readable at a known commitment.
@@ -127,6 +140,17 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
 
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
+
+    /// Reads at most `limit` status rows after `start`, ordered by slot then block ID.
+    ///
+    /// Reads only the slot and status indexes, without decoding block bodies. The lower
+    /// bound is exclusive, even if its block has been deleted since the previous page.
+    /// Checked blocks count toward the limit; an empty page ends the scan.
+    fn scan_block_statuses(
+        &self,
+        start: StatusScanStart,
+        limit: NonZeroUsize,
+    ) -> DbResult<Vec<(OLBlockCommitment, BlockStatus)>>;
 
     /// Returns the highest slot recorded in the canonical OL block index.
     fn get_tip_slot(&self) -> DbResult<Slot>;
