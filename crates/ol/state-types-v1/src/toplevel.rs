@@ -1,10 +1,11 @@
 //! Toplevel state.
 
 use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS, StrataHasher};
-use strata_identifiers::L1_HEIGHT_MMR_PREFILL_LEAF;
+use strata_identifiers::{Buf32, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{IAccountState, NewAccountData, StateError, StateResult};
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::state::*;
 use crate::{OLAccountTypeStateV1, OLSnarkAccountStateV1, WriteBatch};
@@ -71,6 +72,15 @@ impl OLStateV1 {
             intraepoch,
             ledger,
         })
+    }
+
+    /// Computes the chainstate root, the SSZ hash tree root of this state.
+    ///
+    /// This is the `chainstate_root` an
+    /// [`OLRootState`](strata_ol_state_types::OLRootState) commits to for this
+    /// layout, not the protocol state root.
+    pub fn compute_chainstate_root(&self) -> Buf32 {
+        TreeHash::tree_hash_root::<Sha256Hasher>(self).into()
     }
 
     pub fn global_state(&self) -> &GlobalStateV1 {
