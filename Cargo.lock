@@ -9803,6 +9803,10 @@ dependencies = [
  "arbitrary",
  "proptest",
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
@@ -9811,6 +9815,7 @@ dependencies = [
  "strata-snark-acct-types",
  "thiserror 2.0.20",
  "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
