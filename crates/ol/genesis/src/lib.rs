@@ -129,9 +129,27 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
 #[cfg(test)]
 mod tests {
     use strata_ol_params::OLRuntimeParams;
+    use strata_ol_state_types::OLRootState;
     use strata_ol_stf::OLSpecId;
 
     use super::*;
+
+    /// Executed genesis state root for [`OLParams::test_default`].
+    ///
+    /// This changes whenever the root state layout, the V1 chainstate layout,
+    /// genesis versions, or genesis execution change. Each of those changes
+    /// the genesis of every network started from this release.
+    const TEST_GENESIS_STATE_ROOT: &str =
+        "3ed8ee16d5157b272843cae6a22c6d8de6516dc34d81b04aabfa00d1d26e80aa";
+
+    /// Genesis block ID for [`OLParams::test_default`], which commits to
+    /// [`TEST_GENESIS_STATE_ROOT`].
+    const TEST_GENESIS_BLKID: &str =
+        "84ed81e8751d3194bb51221446e11bfcd58fd65e92873821ca90e221cb850a7e";
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
 
     #[test]
     fn test_genesis_runs_under_params_spec() {
@@ -147,5 +165,27 @@ mod tests {
             err,
             GenesisError::StfExecution(ExecError::UnimplementedSpec(OLSpecId::V0))
         ));
+    }
+
+    #[test]
+    fn test_genesis_commits_to_root_state() {
+        let params = OLParams::test_default();
+        let artifacts = build_genesis_artifacts(&params).unwrap();
+        let header_root = *artifacts.ol_block.header().state_root();
+
+        let genesis_version = u32::from(params.genesis_spec());
+        let chainstate_root = artifacts.ol_state.chainstate().compute_chainstate_root();
+        assert_eq!(
+            header_root,
+            OLRootState::new(genesis_version, genesis_version, chainstate_root)
+                .compute_state_root()
+        );
+        assert_eq!(artifacts.epoch_summary.final_state(), &header_root);
+
+        assert_eq!(hex(header_root.as_ref()), TEST_GENESIS_STATE_ROOT);
+        assert_eq!(
+            hex(artifacts.commitment.blkid().as_ref()),
+            TEST_GENESIS_BLKID
+        );
     }
 }

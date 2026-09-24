@@ -25,9 +25,10 @@ use strata_ol_state_types_v1::WriteBatch;
 use strata_ol_stf_v1::test_utils::{
     EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
     epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
-    make_deposit_manifest_for_account, make_genesis_state,
+    make_deposit_manifest_for_account,
 };
 
+use super::fixture::make_marked_genesis_state;
 use crate::{
     WorkerError, WorkerResult, output::OLBlockExecutionOutput, state::exec_block,
     traits::ChainWorkerContext,
@@ -179,7 +180,7 @@ impl ChainWorkerContext for OrderEnforcingContext {
 /// finalization stamps.
 #[test]
 fn test_exec_single_block_epoch_persists_before_summary() {
-    let mut state = make_genesis_state();
+    let mut state = make_marked_genesis_state();
     let snark_serial = seed_accounts(&mut state);
     let genesis = run_genesis(&mut state);
     let genesis_header = genesis.header().clone();

@@ -104,10 +104,16 @@ impl Fixture {
     /// Number of pending ASM logs buffered on the base.
     pub(crate) const PENDING_LOGS: usize = 3;
 
+    /// Spec version the base stages, distinct from its current spec.
+    pub(crate) const STAGED_SPEC_VERSION: u32 = 2;
+
     /// Builds the fixture base state.
     pub(crate) fn new() -> Self {
         let account_id = test_account_id(1);
-        let mut base = new_layer_at(Self::EPOCH, Self::SLOT);
+        let mut base = with_staged_spec(
+            new_layer_at(Self::EPOCH, Self::SLOT),
+            Self::STAGED_SPEC_VERSION,
+        );
 
         let serial = base
             .create_new_account(
@@ -211,6 +217,8 @@ pub(crate) fn check_account_exists_falls_back_to_base<S: IStateAccessor>(fx: &Fi
 pub(crate) fn reads_all_fields_from_base<S: IStateAccessor>(fx: &Fixture, layer: &S) {
     let base = fx.base();
 
+    assert_eq!(layer.cur_spec_version(), base.cur_spec_version());
+    assert_eq!(layer.staged_spec_version(), base.staged_spec_version());
     assert_eq!(layer.cur_slot(), base.cur_slot());
     assert_eq!(layer.limbo_funds(), base.limbo_funds());
     assert_eq!(layer.cur_epoch(), base.cur_epoch());
@@ -239,6 +247,7 @@ pub(crate) fn reads_all_fields_from_base<S: IStateAccessor>(fx: &Fixture, layer:
 
     // The fixture seeds all of these away from their genesis defaults, so the
     // comparisons above are meaningful rather than trivially true.
+    assert_eq!(layer.staged_spec_version(), Fixture::STAGED_SPEC_VERSION);
     assert_eq!(layer.cur_epoch(), Fixture::EPOCH);
     assert_eq!(layer.cur_slot(), Fixture::SLOT);
     assert_eq!(layer.limbo_funds(), Fixture::limbo_funds());

@@ -36,6 +36,7 @@ strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-state-container = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 sled = "0.34.7"
+tempfile.workspace = true
 
 [lints]
 workspace = true
