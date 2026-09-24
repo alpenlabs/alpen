@@ -248,6 +248,8 @@ impl<S: GChainSpec> Eq for LinkPath<S> {}
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]

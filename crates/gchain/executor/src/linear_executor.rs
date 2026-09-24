@@ -80,6 +80,11 @@ impl<S: GChainSpec> OpenReport<S> {
 /// against what it has.
 pub struct LinearExecutor<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>> {
     stages: StageRunner<S>,
+
+    /// Where the pipeline stands.
+    ///
+    /// Only ever mutated through [`Self::update_tracking`], which persists
+    /// it, so it never drifts from what the store has.
     tracking: TrackingState<S>,
 
     /// Links whose stored artifacts have been loaded into the runner, and
@@ -228,8 +233,10 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
             self.set_stage_node(proc_id, path.terminal_node().clone())?;
         }
 
-        self.tracking.extend_committed(&path);
-        self.store_tracking()?;
+        self.update_tracking(|tracking| {
+            tracking.extend_committed(&path);
+            Ok(())
+        })?;
         self.evict_to_committed();
         Ok(())
     }
@@ -251,8 +258,7 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
             self.set_stage_node(proc_id, node.clone())?;
         }
 
-        self.tracking.truncate_committed_to(node)?;
-        self.store_tracking()
+        self.update_tracking(|tracking| tracking.truncate_committed_to(node))
     }
 
     /// Forgets an uncommitted link along with every link that was only
@@ -281,8 +287,7 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
         // The base moves first: if discarding is cut short, what's left
         // behind is unreachable from the new base and a later sweep finds it.
         let old_base = self.committed_path().base_node().clone();
-        self.tracking.advance_base_to(node)?;
-        self.store_tracking()?;
+        self.update_tracking(|tracking| tracking.advance_base_to(node))?;
 
         let dropped = self.sweep_from(&old_base)?;
         self.stages.prune_upto(node)?;
@@ -408,11 +413,22 @@ impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
     }
 
     fn set_stage_node(&mut self, proc_id: ProcId, node: NodeRef<S>) -> Result<(), GExecError> {
-        self.tracking.set_stage_node(proc_id, node);
-        self.store_tracking()
+        self.update_tracking(|tracking| {
+            tracking.set_stage_node(proc_id, node);
+            Ok(())
+        })
     }
 
-    fn store_tracking(&self) -> Result<(), GExecError> {
+    /// Applies a change to the tracking state and persists the result.
+    ///
+    /// This is the only way `self.tracking` gets mutated, so that no change
+    /// can be made and then forgotten to be stored.  An update that fails
+    /// must leave the state as it found it, since nothing is stored then.
+    fn update_tracking(
+        &mut self,
+        update: impl FnOnce(&mut TrackingState<S>) -> Result<(), GExecError>,
+    ) -> Result<(), GExecError> {
+        update(&mut self.tracking)?;
         self.store
             .store_tracking(&self.tracking)
             .map_err(GExecError::Storage)
