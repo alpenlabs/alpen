@@ -1132,6 +1132,7 @@ mod tests {
         fcm::{
             context::{ChainController, CsmStatusReader, FcmStartupReconciler},
             state::{reconcile_canonical_blocks_index, FcmInnerState},
+            ExecutionDeferral,
         },
         ol_mmr_reconcile::{OLMmrReconcileResult, OLMmrReconcileTarget},
         tip_update::TipUpdate,
@@ -1172,6 +1173,7 @@ mod tests {
         header_read_failures: BTreeSet<OLBlockId>,
         canonical_write_failures: usize,
         block_reads: Vec<OLBlockId>,
+        status_reads: Vec<OLBlockId>,
         status_scans: usize,
         blocks: HashMap<OLBlockId, OLBlockV1>,
         headers: HashMap<OLBlockId, OLBlockHeaderV1>,
@@ -1348,6 +1350,17 @@ mod tests {
             self
         }
 
+        fn set_execution_outcome(&self, block: OLBlockId, outcome: BlockExecutionOutcome) {
+            self.execution_outcomes
+                .lock()
+                .unwrap()
+                .insert(block, outcome);
+        }
+
+        fn clear_execution_outcomes(&self) {
+            self.execution_outcomes.lock().unwrap().clear();
+        }
+
         fn executed_blocks(&self) -> Vec<OLBlockCommitment> {
             self.executed_blocks.lock().unwrap().clone()
         }
@@ -1385,6 +1398,7 @@ mod tests {
         async fn get_block_status(&self, blkid: OLBlockId) -> DbResult<Option<BlockStatus>> {
             let mut inner = self.inner.lock().unwrap();
             inner.check_storage_error(StorageOperation::StatusRead)?;
+            inner.status_reads.push(blkid);
             if inner.status_read_failures.remove(&blkid) {
                 return Err(DbError::Busy);
             }
@@ -2130,7 +2144,7 @@ mod tests {
         let chain = LinearChain::new();
         let fixture = chain.fixture_without_x4();
         let mut state = fixture.fcm_state_at(empty_tracker(&chain.genesis), &chain.genesis);
-        fixture.ctx.execution_outcomes.lock().unwrap().insert(
+        fixture.ctx.set_execution_outcome(
             chain.x1.blkid(),
             BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
         );
@@ -2958,6 +2972,527 @@ mod tests {
         assert_eq!(statuses[0].recently_complete_epoch(), genesis_epoch);
         assert_eq!(statuses[0].confirmed_epoch(), genesis_epoch);
         assert_eq!(statuses[0].finalized_epoch(), genesis_epoch);
+    }
+
+    #[tokio::test]
+    async fn pending_parent_and_child_resume_in_order() {
+        let (genesis, mut state) = execute_test_genesis();
+        let parent = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let child = execute_test_block(&mut state, &parent.block, 1_002, 2);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        for block in [&parent, &child] {
+            seed_executed_block(fixture.ctx.storage(), block, BlockStatus::Unchecked);
+            fixture.ctx.set_execution_outcome(
+                block.blkid(),
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            );
+        }
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        for block in [&child, &parent] {
+            process_fc_message(&ForkChoiceMessage::NewBlock(block.blkid()), &mut fcm)
+                .await
+                .unwrap();
+        }
+        let previous_attempt_count = fixture.ctx.executed_blocks().len();
+        fixture.ctx.clear_execution_outcomes();
+        retry_pending_blocks(&mut fcm, true).await.unwrap();
+        retry_pending_blocks(&mut fcm, true).await.unwrap();
+        assert_eq!(
+            &fixture.ctx.executed_blocks()[previous_attempt_count..],
+            &[parent.commitment(), child.commitment()]
+        );
+        assert_eq!(fcm.cur_best_block(), child.commitment());
+        assert_eq!(fcm.pending_block_count(), 0);
+        for block in [&parent, &child] {
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Valid)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_tracker_parent_defers_without_invalidating_child() {
+        let (genesis, mut state) = execute_test_genesis();
+        let parent = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let child = execute_test_block(&mut state, &parent.block, 1_002, 2);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        for block in [&parent, &child] {
+            seed_executed_block(fixture.ctx.storage(), block, BlockStatus::Unchecked);
+        }
+        fixture
+            .ctx
+            .storage()
+            .set_block_high_watermark(child.commitment());
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(child.blkid()), &mut fcm)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            fixture.ctx.get_block_status(child.blkid()).await.unwrap(),
+            Some(BlockStatus::Unchecked)
+        );
+        assert_eq!(
+            fixture.ctx.storage().block_high_watermark(),
+            Some(child.commitment())
+        );
+        assert!(fixture.ctx.executed_blocks().is_empty());
+        assert!(!fcm.chain_tracker().is_seen_block(&child.blkid()));
+        assert_eq!(fcm.pending_block_count(), 1);
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(parent.blkid()), &mut fcm)
+            .await
+            .unwrap();
+        retry_pending_blocks(&mut fcm, true).await.unwrap();
+
+        assert_eq!(fcm.cur_best_block(), child.commitment());
+        assert_eq!(fcm.pending_block_count(), 0);
+        assert_eq!(
+            fixture.ctx.get_block_status(child.blkid()).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+        assert_eq!(
+            fixture.ctx.storage().block_high_watermark(),
+            Some(child.commitment())
+        );
+        assert_eq!(
+            fixture.ctx.executed_blocks(),
+            vec![parent.commitment(), child.commitment()]
+        );
+    }
+
+    #[tokio::test]
+    async fn child_retries_on_parent_arrival_without_waiting_for_status_scan_wrap() {
+        let (genesis, mut state) = execute_test_genesis();
+        let parent = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let child = execute_test_block(&mut state, &parent.block, 1_002, 2);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        seed_executed_block(fixture.ctx.storage(), &child, BlockStatus::Unchecked);
+        fixture.ctx.set_execution_outcome(
+            child.blkid(),
+            BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+        );
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        fcm.record_pending_status_page(&[(child.commitment(), BlockStatus::Unchecked)]);
+
+        // Keep both event-triggered scans beyond the child, with no wrap or rediscovery.
+        let first_filler_slot = child.commitment().slot() + 1;
+        for slot in first_filler_slot..first_filler_slot + 2 * STATUS_SCAN_SIZE as Slot {
+            let block = make_storage_block(slot, genesis.blkid());
+            let commitment = fixture.ctx.storage().put_ol_block(block);
+            fixture
+                .ctx
+                .set_block_status(*commitment.blkid(), BlockStatus::Invalid)
+                .await
+                .unwrap();
+        }
+
+        <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm,
+            FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(child.blkid())),
+        )
+        .await
+        .unwrap();
+
+        assert!(fcm.pending_block_count() > 0);
+        assert_eq!(
+            fixture.ctx.get_block_status(child.blkid()).await.unwrap(),
+            Some(BlockStatus::Unchecked)
+        );
+        assert!(fcm.pending_scan_cursor().unwrap().slot() > child.commitment().slot());
+
+        seed_executed_block(fixture.ctx.storage(), &parent, BlockStatus::Unchecked);
+        fixture.ctx.clear_execution_outcomes();
+        <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm,
+            FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(parent.blkid())),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(fcm.cur_best_block(), child.commitment());
+        assert_eq!(
+            fixture.ctx.executed_blocks(),
+            vec![parent.commitment(), child.commitment()]
+        );
+        assert_eq!(
+            fixture.ctx.get_block_status(child.blkid()).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+        assert!(fcm.pending_scan_cursor().unwrap().slot() > child.commitment().slot());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn full_orphan_cache_does_not_prevent_honest_block_recovery() {
+        let (genesis, mut state) = execute_test_genesis();
+        let honest = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        for slot in 2..=257 {
+            let orphan = make_storage_block(slot, OLBlockId::null());
+            let id = orphan.header().compute_blkid();
+            fixture.ctx.storage().put_ol_block(orphan.clone());
+            fixture
+                .ctx
+                .set_block_status(id, BlockStatus::Unchecked)
+                .await
+                .unwrap();
+            fcm.discover_pending_block(&orphan);
+        }
+        assert_eq!(fcm.pending_block_count(), 256);
+        seed_executed_block(fixture.ctx.storage(), &honest, BlockStatus::Unchecked);
+        fixture.ctx.set_execution_outcome(
+            honest.blkid(),
+            BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+        );
+        process_fc_message(&ForkChoiceMessage::NewBlock(honest.blkid()), &mut fcm)
+            .await
+            .unwrap();
+        fixture.ctx.clear_execution_outcomes();
+
+        // Orphans remain cached until capacity eviction can reclaim their slots.
+        advance(Duration::from_secs(1)).await;
+        retry_pending_blocks(&mut fcm, true).await.unwrap();
+
+        assert_eq!(fcm.cur_best_block(), honest.commitment());
+        assert_eq!(
+            fixture.ctx.get_block_status(honest.blkid()).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+    }
+
+    #[tokio::test]
+    async fn finalized_history_scan_does_not_load_block_bodies() {
+        let (genesis, _) = execute_test_genesis();
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let finalized = EpochCommitment::new(1, 100, genesis.blkid());
+        let tracker = UnfinalizedBlockTracker::new_empty(finalized);
+        let mut fcm = fixture.fcm_state_at(tracker, &genesis);
+        for slot in 1..=100 {
+            let historical = make_storage_block(slot, genesis.blkid());
+            let id = historical.header().compute_blkid();
+            fixture.ctx.storage().put_ol_block(historical.clone());
+            fixture
+                .ctx
+                .set_block_status(id, BlockStatus::Valid)
+                .await
+                .unwrap();
+            fcm.discover_pending_block(&historical);
+        }
+        fixture
+            .ctx
+            .storage()
+            .inner
+            .lock()
+            .unwrap()
+            .block_reads
+            .clear();
+
+        // Finality supersedes cursors below or at its slot, as well as a fresh scan.
+        for cursor_slot in [None, Some(50), Some(100)] {
+            if let Some(slot) = cursor_slot {
+                let block = make_storage_block(slot, genesis.blkid());
+                fcm.record_pending_status_page(&[(
+                    block.header().compute_block_commitment(),
+                    BlockStatus::Valid,
+                )]);
+            }
+            retry_pending_blocks(&mut fcm, true).await.unwrap();
+        }
+
+        let inner = fixture.ctx.storage().inner.lock().unwrap();
+        assert_eq!(inner.status_scans, 3);
+        assert_eq!(inner.block_reads, Vec::<OLBlockId>::new());
+        assert_eq!(fcm.pending_block_count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn full_ready_cache_preserves_unattempted_blocks_despite_age() {
+        let (genesis, _) = execute_test_genesis();
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        let mut expected = Vec::new();
+        for slot in 1..=256 {
+            let block = make_storage_block(slot, genesis.blkid());
+            expected.push(block.header().compute_blkid());
+            fcm.discover_pending_block(&block);
+        }
+
+        advance(Duration::from_secs(60)).await;
+        fcm.discover_pending_block(&make_storage_block(257, genesis.blkid()));
+        assert_eq!(fcm.pending_block_count(), expected.len());
+
+        // Keep the durable table empty so discovery cannot hide an eviction. Each
+        // retry must read the original cached ID's status before removing it.
+        for batch in 0..expected.len().div_ceil(RETRY_BATCH_SIZE) {
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::RetryTick,
+            )
+            .await
+            .unwrap();
+            let attempted = ((batch + 1) * RETRY_BATCH_SIZE).min(expected.len());
+            let inner = fixture.ctx.storage().inner.lock().unwrap();
+            assert_eq!(inner.status_reads, expected[..attempted]);
+            if batch == 0 {
+                assert_eq!(inner.status_scans, 0);
+            }
+            assert_eq!(fcm.pending_block_count(), expected.len() - attempted);
+        }
+        assert_eq!(fcm.pending_block_count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn full_cache_preserves_storage_backoff_during_discovery_and_refill() {
+        let (genesis, _) = execute_test_genesis();
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        for slot in 1..=300 {
+            let block = make_storage_block(slot, genesis.blkid());
+            let commitment = fixture.ctx.storage().put_ol_block(block.clone());
+            fixture
+                .ctx
+                .set_block_status(*commitment.blkid(), BlockStatus::Unchecked)
+                .await
+                .unwrap();
+            fixture.ctx.set_execution_outcome(
+                *commitment.blkid(),
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage),
+            );
+            if slot <= 256 {
+                // Six failures reach the 32-second storage retry deadline.
+                for _ in 0..6 {
+                    fcm.defer_block(&block, ExecutionDeferral::Storage);
+                }
+            } else {
+                // Overflow discoveries must not replace entries still backing off.
+                fcm.discover_pending_block(&block);
+            }
+        }
+        assert_eq!(fcm.pending_block_count(), 256);
+
+        for _ in 0..31 {
+            advance(Duration::from_secs(1)).await;
+            for event in [FcmEvent::NewStateUpdate, FcmEvent::RetryTick] {
+                <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, event)
+                    .await
+                    .unwrap();
+            }
+            assert!(fixture.ctx.executed_blocks().is_empty());
+            assert_eq!(fixture.ctx.storage().inner.lock().unwrap().status_scans, 0);
+            assert_eq!(fcm.pending_scan_cursor(), None);
+            assert_eq!(fcm.pending_block_count(), 256);
+        }
+
+        advance(Duration::from_secs(1)).await;
+        <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, FcmEvent::RetryTick)
+            .await
+            .unwrap();
+
+        assert!(!fixture.ctx.executed_blocks().is_empty());
+        assert_eq!(fixture.ctx.storage().inner.lock().unwrap().status_scans, 1);
+        assert!(fcm.pending_block_count() <= 256);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn durable_refill_keeps_cursor_before_failed_body_read() {
+        let (genesis, _) = execute_test_genesis();
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let mut candidates = Vec::new();
+        for slot in 1..=130 {
+            let block = make_storage_block(slot, genesis.blkid());
+            let commitment = fixture.ctx.storage().put_ol_block(block);
+            fixture
+                .ctx
+                .set_block_status(*commitment.blkid(), BlockStatus::Unchecked)
+                .await
+                .unwrap();
+            fixture.ctx.set_execution_outcome(
+                *commitment.blkid(),
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            );
+            candidates.push(commitment);
+        }
+        let failed = candidates[1];
+        fixture
+            .ctx
+            .storage()
+            .inner
+            .lock()
+            .unwrap()
+            .body_read_failures
+            .insert(*failed.blkid());
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+
+        <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, FcmEvent::RetryTick)
+            .await
+            .unwrap();
+        assert_eq!(fcm.pending_scan_cursor(), Some(candidates[0]));
+        assert_eq!(fixture.ctx.executed_blocks(), vec![candidates[0]]);
+
+        advance(Duration::from_secs(1)).await;
+        <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, FcmEvent::RetryTick)
+            .await
+            .unwrap();
+        assert!(fixture.ctx.executed_blocks().contains(&failed));
+        assert_eq!(
+            fcm.pending_scan_cursor(),
+            Some(candidates[STATUS_SCAN_SIZE])
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn durable_refill_skips_persistent_body_failure_and_revisits_after_wrap() {
+        let (genesis, _) = execute_test_genesis();
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let mut candidates = Vec::new();
+        for slot in 1..=3 {
+            let block = make_storage_block(slot, genesis.blkid());
+            let commitment = fixture.ctx.storage().put_ol_block(block);
+            fixture
+                .ctx
+                .set_block_status(*commitment.blkid(), BlockStatus::Unchecked)
+                .await
+                .unwrap();
+            fixture.ctx.set_execution_outcome(
+                *commitment.blkid(),
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            );
+            candidates.push(commitment);
+        }
+        let failed = candidates[1];
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+
+        for _ in 0..3 {
+            fixture
+                .ctx
+                .storage()
+                .inner
+                .lock()
+                .unwrap()
+                .body_read_failures
+                .insert(*failed.blkid());
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::RetryTick,
+            )
+            .await
+            .unwrap();
+            advance(Duration::from_secs(1)).await;
+        }
+
+        assert!(!fixture.ctx.executed_blocks().contains(&failed));
+        assert!(fixture.ctx.executed_blocks().contains(&candidates[2]));
+        assert_eq!(fcm.pending_scan_cursor(), Some(candidates[2]));
+
+        // The failed body becomes readable while discovery wraps through durable metadata.
+        for _ in 0..2 {
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::RetryTick,
+            )
+            .await
+            .unwrap();
+            advance(Duration::from_secs(1)).await;
+        }
+        assert!(fixture.ctx.executed_blocks().contains(&failed));
+        assert_eq!(
+            fixture.ctx.get_block_status(*failed.blkid()).await.unwrap(),
+            Some(BlockStatus::Unchecked)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn durable_refill_retries_overflow_without_restart() {
+        let (genesis, _) = execute_test_genesis();
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        let mut expected = BTreeSet::new();
+        for slot in 1..=320 {
+            let block = make_storage_block(slot, genesis.blkid());
+            let commitment = fixture.ctx.storage().put_ol_block(block);
+            fixture
+                .ctx
+                .set_block_status(*commitment.blkid(), BlockStatus::Unchecked)
+                .await
+                .unwrap();
+            fixture.ctx.set_execution_outcome(
+                *commitment.blkid(),
+                BlockExecutionOutcome::Deferred(ExecutionDeferral::Dependency),
+            );
+            expected.insert(*commitment.blkid());
+        }
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        let mut attempted = BTreeSet::new();
+        // Allow room for cache rotation as well as one retry batch per entry.
+        let max_retry_cycles = 2 * expected.len().div_ceil(RETRY_BATCH_SIZE);
+        for _ in 0..max_retry_cycles {
+            advance(Duration::from_secs(1)).await;
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::RetryTick,
+            )
+            .await
+            .unwrap();
+            assert!(fcm.pending_block_count() <= 256);
+            attempted.extend(
+                fixture
+                    .ctx
+                    .executed_blocks()
+                    .iter()
+                    .map(|block| *block.blkid()),
+            );
+            if attempted == expected {
+                break;
+            }
+        }
+        assert_eq!(
+            attempted.len(),
+            expected.len(),
+            "all durable entries must eventually get a turn"
+        );
+        assert_eq!(attempted, expected);
+        assert_eq!(fcm.cur_best_block(), genesis.commitment());
+    }
+
+    #[tokio::test]
+    async fn deferred_execution_preserves_status_head_and_high_watermark() {
+        let (genesis, mut state) = execute_test_genesis();
+        let block = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        fixture.ctx.storage().put_ol_block(block.block.clone());
+        fixture
+            .ctx
+            .storage()
+            .set_block_status(block.blkid(), BlockStatus::Unchecked)
+            .await
+            .unwrap();
+        fixture
+            .ctx
+            .storage()
+            .set_block_high_watermark(block.commitment());
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        for reason in [ExecutionDeferral::Dependency, ExecutionDeferral::Storage] {
+            fixture
+                .ctx
+                .set_execution_outcome(block.blkid(), BlockExecutionOutcome::Deferred(reason));
+            process_fc_message(&ForkChoiceMessage::NewBlock(block.blkid()), &mut fcm)
+                .await
+                .unwrap();
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Unchecked)
+            );
+            assert_eq!(fcm.cur_best_block(), genesis.commitment());
+            assert_eq!(
+                fixture.ctx.storage().block_high_watermark(),
+                Some(block.commitment())
+            );
+            assert!(fixture.ctx.storage().indexing_rollbacks().is_empty());
+            assert!(fixture.ctx.storage().epoch_summary_deletes().is_empty());
+            assert!(fixture.ctx.published_statuses().is_empty());
+        }
     }
 
     #[tokio::test]
