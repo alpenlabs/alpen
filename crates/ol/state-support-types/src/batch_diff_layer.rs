@@ -104,6 +104,8 @@ where
 
     // ===== Root state methods =====
 
+    // TODO(STR-4086): read version writes from the batch once `WriteBatch`
+    // carries them; until then the base's versions are the only source.
     fn cur_spec_version(&self) -> u32 {
         self.base.cur_spec_version()
     }

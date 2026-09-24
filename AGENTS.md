@@ -117,6 +117,18 @@ resource rebuild, and genesis. `ol/stf` maps each spec to an STF implementation 
 one place. Outside `ol/stf`, only tests and the prover benchmark's input fixtures
 use `ol/stf-v1` directly.
 
+The OL state root is not the root of `OLStateV1`. Block headers, checkpoint terminal
+headers, and genesis commit to `hash_tree_root(OLRootState)`, a fixed container of
+`cur_spec_version: uint32`, `staged_spec_version: uint32`, and `chainstate_root`, which
+is the root of the chainstate in its layout (`OLStateV1` today). `cur_spec_version`
+selects the layout through `OLStateLayout::for_spec`; the staged version names the spec
+the next epoch runs under. `OLStateContainer` (`ol/state-container`) pairs the root with
+an `OLStateSeries` chainstate and is what storage, the chain worker, and the checkpoint
+proof input carry. It serializes through serde as the root's fields plus the chainstate's
+SSZ bytes, and decoding checks the chainstate against the root. Execution uses
+`MemoryStateBaseLayer<OLStateV1>`, built with `from_container` and converted back with
+`into_container`; only genesis construction assigns versions (`new_genesis`).
+
 #### EE Layer (Execution Environment)
 
 The EE provides EVM execution, decoupled from OL. `alpen-ee` owns Alpen Reth, the EE
@@ -167,7 +179,7 @@ Orchestration Layer implementation.
 |-------|-------------|
 | `ol/stf` | Versioned OL STF entry point that dispatches each operation on `OLSpecId` |
 | `ol/stf-v1` | OL state transition function (block, epoch, manifest processing) |
-| `ol/state-types` | Version-independent state traits and ledger entry types |
+| `ol/state-types` | Version-independent state traits, ledger entry types, `OLSpecId`, and the fixed `OLRootState` |
 | `ol/state-types-v1` | Concrete state structures (toplevel, global, epochal, ledger, snark account) |
 | `ol/chain-types-v1` | Versioned OL block types (SSZ); re-exports OL log types from `strata-common` |
 | `ol/tx-types-v1` | Versioned OL transaction, GAM/SAU payload, and transaction-proof types (SSZ) |
@@ -176,7 +188,8 @@ Orchestration Layer implementation.
 | `ol/da-types-v1` | Concrete V1 OL DA payload types, scheme, and checkpoint-tx extractor |
 | `ol/block-assembly` | OL block construction |
 | `ol/mempool` | Transaction mempool |
-| `ol/state-support-types` | State access layers (batch diff, indexer, write tracking) |
+| `ol/state-container` | `OLStateContainer`, `OLStateSeries`, the spec-to-layout mapping, and the container's serde form |
+| `ol/state-support-types` | State access layers (per-layout memory base layer, batch diff, indexer, write tracking) |
 | `ol/state-provider` | OL state provider traits and implementations |
 | `ol/mmr-index` | OL-owned MMR index comparison and reconciliation helpers |
 | `ol/genesis` | OL genesis state construction |
@@ -539,6 +552,7 @@ fn process_block(block: &Block) -> Result<()> {
 |---------|--------|-------|
 | Protocol data structures | SSZ | `ssz`, `ssz_derive`, and `tree_hash` from `alpenlabs/ssz-gen`; custom `.ssz` schemas |
 | On-chain envelope payloads | `strata-codec` | `strata-codec` |
+| OL state snapshots and the checkpoint proof's start state | serde over the root fields and the SSZ chainstate bytes (CBOR in sled, bincode in the proof input) | `serde`, `strata-ol-state-container` |
 | Private proof interfaces and sled values | `rkyv` | `rkyv` (zero-copy) |
 | Non-protocol persistent data | CBOR | `ciborium` |
 | Human-readable/config | JSON/TOML | `serde` |

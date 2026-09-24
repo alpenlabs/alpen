@@ -350,6 +350,8 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer<OLStateV1> {
 
         // Write batches carry no spec versions, so the root keeps this
         // layer's versions.
+        // TODO(STR-4086): apply the batches' version writes once `WriteBatch`
+        // carries them, or overlay roots will miss staged and promoted specs.
         Ok(self.compute_root_for(&chainstate))
     }
 }
