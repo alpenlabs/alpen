@@ -22,12 +22,11 @@ strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types-v1.workspace = true
-strata-ol-da-types-v1.workspace = true
 strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
-strata-ol-stf-v1.workspace = true
+strata-ol-stf.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
@@ -43,6 +42,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 strata-db-store-sled.workspace = true
+strata-ol-da-types-v1.workspace = true
 strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-tx-types-v1.workspace = true

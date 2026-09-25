@@ -483,6 +483,40 @@ fn test_apply_checkpoint_inverted_l1_range_still_errors() {
 }
 
 #[test]
+fn test_apply_checkpoint_rejects_undecodable_da_payload() {
+    let mut built = build_epoch(EpochPlan::new().terminal(BlockPlan::new().deposit_manifest()));
+    let payload = built.checkpoint_payload.clone();
+    let complement = payload.sidecar().terminal_header_complement();
+    let undecodable_sidecar = CheckpointSidecar::new(
+        vec![0xff; 3],
+        payload.sidecar().ol_logs().to_vec(),
+        TerminalHeaderComplement::new(
+            complement.timestamp(),
+            *complement.parent_blkid(),
+            *complement.body_root(),
+            *complement.logs_root(),
+        ),
+    )
+    .expect("rebuild sidecar with undecodable DA");
+    built.checkpoint_payload = CheckpointPayload::new(
+        *payload.new_tip(),
+        undecodable_sidecar,
+        payload.proof().to_vec(),
+    )
+    .expect("rebuild payload with undecodable DA");
+    let (ctx, epoch) = mock_for(&built);
+
+    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("undecodable DA should fail");
+    assert!(
+        matches!(
+            err,
+            WorkerError::DaPayloadDecode { epoch: failed_epoch, .. } if failed_epoch == epoch.epoch()
+        ),
+        "expected DA payload decode failure, got {err:?}"
+    );
+}
+
+#[test]
 fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
     let built = build_epoch(
         EpochPlan::new()

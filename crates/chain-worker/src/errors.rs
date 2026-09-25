@@ -5,6 +5,7 @@ use strata_codec::CodecError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_state_types::StateError;
+use strata_ol_stf::ExecError;
 use strata_primitives::epoch::EpochCommitment;
 use strata_snark_acct_types::Seqno;
 use thiserror::Error;
@@ -141,7 +142,7 @@ pub enum WorkerError {
 
     /// STF execution error.
     #[error("STF execution failure: {0}")]
-    StfExecution(#[from] strata_ol_stf_v1::ExecError),
+    StfExecution(#[from] ExecError),
 
     /// Write-batch application failed when committing executed-block state.
     #[error("apply_write_batch failed at {commitment:?}: {source}")]

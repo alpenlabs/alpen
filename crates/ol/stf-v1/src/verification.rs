@@ -15,6 +15,7 @@ use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::*;
 use tracing::error;
 
+use crate::assembly::execute_block_initialization;
 use crate::context::*;
 use crate::errors::{ExecError, ExecResult};
 use crate::output::ExecOutputBuffer;
@@ -164,20 +165,14 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
     verify_block_structure(header, body)?;
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
-    // 1. If it's the first block of the epoch, call process_epoch_initial.
+    // 1. Run epoch-initial processing for the first block of an epoch, then
+    // block-start processing for every block. Block start is where DA-covered
+    // writes begin.
     let block_info = BlockInfo::from_header(header);
     let block_context = BlockContext::new(&block_info, parent_header);
-    if block_context.is_epoch_initial() {
-        let epoch_context = block_context.get_epoch_initial_context();
-        chain_processing::process_epoch_initial(state, &epoch_context)?;
-    }
+    execute_block_initialization(state, &block_context)?;
 
-    // 2. Process the slot start for every block.
-    //
-    // This is where we start doing stuff covered by DA.
-    chain_processing::process_block_start(state, &block_context)?;
-
-    // 3. Call process_block_tx_segment for every block as usual.
+    // 2. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer, runtime_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, parent_header);
@@ -185,12 +180,12 @@ pub fn verify_block_predrain<S: IStateAccessorMut>(
         transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;
     }
 
-    // 4. Buffer any manifests carried by this block (allowed in any block).
+    // 3. Buffer any manifests carried by this block (allowed in any block).
     if let Some(manifest_container) = body.manifests() {
         manifest_processing::process_block_manifests(state, manifest_container.manifests())?;
     }
 
-    // 5. For non-terminal blocks, the header state root reflects the state
+    // 4. For non-terminal blocks, the header state root reflects the state
     // after buffering, so check it now. Terminal blocks check the root after
     // the drain in `apply_epoch_terminal`.
     if !header.is_terminal() {

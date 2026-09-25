@@ -52,8 +52,8 @@ use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::OLStateV1;
-use strata_ol_stf_v1::{
-    BlockComponents, BlockContext, BlockInfo, construct_block as stf_construct_block,
+use strata_ol_stf::{
+    BlockComponents, BlockContext, BlockInfo, OLSpecId, construct_block as stf_construct_block,
 };
 use strata_ol_tx_types_v1::{
     ClaimListV1, OLTransactionDataV1, OLTransactionV1, ProofSatisfierListV1, SauTxLedgerRefsV1,
@@ -617,7 +617,7 @@ pub(crate) fn add_snark_account_to_state(
     account_id: AccountId,
     state_root_seed: u8,
     initial_balance: u64,
-) {
+) -> AccountSerial {
     let new_acct = NewAccountData::new(
         BitcoinAmount::try_from(initial_balance)
             .expect("amount must not exceed the Bitcoin money supply"),
@@ -626,7 +626,7 @@ pub(crate) fn add_snark_account_to_state(
             initial_state_root: test_hash(state_root_seed),
         },
     );
-    state.create_new_account(account_id, new_acct).unwrap();
+    state.create_new_account(account_id, new_acct).unwrap()
 }
 
 /// Inserts inbox messages into a snark account's state MMR.
@@ -660,6 +660,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_v1::OLBlockHe
     let genesis_context = BlockContext::new(&genesis_info, None);
     let genesis_components = BlockComponents::new_empty();
     let genesis_output = stf_construct_block(
+        OLSpecId::V1,
         &mut temp_state,
         genesis_context,
         genesis_components,
@@ -878,6 +879,8 @@ pub struct TestStorageFixture {
     /// corresponding L1 block ref.
     l1_block_refs: Vec<AccumulatorClaim>,
     inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
+    /// Serials assigned to the seeded accounts, in seeding order.
+    seeded_account_serials: Vec<(AccountId, AccountSerial)>,
 }
 
 const GENESIS_L1_MANIFEST_HEIGHT: L1Height = 1;
@@ -889,7 +892,29 @@ impl TestStorageFixture {
             storage,
             l1_block_refs: Vec::new(),
             inbox_message_claims: Vec::new(),
+            seeded_account_serials: Vec::new(),
         }
+    }
+
+    /// Sets the serials assigned to the seeded accounts.
+    pub(crate) fn with_seeded_account_serials(
+        mut self,
+        seeded_account_serials: Vec<(AccountId, AccountSerial)>,
+    ) -> Self {
+        self.seeded_account_serials = seeded_account_serials;
+        self
+    }
+
+    /// Returns the serial the fixture assigned to the seeded account `account_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `account_id` was not seeded.
+    pub(crate) fn account_serial(&self, account_id: AccountId) -> AccountSerial {
+        self.seeded_account_serials
+            .iter()
+            .find_map(|(id, serial)| (*id == account_id).then_some(*serial))
+            .expect("account was seeded by the fixture")
     }
 
     /// Sets seeded L1 block refs and inbox message claims produced during fixture setup.
@@ -1209,6 +1234,7 @@ pub(crate) fn block_and_post_state_from_output(
 pub struct TestStorageFixtureBuilder {
     parent_slot: Option<u64>,
     l1_manifest_height_range: Option<RangeInclusive<L1Height>>,
+    l1_manifest_logs: Vec<(L1Height, Vec<AsmLogEntry>)>,
     asm_manifest_heights: Vec<L1Height>,
     expected_inbox_message_indices: Vec<(AccountId, Vec<u64>)>,
     accounts: Vec<TestAccount>,
@@ -1242,6 +1268,19 @@ impl TestStorageFixtureBuilder {
     /// Stores L1 manifests in ASM storage for block's L1 update fetching.
     pub(crate) fn with_l1_manifest_height_range(mut self, range: RangeInclusive<L1Height>) -> Self {
         self.l1_manifest_height_range = Some(range);
+        self
+    }
+
+    /// Attaches `logs` to the seeded L1 manifest at `height`.
+    ///
+    /// `height` must fall within [`Self::with_l1_manifest_height_range`].
+    pub(crate) fn with_l1_manifest_logs(
+        mut self,
+        height: L1Height,
+        logs: impl IntoIterator<Item = AsmLogEntry>,
+    ) -> Self {
+        self.l1_manifest_logs
+            .push((height, logs.into_iter().collect()));
         self
     }
 
@@ -1281,10 +1320,30 @@ impl TestStorageFixtureBuilder {
 
         // Setup ASM state with L1 manifests if configured.
         if let Some(range) = &self.l1_manifest_height_range {
-            let min_height = *range.start();
-            let max_height = *range.end();
-            setup_asm_state_with_l1_manifests(fixture.storage().as_ref(), min_height, max_height)
-                .await;
+            for (height, _) in &self.l1_manifest_logs {
+                assert!(
+                    range.contains(height),
+                    "L1 manifest logs configured outside the seeded range: {height}"
+                );
+            }
+            let manifests = range
+                .clone()
+                .map(|height| {
+                    let logs = self
+                        .l1_manifest_logs
+                        .iter()
+                        .filter(|(log_height, _)| *log_height == height)
+                        .flat_map(|(_, logs)| logs.iter().cloned())
+                        .collect();
+                    create_l1_manifest_with_logs(height, logs)
+                })
+                .collect();
+            setup_asm_state_with_l1_manifests_list(fixture.storage().as_ref(), manifests).await;
+        } else {
+            assert!(
+                self.l1_manifest_logs.is_empty(),
+                "L1 manifest logs require a seeded L1 manifest range"
+            );
         }
 
         // Create genesis state and align the DB-side ASM MMR with the state's
@@ -1295,8 +1354,11 @@ impl TestStorageFixtureBuilder {
 
         // Add snark accounts
         let mut inbox_message_claims = Vec::new();
+        let mut seeded_account_serials = Vec::with_capacity(self.accounts.len());
         for (i, account) in self.accounts.iter().enumerate() {
-            add_snark_account_to_state(&mut state, account.id, i as u8 + 1, account.balance);
+            let serial =
+                add_snark_account_to_state(&mut state, account.id, i as u8 + 1, account.balance);
+            seeded_account_serials.push((account.id, serial));
             if !account.inbox.is_empty() {
                 insert_inbox_messages_into_state(&mut state, account.id, &account.inbox);
 
@@ -1380,6 +1442,7 @@ impl TestStorageFixtureBuilder {
 
                 let block_context = BlockContext::new(&block_info, None);
                 let construct_output = stf_construct_block(
+                    OLSpecId::V1,
                     &mut state,
                     block_context,
                     components,
@@ -1439,8 +1502,11 @@ impl TestStorageFixtureBuilder {
             null_commitment
         };
 
-        let fixture =
-            Arc::new(fixture.with_seeded_claims(seeded_l1_block_refs, inbox_message_claims));
+        let fixture = Arc::new(
+            fixture
+                .with_seeded_claims(seeded_l1_block_refs, inbox_message_claims)
+                .with_seeded_account_serials(seeded_account_serials),
+        );
         (fixture, parent_commitment)
     }
 }

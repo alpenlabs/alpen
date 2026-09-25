@@ -82,13 +82,16 @@ pub(crate) fn gen_perf_report(host: &impl ZkVmHost) -> (String, ExecutionSummary
 #[cfg(test)]
 mod tests {
     use strata_ol_params::OLRuntimeParams;
+    use strata_ol_state_types::OLSpecId;
 
     use super::*;
 
     #[test]
     fn test_checkpoint_native_execution() {
         let input = prepare_checkpoint_input();
-        let output = CheckpointProgram::execute(&input, OLRuntimeParams::test_default()).unwrap();
+        let output =
+            CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default())
+                .unwrap();
         dbg!(output);
     }
 }

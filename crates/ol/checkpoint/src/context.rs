@@ -10,6 +10,7 @@ use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_stf::OLSpecId;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -373,7 +374,10 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     let ol_state_raw = ctx
         .get_ol_state(prev_terminal)?
         .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
+    // TODO(STR-4086): use the spec scheduled for the summary's epoch.
+    let spec = OLSpecId::V1;
     let da_output = compute_epoch_da(
+        spec,
         MemoryStateBaseLayer::new(ol_state_raw),
         &epoch_blocks,
         &prev_terminal_header,

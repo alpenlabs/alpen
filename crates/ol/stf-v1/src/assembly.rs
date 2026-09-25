@@ -73,8 +73,13 @@ impl BlockExecOutputs {
     }
 }
 
-/// Executes epoch-initial state transitions when needed.
-pub fn execute_epoch_initial_if_needed<S: IStateAccessorMut>(
+/// Executes the phases that open every block: epoch-initial processing for
+/// the first block of an epoch, then block-start processing.
+///
+/// Block verification, STF block construction, and sequencer block assembly
+/// all open a block through this function so that they apply the phases in
+/// the same order.
+pub fn execute_block_initialization<S: IStateAccessorMut>(
     state: &mut S,
     block_context: &BlockContext<'_>,
 ) -> ExecResult<()> {
@@ -82,15 +87,6 @@ pub fn execute_epoch_initial_if_needed<S: IStateAccessorMut>(
         let init_ctx = block_context.get_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &init_ctx)?;
     }
-    Ok(())
-}
-
-/// Executes the per-block start phase.
-// TODO(STR-2863) remove this function
-pub fn execute_block_start<S: IStateAccessorMut>(
-    state: &mut S,
-    block_context: &BlockContext<'_>,
-) -> ExecResult<()> {
     chain_processing::process_block_start(state, block_context)
 }
 
@@ -146,13 +142,11 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     // across phases.
     let output = ExecOutputBuffer::new_empty();
 
-    // 1. If it's the first block of the epoch, call process_epoch_initial.
-    execute_epoch_initial_if_needed(state, &block_context)?;
+    // 1. Run epoch-initial processing for the first block of an epoch, then
+    // block-start processing for every block.
+    execute_block_initialization(state, &block_context)?;
 
-    // 2. Process the slot start for every block.
-    execute_block_start(state, &block_context)?;
-
-    // 3. Call process_block_tx_segment for every block as usual.
+    // 2. Call process_block_tx_segment for every block as usual.
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output, runtime_params);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     execute_block_tx_segment(state, block_exec_input.tx_segment(), &tx_ctx)?;
@@ -161,13 +155,13 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     // bypass `emit_logs`.
     output.verify_logs_within_block_limit()?;
 
-    // 4. If the block carries manifests, buffer their ASM logs into intraepoch
+    // 3. If the block carries manifests, buffer their ASM logs into intraepoch
     // state. Manifests may appear in any block; this does not apply effects.
     if let Some(manifest_container) = block_exec_input.manifest_container() {
         execute_block_manifest_buffering(state, manifest_container.manifests())?;
     }
 
-    // 5. If this is the epoch terminal (per the authoritative flag), drain the
+    // 4. If this is the epoch terminal (per the authoritative flag), drain the
     // buffered ASM logs, reset intraepoch state, and advance the epoch.
     if block_exec_input.is_terminal() {
         let term_ctx = tx_ctx.basic_context();
@@ -176,7 +170,7 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
         output.verify_logs_within_block_limit()?;
     }
 
-    // 6. The single state root is the final root after all of the block's
+    // 5. The single state root is the final root after all of the block's
     // processing.
     let state_root = state.compute_state_root()?;
 

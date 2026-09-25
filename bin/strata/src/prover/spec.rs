@@ -12,6 +12,7 @@ use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_checkpoint::compute_epoch_da;
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
+use strata_ol_state_types::OLSpecId;
 use strata_paas::{InputResolution, ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
@@ -153,7 +154,10 @@ fn fetch_input_blocking(
 
     blocks.reverse();
 
+    // TODO(STR-4086): use the spec scheduled for the target epoch.
+    let spec = OLSpecId::V1;
     let da_output = compute_epoch_da(
+        spec,
         MemoryStateBaseLayer::new((*start_state).clone()),
         &blocks,
         &parent,

@@ -6,7 +6,7 @@
 //! OL chainstate database. It encapsulates the logic for fetching, executing,
 //! and finalizing OL blocks and epochs using:
 //!
-//! - OL STF ([`strata_ol_stf_v1::verify_block`])
+//! - OL STF ([`strata_ol_stf::verify_block`])
 //! - OL types ([`OLBlockV1`](strata_ol_chain_types_v1::OLBlockV1),
 //!   [`OLBlockHeaderV1`](strata_ol_chain_types_v1::OLBlockHeaderV1),
 //!   [`OLStateV1`](strata_ol_state_types_v1::OLStateV1),

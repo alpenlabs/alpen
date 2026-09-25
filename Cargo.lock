@@ -8829,6 +8829,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
+ "strata-ol-stf",
  "strata-ol-stf-v1",
  "strata-ol-tx-types-v1",
  "strata-predicate",
@@ -9428,6 +9429,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
+ "strata-ol-stf",
  "strata-ol-stf-v1",
  "strata-ol-tx-types-v1",
  "strata-predicate",
@@ -9501,6 +9503,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
+ "strata-ol-stf",
  "strata-ol-stf-v1",
  "strata-ol-tx-types-v1",
  "strata-predicate",
@@ -9562,7 +9565,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
- "strata-ol-stf-v1",
+ "strata-ol-stf",
  "thiserror 2.0.20",
  "tracing",
 ]
@@ -9605,7 +9608,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
- "strata-ol-stf-v1",
+ "strata-ol-stf",
  "strata-ol-tx-types-v1",
  "strata-predicate",
  "strata-service",
@@ -9812,6 +9815,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-stf"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ol-chain-types-v1",
+ "strata-ol-da-types-v1",
+ "strata-ol-params",
+ "strata-ol-state-support-types",
+ "strata-ol-state-types",
+ "strata-ol-stf-v1",
+ "strata-ol-tx-types-v1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "strata-ol-stf-v1"
 version = "0.1.0"
 dependencies = [
@@ -9951,6 +9970,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
+ "strata-ol-stf",
  "strata-ol-stf-v1",
  "strata-predicate",
  "zkaleido",

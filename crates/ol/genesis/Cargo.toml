@@ -12,7 +12,7 @@ strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
-strata-ol-stf-v1.workspace = true
+strata-ol-stf.workspace = true
 
 thiserror.workspace = true
 tracing.workspace = true

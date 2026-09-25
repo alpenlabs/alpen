@@ -7,7 +7,7 @@ use strata_ol_state_types::IStateAccessor;
 use crate::context::{BlockContext, BlockInfo, EpochInitialContext};
 use crate::errors::ExecError;
 use crate::test_utils::{OLStfFixture, make_genesis_state, tamper_epoch, tamper_slot};
-use crate::{process_block_start, process_epoch_initial};
+use crate::{execute_block_initialization, process_block_start, process_epoch_initial};
 
 fn terminal_genesis_header() -> OLBlockHeaderV1 {
     OLStfFixture::builder()
@@ -117,6 +117,22 @@ fn test_block_start_rejects_state_epoch_mismatch() {
         .expect_err("invalid chain-processing input should fail");
 
     assert!(matches!(err, ExecError::HeaderEpochMismatch(1, 0)));
+    assert_eq!(state.cur_slot(), 0);
+}
+
+#[test]
+fn test_block_initialization_runs_epoch_initial_before_block_start() {
+    // Same input as `test_block_start_rejects_state_epoch_mismatch`. Epoch-initial
+    // processing runs first, so its mismatch is reported instead.
+    let mut state = make_genesis_state();
+    let parent_header = terminal_genesis_header();
+    let block_info = BlockInfo::new(1_001_000, 1, 1);
+    let context = BlockContext::new(&block_info, Some(&parent_header));
+
+    let err = execute_block_initialization(&mut state, &context)
+        .expect_err("invalid chain-processing input should fail");
+
+    assert!(matches!(err, ExecError::ContextEpochMismatch(1, 0)));
     assert_eq!(state.cur_slot(), 0);
 }
 

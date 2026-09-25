@@ -5,12 +5,16 @@
 //! applies the epoch DA diff and then replays those manifests. The same
 //! pre-drain execution that constructs the diff also produces the OL logs
 //! carried alongside it by the checkpoint.
+//!
+//! The replay runs under the epoch's spec, but the accumulated diff is still
+//! encoded as a V1 DA payload. Rules that change the DA format must also
+//! select the encoder here.
 
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, DaAccumulationError};
 use strata_ol_state_types::IStateAccessorMut;
-use strata_ol_stf_v1::{ExecError, execute_block_batch_predrain};
+use strata_ol_stf::{ExecError, OLSpecId, execute_block_batch_predrain};
 use thiserror::Error;
 
 /// Errors produced while computing epoch DA.
@@ -54,20 +58,22 @@ impl<Log> EpochReplayArtifacts<Log> {
     }
 }
 
-/// Computes the complete DA for an epoch and its OL logs.
+/// Computes the complete DA for an epoch and its OL logs, replaying the
+/// epoch's blocks under `spec`.
 ///
 /// ASM manifests are already available from L1, so epoch DA does not duplicate
 /// the state effects reconstructed from them. The computation therefore
 /// replays the epoch's blocks without applying the terminal ASM-log drain.
 /// Log collection begins after epoch-initial processing. This is currently
-/// complete because [`strata_ol_stf_v1::process_epoch_initial`] has no log
-/// output; include that phase's output here if this changes.
+/// complete because epoch-initial processing emits no logs; include that
+/// phase's output here if this changes.
 ///
 /// # Errors
 ///
 /// Returns an error if the blocks do not form a complete epoch, block replay
 /// fails, or the accumulated DA diff cannot be encoded.
 pub fn compute_epoch_da<S>(
+    spec: OLSpecId,
     pre_epoch_state: S,
     epoch_blocks: &[OLBlockV1],
     previous_terminal: &OLBlockHeaderV1,
@@ -90,6 +96,7 @@ where
 
     let mut da_state = DaAccumulatingState::new(pre_epoch_state);
     let ol_logs = execute_block_batch_predrain(
+        spec,
         &mut da_state,
         epoch_blocks,
         previous_terminal,
@@ -112,7 +119,7 @@ where
 mod tests {
     use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_stf_v1::BlockComponents;
+    use strata_ol_stf::{BlockComponents, OLSpecId};
     use strata_ol_stf_v1::test_utils::{
         epoch_runner_run_block as run_block, epoch_runner_run_genesis as run_genesis,
         make_genesis_state,
@@ -128,6 +135,7 @@ mod tests {
         let runtime_params = OLRuntimeParams::test_default();
 
         let empty_error = compute_epoch_da(
+            OLSpecId::V1,
             MemoryStateBaseLayer::new(pre_epoch_state.clone()),
             &[],
             previous_terminal.header(),
@@ -144,6 +152,7 @@ mod tests {
             BlockComponents::new_empty(),
         );
         let nonterminal_error = compute_epoch_da(
+            OLSpecId::V1,
             MemoryStateBaseLayer::new(pre_epoch_state),
             &blocks,
             previous_terminal.header(),

@@ -1,0 +1,24 @@
+[package]
+name = "strata-ol-stf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-acct-types.workspace = true
+strata-codec.workspace = true
+strata-ol-chain-types-v1.workspace = true
+strata-ol-da-types-v1.workspace = true
+strata-ol-params.workspace = true
+strata-ol-state-types.workspace = true
+strata-ol-stf-v1.workspace = true
+strata-ol-tx-types-v1.workspace = true
+
+thiserror.workspace = true
+
+[dev-dependencies]
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-state-support-types.workspace = true
+strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
+
+[lints]
+workspace = true

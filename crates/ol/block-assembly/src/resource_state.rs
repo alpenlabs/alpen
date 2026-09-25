@@ -6,7 +6,7 @@ use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_state_types::{IAccountStateMut, IStateAccessorMut};
-use strata_ol_stf_v1::execute_block_batch_predrain;
+use strata_ol_stf::{OLSpecId, execute_block_batch_predrain};
 use strata_primitives::nonempty_vec::NonEmptyVec;
 
 use crate::{BlockAssemblyAnchorContext, BlockAssemblyError, BlockAssemblyStateAccess};
@@ -134,8 +134,11 @@ where
     let epoch_blocks = collect_epoch_blocks_until(blkid.blkid, epoch, ctx).await?;
     let initial_state = fetch_state(&epoch_blocks.epoch_parent, ctx).await?;
 
+    // TODO(STR-4086): use the spec scheduled for `epoch`.
+    let spec = OLSpecId::V1;
     let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
     let batch_logs = execute_block_batch_predrain(
+        spec,
         &mut da_state,
         &epoch_blocks.blocks,
         &epoch_blocks.epoch_parent,

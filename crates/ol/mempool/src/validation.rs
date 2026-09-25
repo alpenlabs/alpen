@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
 use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
-use strata_ol_stf_v1::{ExecError, ExecResult, check_tx_constraints};
+use strata_ol_stf::sequencer::check_tx_constraints;
+use strata_ol_stf::{ExecError, ExecResult, OLSpecId};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::Seqno;
@@ -124,8 +125,11 @@ pub(crate) fn validate_transaction(
         .target()
         .expect("all OL payload variants must have a target");
 
+    // TODO(STR-4086): use the spec scheduled for the snapshot state's epoch.
+    let spec = OLSpecId::V1;
+
     // 1. Slot bounds check.
-    check_tx_constraints(tx.constraints(), state_accessor).map_err(|e| match e {
+    check_tx_constraints(spec, tx.constraints(), state_accessor).map_err(|e| match e {
         ExecError::TransactionExpired(max_slot, current_slot) => {
             OLMempoolError::TransactionExpired {
                 txid,

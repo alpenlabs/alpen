@@ -11,9 +11,17 @@ use strata_ol_chain_types_v1::*;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
-use strata_ol_state_types::{AccProofCheck, ISnarkAccountState, IStateAccessor, TxProofIndexer, *};
+use strata_ol_state_types::{AccProofCheck, ISnarkAccountState, IStateAccessor, *};
 use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
-use strata_ol_stf_v1::*;
+use strata_ol_stf::sequencer::{
+    execute_block_initialization as stf_execute_block_initialization,
+    index_snark_update_proof_requirements, process_asm_manifest, process_epoch_terminal,
+    process_single_tx, verify_block_structure,
+};
+use strata_ol_stf::{
+    BasicExecContext, BlockContext, BlockExecOutputs, BlockInfo, ExecError, ExecOutputBuffer,
+    OLSpecId, TxExecContext,
+};
 use strata_ol_tx_types_v1::*;
 use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
@@ -309,6 +317,10 @@ where
     let block_info = BlockInfo::new(0, block_slot, block_epoch);
     let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
+    // TODO(STR-4086): use the spec scheduled for `block_epoch`. A terminal
+    // block, including its drain, runs under the spec of the epoch it ends.
+    let spec = OLSpecId::V1;
+
     // Create output buffer to collect logs from all transaction executions.
     let output_buffer = ExecOutputBuffer::new_empty();
 
@@ -316,8 +328,12 @@ where
     // Resource state flows through each phase, accumulating state diffs, logs, and manifest count.
     let epoch_cumulative_da = resource_state_before_block.da().clone();
     let epoch_cumulative_manifest_count = resource_state_before_block.manifest_count();
-    let (accumulated_batch, accumulated_da) =
-        execute_block_initialization(parent_state.as_ref(), &block_context, epoch_cumulative_da);
+    let (accumulated_batch, accumulated_da) = execute_block_initialization(
+        spec,
+        parent_state.as_ref(),
+        &block_context,
+        epoch_cumulative_da,
+    );
     let runtime_params = ctx.runtime_params();
 
     // Phase 2: Process transactions, filtering out invalid ones.
@@ -328,6 +344,7 @@ where
         accumulated_da,
         mut sealing_limit_verdict,
     } = process_transactions(
+        spec,
         ctx,
         epoch_sealing_policy,
         &block_context,
@@ -348,6 +365,7 @@ where
         checkpoint_enactment_height,
         sealing_limit_verdict: manifest_limit_verdict,
     } = fetch_and_process_asm_manifests_for_block(
+        spec,
         ctx,
         epoch_sealing_policy,
         &mut manifest_state,
@@ -383,6 +401,7 @@ where
     // Clone output_buffer: the clone goes to build_block_template (which collects logs
     // during the terminal drain), the original is consumed below to append this block's tx logs to DA.
     debug!(
+        ?spec,
         successful_tx_count = successful_txs.len(),
         failed_tx_count = failed_txs.len(),
         is_terminal = should_seal,
@@ -390,6 +409,7 @@ where
         "block construction summary",
     );
     let (template, post_state) = build_block_template(
+        spec,
         config,
         &block_context,
         &parent_state,
@@ -432,6 +452,7 @@ where
 /// `epoch_cumulative_manifest_count` is the number of ASM manifests already carried
 /// by preceding blocks in the current epoch.
 async fn fetch_and_process_asm_manifests_for_block<C, E, S>(
+    spec: OLSpecId,
     ctx: &C,
     epoch_sealing_policy: &E,
     state: &mut S,
@@ -462,6 +483,7 @@ where
         sealing_limit_verdict,
         checkpoint_enactment_height,
     } = select_and_process_asm_manifests(
+        spec,
         epoch_sealing_policy,
         state,
         fetched_asm_manifests,
@@ -505,6 +527,7 @@ where
 /// checkpoint DA output; if that invariant changes, selection must budget that
 /// output before admitting ASM manifests.
 fn select_and_process_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>(
+    spec: OLSpecId,
     epoch_sealing_policy: &E,
     state: &mut S,
     candidate_asm_manifests: Vec<AsmManifest>,
@@ -546,7 +569,7 @@ fn select_and_process_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>
 
         // Process admitted manifests through the STF and honor its enactment signal.
         // Height B ends the old predicate's territory; B+1 belongs to the next epoch.
-        checkpoint_enactment_height = process_asm_manifest(state, &candidate_asm_manifest)
+        checkpoint_enactment_height = process_asm_manifest(spec, state, &candidate_asm_manifest)
             .map_err(BlockAssemblyError::BlockConstruction)?
             .checkpoint_enactment_height();
         selected_asm_log_count += candidate_asm_log_count;
@@ -569,7 +592,11 @@ fn select_and_process_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>
 ///
 /// Runs through `DaAccumulatingState` so that slot/epoch mutations are captured
 /// in the DA accumulator. Returns the write batch and the updated DA data.
+///
+/// Uses the same initialization as block verification, so the sequencer and
+/// verifiers apply the phases in the same order.
 fn execute_block_initialization<S: BlockAssemblyStateAccess>(
+    spec: OLSpecId,
     parent_state: &S,
     block_context: &BlockContext<'_>,
     accumulated_da: AccumulatedDaData,
@@ -578,17 +605,8 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
     let write_state = WriteTrackingState::new_empty(parent_state);
     let mut da_state = DaAccumulatingState::new_with_accumulator(write_state, accumulator);
 
-    // Process block start for every block (sets cur_slot, etc.)
-    // Per spec: process_slot_start runs before process_epoch_initial.
-    process_block_start(&mut da_state, block_context)
-        .expect("block start processing should not fail");
-
-    // Process epoch initial if this is the first block of the epoch.
-    if block_context.is_epoch_initial() {
-        let init_ctx = block_context.get_epoch_initial_context();
-        process_epoch_initial(&mut da_state, &init_ctx)
-            .expect("epoch initial processing should not fail");
-    }
+    stf_execute_block_initialization(spec, &mut da_state, block_context)
+        .expect("block initialization should not fail on a sequencer-derived context");
 
     let (accumulator, write_state) = da_state.into_parts();
     (
@@ -608,6 +626,7 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
 )]
 #[expect(clippy::too_many_arguments, reason = "all arguments are required")]
 fn process_transactions<P, E, S>(
+    spec: OLSpecId,
     proof_gen: &P,
     epoch_sealing_policy: &E,
     block_context: &BlockContext<'_>,
@@ -660,7 +679,7 @@ where
 
         // Step 1: Validate and generate accumulator proofs, convert to OL transaction.
         // This only reads from state, so no rollback needed on failure.
-        let tx = match add_accumulator_proofs(proof_gen, &staging_state, mempool_tx) {
+        let tx = match add_accumulator_proofs(spec, proof_gen, &staging_state, mempool_tx) {
             Ok(tx) => tx,
             Err(e) => {
                 let reason = block_assembly_error_to_mempool_reason(&e);
@@ -697,7 +716,7 @@ where
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
         debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
-        match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
+        match process_single_tx(spec, &mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
                 // Tx executed successfully. Before committing side effects, check
                 // the estimated checkpoint size against component and envelope limits.
@@ -815,6 +834,7 @@ where
 ///
 /// Returns `(template, final_state)` where `final_state` is the post-block state.
 fn build_block_template<S>(
+    spec: OLSpecId,
     config: &BlockGenerationConfig,
     block_context: &BlockContext<'_>,
     parent_state: &Arc<S>,
@@ -841,7 +861,7 @@ where
     if is_terminal {
         let basic_ctx =
             BasicExecContext::new(*block_context.block_info(), &output_buffer, runtime_params);
-        process_epoch_terminal(&mut final_state, &basic_ctx).map_err(|e| {
+        process_epoch_terminal(spec, &mut final_state, &basic_ctx).map_err(|e| {
             error!(?e, "epoch terminal processing failed");
             BlockAssemblyError::BlockConstruction(e)
         })?;
@@ -904,7 +924,7 @@ where
         logs_root,
     );
 
-    verify_block_structure(&header, &body).map_err(BlockAssemblyError::BlockConstruction)?;
+    verify_block_structure(spec, &header, &body).map_err(BlockAssemblyError::BlockConstruction)?;
 
     // Build full block template
     let template = FullBlockTemplate::new(header, body);
@@ -944,10 +964,10 @@ impl SauSummary {
 /// [`TransactionPayloadV1::GenericAccountMessage`] transactions do not require
 /// accumulator proofs and are returned unchanged.
 ///
-/// Uses [`TxProofIndexer`] with [`verify_snark_acct_update_proofs`] to discover
-/// what accumulator proofs are needed, then generates them via the
-/// [`AccumulatorProofGenerator`].
+/// Uses [`index_snark_update_proof_requirements`] to discover what accumulator
+/// proofs are needed, then generates them via the [`AccumulatorProofGenerator`].
 fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
+    spec: OLSpecId,
     proof_gen: &P,
     state: &S,
     mempool_tx: OLTransactionV1,
@@ -959,20 +979,18 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     let target = *sau_payload.target();
     let effects = mempool_tx.data().effects();
 
-    // Use the TxProofIndexer to discover what proofs are needed by running the
-    // verification logic in "dry-run" mode.
+    // List the proofs the update needs by running its proof checks as a dry run.
     let account_state = state
         .get_account_state(target)
         .map_err(BlockAssemblyError::State)?
         .ok_or(BlockAssemblyError::AccountNotFound(target))?;
 
-    let mut proof_indexer = TxProofIndexer::new_fresh();
-    verify_snark_acct_update_proofs(
+    let proof_indexer = index_snark_update_proof_requirements(
+        spec,
         target,
         account_state,
         sau_payload.operation(),
         effects,
-        &mut proof_indexer,
     )
     .map_err(BlockAssemblyError::SnarkUpdatePreValidation)?;
 
@@ -1115,6 +1133,7 @@ mod tests {
 
         // Convert transaction (generates accumulator proofs).
         let result = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1159,6 +1178,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1200,6 +1220,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         let err = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1230,6 +1251,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         let out_tx = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1283,6 +1305,7 @@ mod tests {
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1327,6 +1350,7 @@ mod tests {
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1371,6 +1395,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1470,6 +1495,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1519,6 +1545,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1579,6 +1606,7 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         let tx = add_accumulator_proofs(
+            OLSpecId::V1,
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
@@ -1979,6 +2007,7 @@ mod tests {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
         let selected = select_and_process_asm_manifests(
+            OLSpecId::V1,
             &policy,
             &mut state,
             vec![
@@ -2017,6 +2046,7 @@ mod tests {
         let initial_root = state.compute_state_root().unwrap();
         let height = state.last_l1_height() + 1;
         let err = select_and_process_asm_manifests(
+            OLSpecId::V1,
             &policy,
             &mut state,
             vec![create_l1_manifest_with_logs(
@@ -2042,6 +2072,7 @@ mod tests {
         let initial_root = state.compute_state_root().unwrap();
         let height = state.last_l1_height() + 1;
         let err = select_and_process_asm_manifests(
+            OLSpecId::V1,
             &policy,
             &mut state,
             vec![create_l1_manifest_with_logs(
@@ -2068,6 +2099,7 @@ mod tests {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
         let selected = select_and_process_asm_manifests(
+            OLSpecId::V1,
             &policy,
             &mut state,
             vec![create_l1_manifest_with_logs(
@@ -2100,6 +2132,7 @@ mod tests {
             let initial_height = state.last_l1_height();
             let boundary_height = initial_height + 1;
             let selected = select_and_process_asm_manifests(
+                OLSpecId::V1,
                 &policy,
                 &mut state,
                 vec![create_l1_manifest_with_logs(
@@ -2162,6 +2195,7 @@ mod tests {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
         let selected = select_and_process_asm_manifests(
+            OLSpecId::V1,
             &policy,
             &mut state,
             vec![
@@ -2195,6 +2229,7 @@ mod tests {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
         let mut state = create_test_genesis_state();
         let selected = select_and_process_asm_manifests(
+            OLSpecId::V1,
             &policy,
             &mut state,
             vec![create_l1_manifest_with_logs(2, vec![raw_asm_log(1)])],
@@ -3065,6 +3100,7 @@ mod tests {
             .expect("pre-fill should succeed");
 
         let out = process_transactions(
+            OLSpecId::V1,
             env.ctx(),
             env.epoch_sealing_policy(),
             &block_context,
@@ -3124,6 +3160,7 @@ mod tests {
             .expect("pre-fill should succeed");
 
         let out = process_transactions(
+            OLSpecId::V1,
             env.ctx(),
             env.epoch_sealing_policy(),
             &block_context,
@@ -3171,6 +3208,7 @@ mod tests {
             .expect("pre-filling up to the cap should succeed");
 
         let out = process_transactions(
+            OLSpecId::V1,
             env.ctx(),
             env.epoch_sealing_policy(),
             &block_context,
@@ -3213,6 +3251,7 @@ mod tests {
         let seeded_da = seeded_da(seeded_log_count);
 
         process_transactions(
+            OLSpecId::V1,
             env.ctx(),
             env.epoch_sealing_policy(),
             &block_context,
