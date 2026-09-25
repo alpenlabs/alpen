@@ -2761,6 +2761,71 @@ mod tests {
         sign_schnorr_sig(&msg, signing_key)
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn startup_synchronizes_valid_tip_without_execution_replay() {
+        for fail_first_update in [false, true] {
+            let (genesis, mut state) = execute_test_genesis();
+            let block = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+            let fixture = FcmTestFixture::new(&genesis, &[&block]);
+            // Only genesis is canonical on disk, as after an interrupted tip update.
+            assert_eq!(
+                fixture
+                    .ctx
+                    .storage()
+                    .get_canonical_block_at(1)
+                    .await
+                    .unwrap(),
+                None
+            );
+            let mut fcm =
+                init_fcm_service_state(PredicateKey::always_accept(), fixture.ctx.clone())
+                    .await
+                    .unwrap();
+            assert_eq!(fcm.cur_best_block(), block.commitment());
+            assert!(fcm.take_startup_replay_candidates().is_empty());
+            *fixture.ctx.safe_tip_failures.lock().unwrap() = usize::from(fail_first_update);
+
+            <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut fcm)
+                .await
+                .unwrap();
+            if fail_first_update {
+                assert!(fixture.ctx.safe_tip_updates().is_empty());
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::NewStateUpdate,
+                )
+                .await
+                .unwrap();
+                assert!(fixture.ctx.safe_tip_updates().is_empty());
+                advance(Duration::from_secs(1)).await;
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::RetryTick,
+                )
+                .await
+                .unwrap();
+            }
+
+            assert_eq!(fixture.ctx.safe_tip_updates(), vec![block.commitment()]);
+            assert_eq!(
+                fixture
+                    .ctx
+                    .storage()
+                    .get_canonical_block_at(1)
+                    .await
+                    .unwrap(),
+                Some(block.commitment())
+            );
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Valid)
+            );
+            assert_eq!(fcm.pending_block_count(), 0);
+            assert!(fixture.ctx.executed_blocks().is_empty());
+            assert!(!fcm.fork_choice_retry_due());
+        }
+    }
+
     #[tokio::test]
     async fn on_launch_replays_startup_candidates_and_drains_them() -> anyhow::Result<()> {
         let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
@@ -3492,6 +3557,797 @@ mod tests {
             assert!(fixture.ctx.storage().indexing_rollbacks().is_empty());
             assert!(fixture.ctx.storage().epoch_summary_deletes().is_empty());
             assert!(fixture.ctx.published_statuses().is_empty());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_preserves_durable_verdict_and_indexing_on_local_failure() {
+        for status in [BlockStatus::Unchecked, BlockStatus::Valid] {
+            for deferral in [
+                Some(ExecutionDeferral::Storage),
+                Some(ExecutionDeferral::Dependency),
+                None,
+            ] {
+                let (genesis, mut state) = execute_test_genesis();
+                let block =
+                    execute_terminal_test_block_in_epoch(&mut state, &genesis.block, 1_001, 1, 1);
+                let fixture = FcmTestFixture::new(&genesis, &[]);
+                seed_executed_block(fixture.ctx.storage(), &block, status);
+                fixture
+                    .ctx
+                    .storage()
+                    .set_block_high_watermark(block.commitment());
+                fixture
+                    .ctx
+                    .storage()
+                    .put_canonical_epoch_commitment(EpochCommitment::new(1, 1, block.blkid()));
+                if let Some(reason) = deferral {
+                    fixture.ctx.set_execution_outcome(
+                        block.blkid(),
+                        BlockExecutionOutcome::Deferred(reason),
+                    );
+                } else {
+                    fixture
+                        .ctx
+                        .execution_errors
+                        .lock()
+                        .unwrap()
+                        .insert(block.blkid());
+                }
+                let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+
+                let result = <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::RetryTick,
+                )
+                .await;
+                if deferral.is_some() {
+                    result.unwrap();
+                } else {
+                    assert!(result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("injected unclassified worker failure"));
+                }
+
+                // The verdict must remain intact during execution as well as after deferral.
+                assert_eq!(
+                    *fixture.ctx.execution_statuses.lock().unwrap(),
+                    vec![Some(status)]
+                );
+                assert_eq!(
+                    fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                    Some(status)
+                );
+                assert_eq!(
+                    fixture.ctx.storage().block_high_watermark(),
+                    Some(block.commitment())
+                );
+                assert_eq!(fcm.cur_best_block(), genesis.commitment());
+                assert_eq!(fcm.pending_block_count(), 1);
+                assert!(fixture.ctx.storage().indexing_rollbacks().is_empty());
+                assert!(fixture.ctx.storage().epoch_summary_deletes().is_empty());
+                assert!(fixture.ctx.published_statuses().is_empty());
+
+                if deferral.is_none() {
+                    // A fatal local failure terminates the service and preserves durable data.
+                    continue;
+                }
+                if deferral != Some(ExecutionDeferral::Dependency) {
+                    <FcmService<StubFcmContext> as AsyncService>::process_input(
+                        &mut fcm,
+                        FcmEvent::NewStateUpdate,
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(fixture.ctx.executed_blocks(), vec![block.commitment()]);
+                }
+
+                fixture.ctx.clear_execution_outcomes();
+                fixture.ctx.execution_errors.lock().unwrap().clear();
+                advance(Duration::from_secs(1)).await;
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::RetryTick,
+                )
+                .await
+                .unwrap();
+
+                assert_eq!(
+                    fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                    Some(BlockStatus::Valid)
+                );
+                assert_eq!(fcm.cur_best_block(), block.commitment());
+                assert_eq!(fcm.pending_block_count(), 0);
+                assert_eq!(
+                    fixture.ctx.storage().block_high_watermark(),
+                    Some(block.commitment())
+                );
+                assert!(fixture.ctx.storage().indexing_rollbacks().is_empty());
+                assert!(fixture.ctx.storage().epoch_summary_deletes().is_empty());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn fatal_execution_failure_propagates_from_new_block_and_startup() {
+        for startup in [false, true] {
+            let (genesis, mut state) = execute_test_genesis();
+            let block =
+                execute_terminal_test_block_in_epoch(&mut state, &genesis.block, 1_001, 1, 1);
+            let fixture = FcmTestFixture::new(&genesis, &[]);
+            seed_executed_block(fixture.ctx.storage(), &block, BlockStatus::Unchecked);
+            fixture
+                .ctx
+                .storage()
+                .set_block_high_watermark(block.commitment());
+            fixture
+                .ctx
+                .execution_errors
+                .lock()
+                .unwrap()
+                .insert(block.blkid());
+            let inner = FcmInnerState::new(
+                empty_tracker(&genesis),
+                genesis.commitment(),
+                Arc::new(genesis.state.clone()),
+                if startup {
+                    vec![block.blkid()]
+                } else {
+                    Vec::new()
+                },
+            );
+            let mut fcm =
+                FcmServiceState::new(fixture.ctx.clone(), PredicateKey::always_accept(), inner);
+
+            let error = if startup {
+                <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut fcm)
+                    .await
+                    .unwrap_err()
+            } else {
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(block.blkid())),
+                )
+                .await
+                .unwrap_err()
+            };
+
+            assert!(error
+                .to_string()
+                .contains("injected unclassified worker failure"));
+            assert_eq!(fixture.ctx.executed_blocks(), vec![block.commitment()]);
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Unchecked)
+            );
+            assert_eq!(
+                fixture.ctx.storage().block_high_watermark(),
+                Some(block.commitment())
+            );
+            assert_eq!(fcm.cur_best_block(), genesis.commitment());
+            assert_eq!(fcm.pending_block_count(), usize::from(startup));
+            assert!(fixture.ctx.storage().indexing_rollbacks().is_empty());
+            assert!(fixture.ctx.storage().epoch_summary_deletes().is_empty());
+            assert!(fixture.ctx.published_statuses().is_empty());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn attached_block_retries_fork_choice_without_reexecution() {
+        enum Failure {
+            HeaderRead,
+            SafeTip,
+            CanonicalWrite,
+            ExhaustedStateRead,
+        }
+        for failure in [
+            Failure::HeaderRead,
+            Failure::SafeTip,
+            Failure::CanonicalWrite,
+            Failure::ExhaustedStateRead,
+        ] {
+            let (genesis, mut state) = execute_test_genesis();
+            let block = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+            let fixture = FcmTestFixture::new(&genesis, &[]);
+            seed_executed_block(fixture.ctx.storage(), &block, BlockStatus::Unchecked);
+            match failure {
+                Failure::HeaderRead => {
+                    fixture
+                        .ctx
+                        .storage()
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .header_read_failures
+                        .insert(block.blkid());
+                }
+                Failure::ExhaustedStateRead => {
+                    fixture
+                        .ctx
+                        .storage()
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .state_read_errors
+                        .insert(
+                            block.commitment(),
+                            DbError::RetriesExhausted {
+                                attempts: 3,
+                                last_error: Box::new(DbError::Busy),
+                            },
+                        );
+                }
+                Failure::SafeTip => *fixture.ctx.safe_tip_failures.lock().unwrap() = 1,
+                Failure::CanonicalWrite => {
+                    fixture
+                        .ctx
+                        .storage()
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .canonical_write_failures = 1;
+                }
+            }
+            let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(block.blkid())),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Valid)
+            );
+            assert!(fcm.chain_tracker().is_seen_block(&block.blkid()));
+            assert_eq!(fcm.pending_block_count(), 0);
+            assert_eq!(fcm.cur_best_block(), genesis.commitment());
+            assert_eq!(
+                fixture
+                    .ctx
+                    .storage()
+                    .get_canonical_block_at(1)
+                    .await
+                    .unwrap(),
+                None
+            );
+            assert!(fixture.ctx.published_statuses().is_empty());
+
+            // Progress must not bypass fork choice's storage backoff.
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::NewStateUpdate,
+            )
+            .await
+            .unwrap();
+            assert_eq!(fcm.cur_best_block(), genesis.commitment());
+            advance(Duration::from_secs(1)).await;
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::RetryTick,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(fcm.cur_best_block(), block.commitment());
+            assert_eq!(
+                fixture
+                    .ctx
+                    .storage()
+                    .get_canonical_block_at(1)
+                    .await
+                    .unwrap(),
+                Some(block.commitment())
+            );
+            assert_eq!(
+                fixture.ctx.safe_tip_updates().last(),
+                Some(&block.commitment())
+            );
+            assert_eq!(fixture.ctx.executed_blocks(), vec![block.commitment()]);
+            assert_eq!(fixture.ctx.published_statuses().len(), 1);
+            assert_eq!(
+                fixture.ctx.published_statuses()[0].tip(),
+                block.commitment()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn fork_choice_propagates_missing_state_after_partial_tip_update() {
+        for replay in [false, true] {
+            let chain = LinearChain::new();
+            let fixture = chain.fixture_without_x4();
+            seed_executed_block(fixture.ctx.storage(), &chain.x4, BlockStatus::Unchecked);
+            fixture
+                .ctx
+                .storage()
+                .inner
+                .lock()
+                .unwrap()
+                .states
+                .remove(&chain.x2.commitment());
+            let mut fcm = fixture.fcm_state_at(chain.tracker_through_x3(), &chain.genesis);
+            let input = if replay {
+                FcmEvent::RetryTick
+            } else {
+                FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(chain.x4.blkid()))
+            };
+
+            let error =
+                <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, input)
+                    .await
+                    .unwrap_err();
+
+            assert!(
+                matches!(error.downcast_ref::<Error>(), Some(Error::MissingOLState(block))
+                if *block == chain.x2.commitment())
+            );
+            assert_eq!(fixture.ctx.safe_tip_updates(), vec![chain.x1.commitment()]);
+            assert_eq!(fcm.cur_best_block(), chain.genesis.commitment());
+            assert_eq!(
+                fixture
+                    .ctx
+                    .get_block_status(chain.x4.blkid())
+                    .await
+                    .unwrap(),
+                Some(BlockStatus::Valid)
+            );
+            assert!(fixture.ctx.storage().indexing_rollbacks().is_empty());
+            assert!(fixture.ctx.published_statuses().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn fork_choice_propagates_permanent_database_failures_during_acceptance() {
+        for replay in [false, true] {
+            for failure in [
+                DbError::CodecError("corrupt stored state".into()),
+                DbError::Other("unclassified storage failure".into()),
+                DbError::OverwriteEpoch(EpochCommitment::null()),
+                DbError::RetriesExhausted {
+                    attempts: 3,
+                    last_error: Box::new(DbError::CodecError("corrupt stored state".into())),
+                },
+            ] {
+                let chain = LinearChain::new();
+                let fixture = chain.fixture_without_x4();
+                seed_executed_block(fixture.ctx.storage(), &chain.x4, BlockStatus::Unchecked);
+                let expected = failure.to_string();
+                fixture
+                    .ctx
+                    .storage()
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .state_read_errors
+                    .insert(chain.x2.commitment(), failure);
+                let mut fcm = fixture.fcm_state_at(chain.tracker_through_x3(), &chain.genesis);
+                let input = if replay {
+                    FcmEvent::RetryTick
+                } else {
+                    FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(chain.x4.blkid()))
+                };
+
+                let error =
+                    <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, input)
+                        .await
+                        .unwrap_err();
+
+                assert_eq!(
+                    error.downcast_ref::<DbError>().unwrap().to_string(),
+                    expected
+                );
+                assert_eq!(fcm.cur_best_block(), chain.genesis.commitment());
+                assert_eq!(
+                    fixture
+                        .ctx
+                        .get_block_status(chain.x4.blkid())
+                        .await
+                        .unwrap(),
+                    Some(BlockStatus::Valid)
+                );
+                assert!(fixture.ctx.published_statuses().is_empty());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn fork_choice_propagates_parent_mismatch_and_restores_original_tip() {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        let mut tracker = tracker_with_blocks(&fork.genesis, &[&fork.a1]);
+        tracker
+            .attach_block(
+                fork.a2.block.header().slot(),
+                fork.a2.blkid(),
+                fork.genesis.blkid(),
+            )
+            .unwrap();
+        let mut fcm = fixture.fcm_state_at(tracker, &fork.a1);
+        fcm.mark_fork_choice_pending();
+
+        let error = retry_fork_choice(&mut fcm).await.unwrap_err();
+
+        assert!(matches!(error.downcast_ref::<Error>(),
+            Some(Error::OLApplyBlockParentMismatch(block, expected_parent, got_parent))
+                if *block == fork.a2.commitment()
+                    && *expected_parent == fork.genesis.commitment()
+                    && *got_parent == fork.a1.blkid()));
+        assert_eq!(fcm.cur_best_block(), fork.a1.commitment());
+        assert!(fixture.ctx.published_statuses().is_empty());
+    }
+
+    #[tokio::test]
+    async fn fatal_safe_tip_failure_propagates_at_startup_and_on_retry() {
+        for startup in [false, true] {
+            let (genesis, _) = execute_test_genesis();
+            let fixture = FcmTestFixture::new(&genesis, &[]);
+            let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+            *fixture.ctx.safe_tip_error.lock().unwrap() = Some(anyhow!("worker stopped"));
+            let error = if startup {
+                <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut fcm)
+                    .await
+                    .unwrap_err()
+            } else {
+                fcm.mark_fork_choice_pending();
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::RetryTick,
+                )
+                .await
+                .unwrap_err()
+            };
+            assert_eq!(error.to_string(), "worker stopped");
+            assert_eq!(fcm.cur_best_block(), genesis.commitment());
+            assert!(fixture.ctx.published_statuses().is_empty());
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fork_choice_retries_entire_path_after_partial_tip_update() {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        seed_executed_block(fixture.ctx.storage(), &chain.x4, BlockStatus::Unchecked);
+        fixture
+            .ctx
+            .storage()
+            .inner
+            .lock()
+            .unwrap()
+            .state_read_errors
+            .insert(chain.x2.commitment(), DbError::Busy);
+        let mut fcm = fixture.fcm_state_at(chain.tracker_through_x3(), &chain.genesis);
+
+        <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm,
+            FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(chain.x4.blkid())),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(fixture.ctx.safe_tip_updates(), vec![chain.x1.commitment()]);
+        assert_eq!(fcm.cur_best_block(), chain.genesis.commitment());
+        assert_eq!(fcm.pending_block_count(), 0);
+        assert_eq!(
+            fixture
+                .ctx
+                .storage()
+                .get_canonical_block_at(1)
+                .await
+                .unwrap(),
+            None
+        );
+
+        advance(Duration::from_secs(1)).await;
+        <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, FcmEvent::RetryTick)
+            .await
+            .unwrap();
+
+        assert_eq!(fcm.cur_best_block(), chain.x4.commitment());
+        for block in [&chain.x1, &chain.x2, &chain.x3, &chain.x4] {
+            assert_eq!(
+                fixture
+                    .ctx
+                    .storage()
+                    .get_canonical_block_at(block.commitment().slot())
+                    .await
+                    .unwrap(),
+                Some(block.commitment())
+            );
+        }
+        assert_eq!(
+            fixture.ctx.safe_tip_updates().last(),
+            Some(&chain.x4.commitment())
+        );
+        assert_eq!(fixture.ctx.executed_blocks(), vec![chain.x4.commitment()]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn child_waits_for_parent_after_temporary_status_write_failure() {
+        let (genesis, mut state) = execute_test_genesis();
+        let parent = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let child = execute_test_block(&mut state, &parent.block, 1_002, 2);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        // Execution artifacts are already readable, as they would be after the worker succeeds.
+        seed_executed_block(fixture.ctx.storage(), &parent, BlockStatus::Unchecked);
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+        fixture
+            .ctx
+            .storage()
+            .inner
+            .lock()
+            .unwrap()
+            .status_writes_until_failure = Some(0);
+
+        <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm,
+            FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(parent.blkid())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(fixture.ctx.executed_blocks(), vec![parent.commitment()]);
+        assert!(!fcm.chain_tracker().is_seen_block(&parent.blkid()));
+        assert_eq!(fcm.pending_block_count(), 1);
+
+        seed_executed_block(fixture.ctx.storage(), &child, BlockStatus::Unchecked);
+        <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm,
+            FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(child.blkid())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(fixture.ctx.executed_blocks(), vec![parent.commitment()]);
+        for block in [&parent, &child] {
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Unchecked)
+            );
+        }
+        assert_eq!(fcm.cur_best_block(), genesis.commitment());
+        assert_eq!(fcm.pending_block_count(), 2);
+
+        advance(Duration::from_secs(1)).await;
+        <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, FcmEvent::RetryTick)
+            .await
+            .unwrap();
+        assert_eq!(
+            fixture.ctx.executed_blocks(),
+            vec![parent.commitment(), parent.commitment(), child.commitment()]
+        );
+        for block in [&parent, &child] {
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Valid)
+            );
+        }
+        assert_eq!(fcm.cur_best_block(), child.commitment());
+        assert_eq!(fcm.pending_block_count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn acceptance_recovers_status_write_failure_without_redundant_writes() {
+        for successful_writes in [0, 1] {
+            let (genesis, mut state) = execute_test_genesis();
+            let block = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+            let fixture = FcmTestFixture::new(&genesis, &[]);
+            seed_executed_block(fixture.ctx.storage(), &block, BlockStatus::Unchecked);
+            fixture
+                .ctx
+                .storage()
+                .inner
+                .lock()
+                .unwrap()
+                .status_writes_until_failure = Some(successful_writes);
+            let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+
+            <FcmService<StubFcmContext> as AsyncService>::process_input(
+                &mut fcm,
+                FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(block.blkid())),
+            )
+            .await
+            .unwrap();
+            if successful_writes == 0 {
+                assert_eq!(fcm.cur_best_block(), genesis.commitment());
+                assert_eq!(fcm.pending_block_count(), 1);
+                advance(Duration::from_secs(1)).await;
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::RetryTick,
+                )
+                .await
+                .unwrap();
+            }
+            // Once Valid is durable, advancing fork choice needs no further status write.
+            assert_eq!(fcm.cur_best_block(), block.commitment());
+            assert_eq!(fcm.pending_block_count(), 0);
+            assert_eq!(
+                fixture.ctx.get_block_status(block.blkid()).await.unwrap(),
+                Some(BlockStatus::Valid)
+            );
+            assert_eq!(
+                fixture
+                    .ctx
+                    .storage()
+                    .get_canonical_block_at(1)
+                    .await
+                    .unwrap(),
+                Some(block.commitment())
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn new_block_status_read_failure_uses_storage_backoff() {
+        let (genesis, mut state) = execute_test_genesis();
+        let block = execute_test_block(&mut state, &genesis.block, 1_001, 1);
+        let fixture = FcmTestFixture::new(&genesis, &[]);
+        seed_executed_block(fixture.ctx.storage(), &block, BlockStatus::Unchecked);
+        fixture
+            .ctx
+            .storage()
+            .inner
+            .lock()
+            .unwrap()
+            .status_read_failures
+            .insert(block.blkid());
+        let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+
+        <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm,
+            FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(block.blkid())),
+        )
+        .await
+        .unwrap();
+        assert_eq!(fcm.pending_block_count(), 1);
+        assert!(fixture.ctx.executed_blocks().is_empty());
+        <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm,
+            FcmEvent::NewStateUpdate,
+        )
+        .await
+        .unwrap();
+        assert!(fixture.ctx.executed_blocks().is_empty());
+
+        advance(Duration::from_secs(1)).await;
+        <FcmService<StubFcmContext> as AsyncService>::process_input(&mut fcm, FcmEvent::RetryTick)
+            .await
+            .unwrap();
+        assert_eq!(fcm.cur_best_block(), block.commitment());
+        assert_eq!(fixture.ctx.executed_blocks(), vec![block.commitment()]);
+        assert_eq!(fcm.pending_block_count(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rejection_cleanup_retries_without_execution_or_parent_dependency() {
+        for failure in [
+            CleanupFailure::Summary,
+            CleanupFailure::WatermarkRead,
+            CleanupFailure::Rollback,
+            CleanupFailure::WatermarkClear,
+            CleanupFailure::CompletionWrite,
+        ] {
+            for (finalized_slot, restart) in [
+                (0, false),
+                (0, true),
+                (1, false),
+                (1, true),
+                (2, false),
+                (2, true),
+            ] {
+                let (genesis, _) = execute_test_genesis();
+                let fixture = FcmTestFixture::new(&genesis, &[]);
+                // Resume a durable rejection whose parent is no longer available to attach.
+                let block = make_terminal_storage_block(1, OLBlockId::null());
+                let commitment = fixture.ctx.storage().put_ol_block(block);
+                fixture
+                    .ctx
+                    .set_block_status(*commitment.blkid(), BlockStatus::Invalid)
+                    .await
+                    .unwrap();
+                fixture.ctx.storage().set_block_high_watermark(commitment);
+                fixture.ctx.storage().inner.lock().unwrap().cleanup_failure = Some(failure);
+                let mut fcm = fixture.fcm_state_at(empty_tracker(&genesis), &genesis);
+                assert!(!fcm.chain_tracker().is_seen_block(&OLBlockId::null()));
+
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::NewFcmMsg(ForkChoiceMessage::NewBlock(*commitment.blkid())),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    fixture
+                        .ctx
+                        .get_block_status(*commitment.blkid())
+                        .await
+                        .unwrap(),
+                    Some(BlockStatus::Invalid)
+                );
+                assert_eq!(
+                    fixture.ctx.storage().block_high_watermark(),
+                    (failure != CleanupFailure::CompletionWrite).then_some(commitment)
+                );
+                assert_eq!(fcm.pending_block_count(), 1);
+                assert!(fixture.ctx.executed_blocks().is_empty());
+
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::NewStateUpdate,
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    fixture.ctx.storage().block_high_watermark(),
+                    (failure != CleanupFailure::CompletionWrite).then_some(commitment)
+                );
+                if restart {
+                    // The Invalid verdict must recover cleanup even without the old cache.
+                    fcm =
+                        init_fcm_service_state(PredicateKey::always_accept(), fixture.ctx.clone())
+                            .await
+                            .unwrap();
+                }
+                // Finality can overtake failed cleanup, including across a restart that loses
+                // the pending cache and must rediscover the rejected block from storage.
+                let finalized = EpochCommitment::new(1, finalized_slot, genesis.blkid());
+                *fcm.chain_tracker_mut() = UnfinalizedBlockTracker::new_empty(finalized);
+                advance(Duration::from_secs(1)).await;
+                <FcmService<StubFcmContext> as AsyncService>::process_input(
+                    &mut fcm,
+                    FcmEvent::RetryTick,
+                )
+                .await
+                .unwrap();
+
+                assert_eq!(fixture.ctx.storage().block_high_watermark(), None);
+                assert_eq!(fcm.pending_block_count(), 0);
+                assert!(fixture.ctx.executed_blocks().is_empty());
+                assert!(!fixture.ctx.storage().indexing_rollbacks().is_empty());
+                assert!(!fixture.ctx.storage().epoch_summary_deletes().is_empty());
+                assert!(fixture
+                    .ctx
+                    .is_block_rejection_complete(*commitment.blkid())
+                    .await
+                    .unwrap());
+
+                // Completion survives restart and repeated wraps without loading invalid bodies
+                // or consuming the retry budget again.
+                fcm = init_fcm_service_state(PredicateKey::always_accept(), fixture.ctx.clone())
+                    .await
+                    .unwrap();
+                *fcm.chain_tracker_mut() = UnfinalizedBlockTracker::new_empty(finalized);
+                let cleanup_counts = {
+                    let mut inner = fixture.ctx.storage().inner.lock().unwrap();
+                    inner.block_reads.clear();
+                    inner.status_writes_until_failure = Some(0);
+                    (
+                        inner.indexing_rollbacks.len(),
+                        inner.epoch_summary_deletes.len(),
+                    )
+                };
+                for _ in 0..6 {
+                    advance(Duration::from_secs(1)).await;
+                    <FcmService<StubFcmContext> as AsyncService>::process_input(
+                        &mut fcm,
+                        FcmEvent::RetryTick,
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(fcm.pending_block_count(), 0);
+                }
+                let inner = fixture.ctx.storage().inner.lock().unwrap();
+                assert!(inner.block_reads.is_empty());
+                assert_eq!(inner.status_writes_until_failure, Some(0));
+                assert_eq!(
+                    (
+                        inner.indexing_rollbacks.len(),
+                        inner.epoch_summary_deletes.len()
+                    ),
+                    cleanup_counts
+                );
+            }
         }
     }
 
