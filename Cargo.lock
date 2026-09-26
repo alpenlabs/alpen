@@ -8276,6 +8276,7 @@ dependencies = [
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
+ "strata-ol-state-container",
  "strata-ol-state-provider",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
@@ -8299,7 +8300,6 @@ dependencies = [
  "tower 0.5.3",
  "tower-http 0.7.0",
  "tracing",
- "tree_hash",
  "zkaleido",
  "zkaleido-sp1-host",
 ]
@@ -8826,6 +8826,7 @@ dependencies = [
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
@@ -8984,6 +8985,7 @@ dependencies = [
  "strata-ol-chain-types-v1",
  "strata-ol-mmr-index",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types-v1",
  "strata-ol-stf-v1",
@@ -9157,9 +9159,11 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-v1",
+ "strata-ol-state-container",
  "strata-ol-state-types-v1",
  "strata-paas",
  "strata-primitives",
+ "tempfile",
  "thiserror 2.0.20",
  "tracing",
  "typed-sled",
@@ -9181,6 +9185,7 @@ dependencies = [
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-ol-chain-types-v1",
+ "strata-ol-state-container",
  "strata-ol-state-types-v1",
  "strata-paas",
  "strata-primitives",
@@ -9208,6 +9213,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-merkle-node-store",
  "strata-ol-chain-types-v1",
+ "strata-ol-state-container",
  "strata-ol-state-types-v1",
  "strata-paas",
  "strata-primitives",
@@ -9240,8 +9246,8 @@ dependencies = [
  "strata-ol-chain-types-v1",
  "strata-ol-mmr-index",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
- "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-paas",
  "strata-primitives",
@@ -9500,6 +9506,7 @@ dependencies = [
  "strata-node-context",
  "strata-ol-chain-types-v1",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
@@ -9508,6 +9515,7 @@ dependencies = [
  "strata-ol-tx-types-v1",
  "strata-predicate",
  "strata-primitives",
+ "strata-proofimpl-checkpoint",
  "strata-service",
  "strata-storage",
  "strata-tasks",
@@ -9547,6 +9555,7 @@ dependencies = [
  "strata-ol-da-common",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
+ "strata-ol-state-types-v1",
  "strata-ol-stf-v1",
  "strata-predicate",
  "strata-snark-acct-types",
@@ -9562,9 +9571,9 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-chain-types-v1",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
- "strata-ol-state-types-v1",
  "strata-ol-stf",
  "thiserror 2.0.20",
  "tracing",
@@ -9604,6 +9613,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-chain-types-v1",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-provider",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
@@ -9631,6 +9641,7 @@ dependencies = [
  "strata-identifiers",
  "strata-merkle",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
@@ -9697,6 +9708,7 @@ dependencies = [
  "strata-ol-chain-types-v1",
  "strata-ol-mempool",
  "strata-ol-sequencer",
+ "strata-ol-state-container",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-tx-types-v1",
@@ -9742,6 +9754,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-state-container"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "proptest",
+ "serde",
+ "serde_bytes",
+ "ssz",
+ "strata-acct-types",
+ "strata-identifiers",
+ "strata-ol-state-types",
+ "strata-ol-state-types-v1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "strata-ol-state-provider"
 version = "0.1.0"
 dependencies = [
@@ -9750,6 +9778,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
+ "strata-ol-state-types-v1",
  "strata-storage",
 ]
 
@@ -9766,6 +9795,7 @@ dependencies = [
  "strata-ol-da-common",
  "strata-ol-da-types-v1",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-predicate",
@@ -9779,6 +9809,10 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
@@ -9787,6 +9821,7 @@ dependencies = [
  "strata-snark-acct-types",
  "thiserror 2.0.20",
  "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -9825,6 +9860,7 @@ dependencies = [
  "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
+ "strata-ol-state-types-v1",
  "strata-ol-stf-v1",
  "strata-ol-tx-types-v1",
  "thiserror 2.0.20",
@@ -9967,6 +10003,7 @@ dependencies = [
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
  "strata-ol-params",
+ "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
@@ -10203,6 +10240,7 @@ dependencies = [
  "strata-merkle",
  "strata-merkle-node-store",
  "strata-ol-chain-types-v1",
+ "strata-ol-state-container",
  "strata-ol-state-types-v1",
  "strata-paas",
  "strata-primitives",

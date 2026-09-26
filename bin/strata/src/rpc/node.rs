@@ -25,8 +25,8 @@ use strata_ol_rpc_types::{
     RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
     RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
+use strata_ol_state_container::{OLStateContainer, OLStateSeries};
 use strata_ol_state_types::{IAccountState, ISnarkAccountState};
-use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
@@ -322,7 +322,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             })?;
 
         // Get account state
-        let Some(account_state) = ol_state.get_account_state(&account_id) else {
+        let OLStateSeries::V1(chainstate) = ol_state.chainstate();
+        let Some(account_state) = chainstate.get_account_state(&account_id) else {
             return Ok(None); // Account doesn't exist
         };
 
@@ -570,7 +571,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             return Ok(None);
         };
 
-        let Some(account_state) = ol_state.get_account_state(&account_id) else {
+        let OLStateSeries::V1(chainstate) = ol_state.chainstate();
+        let Some(account_state) = chainstate.get_account_state(&account_id) else {
             return Ok(None);
         };
 
@@ -615,7 +617,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     async fn get_toplevel_ol_state_for_epoch(
         &self,
         epoch: Epoch,
-    ) -> RpcResult<(EpochCommitment, Arc<OLStateV1>)> {
+    ) -> RpcResult<(EpochCommitment, Arc<OLStateContainer>)> {
         let Some(epoch_commitment) = self
             .provider
             .get_canonical_epoch_commitment_at(epoch)
@@ -672,7 +674,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 ))
             })?;
 
-        Ok(tip_ol_state
+        let OLStateSeries::V1(tip_chainstate) = tip_ol_state.chainstate();
+        Ok(tip_chainstate
             .get_account_state(&account_id)
             .and_then(|state| state.as_snark_account().ok())
             .map(|state| *state.seqno().inner()))
@@ -687,7 +690,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         epoch: Epoch,
     ) -> RpcResult<RpcAccountEpochSummary> {
         let (epoch_commitment, ol_state) = self.get_toplevel_ol_state_for_epoch(epoch).await?;
-        let account_state = ol_state
+        let OLStateSeries::V1(chainstate) = ol_state.chainstate();
+        let account_state = chainstate
             .get_account_state(&account_id)
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 

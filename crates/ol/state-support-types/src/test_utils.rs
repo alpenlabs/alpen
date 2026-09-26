@@ -4,6 +4,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload
 use strata_asm_manifest_types::AsmLogEntry;
 use strata_identifiers::{AccountSerial, Epoch, L1Height, Slot};
 use strata_ol_params::{GenesisHeaderParams, OLParams, OLRuntimeParams};
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::{
     ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, PendingAsmLog,
 };
@@ -12,15 +13,9 @@ use strata_predicate::PredicateKey;
 
 use crate::memory_state_layer::MemoryStateBaseLayer;
 
-/// Creates a genesis OLStateV1 using minimal empty parameters.
-pub(crate) fn create_test_genesis_state() -> OLStateV1 {
-    let params = OLParams::test_default();
-    OLStateV1::from_genesis_params(&params).expect("valid params")
-}
-
 /// Creates a [`MemoryStateBaseLayer`] whose genesis header is at the given
 /// epoch and slot.
-pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
+pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer<OLStateV1> {
     let params = OLParams::builder(OLRuntimeParams::test_default())
         .genesis_header(GenesisHeaderParams {
             slot,
@@ -28,9 +23,7 @@ pub(crate) fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
             ..Default::default()
         })
         .build();
-    let state = OLStateV1::from_genesis_params(&params)
-        .expect("failed to create OLStateV1 from genesis params");
-    MemoryStateBaseLayer::new(state)
+    MemoryStateBaseLayer::new_genesis(&params).expect("failed to build genesis layer from params")
 }
 
 /// Creates a [`PendingAsmLog`] whose height and payload byte are derived from
@@ -88,8 +81,8 @@ pub(crate) fn setup_layer_with_snark_account(
     account_id: AccountId,
     state_root_seed: u8,
     initial_balance: BitcoinAmount,
-) -> (MemoryStateBaseLayer, AccountSerial) {
-    let mut layer = MemoryStateBaseLayer::new(create_test_genesis_state());
+) -> (MemoryStateBaseLayer<OLStateV1>, AccountSerial) {
+    let mut layer = create_test_base_layer();
     let snark_state = test_snark_account_state(state_root_seed);
     let new_acct = test_new_snark_account_data(&snark_state, initial_balance);
     let serial = layer.create_new_account(account_id, new_acct).unwrap();
@@ -97,6 +90,25 @@ pub(crate) fn setup_layer_with_snark_account(
 }
 
 /// Creates a [`MemoryStateBaseLayer`] from genesis.
-pub(crate) fn create_test_base_layer() -> MemoryStateBaseLayer {
-    MemoryStateBaseLayer::new(create_test_genesis_state())
+pub(crate) fn create_test_base_layer() -> MemoryStateBaseLayer<OLStateV1> {
+    MemoryStateBaseLayer::new_genesis(&OLParams::test_default()).expect("valid params")
+}
+
+/// Returns `layer` with `staged_spec_version` staged, keeping its chainstate and
+/// current spec.
+///
+/// A staged version that differs from the current one makes a layer that drops
+/// or defaults the versions report and commit to other values.
+pub(crate) fn with_staged_spec(
+    layer: MemoryStateBaseLayer<OLStateV1>,
+    staged_spec_version: u32,
+) -> MemoryStateBaseLayer<OLStateV1> {
+    let container = layer.into_container();
+    let cur_spec = container.cur_spec();
+    let (_, chainstate) = container.into_parts();
+    MemoryStateBaseLayer::from_container(OLStateContainer::new(
+        cur_spec,
+        staged_spec_version,
+        chainstate,
+    ))
 }

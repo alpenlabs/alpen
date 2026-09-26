@@ -158,7 +158,7 @@ fn fetch_input_blocking(
     let spec = OLSpecId::V1;
     let da_output = compute_epoch_da(
         spec,
-        MemoryStateBaseLayer::new((*start_state).clone()),
+        MemoryStateBaseLayer::from_container((*start_state).clone()),
         &blocks,
         &parent,
         &runtime_params,

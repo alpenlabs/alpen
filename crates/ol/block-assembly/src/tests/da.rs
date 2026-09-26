@@ -15,6 +15,7 @@ use strata_ol_state_support_types::{
 use strata_ol_state_types::{
     IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState,
 };
+use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf::{
     BlockInfo, EpochInfo, OLSpecId, apply_da_epoch, execute_block_batch_predrain, verify_block,
 };
@@ -31,7 +32,10 @@ use crate::test_utils::{
 };
 
 /// Finalizes an accumulator against the given state and returns the encoded DA blob bytes.
-fn finalize_da_to_bytes(accumulator: EpochDaAccumulator, state: MemoryStateBaseLayer) -> Vec<u8> {
+fn finalize_da_to_bytes(
+    accumulator: EpochDaAccumulator,
+    state: MemoryStateBaseLayer<OLStateV1>,
+) -> Vec<u8> {
     let mut da_state = DaAccumulatingState::new_with_accumulator(state, accumulator);
     da_state
         .take_completed_epoch_da_blob()
@@ -49,7 +53,7 @@ async fn build_blocks_with_resource_state_and_artifacts(
 ) -> (
     OLBlockCommitment,
     EpochResourceState,
-    Vec<(OLBlockV1, MemoryStateBaseLayer)>,
+    Vec<(OLBlockV1, MemoryStateBaseLayer<OLStateV1>)>,
 ) {
     let mut current_commitment = env.parent_commitment();
     let mut resource_state = EpochResourceState::new_empty();

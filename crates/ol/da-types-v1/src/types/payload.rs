@@ -353,6 +353,7 @@ mod tests {
     use strata_ol_da_common::{DaScheme, U16LenBytes, U16LenList};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
+    use strata_ol_state_types_v1::OLStateV1;
     use strata_ol_stf_v1::test_utils::make_genesis_state;
     use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 
@@ -369,7 +370,7 @@ mod tests {
 
     /// Creates an empty account with the given balance, returning its serial.
     fn seed_empty_account(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         id: AccountId,
         sats: u64,
     ) -> AccountSerial {
@@ -386,7 +387,7 @@ mod tests {
     }
 
     /// Reads an existing account's balance.
-    fn account_balance(state: &MemoryStateBaseLayer, id: AccountId) -> BitcoinAmount {
+    fn account_balance(state: &MemoryStateBaseLayer<OLStateV1>, id: AccountId) -> BitcoinAmount {
         state
             .get_account_state(id)
             .expect("read account")
@@ -396,20 +397,20 @@ mod tests {
 
     /// Applies an [`OLStateDiffV1`] to the state via [`OLStateDiffWriterV1`] + [`DaWrite::apply`].
     fn apply_ol_state_diff(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         diff: OLStateDiffV1,
     ) -> Result<(), DaError> {
-        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(diff);
+        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer<OLStateV1>>::new(diff);
         DaWrite::apply(&ol_diff, state, &())
     }
 
     /// Polls an [`OLStateDiffV1`] against the state via [`OLStateDiffWriterV1`] +
     /// [`DaWrite::poll_context`].
     fn poll_ol_state_diff(
-        state: &MemoryStateBaseLayer,
+        state: &MemoryStateBaseLayer<OLStateV1>,
         diff: OLStateDiffV1,
     ) -> Result<(), DaError> {
-        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(diff);
+        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer<OLStateV1>>::new(diff);
         DaWrite::poll_context(&ol_diff, state, &())
     }
 
@@ -1034,7 +1035,7 @@ mod tests {
     }
 
     struct PreStateAccounts {
-        state: MemoryStateBaseLayer,
+        state: MemoryStateBaseLayer<OLStateV1>,
         empty: AcctRef,
         snark: AcctRef,
     }
@@ -1299,7 +1300,8 @@ mod tests {
             .expect("root before");
 
         let mut state = pre_accounts.state.clone();
-        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(OLStateDiffV1::default());
+        let ol_diff =
+            OLStateDiffWriterV1::<MemoryStateBaseLayer<OLStateV1>>::new(OLStateDiffV1::default());
         assert!(DaWrite::is_default(&ol_diff));
         OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(OLStateDiffV1::default()), &mut state)
             .expect("apply empty diff");

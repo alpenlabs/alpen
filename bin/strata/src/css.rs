@@ -257,7 +257,8 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId};
     use strata_ol_params::{BridgeParams, OLParams, OLRuntimeParams};
-    use strata_ol_state_types_v1::WriteBatch;
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types_v1::{IStateBatchApplicable, WriteBatch};
     use strata_primitives::{L1BlockCommitment, OLBlockId};
     use strata_storage::create_node_storage;
 
@@ -311,12 +312,13 @@ mod tests {
             *genesis_summary.new_l1(),
             Buf32::from([2u8; 32]),
         );
-        let mut next_state = (*genesis_state).clone();
+        let mut next_state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
         let mut state_writes = WriteBatch::default();
         state_writes.global_writes_mut().cur_slot = Some(next_commitment.slot());
         next_state
             .apply_write_batch(state_writes)
             .expect("test: update next state slot");
+        let next_state = next_state.into_container();
         storage
             .ol_checkpoint()
             .insert_epoch_summary_blocking(next_summary)

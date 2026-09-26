@@ -10,6 +10,7 @@ use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
 use strata_identifiers::{Epoch, Hash, OLBlockCommitment, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_ol_mmr_index::OLMmrIndexError;
 use strata_ol_params::{BridgeParams, OLParams, OLRuntimeParams};
+use strata_ol_state_container::test_utils::genesis_container;
 use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
 use strata_storage::{test_runtime_handle, MmrIndexManager};
 
@@ -283,16 +284,21 @@ fn make_target_commitment(slot: u64) -> OLBlockCommitment {
 fn make_reconcile_target(
     block: OLBlockCommitment,
     epoch: Epoch,
-    state: Arc<OLStateV1>,
+    state: OLStateV1,
 ) -> OLMmrReconcileTarget {
-    OLMmrReconcileTarget::new(block, epoch, state, BTreeSet::new())
+    OLMmrReconcileTarget::new(
+        block,
+        epoch,
+        Arc::new(genesis_container(state)),
+        BTreeSet::new(),
+    )
 }
 
 #[tokio::test]
 async fn test_ahead_index_is_truncated() {
     let ctx = MmrReconcileTestCtx::default();
     let records = [make_l1_block_record(1), make_l1_block_record(2)];
-    let target_state = Arc::new(make_target_state_with_l1_records(&records));
+    let target_state = make_target_state_with_l1_records(&records);
     let target_mmr = get_l1_target_mmr(&target_state);
     ctx.seed_l1_block_refs_index(&records).await;
     ctx.append_l1_leaf(Hash::from([0x88; 32])).await;
@@ -326,9 +332,7 @@ async fn test_ahead_index_is_truncated() {
 #[tokio::test]
 async fn test_non_prefix_index_is_rejected_before_truncate() {
     let ctx = MmrReconcileTestCtx::default();
-    let target_state = Arc::new(make_target_state_with_l1_records(&[make_l1_block_record(
-        1,
-    )]));
+    let target_state = make_target_state_with_l1_records(&[make_l1_block_record(1)]);
     let target_mmr = get_l1_target_mmr(&target_state);
     ctx.seed_l1_block_refs_index(&[make_l1_block_record(9)])
         .await;
@@ -361,9 +365,7 @@ async fn test_non_prefix_index_is_rejected_before_truncate() {
 #[tokio::test]
 async fn test_bad_final_leaf_count_is_rejected() {
     let inner = MmrReconcileTestCtx::default();
-    let target_state = Arc::new(make_target_state_with_l1_records(&[make_l1_block_record(
-        1,
-    )]));
+    let target_state = make_target_state_with_l1_records(&[make_l1_block_record(1)]);
     let target_mmr = get_l1_target_mmr(&target_state);
     inner
         .seed_l1_block_refs_index(&[make_l1_block_record(1)])
@@ -399,9 +401,7 @@ async fn test_bad_final_leaf_count_is_rejected() {
 #[tokio::test]
 async fn test_bad_final_state_is_rejected() {
     let inner = MmrReconcileTestCtx::default();
-    let target_state = Arc::new(make_target_state_with_l1_records(&[make_l1_block_record(
-        1,
-    )]));
+    let target_state = make_target_state_with_l1_records(&[make_l1_block_record(1)]);
     let target_mmr = get_l1_target_mmr(&target_state);
     inner
         .seed_l1_block_refs_index(&[make_l1_block_record(1)])
@@ -432,9 +432,7 @@ async fn test_bad_final_state_is_rejected() {
 #[tokio::test]
 async fn test_same_count_state_mismatch_is_rejected() {
     let ctx = MmrReconcileTestCtx::default();
-    let target_state = Arc::new(make_target_state_with_l1_records(&[make_l1_block_record(
-        1,
-    )]));
+    let target_state = make_target_state_with_l1_records(&[make_l1_block_record(1)]);
     let target_mmr = get_l1_target_mmr(&target_state);
     ctx.seed_l1_block_refs_index(&[make_l1_block_record(9)])
         .await;

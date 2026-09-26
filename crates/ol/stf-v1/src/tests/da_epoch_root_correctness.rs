@@ -11,6 +11,7 @@ use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::OLStateV1;
 
 use crate::assembly::{BlockComponents, CompletedBlock};
 use crate::test_utils::*;
@@ -76,7 +77,7 @@ fn test_epoch_root_round_trip_with_limbo_deposit_manifest() {
 }
 
 fn assert_epoch_root_round_trip(
-    pre_epoch_state: &MemoryStateBaseLayer,
+    pre_epoch_state: &MemoryStateBaseLayer<OLStateV1>,
     genesis: &CompletedBlock,
     epoch_blocks: &[OLBlockV1],
     terminal: &CompletedBlock,
@@ -120,7 +121,7 @@ fn assert_epoch_root_round_trip(
 }
 
 fn build_non_terminal_blocks(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     genesis: &CompletedBlock,
 ) -> (Vec<OLBlockV1>, OLBlockHeaderV1) {
     let mut prev_header = genesis.header().clone();
@@ -142,7 +143,7 @@ fn build_non_terminal_blocks(
 }
 
 fn execute_terminal(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     parent_header: &OLBlockHeaderV1,
     manifest: AsmManifest,
 ) -> CompletedBlock {
@@ -160,7 +161,7 @@ fn execute_terminal(
 }
 
 fn rebuild_da_blob(
-    pre_epoch_state: &MemoryStateBaseLayer,
+    pre_epoch_state: &MemoryStateBaseLayer<OLStateV1>,
     blocks: &[OLBlockV1],
     prev_terminal_header: &OLBlockHeaderV1,
 ) -> Vec<u8> {

@@ -16,9 +16,9 @@ strata-identifiers.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-params.workspace = true
+strata-ol-state-container.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
-strata-ol-state-types-v1.workspace = true
 strata-ol-stf.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
@@ -42,9 +42,11 @@ strata-checkpoint-verification.workspace = true
 strata-db-store-sled.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types.workspace = true
+strata-ol-state-types-v1.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-tx-types-v1.workspace = true
 strata-predicate.workspace = true
+strata-proofimpl-checkpoint.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 
 proptest.workspace = true

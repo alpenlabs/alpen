@@ -19,13 +19,16 @@ use strata_identifiers::{
 };
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::WriteBatch;
 use strata_ol_stf_v1::test_utils::{
     EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
     epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
-    make_deposit_manifest_for_account, make_genesis_state,
+    make_deposit_manifest_for_account,
 };
 
+use super::fixture::make_marked_genesis_state;
 use crate::{
     WorkerError, WorkerResult, output::OLBlockExecutionOutput, state::exec_block,
     traits::ChainWorkerContext,
@@ -42,7 +45,7 @@ struct OrderEnforcingContext {
     /// Headers served to [`ChainWorkerContext::fetch_header`].
     headers: HashMap<OLBlockId, OLBlockHeaderV1>,
     /// States served to [`ChainWorkerContext::fetch_ol_state`].
-    states: HashMap<OLBlockCommitment, OLStateV1>,
+    states: HashMap<OLBlockCommitment, OLStateContainer>,
     /// Canonical summaries served per epoch index.
     canonical_summaries: HashMap<Epoch, EpochSummary>,
     /// Epochs with at least one block's indexing writes applied.
@@ -66,7 +69,10 @@ impl ChainWorkerContext for OrderEnforcingContext {
         Ok(self.headers.get(blkid).cloned())
     }
 
-    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>> {
+    fn fetch_ol_state(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> WorkerResult<Option<OLStateContainer>> {
         Ok(self.states.get(&commitment).cloned())
     }
 
@@ -90,7 +96,7 @@ impl ChainWorkerContext for OrderEnforcingContext {
     fn store_toplevel_state(
         &self,
         _commitment: OLBlockCommitment,
-        _state: OLStateV1,
+        _state: OLStateContainer,
     ) -> WorkerResult<()> {
         Ok(())
     }
@@ -174,11 +180,12 @@ impl ChainWorkerContext for OrderEnforcingContext {
 /// finalization stamps.
 #[test]
 fn test_exec_single_block_epoch_persists_before_summary() {
-    let mut state = make_genesis_state();
+    let mut state = make_marked_genesis_state();
     let snark_serial = seed_accounts(&mut state);
     let genesis = run_genesis(&mut state);
     let genesis_header = genesis.header().clone();
-    let pre_epoch_state = state.clone().into_inner();
+    let pre_epoch_state = state.to_container();
+    let genesis_l1 = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
 
     // Build epoch 1 as a single terminal block directly on genesis.
     let mut blocks: Vec<OLBlockV1> = Vec::new();
@@ -201,11 +208,6 @@ fn test_exec_single_block_epoch_persists_before_summary() {
     // Genesis (epoch 0) commitment and summary, for `get_prev_terminal`.
     let genesis_commitment =
         OLBlockCommitment::new(genesis_header.slot(), genesis_header.compute_blkid());
-    let genesis_epoch_state = pre_epoch_state.epoch_state();
-    let genesis_l1 = L1BlockCommitment::new(
-        genesis_epoch_state.last_l1_height(),
-        *genesis_epoch_state.last_l1_blkid(),
-    );
     let genesis_summary = EpochSummary::new(
         0,
         genesis_commitment,

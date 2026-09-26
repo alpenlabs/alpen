@@ -1,0 +1,25 @@
+### Root of the OL state.
+###
+### The protocol state root that block headers, checkpoints, and genesis commit
+### to is the hash tree root of this container, over exactly these three fields.
+### Its layout never changes; a new chainstate layout changes only what
+### `chainstate_root` commits to.
+###
+### The version fields are raw `uint32` values rather than the `uint8` encoding
+### of `OLSpecId`, so that a root naming a spec this binary does not know still
+### decodes and can be reported.
+class OLRootState(Container):
+    ### Spec the chainstate was produced under.
+    ###
+    ### Selects the chainstate layout through the spec-to-layout mapping.
+    cur_spec_version: uint32
+
+    ### Spec the next epoch runs under.
+    ###
+    ### Equal to `cur_spec_version` except between the terminal block of an
+    ### epoch that processes a checkpoint predicate enactment and the first
+    ### block of the next epoch.
+    staged_spec_version: uint32
+
+    ### Hash tree root of the chainstate in the layout `cur_spec_version` maps to.
+    chainstate_root: Bytes32

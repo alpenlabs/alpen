@@ -118,7 +118,6 @@ where
 #[cfg(test)]
 mod tests {
     use strata_ol_params::OLRuntimeParams;
-    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf::{BlockComponents, OLSpecId};
     use strata_ol_stf_v1::test_utils::{
         epoch_runner_run_block as run_block, epoch_runner_run_genesis as run_genesis,
@@ -131,12 +130,12 @@ mod tests {
     fn rejects_incomplete_epoch() {
         let mut state = make_genesis_state();
         let previous_terminal = run_genesis(&mut state);
-        let pre_epoch_state = state.clone().into_inner();
+        let pre_epoch_state = state.clone();
         let runtime_params = OLRuntimeParams::test_default();
 
         let empty_error = compute_epoch_da(
             OLSpecId::V1,
-            MemoryStateBaseLayer::new(pre_epoch_state.clone()),
+            pre_epoch_state.clone(),
             &[],
             previous_terminal.header(),
             &runtime_params,
@@ -153,7 +152,7 @@ mod tests {
         );
         let nonterminal_error = compute_epoch_da(
             OLSpecId::V1,
-            MemoryStateBaseLayer::new(pre_epoch_state),
+            pre_epoch_state,
             &blocks,
             previous_terminal.header(),
             &runtime_params,

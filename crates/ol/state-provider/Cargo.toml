@@ -8,6 +8,7 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
+strata-ol-state-types-v1.workspace = true
 strata-storage.workspace = true
 
 futures.workspace = true

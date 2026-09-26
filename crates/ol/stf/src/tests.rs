@@ -9,6 +9,7 @@ use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf_v1::test_utils::*;
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 
@@ -19,8 +20,8 @@ use crate::{
 
 /// An epoch built with the V1 STF, with its pre-genesis and pre-epoch states.
 struct V1Epoch {
-    pre_genesis_state: MemoryStateBaseLayer,
-    pre_epoch_state: MemoryStateBaseLayer,
+    pre_genesis_state: MemoryStateBaseLayer<OLStateV1>,
+    pre_epoch_state: MemoryStateBaseLayer<OLStateV1>,
     genesis: OLBlockV1,
     epoch_blocks: Vec<OLBlockV1>,
 }

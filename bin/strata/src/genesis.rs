@@ -7,6 +7,7 @@ use strata_chain_worker::prefill_l1_block_refs_mmr_blocking;
 use strata_db_types::{ol_block::BlockStatus, ol_state_index::IndexingWrites};
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts};
 use strata_ol_params::OLParams;
+use strata_ol_state_container::OLStateSeries;
 use strata_primitives::OLBlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, instrument};
@@ -35,7 +36,8 @@ pub(crate) fn init_ol_genesis(
     // Seed epoch-0 indexing with all genesis accounts as created accounts.
     // Genesis epoch is finalized at boot, so its commitment is known here;
     // no per-account updates or inbox writes at genesis.
-    let created_accounts = ol_state
+    let OLStateSeries::V1(chainstate) = ol_state.chainstate();
+    let created_accounts = chainstate
         .ledger
         .accounts
         .iter()

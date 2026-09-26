@@ -136,10 +136,8 @@ pub fn make_proof(variant: u8) -> Vec<u8> {
 }
 
 /// Builds a genesis state layer using minimal empty parameters.
-pub fn make_genesis_state() -> MemoryStateBaseLayer {
-    let params = OLParams::test_default();
-    let state = OLStateV1::from_genesis_params(&params).expect("valid params");
-    MemoryStateBaseLayer::new(state)
+pub fn make_genesis_state() -> MemoryStateBaseLayer<OLStateV1> {
+    MemoryStateBaseLayer::new_genesis(&OLParams::test_default()).expect("valid params")
 }
 
 /// Builds a GAM transaction targeting the given account with empty payload data.
@@ -295,7 +293,7 @@ pub fn build_terminal_tx_components(txs: Vec<OLTransactionV1>) -> BlockComponent
 ///
 /// Returns all completed blocks in the chain.
 pub fn build_empty_chain(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     num_blocks: usize,
     slots_per_epoch: u64,
 ) -> ExecResult<Vec<CompletedBlock>> {
@@ -356,7 +354,7 @@ pub fn build_empty_chain(
 ///
 /// Returns the headers of all blocks in the chain.
 pub fn build_empty_chain_headers(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     num_blocks: usize,
     slots_per_epoch: u64,
 ) -> ExecResult<Vec<OLBlockHeaderV1>> {
@@ -377,7 +375,7 @@ pub fn build_empty_chain_headers(
 ///
 /// The last slot must equal `slots_per_epoch` to produce a terminal block with manifest processing.
 pub fn build_chain_with_transactions(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     num_blocks: usize,
     slots_per_epoch: u64,
 ) -> Vec<CompletedBlock> {
@@ -586,7 +584,7 @@ pub fn assert_header_position(header: &OLBlockHeaderV1, expected_epoch: u64, exp
 
 /// Asserts that state has the expected current epoch and slot.
 pub fn assert_state_position(
-    state: &MemoryStateBaseLayer,
+    state: &MemoryStateBaseLayer<OLStateV1>,
     expected_epoch: u64,
     expected_slot: u64,
 ) {
@@ -783,7 +781,7 @@ impl FixtureAsmManifestBuilder {
 /// Builder for protocol-shaped OL STF test fixtures.
 #[derive(Debug)]
 pub struct OLStfFixtureBuilder {
-    state: MemoryStateBaseLayer,
+    state: MemoryStateBaseLayer<OLStateV1>,
     manifests: Vec<AsmManifest>,
 }
 
@@ -894,7 +892,7 @@ impl Default for OLStfFixtureBuilder {
 /// Behavior-level OL STF fixture for tests.
 #[derive(Debug)]
 pub struct OLStfFixture {
-    state: MemoryStateBaseLayer,
+    state: MemoryStateBaseLayer<OLStateV1>,
     last_block: CompletedBlock,
     next_slot: Slot,
     next_epoch: Epoch,
@@ -907,7 +905,10 @@ impl OLStfFixture {
         OLStfFixtureBuilder::new()
     }
 
-    fn from_executed_genesis(state: MemoryStateBaseLayer, genesis_block: CompletedBlock) -> Self {
+    fn from_executed_genesis(
+        state: MemoryStateBaseLayer<OLStateV1>,
+        genesis_block: CompletedBlock,
+    ) -> Self {
         Self {
             state,
             last_block: genesis_block,
@@ -918,12 +919,12 @@ impl OLStfFixture {
     }
 
     /// Returns the current fixture state.
-    pub fn state(&self) -> &MemoryStateBaseLayer {
+    pub fn state(&self) -> &MemoryStateBaseLayer<OLStateV1> {
         &self.state
     }
 
     /// Returns the mutable current fixture state.
-    pub fn state_mut(&mut self) -> &mut MemoryStateBaseLayer {
+    pub fn state_mut(&mut self) -> &mut MemoryStateBaseLayer<OLStateV1> {
         &mut self.state
     }
 
@@ -2118,7 +2119,7 @@ impl SnarkUpdateBuilder {
 /// Returns the (`OLAccountStateV1`, `OLSnarkAccountStateV1`) for `snark_id`,
 /// panicking if not found or not a snark account.
 pub fn get_snark_state_expect(
-    state: &MemoryStateBaseLayer,
+    state: &MemoryStateBaseLayer<OLStateV1>,
     snark_id: AccountId,
 ) -> (&OLAccountStateV1, &OLSnarkAccountStateV1) {
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -2132,7 +2133,7 @@ pub fn get_snark_state_expect(
 /// The update starts from the snark account's live state in `state`, so call it
 /// after the block that delivers `inbox_msg` has executed.
 pub fn build_snark_update(
-    state: &MemoryStateBaseLayer,
+    state: &MemoryStateBaseLayer<OLStateV1>,
     inbox_msg: &MessageEntry,
 ) -> OLTransactionV1 {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
@@ -2174,7 +2175,7 @@ pub fn snark_inbox_msg_with_data(data: &[u8]) -> MessageEntry {
 /// Inserts an empty account under [`TEST_RECIPIENT_ID`] and creates a snark
 /// account under [`TEST_SNARK_ACCOUNT_ID`] with an `always_accept` predicate
 /// and a deterministic initial state root. Returns the snark account's serial.
-pub fn epoch_runner_seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSerial {
+pub fn epoch_runner_seed_accounts(state: &mut MemoryStateBaseLayer<OLStateV1>) -> AccountSerial {
     insert_empty_account(state, make_account_id(TEST_RECIPIENT_ID));
     state
         .create_new_account(
@@ -2192,7 +2193,7 @@ pub fn epoch_runner_seed_accounts(state: &mut MemoryStateBaseLayer) -> AccountSe
 }
 
 /// Executes the genesis (epoch 0 terminal) block under the shared epoch runner.
-pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
+pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer<OLStateV1>) -> CompletedBlock {
     execute_block(
         state,
         &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
@@ -2205,7 +2206,7 @@ pub fn epoch_runner_run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBl
 /// Executes one block at the slot following `parent` with the given
 /// `components`, appends it to `blocks`, and returns its header.
 pub fn epoch_runner_run_block(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     blocks: &mut Vec<OLBlockV1>,
     parent: &OLBlockHeaderV1,
     components: BlockComponents,
@@ -2230,7 +2231,7 @@ pub fn epoch_runner_run_block(
 /// returns the [`CompletedBlock`] (so callers can read the body the way the
 /// checkpoint payload assembler does).
 pub fn epoch_runner_run_terminal(
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     blocks: &mut Vec<OLBlockV1>,
     parent: &OLBlockHeaderV1,
     manifest: AsmManifest,

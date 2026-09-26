@@ -14,8 +14,8 @@ strata-asm-manifest-types.workspace = true
 strata-crypto.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-params.workspace = true
+strata-ol-state-container.workspace = true
 strata-ol-state-support-types.workspace = true
-strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
 strata-ol-stf.workspace = true
 zkaleido.workspace = true
@@ -31,4 +31,5 @@ strata-codec.workspace = true
 strata-da-framework.workspace = true
 strata-identifiers.workspace = true
 strata-ol-da-types-v1.workspace = true
+strata-ol-state-types.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }

@@ -635,6 +635,14 @@ impl TestState {
 impl IStateAccessor for TestState {
     type AccountState = TestAccountState;
 
+    fn cur_spec_version(&self) -> u32 {
+        OLSpecId::GENESIS.into()
+    }
+
+    fn staged_spec_version(&self) -> u32 {
+        OLSpecId::GENESIS.into()
+    }
+
     fn cur_slot(&self) -> u64 {
         self.cur_slot
     }

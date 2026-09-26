@@ -7,7 +7,7 @@ use std::{
 
 use metrics::{counter, gauge};
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_state_container::OLStateContainer;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
@@ -34,7 +34,7 @@ pub(crate) struct FcmServiceState<C: FcmContext> {
 }
 
 impl<C: FcmContext> FcmServiceState<C> {
-    pub(crate) fn cur_ol_state(&self) -> Arc<OLStateV1> {
+    pub(crate) fn cur_ol_state(&self) -> Arc<OLStateContainer> {
         self.inner_state.cur_olstate.clone()
     }
 
@@ -122,7 +122,7 @@ impl<C: FcmContext> FcmServiceState<C> {
     pub(crate) async fn update_tip_block(
         &mut self,
         block: OLBlockCommitment,
-        state: Arc<OLStateV1>,
+        state: Arc<OLStateContainer>,
     ) -> anyhow::Result<()> {
         self.inner_state.cur_best_block = block;
         self.inner_state.cur_olstate = state;
@@ -136,7 +136,7 @@ impl<C: FcmContext> FcmServiceState<C> {
         let prev_epoch = self
             .inner_state
             .cur_olstate
-            .epoch_state()
+            .chainstate()
             .cur_epoch()
             .saturating_sub(1);
         if prev_epoch == 0 {
@@ -254,7 +254,7 @@ impl<C: FcmContext> ServiceState for FcmServiceState<C> {
 pub(crate) struct FcmInnerState {
     chain_tracker: UnfinalizedBlockTracker,
     cur_best_block: OLBlockCommitment,
-    cur_olstate: Arc<OLStateV1>,
+    cur_olstate: Arc<OLStateContainer>,
     startup_replay_candidates: Vec<OLBlockId>,
     epochs_pending_finalization: VecDeque<EpochCommitment>,
 }
@@ -263,7 +263,7 @@ impl FcmInnerState {
     pub(crate) fn new(
         chain_tracker: UnfinalizedBlockTracker,
         cur_best_block: OLBlockCommitment,
-        cur_olstate: Arc<OLStateV1>,
+        cur_olstate: Arc<OLStateContainer>,
         startup_replay_candidates: Vec<OLBlockId>,
     ) -> Self {
         Self {

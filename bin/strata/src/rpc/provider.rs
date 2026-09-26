@@ -17,7 +17,8 @@ use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
-use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_types_v1::WriteBatch;
 use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_primitives::{L1BlockId, OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
@@ -91,7 +92,7 @@ impl OLRpcProvider for NodeRpcProvider {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLStateV1>>> {
+    ) -> DbResult<Option<Arc<OLStateContainer>>> {
         self.storage
             .ol_state()
             .get_toplevel_ol_state_async(commitment)

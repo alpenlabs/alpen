@@ -102,6 +102,18 @@ where
 {
     type AccountState = S::AccountState;
 
+    // ===== Root state methods =====
+
+    // TODO(STR-4086): read version writes from the batch once `WriteBatch`
+    // carries them; until then the base's versions are the only source.
+    fn cur_spec_version(&self) -> u32 {
+        self.base.cur_spec_version()
+    }
+
+    fn staged_spec_version(&self) -> u32 {
+        self.base.staged_spec_version()
+    }
+
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {
@@ -261,6 +273,7 @@ mod tests {
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
     use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
+    use strata_ol_state_types_v1::IStateBatchApplicable;
 
     /// Builds a [`BatchDiffState`] with no pending batches — a pure read-only
     /// passthrough to the base.
@@ -623,6 +636,48 @@ mod tests {
         let empty_batches: Vec<WriteBatch> = vec![];
         let passthrough = BatchDiffState::new(&base_layer, &empty_batches);
         assert_eq!(passthrough.compute_state_root().unwrap(), base_root);
+    }
+
+    #[test]
+    fn test_state_root_matches_materialized_batches() {
+        // A staged version unequal to the current one makes the overlays fail
+        // if they drop or default the versions.
+        let base_layer = with_staged_spec(create_test_base_layer(), 2);
+
+        // Ordered batches: the second overrides the first's slot.
+        let mut first = WriteBatch::default();
+        first.global_writes_mut().cur_slot = Some(5);
+        first.ledger_mut().create_account_from_data(
+            test_account_id(1),
+            test_new_snark_account_data(
+                &test_snark_account_state(1),
+                BitcoinAmount::try_from(1000).expect("valid amount"),
+            ),
+            base_layer.next_account_serial(),
+        );
+        let mut second = WriteBatch::default();
+        second.global_writes_mut().cur_slot = Some(9);
+        let batches = [first, second];
+
+        let mut materialized = base_layer.clone();
+        for batch in &batches {
+            materialized.apply_write_batch(batch.clone()).unwrap();
+        }
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
+        assert_eq!(
+            diff_state.compute_state_root().unwrap(),
+            materialized.compute_state_root().unwrap()
+        );
+
+        // Nested: write tracking over the batch diff.
+        let mut tracking = WriteTrackingState::new_empty(&diff_state);
+        tracking.set_cur_slot(12);
+        let nested_root = tracking.compute_state_root().unwrap();
+        materialized
+            .apply_write_batch(tracking.into_batch())
+            .unwrap();
+        assert_eq!(nested_root, materialized.compute_state_root().unwrap());
+        assert_eq!(materialized.staged_spec_version(), 2);
     }
 
     #[test]
