@@ -649,7 +649,6 @@ where
     let mut failed_txs = Vec::new();
     let mut sealing_limit_verdict = EpochSealingLimitVerdict::within_limits();
     let mut blocked_sequences: HashMap<AccountId, u64> = HashMap::new();
-    let mut deferred_limits = EpochSealingLimitVerdict::within_limits();
 
     // Track log metrics incrementally for checkpoint size estimation.
     let mut log_usage = LogUsage::from_logs(accumulated_da.logs());
@@ -760,7 +759,7 @@ where
                             WriteTrackingState::new(parent_state, backup_batch),
                             backup_accumulator,
                         );
-                        deferred_limits.merge(verdict);
+                        sealing_limit_verdict.merge(verdict);
                         block_successors(account_seqno, &mut blocked_sequences);
                         continue;
                     }
@@ -829,13 +828,11 @@ where
         }
     }
 
-    // Mempool admission establishes standalone log fit; DA/envelope deferrals need prior work
-    // to justify a capacity seal. Independent transactions selected later count too.
-    if has_prior_epoch_work
-        || !successful_txs.is_empty()
-        || deferred_limits.checkpoint_logs_exceeded()
-    {
-        sealing_limit_verdict.merge(deferred_limits);
+    let has_epoch_work = has_prior_epoch_work || !successful_txs.is_empty();
+
+    // Sealing an empty epoch would not free useful capacity.
+    if !has_epoch_work {
+        sealing_limit_verdict = EpochSealingLimitVerdict::within_limits();
     }
 
     // Reassemble AccumulatedDaData with updated accumulator; epoch_logs unchanged
@@ -3068,7 +3065,7 @@ mod tests {
         let account1 = test_account_id(1);
         let account2 = test_account_id(2);
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
-            .with_parent_slot(0)
+            .with_parent_slot(1)
             .with_account(TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE))
             .with_account(TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE))
             .build_fixture()
@@ -3547,7 +3544,12 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_block_log_deferral_continues_without_sealing() {
         let account_id = test_account_id(1);
-        let env = build_process_tx_env(account_id).await;
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(1)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE))
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
         let soft_threshold = MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10;
 
         for checkpoint_log_count in [0, soft_threshold - 1] {
@@ -3616,7 +3618,12 @@ mod tests {
         const CHECKPOINT_TEST_TIMESTAMP: u64 = 1_000_003;
         const CHECKPOINT_TEST_SLOT_OFFSET: u64 = 3;
 
-        let env = build_process_tx_env(account_id).await;
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(1)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE))
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
         let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
             build_process_transactions_preamble(
                 &env,
@@ -3625,6 +3632,10 @@ mod tests {
             )
             .await;
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        assert!(
+            !block_context.is_epoch_initial(),
+            "seeded logs require a continuing epoch"
+        );
         let seeded_da = seeded_da(seeded_log_count);
 
         process_transactions(

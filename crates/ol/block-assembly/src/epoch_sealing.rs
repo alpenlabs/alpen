@@ -113,12 +113,6 @@ impl EpochSealingLimitVerdict {
             .max(self.envelope)
     }
 
-    /// Returns whether checkpoint log count or payload bytes reached a hard limit.
-    pub(crate) fn checkpoint_logs_exceeded(&self) -> bool {
-        self.log_count == EpochSealingLimitAction::RejectCandidate
-            || self.log_payload_bytes == EpochSealingLimitAction::RejectCandidate
-    }
-
     /// Returns the manifest-count limit action.
     #[cfg(test)]
     pub(crate) fn manifest_count_action(&self) -> EpochSealingLimitAction {
@@ -380,7 +374,6 @@ mod fixed_slot_sealing_tests {
                 ..Default::default()
             }
         );
-        assert!(verdict.checkpoint_logs_exceeded());
         assert_eq!(
             sealing.should_seal_epoch(1, None, &verdict),
             EpochSealingDecision::Seal(EpochSealTrigger::Limits(verdict))
@@ -395,7 +388,11 @@ mod fixed_slot_sealing_tests {
         let verdict = sealing.check_limits(&stats);
 
         assert_eq!(verdict.da_diff, EpochSealingLimitAction::RejectCandidate);
-        assert!(!verdict.checkpoint_logs_exceeded());
+        assert_ne!(verdict.log_count, EpochSealingLimitAction::RejectCandidate);
+        assert_ne!(
+            verdict.log_payload_bytes,
+            EpochSealingLimitAction::RejectCandidate
+        );
     }
 
     #[test]
@@ -405,7 +402,11 @@ mod fixed_slot_sealing_tests {
         let verdict = sealing.check_limits(&stats);
 
         assert_eq!(verdict.envelope, EpochSealingLimitAction::RejectCandidate);
-        assert!(!verdict.checkpoint_logs_exceeded());
+        assert_ne!(verdict.log_count, EpochSealingLimitAction::RejectCandidate);
+        assert_ne!(
+            verdict.log_payload_bytes,
+            EpochSealingLimitAction::RejectCandidate
+        );
     }
 
     #[test]
