@@ -3,7 +3,7 @@
 use strata_acct_types::AccountId;
 use strata_db_types::DbError;
 use strata_identifiers::OLTxId;
-use strata_ol_tx_policy::TxLogBudgetError;
+use strata_ol_log_budget::TxLogBudgetError;
 
 /// Errors that can occur during mempool operations.
 #[derive(Debug, thiserror::Error)]

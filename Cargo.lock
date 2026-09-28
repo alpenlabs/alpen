@@ -8271,6 +8271,7 @@ dependencies = [
  "strata-ol-chain-types-v1",
  "strata-ol-checkpoint",
  "strata-ol-genesis",
+ "strata-ol-log-budget",
  "strata-ol-mempool",
  "strata-ol-params",
  "strata-ol-rpc-api",
@@ -8281,7 +8282,6 @@ dependencies = [
  "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-ol-stf-v1",
- "strata-ol-tx-policy",
  "strata-ol-tx-types-v1",
  "strata-paas",
  "strata-predicate",
@@ -9424,6 +9424,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-msg-fmt",
  "strata-ol-chain-types-v1",
+ "strata-ol-log-budget",
  "strata-ol-mempool",
  "strata-ol-msg-types",
  "strata-ol-params",
@@ -9433,7 +9434,6 @@ dependencies = [
  "strata-ol-state-types-v1",
  "strata-ol-stf",
  "strata-ol-stf-v1",
- "strata-ol-tx-policy",
  "strata-ol-tx-types-v1",
  "strata-predicate",
  "strata-primitives",
@@ -9574,6 +9574,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-log-budget"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "strata-acct-types",
+ "strata-asm-checkpoint-types",
+ "strata-bridge-params",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-ol-chain-types-v1",
+ "strata-ol-stf",
+ "strata-ol-stf-v1",
+ "strata-ol-tx-types-v1",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "strata-ol-logs"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0-rc.3#4b7fd841447910cd9b29b057c02d847b91d23872"
@@ -9607,6 +9624,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-v1",
+ "strata-ol-log-budget",
  "strata-ol-params",
  "strata-ol-state-provider",
  "strata-ol-state-support-types",
@@ -9614,7 +9632,6 @@ dependencies = [
  "strata-ol-state-types-v1",
  "strata-ol-stf",
  "strata-ol-stf-v1",
- "strata-ol-tx-policy",
  "strata-ol-tx-types-v1",
  "strata-predicate",
  "strata-service",
@@ -9868,22 +9885,6 @@ dependencies = [
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "tracing",
-]
-
-[[package]]
-name = "strata-ol-tx-policy"
-version = "0.1.0"
-dependencies = [
- "strata-acct-types",
- "strata-asm-checkpoint-types",
- "strata-bridge-params",
- "strata-codec",
- "strata-identifiers",
- "strata-ol-chain-types-v1",
- "strata-ol-stf",
- "strata-ol-stf-v1",
- "strata-ol-tx-types-v1",
- "thiserror 2.0.20",
 ]
 
 [[package]]

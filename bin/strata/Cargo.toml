@@ -69,6 +69,7 @@ strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-chain-types-v1.workspace = true
 strata-ol-checkpoint.workspace = true
 strata-ol-genesis.workspace = true
+strata-ol-log-budget.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-params.workspace = true
 strata-ol-rpc-api.workspace = true
@@ -78,7 +79,6 @@ strata-ol-state-provider = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
-strata-ol-tx-policy.workspace = true
 strata-ol-tx-types-v1.workspace = true
 strata-paas = { workspace = true, optional = true }
 strata-predicate.workspace = true

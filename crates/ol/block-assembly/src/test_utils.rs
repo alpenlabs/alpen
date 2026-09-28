@@ -45,6 +45,7 @@ use strata_ol_chain_types_v1::{
     LogDecodeError, OLBlockBodyV1, OLBlockV1, OLLog, OLLogType, OLTxSegmentV1,
     SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData, test_utils as ol_test_utils,
 };
+use strata_ol_log_budget::LogUsage;
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::{OLParams, OLRuntimeParams};
@@ -1670,6 +1671,16 @@ pub(crate) fn extract_withdrawal_intents(
             }
         })
         .collect()
+}
+
+/// Measures `count` log payloads of `payload_len` bytes each.
+pub(crate) fn make_log_usage(count: usize, payload_len: usize) -> LogUsage {
+    let payload = vec![0; payload_len];
+    let mut usage = LogUsage::default();
+    for _ in 0..count {
+        usage.add_payload(&payload);
+    }
+    usage
 }
 
 /// Returns accumulated DA with `n` seeded dummy logs.

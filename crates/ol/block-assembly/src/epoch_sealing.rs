@@ -9,8 +9,9 @@ use std::fmt::Debug;
 
 use strata_identifiers::{L1Height, Slot};
 use strata_ol_chain_types_v1::MAX_SEALING_MANIFEST_COUNT;
+use strata_ol_log_budget::LogUsage;
 
-use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict};
+use crate::checkpoint_size::{CheckpointSizeVerdict, checkpoint_size_verdict};
 
 /// Resource stats used by the epoch sealing policy.
 ///
@@ -20,13 +21,13 @@ use crate::checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EpochSealingResourceStats {
     da_diff_size: usize,
-    log: LogMetrics,
+    log: LogUsage,
     manifest_count: u32,
 }
 
 impl EpochSealingResourceStats {
     /// Creates a new resource stats snapshot.
-    pub(crate) fn new(da_diff_size: usize, log: LogMetrics, manifest_count: u32) -> Self {
+    pub(crate) fn new(da_diff_size: usize, log: LogUsage, manifest_count: u32) -> Self {
         Self {
             da_diff_size,
             log,
@@ -40,7 +41,7 @@ impl EpochSealingResourceStats {
     }
 
     /// Returns the OL log metrics.
-    pub(crate) fn log(&self) -> &LogMetrics {
+    pub(crate) fn log(&self) -> &LogUsage {
         &self.log
     }
 
@@ -259,6 +260,7 @@ mod fixed_slot_sealing_tests {
     use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 
     use super::*;
+    use crate::test_utils::make_log_usage;
 
     #[test]
     fn test_genesis_is_terminal() {
@@ -296,10 +298,7 @@ mod fixed_slot_sealing_tests {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
         let stats = EpochSealingResourceStats::new(
             0,
-            LogMetrics {
-                count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
-                ..Default::default()
-            },
+            make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize, 0),
             0,
         );
         let verdict = sealing.check_limits(&stats);
@@ -321,10 +320,7 @@ mod fixed_slot_sealing_tests {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
         let stats = EpochSealingResourceStats::new(
             0,
-            LogMetrics {
-                count: MAX_OL_LOGS_PER_CHECKPOINT as usize,
-                ..Default::default()
-            },
+            make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize, 0),
             MAX_SEALING_MANIFEST_COUNT as u32,
         );
         let verdict = sealing.check_limits(&stats);
@@ -355,7 +351,7 @@ mod fixed_slot_sealing_tests {
             (max_manifests, EpochSealingLimitAction::SealAfterAdmit),
             (max_manifests + 1, EpochSealingLimitAction::RejectCandidate),
         ] {
-            let stats = EpochSealingResourceStats::new(0, LogMetrics::default(), manifest_count);
+            let stats = EpochSealingResourceStats::new(0, LogUsage::default(), manifest_count);
             let verdict = sealing.check_limits(&stats);
 
             assert_eq!(

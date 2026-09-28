@@ -12,9 +12,9 @@ use strata_bridge_params::BridgeParams;
 use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
+use strata_ol_log_budget::check_tx_log_budget;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_types::{IStateAccessor, OLSpecId};
-use strata_ol_tx_policy::check_tx_log_budget;
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_service::ServiceState;
 use strata_storage::NodeStorage;
@@ -902,9 +902,9 @@ fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
 mod tests {
     use strata_acct_types::{BitcoinAmount, MsgPayload};
     use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32};
+    use strata_ol_log_budget::TxLogBudgetError;
     use strata_ol_params::BridgeParams;
     use strata_ol_stf_v1::test_utils::make_withdrawal_payload;
-    use strata_ol_tx_policy::TxLogBudgetError;
     use strata_snark_acct_types::{
         LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate, UpdateOperationData,
         UpdateOutputs,

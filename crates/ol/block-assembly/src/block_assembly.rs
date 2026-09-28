@@ -8,6 +8,7 @@ use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, L1Height, OLBlockCommitment, OLTxId, Slot};
 use strata_ol_chain_types_v1::*;
+use strata_ol_log_budget::LogUsage;
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
@@ -26,7 +27,6 @@ use strata_ol_tx_types_v1::*;
 use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
-use crate::checkpoint_size::LogMetrics;
 use crate::context::BlockAssemblyAnchorContext;
 use crate::epoch_sealing::{
     EpochSealingLimitAction, EpochSealingLimitVerdict, EpochSealingPolicy,
@@ -559,7 +559,7 @@ fn select_and_process_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>
         // Candidate count includes the manifest currently being evaluated: it is the
         // epoch-cumulative manifest total if this candidate is admitted.
         let stats =
-            EpochSealingResourceStats::new(0, LogMetrics::default(), candidate_manifest_count);
+            EpochSealingResourceStats::new(0, LogUsage::default(), candidate_manifest_count);
         let verdict = epoch_sealing_policy.check_limits(&stats);
         let action = verdict.most_restrictive_action();
         sealing_limit_verdict.merge(verdict);
@@ -648,7 +648,7 @@ where
     let mut sealing_limit_verdict = EpochSealingLimitVerdict::within_limits();
 
     // Track log metrics incrementally for checkpoint size estimation.
-    let mut log_metrics = LogMetrics::from_logs(accumulated_da.logs());
+    let mut log_usage = LogUsage::from_logs(accumulated_da.logs());
 
     // Split out the accumulator for DaAccumulatingState; logs are preserved and
     // reassembled at the end.
@@ -722,7 +722,7 @@ where
                 // the estimated checkpoint size against component and envelope limits.
                 let tx_logs = tx_buffer.into_logs();
 
-                let mut tentative = log_metrics;
+                let mut tentative = log_usage;
                 tentative.add_logs(&tx_logs);
                 let da_diff_size = staging_state.accumulator().estimated_encoded_size();
                 let stats = EpochSealingResourceStats::new(
@@ -780,7 +780,7 @@ where
                             );
                             break;
                         }
-                        log_metrics = tentative;
+                        log_usage = tentative;
                         successful_txs.push(tx);
                     }
                 }

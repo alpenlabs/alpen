@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use strata_acct_types::AccountId;
-use strata_ol_tx_policy::TxLogBudgetError;
+use strata_ol_log_budget::TxLogBudgetError;
 pub use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_ol_tx_types_v1::TransactionPayloadV1;
 

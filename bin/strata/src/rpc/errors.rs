@@ -3,8 +3,8 @@ use std::fmt::Display;
 use jsonrpsee::types::ErrorObjectOwned;
 pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
 use serde_json::json;
+use strata_ol_log_budget::TxLogBudgetError;
 use strata_ol_mempool::OLMempoolError;
-use strata_ol_tx_policy::TxLogBudgetError;
 use tracing::*;
 
 /// Custom error code for mempool capacity-related errors.

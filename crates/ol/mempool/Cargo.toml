@@ -13,10 +13,10 @@ strata-bridge-params.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
+strata-ol-log-budget.workspace = true
 strata-ol-state-provider.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
-strata-ol-tx-policy.workspace = true
 strata-ol-tx-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-service.workspace = true
 strata-snark-acct-sys.workspace = true

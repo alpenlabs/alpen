@@ -1,5 +1,5 @@
 [package]
-name = "strata-ol-tx-policy"
+name = "strata-ol-log-budget"
 version = "0.1.0"
 edition = "2024"
 
@@ -21,3 +21,5 @@ thiserror.workspace = true
 strata-acct-types.workspace = true
 strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
+
+ssz.workspace = true

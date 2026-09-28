@@ -24,6 +24,7 @@ use strata_db_types::{
 };
 use strata_identifiers::*;
 use strata_ol_chain_types_v1::*;
+use strata_ol_log_budget::{TxLogBudgetError, check_tx_log_budget};
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::{BridgeParams, OLParams, OLRuntimeParams};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
@@ -32,7 +33,6 @@ use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1, WriteBatch};
 use strata_ol_stf_v1::test_utils::make_withdrawal_payload;
-use strata_ol_tx_policy::{TxLogBudgetError, check_tx_log_budget};
 use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
 use strata_primitives::{

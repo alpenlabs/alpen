@@ -134,17 +134,13 @@ fn test_maximal_update_exceeds_log_count_budget() {
 fn test_log_count_limit_is_inclusive_for_the_admission_error() {
     // Isolate the count dimension; real withdrawal payloads hit the byte limit sooner.
     let limit = (MAX_LOGS_PER_BLOCK as usize).min(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
-    let usage = TxLogUsage {
-        count: limit,
-        payload_bytes: 0,
-    };
-    assert_eq!(usage.check_limits().unwrap(), usage);
-    let error = TxLogUsage {
-        count: limit + 1,
-        payload_bytes: 0,
+    let mut usage = LogUsage::default();
+    for _ in 0..limit {
+        usage.add_payload(&[]);
     }
-    .check_limits()
-    .unwrap_err();
+    assert!(check_limits(&usage).is_ok());
+    usage.add_payload(&[]);
+    let error = check_limits(&usage).unwrap_err();
     assert!(
         matches!(error, TxLogBudgetError::LogCount { actual, limit: reported_limit }
         if actual == limit + 1 && reported_limit == limit)
