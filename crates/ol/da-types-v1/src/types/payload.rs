@@ -21,13 +21,16 @@ use super::{
 ///
 /// Wire format is the `strata_codec` encoding of [`OLStateDiffV1`] (not SSZ).
 ///
-/// # Compatibility window
+/// # Compatibility
 ///
-/// V1 is the only format currently produced or consumed; there is no V2 and no in-band version
-/// byte. The byte layout is frozen by the golden fixture in this module's tests: any change to the
-/// encoding of [`OLStateDiffV1`] or its nested types breaks that test by design. Such a change is a
-/// wire-format break that requires a new payload version, not an edit to V1; on an intentional
-/// break, introduce the new version and regenerate the fixture rather than mutating V1 in place.
+/// V1 is the format MN0 has posted to L1 since genesis under the 0.3.0 rules, and nodes must decode
+/// every historical payload unchanged. There is no in-band version byte. The golden fixtures in this
+/// module's tests freeze the byte layout: one is copied verbatim from `releases/0.3.0`, and another
+/// covers the compound members appended since. A change to the encoding of [`OLStateDiffV1`] or its
+/// nested types must either append a member to a compound type or introduce a new payload version;
+/// never edit V1 in place or regenerate its fixtures. Appending is compatible in one direction
+/// only: decoders read compound members positionally, so a decoder that predates a member cannot
+/// read a payload that sets it, and rules that predate a member must leave it unset.
 #[derive(Debug, Codec)]
 pub struct OLDaPayloadV1 {
     /// State diff for the epoch.
@@ -474,7 +477,7 @@ mod tests {
                 Some(vk) => DaRegister::new_set(U16LenBytes::new(vk)),
                 None => DaRegister::new_unset(),
             };
-            SnarkAccountDiffV1::new(update_vk, proof_state, seq_no, inbox)
+            SnarkAccountDiffV1::new(seq_no, proof_state, inbox, update_vk)
         }
 
         /// Inbox message entry with a repeated-byte payload.
@@ -523,7 +526,15 @@ mod tests {
     }
 
     /// Shared non-trivial payload fixture for round-trip and golden tests.
+    ///
+    /// Builds the same diff as `populated_state_diff` on `releases/0.3.0`.
     fn populated_state_diff() -> OLStateDiffV1 {
+        populated_state_diff_with_update_vk(None)
+    }
+
+    /// [`populated_state_diff`] with the snark diff's `update_vk` register set
+    /// to `new_vk`, if given.
+    fn populated_state_diff_with_update_vk(new_vk: Option<Vec<u8>>) -> OLStateDiffV1 {
         let snark_acct = build::snark_init(
             500,
             Hash::from([0x11u8; 32]),
@@ -550,7 +561,7 @@ mod tests {
                 AccountSerial::from(1u32),
                 AccountDiffV1::new(
                     DaCounter::new_unchanged(),
-                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox, None),
+                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox, new_vk),
                 ),
             ),
         ];
@@ -918,10 +929,10 @@ mod tests {
             .expect("create snark account");
 
         let snark_diff = SnarkAccountDiffV1::new(
-            DaRegister::new_unset(),
-            DaProofStateDiffV1::default(),
             DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
+            DaProofStateDiffV1::default(),
             DaLinacc::new(),
+            DaRegister::new_unset(),
         );
         let account_diff = AccountDiffV1::new(DaCounter::new_unchanged(), snark_diff);
         let diff = OLStateDiffV1::new(
@@ -1470,11 +1481,29 @@ mod tests {
         assert_eq!(decoded, entry);
     }
 
-    /// Frozen wire-format fixture for [`OLDaPayloadV1`].
+    /// Frozen wire-format fixture for [`OLDaPayloadV1`], encoding [`populated_state_diff`].
     ///
-    /// The hex was derived from the encoder and acts as a drift detector, not a hand-verified spec
-    /// oracle.
-    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba0300000001020e0322222222222222222222222222222222222222222222222222222222222222220200030002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+    /// Copied verbatim from `GOLDEN_PAYLOAD_V1_HEX` on `releases/0.3.0` (`4221af71`), whose
+    /// encoder produced it from the same diff. It freezes the layout MN0 has on L1. The hex acts
+    /// as a drift detector, not a hand-verified spec oracle.
+    const GOLDEN_PAYLOAD_V1_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba030000000102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+    /// Frozen wire-format fixture for [`OLDaPayloadV1`], encoding [`populated_state_diff`] with
+    /// the snark diff's `update_vk` set to [`golden_update_vk`].
+    ///
+    /// It freezes the encoding of `update_vk`, which was appended after 0.3.0. It differs from
+    /// [`GOLDEN_PAYLOAD_V1_HEX`] only in the snark diff's presence bitmap and the length-prefixed
+    /// key bytes after the inbox. The hex was derived from the encoder.
+    const GOLDEN_PAYLOAD_V1_UPDATE_VK_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000000001ba0300000001020f0003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00210a4242424242424242424242424242424242424242424242424242424242424242";
+
+    /// Update VK the `update_vk` golden fixture rotates to.
+    fn golden_update_vk() -> Vec<u8> {
+        PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0x42u8; 32])
+            .expect("predicate condition must fit within the maximum length")
+            .try_as_buf_ref()
+            .expect("predicate key must be valid")
+            .to_bytes()
+    }
 
     fn hex_to_bytes(hex: &str) -> Vec<u8> {
         (0..hex.len())
@@ -1483,21 +1512,155 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn test_golden_payload_v1_wire_format_is_stable() {
-        let golden = hex_to_bytes(GOLDEN_PAYLOAD_V1_HEX);
+    fn bytes_to_hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
 
-        let encoded = encode_to_vec(&OLDaPayloadV1::new(populated_state_diff()))
-            .expect("encode populated payload");
+    /// Checks that `diff` encodes to `golden_hex` and that the fixture decodes and re-encodes
+    /// unchanged.
+    fn assert_golden_payload(diff: OLStateDiffV1, golden_hex: &str) {
+        let golden = hex_to_bytes(golden_hex);
+
+        let encoded = encode_to_vec(&OLDaPayloadV1::new(diff)).expect("encode populated payload");
         assert_eq!(
             encoded, golden,
-            "wire format drifted from the golden fixture; if intentional, regenerate the constant \
-             and bump the compatibility note on OLDaPayloadV1"
+            "wire format drifted from the golden fixture; V1 is the layout MN0 has on L1, so \
+             append a compound member or add a payload version instead (see OLDaPayloadV1)"
         );
 
         let decoded = decode_ol_da_payload_bytes(&golden).expect("decode golden payload");
         let reencoded = encode_to_vec(&decoded).expect("re-encode decoded golden");
         assert_eq!(reencoded, golden);
+    }
+
+    #[test]
+    fn test_golden_payload_v1_wire_format_is_stable() {
+        assert_golden_payload(populated_state_diff(), GOLDEN_PAYLOAD_V1_HEX);
+    }
+
+    #[test]
+    fn test_golden_payload_v1_update_vk_wire_format_is_stable() {
+        assert_golden_payload(
+            populated_state_diff_with_update_vk(Some(golden_update_vk())),
+            GOLDEN_PAYLOAD_V1_UPDATE_VK_HEX,
+        );
+    }
+
+    /// Diff that `releases/0.3.0` encoded into [`V030_APPLY_PAYLOAD_HEX`].
+    ///
+    /// It has the shape of [`populated_state_diff`] but targets the accounts of
+    /// [`pre_state_with_accounts`], so it applies to a real pre-state.
+    fn v030_apply_fixture_diff(pre_accounts: &PreStateAccounts) -> OLStateDiffV1 {
+        let snark_acct = build::snark_init(
+            500,
+            Hash::from([0x11u8; 32]),
+            PredicateKey::always_accept()
+                .try_as_buf_ref()
+                .expect("predicate key must be valid")
+                .to_bytes(),
+        );
+        let new_accounts = vec![
+            NewAccountEntryV1::new(test_account_id(0xA1), build::empty_init(1_000)),
+            NewAccountEntryV1::new(test_account_id(0xA2), snark_acct),
+        ];
+
+        let inbox = vec![
+            build::inbox_msg(test_account_id(0xB1), 7, 4, 0xEE),
+            build::inbox_msg(test_account_id(0xB2), 8, 16, 0xCD),
+        ];
+        let account_diffs = vec![
+            AccountDiffEntryV1::new(
+                pre_accounts.empty.serial,
+                build::balance_diff(SignedVarInt::positive(250)),
+            ),
+            AccountDiffEntryV1::new(
+                pre_accounts.snark.serial,
+                AccountDiffV1::new(
+                    DaCounter::new_unchanged(),
+                    build::snark_diff(3, Some(Hash::from([0x22u8; 32])), 2, inbox, None),
+                ),
+            ),
+        ];
+
+        OLStateDiffV1::new(
+            build::global_diff(5, Some(SignedVarInt::positive(900))),
+            build::ledger_diff(new_accounts, account_diffs),
+        )
+    }
+
+    /// OL DA payload that the `releases/0.3.0` (`4221af71`) encoder produced from
+    /// [`v030_apply_fixture_diff`].
+    ///
+    /// A scratch test on that branch built the diff with its own test builders against its
+    /// `pre_state_with_accounts`, encoded it, and applied it through `OLDaSchemeV1::apply_to_state`.
+    /// It recorded [`V030_APPLY_PRE_STATE_ROOT`] and [`V030_APPLY_POST_STATE_ROOT`]. Unlike
+    /// [`GOLDEN_PAYLOAD_V1_HEX`], whose account-diff serials fall in the system-reserved range,
+    /// this payload applies to a real pre-state.
+    const V030_APPLY_PAYLOAD_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000008001ba030000008102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+    /// State root `releases/0.3.0` computes for its `pre_state_with_accounts`.
+    const V030_APPLY_PRE_STATE_ROOT: &str =
+        "5a1444b0158da7beeee080b771a4a075ef77ee0eed5d5411c6f4f01c1f72dcb4";
+
+    /// State root `releases/0.3.0` computes after applying [`V030_APPLY_PAYLOAD_HEX`] to its
+    /// `pre_state_with_accounts`.
+    const V030_APPLY_POST_STATE_ROOT: &str =
+        "15d6ea56864d907df65e642790ae4214b64870fa69e717dd891f7c091523493a";
+
+    /// A payload that 0.3.0 encoded decodes here and applies to the post-state 0.3.0 computes.
+    #[test]
+    fn test_v030_payload_applies_to_same_state_as_v030() {
+        let pre_accounts = pre_state_with_accounts();
+        let pre_root = pre_accounts
+            .state
+            .compute_state_root()
+            .expect("pre-state root");
+        assert_eq!(
+            bytes_to_hex(pre_root.as_ref()),
+            V030_APPLY_PRE_STATE_ROOT,
+            "pre-state must match the one 0.3.0 applied the payload to"
+        );
+
+        let golden = hex_to_bytes(V030_APPLY_PAYLOAD_HEX);
+        let encoded = encode_to_vec(&OLDaPayloadV1::new(v030_apply_fixture_diff(&pre_accounts)))
+            .expect("encode fixture diff");
+        assert_eq!(encoded, golden, "encoder must reproduce the 0.3.0 bytes");
+
+        let payload = decode_ol_da_payload_bytes(&golden).expect("decode 0.3.0 payload");
+        let mut state = pre_accounts.state.clone();
+        OLDaSchemeV1::apply_to_state(payload, &mut state).expect("apply 0.3.0 payload");
+
+        let post_root = state.compute_state_root().expect("post-state root");
+        assert_eq!(bytes_to_hex(post_root.as_ref()), V030_APPLY_POST_STATE_ROOT);
+
+        // The post-state root covers everything; these name the expected changes.
+        assert_eq!(state.cur_slot(), 5);
+        assert_eq!(
+            state.limbo_funds(),
+            BitcoinAmount::try_from(900).expect("amount must not exceed the Bitcoin money supply")
+        );
+        assert_eq!(
+            account_balance(&state, pre_accounts.empty.id),
+            BitcoinAmount::try_from(1_250)
+                .expect("amount must not exceed the Bitcoin money supply")
+        );
+        let account = state
+            .get_account_state(pre_accounts.snark.id)
+            .expect("read account")
+            .expect("account exists");
+        let snark = account.as_snark_account().expect("snark account");
+        assert_eq!(*snark.seqno().inner(), 3);
+        assert_eq!(snark.inner_state_root(), Hash::from([0x22u8; 32]));
+        assert_eq!(snark.next_inbox_msg_idx(), 2);
+        assert_eq!(snark.inbox_mmr().num_entries(), 2);
+        assert_eq!(snark.update_vk(), &PredicateKey::always_accept());
+        for (seed, serial) in [(0xA1, 130u32), (0xA2, 131)] {
+            let account = state
+                .get_account_state(test_account_id(seed))
+                .expect("read account")
+                .expect("new account exists");
+            assert_eq!(account.serial(), AccountSerial::from(serial));
+        }
     }
 
     /// Proptest strategies producing arbitrary, well-formed (encodable) [`OLStateDiffV1`] trees.
