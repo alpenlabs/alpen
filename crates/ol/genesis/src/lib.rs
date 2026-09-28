@@ -11,7 +11,7 @@ use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::StateError;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf::{
-    BlockComponents, BlockContext, BlockInfo, ExecError, OLSpecId, execute_and_complete_block,
+    BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
 };
 use thiserror::Error;
 use tracing::{info, instrument};
@@ -35,8 +35,9 @@ pub struct GenesisArtifacts {
 /// Errors returned while building OL genesis artifacts.
 #[derive(Debug, Error)]
 pub enum GenesisError {
-    /// The OL STF execution failed.
-    #[error("OL STF execution failed")]
+    /// The OL STF execution failed, including when this binary does not
+    /// implement the genesis spec's rules.
+    #[error("OL STF execution failed: {0}")]
     StfExecution(#[from] ExecError),
 
     /// The genesis L1 height is invalid.
@@ -54,6 +55,14 @@ pub enum GenesisError {
 pub type Result<T> = StdResult<T, GenesisError>;
 
 /// Constructs the genesis OL state and block artifacts from the given parameters.
+///
+/// The genesis block runs under the params' genesis spec.
+///
+/// # Errors
+///
+/// Returns [`GenesisError::StfExecution`] with
+/// [`ExecError::UnimplementedSpec`] if this binary does not implement the
+/// genesis spec's rules, as for params of a network launched on 0.3.0.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
 pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
@@ -73,12 +82,12 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     // terminality is set explicitly via the header flag).
     let genesis_components = BlockComponents::new_manifests(vec![]).as_terminal();
 
-    // Execute genesis block through the OL STF. Genesis always runs under the
-    // genesis rules.
+    // Execute genesis block through the OL STF under the network's genesis
+    // spec.
     let block_context = BlockContext::new(&genesis_info, None);
     let runtime_params = params.runtime_params();
     let genesis_block = execute_and_complete_block(
-        OLSpecId::V1,
+        params.genesis_spec(),
         &mut ol_state,
         block_context,
         genesis_components,
@@ -108,4 +117,28 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
         commitment,
         epoch_summary,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_ol_params::OLRuntimeParams;
+    use strata_ol_stf::OLSpecId;
+
+    use super::*;
+
+    #[test]
+    fn test_genesis_runs_under_params_spec() {
+        let v1_params = OLParams::test_default();
+        assert_eq!(v1_params.genesis_spec(), OLSpecId::V1);
+        build_genesis_artifacts(&v1_params).expect("V1 genesis builds");
+
+        let v0_params = OLParams::builder(OLRuntimeParams::test_default())
+            .genesis_spec(OLSpecId::V0)
+            .build();
+        let err = build_genesis_artifacts(&v0_params).expect_err("V0 rules are not implemented");
+        assert!(matches!(
+            err,
+            GenesisError::StfExecution(ExecError::UnimplementedSpec(OLSpecId::V0))
+        ));
+    }
 }

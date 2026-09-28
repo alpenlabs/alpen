@@ -10,6 +10,7 @@ workspace = true
 strata-bridge-params.workspace = true
 strata-btc-types.workspace = true
 strata-identifiers.workspace = true
+strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
 
 arbitrary = { workspace = true, optional = true }
@@ -25,6 +26,7 @@ serde_json.workspace = true
 [features]
 arbitrary = [
   "dep:arbitrary",
+  "strata-ol-state-types/arbitrary",
   "strata-predicate/arbitrary",
   "strata-bridge-params/arbitrary",
 ]

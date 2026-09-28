@@ -1,23 +1,31 @@
 //! OL rules version identifier.
 
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use ssz::DecodeError;
 use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 
 /// Identifies the OL rules active for an epoch.
 ///
-/// [`Self::V1`] is the genesis rules. The Nth `CheckpointPredicateEnacted` log
-/// processed at an epoch terminal activates spec N+1 from the first block of the
-/// next epoch. The log carries no spec identifier, so every predicate rotation
-/// advances exactly one spec, including a rotation that changes no rules.
+/// The genesis spec is a network parameter carried in the OL genesis params.
+/// After genesis spec G, the Nth `CheckpointPredicateEnacted` log processed at
+/// an epoch terminal activates spec G+N from the first block of the next epoch.
+/// The log carries no spec identifier, so every predicate rotation advances
+/// exactly one spec, including a rotation that changes no rules.
 ///
 /// Variants are appended in activation order and must never be removed or
 /// renumbered. Ordering follows activation order. The SSZ representation is a
 /// single `uint8` equal to the explicit discriminant (`V1` is `1`); unknown values
 /// are rejected, never interpreted as genesis rules.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[repr(u8)]
 pub enum OLSpecId {
-    /// Genesis OL rules.
+    /// Rules of the 0.3.0 release, under which networks launched on it
+    /// started.
+    V0 = 0,
+
+    /// Rules of this release, under which networks launched on it start.
     V1 = 1,
 }
 
@@ -28,6 +36,7 @@ impl OLSpecId {
     /// Callers processing an enactment must halt when the successor is unknown.
     pub fn successor(self) -> Option<Self> {
         match self {
+            Self::V0 => Some(Self::V1),
             Self::V1 => None,
         }
     }
@@ -42,6 +51,7 @@ impl SszDelegate for OLSpecId {
 
     fn from_delegate(value: Self::Delegate) -> Result<Self, DecodeError> {
         match value {
+            0 => Ok(Self::V0),
             1 => Ok(Self::V1),
             _ => Err(DecodeError::BytesInvalid(format!(
                 "unknown OL spec identifier: {value}"
@@ -62,7 +72,7 @@ mod tests {
     use super::OLSpecId;
 
     // Append each spec and its fixed wire value in activation order.
-    const KNOWN_SPECS: &[(OLSpecId, u8)] = &[(OLSpecId::V1, 1)];
+    const KNOWN_SPECS: &[(OLSpecId, u8)] = &[(OLSpecId::V0, 0), (OLSpecId::V1, 1)];
 
     proptest! {
         #[test]

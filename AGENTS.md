@@ -703,7 +703,9 @@ Configuration is split by ownership:
 - **OL parameters** (`OLParams`, `ol-params.json`, `--ol-params`) contain
   `OLGenesisParams` and `OLRuntimeParams`. Runtime parameters are threaded through OL
   execution and embedded in real checkpoint guest builds, so changing them changes the
-  checkpoint verification key.
+  checkpoint verification key. `OLGenesisParams` carries the network's genesis
+  `OLSpecId` as a required `genesis.spec`: `0` (V0) for networks launched on 0.3.0, whose
+  flat params files must be converted, and `1` (V1) for networks launched from this release.
 - **Node configuration** (TOML types under `crates/config`) contains operational settings,
   including `BtcioConfig` and its L1 reader, writer, fee, and reorg policy.
 

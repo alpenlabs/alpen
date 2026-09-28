@@ -1,4 +1,5 @@
-//! Smoke tests for dispatch under [`OLSpecId::V1`].
+//! Smoke tests for dispatch under [`OLSpecId::V1`], and for the rejection of
+//! [`OLSpecId::V0`], whose rules this binary does not implement yet.
 //!
 //! The differential tests in `strata-ol-checkpoint` and
 //! `strata-ol-block-assembly` compare the drivers against each other.
@@ -13,7 +14,7 @@ use strata_ol_stf_v1::test_utils::*;
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 
 use crate::{
-    BlockComponents, BlockInfo, EpochDaReplayError, EpochInfo, OLSpecId, apply_da_epoch,
+    BlockComponents, BlockInfo, EpochDaReplayError, EpochInfo, ExecError, OLSpecId, apply_da_epoch,
     verify_block,
 };
 
@@ -130,4 +131,58 @@ fn test_apply_da_epoch_distinguishes_decode_failure() {
     .expect_err("malformed DA bytes must not decode");
 
     assert!(matches!(err, EpochDaReplayError::Decode(_)));
+}
+
+#[test]
+fn test_verify_block_under_v0_is_unimplemented() {
+    let epoch = build_v1_epoch();
+    let mut state = epoch.pre_genesis_state.clone();
+
+    let err = verify_block(
+        OLSpecId::V0,
+        &mut state,
+        epoch.genesis.header(),
+        None,
+        epoch.genesis.body(),
+        &OLRuntimeParams::test_default(),
+    )
+    .expect_err("V0 rules are not implemented");
+
+    assert!(matches!(err, ExecError::UnimplementedSpec(OLSpecId::V0)));
+    assert_eq!(
+        state.compute_state_root().expect("state root"),
+        epoch
+            .pre_genesis_state
+            .compute_state_root()
+            .expect("state root"),
+        "a rejected spec must not touch the state"
+    );
+}
+
+#[test]
+fn test_apply_da_epoch_under_v0_is_unimplemented() {
+    let epoch = build_v1_epoch();
+    let terminal = epoch.epoch_blocks.last().expect("epoch has a terminal");
+    let epoch_info = EpochInfo::new(
+        BlockInfo::from_header(terminal.header()),
+        epoch.genesis.header().compute_block_commitment(),
+    );
+    let mut state = epoch.pre_epoch_state;
+
+    // The spec is rejected before its DA encoding is chosen, so even bytes
+    // that would not decode report the unimplemented spec.
+    let err = apply_da_epoch(
+        OLSpecId::V0,
+        &mut state,
+        &epoch_info,
+        &[0xff; 3],
+        &[],
+        &OLRuntimeParams::test_default(),
+    )
+    .expect_err("V0 rules are not implemented");
+
+    assert!(matches!(
+        err,
+        EpochDaReplayError::Exec(ExecError::UnimplementedSpec(OLSpecId::V0))
+    ));
 }

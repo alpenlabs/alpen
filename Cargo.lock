@@ -9661,6 +9661,7 @@ dependencies = [
  "strata-bridge-params",
  "strata-btc-types",
  "strata-identifiers",
+ "strata-ol-state-types",
  "strata-predicate",
 ]
 
@@ -9777,6 +9778,7 @@ dependencies = [
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "proptest",
  "ssz",
  "strata-acct-types",

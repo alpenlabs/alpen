@@ -22,7 +22,7 @@ pub enum EpochDaReplayError {
 
     /// Applying the diff or replaying the epoch's manifests failed.
     #[error("epoch DA replay: {0}")]
-    Exec(#[source] ExecError),
+    Exec(#[from] ExecError),
 }
 
 /// Applies an epoch's encoded DA diff and replays its L1 manifests under `spec`

@@ -17,5 +17,8 @@ strata-ol-stf.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
+
 [lints]
 workspace = true

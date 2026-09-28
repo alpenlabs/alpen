@@ -60,6 +60,37 @@ strata-datatool gen-asm-params \
     --cli-config alpen-cli-profile.toml
 ```
 
+## OL params file
+
+`gen-ol-params` writes the nested layout, with the network's first OL spec in
+`genesis.spec`:
+
+```json
+{
+  "genesis": {
+    "spec": 1,
+    "header": { ... },
+    "accounts": { ... },
+    "last_l1_block": { "height": ..., "blkid": "..." }
+  },
+  "runtime": {
+    "bridge_params": { ... }
+  }
+}
+```
+
+`genesis.spec` is required and has no default. Networks launched from this
+release start at `1` (V1), which is what `gen-ol-params` writes. A nested file
+that an earlier build of this release wrote without the field describes a V1
+network: add `"spec": 1` under `genesis` or regenerate it.
+
+The flat layout 0.3.0 wrote, with `header`, `accounts`, `last_l1_block` and
+`bridge_params` at the top level, no longer parses. Networks launched on 0.3.0
+started under V0, so convert such a file by hand: keep every value, move
+`header`, `accounts` and `last_l1_block` under `genesis` with `"spec": 0`, and
+move `bridge_params` under `runtime`. Don't regenerate it, and don't use
+`"spec": 1`.
+
 ## Alpen CLI network profile
 
 `gen-asm-params --cli-config <path>` additionally emits the network fields the

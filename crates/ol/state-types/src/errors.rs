@@ -4,6 +4,8 @@ use strata_identifiers::{Epoch, L1Height, OLTxId, Slot};
 use strata_snark_acct_types::Seqno;
 use thiserror::Error;
 
+use crate::OLSpecId;
+
 /// State result type returned by state accessor functions.
 pub type StateResult<T> = Result<T, StateError>;
 
@@ -217,6 +219,13 @@ pub enum ExecError {
     #[error("block logs exceeded limit (count {count}, max {max})")]
     LogsOverflow { count: usize, max: usize },
 
+    /// The rules the spec names are not implemented by this binary.
+    ///
+    /// A spec this binary does not know cannot be represented, so this only
+    /// arises for a known spec whose implementation has not landed yet.
+    #[error("OL spec {0:?} rules are not implemented")]
+    UnimplementedSpec(OLSpecId),
+
     /// Wrapper to provide additional context about tx processing.
     #[error("tx {0} at idx {1} processing failed: {2}")]
     TxExec(OLTxId, usize, Box<Self>),
@@ -257,9 +266,13 @@ impl ExecError {
     }
 
     pub fn kind(&self) -> ErrorKind {
-        // By default, we can assume all errors indicate the block is invalid,
-        // we don't have any execution ones yet.
-        ErrorKind::Correctness
+        match self.base() {
+            // The block may be valid; this binary just cannot run its rules.
+            Self::UnimplementedSpec(_) => ErrorKind::Execution,
+
+            // All other errors indicate the block is invalid.
+            _ => ErrorKind::Correctness,
+        }
     }
 }
 
@@ -270,4 +283,22 @@ pub enum ErrorKind {
 
     /// This is some correctness error that indicates the block is invalid.
     Correctness,
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_identifiers::{Buf32, OLTxId};
+
+    use super::*;
+
+    #[test]
+    fn test_unimplemented_spec_is_inconclusive() {
+        let err = ExecError::UnimplementedSpec(OLSpecId::V0);
+        assert_eq!(err.kind(), ErrorKind::Execution);
+
+        let wrapped = err.with_tx(OLTxId::from(Buf32::from([1u8; 32])), 0);
+        assert_eq!(wrapped.kind(), ErrorKind::Execution);
+
+        assert_eq!(ExecError::ChainIntegrity.kind(), ErrorKind::Correctness);
+    }
 }

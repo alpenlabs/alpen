@@ -72,6 +72,9 @@ class BridgeParams:
 class OLParams:
     """OL genesis parameters. Maps to Rust OLParams."""
 
+    # Genesis OL spec (`OLSpecId` discriminant). Networks launched on this
+    # release start at V1.
+    genesis_spec: int = 1
     accounts: dict[str, GenesisAccountData] = field(default_factory=dict)
     last_l1_block: L1BlockCommitment = field(default_factory=L1BlockCommitment)
     bridge_params: BridgeParams = field(default_factory=BridgeParams)
@@ -83,6 +86,7 @@ class OLParams:
     def as_json_string(self) -> str:
         d = {
             "genesis": {
+                "spec": self.genesis_spec,
                 "accounts": {k: asdict(v) for k, v in self.accounts.items()},
                 "last_l1_block": asdict(self.last_l1_block),
             },

@@ -117,10 +117,21 @@ pub(crate) trait OLStfSpec {
 /// earlier rules adds an arm naming an existing implementation; a spec with new
 /// rules also adds an [`OLStfSpec`] implementation.
 ///
+/// A spec whose rules this binary does not implement yet returns
+/// [`ExecError::UnimplementedSpec`](strata_ol_state_types::ExecError::UnimplementedSpec)
+/// without running anything.
+///
 /// Callers import `OLSpecId`, `OLStfSpec`, and the implementation types.
 macro_rules! dispatch_spec {
     ($spec:expr => $op:ident($($arg:expr),* $(,)?)) => {
         match $spec {
+            // TODO(STR-4486): implement the 0.3.0 rules. They differ from V1 in at
+            // least the state root, which V0 commits bare once STR-4472 lands, and
+            // the `EePredicateKeyUpdate` drain, where 0.3.0 sets the EE account's
+            // predicate key directly and V1 queues an inbox message. Block hashing
+            // may differ for nonempty bodies; the MN0 genesis block, whose body is
+            // empty, hashes identically under V1.
+            OLSpecId::V0 => Err($crate::ExecError::UnimplementedSpec(OLSpecId::V0).into()),
             OLSpecId::V1 => <StfV1 as OLStfSpec>::$op($($arg),*),
         }
     };
