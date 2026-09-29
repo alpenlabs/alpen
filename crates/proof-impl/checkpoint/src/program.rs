@@ -99,7 +99,7 @@ mod tests {
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
-    use strata_identifiers::Buf64;
+    use strata_identifiers::{Buf32, Buf64};
     use strata_ol_chain_types_v1::{
         OLAsmManifestContainerV1, OLBlockBodyV1, OLBlockV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
@@ -107,10 +107,14 @@ mod tests {
     use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::{IStateAccessor, OLSpecVersions};
+    use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLRootState, OLSpecVersions};
     use strata_ol_stf::OLSpecId;
-    use strata_ol_stf_v1::test_utils::{
-        FixtureAsmManifestBuilder, OLStfFixture, build_empty_chain, make_genesis_state,
+    use strata_ol_stf_v1::{
+        BlockComponents, BlockInfo,
+        test_utils::{
+            FixtureAsmManifestBuilder, OLStfFixture, build_empty_chain, execute_block,
+            make_empty_manifest, make_genesis_state, tamper_state_root,
+        },
     };
     use strata_predicate::PredicateKey;
 
@@ -189,6 +193,106 @@ mod tests {
             parent,
             da_state_diff_bytes: encode_to_vec(&OLDaPayloadV1::new(diff)).unwrap(),
         }
+    }
+
+    /// Builds a one-block V1 epoch whose start state is a V0 state, as the last
+    /// 0.3.0 terminal leaves it.
+    ///
+    /// Genesis runs under V1 rules, then its result is relabelled as the V0
+    /// terminal it stands in for: the same chainstate with V0 versions, under
+    /// a header committing to the bare root. Also returns the chainstate root
+    /// after the epoch's terminal block.
+    fn prepare_v0_input() -> (CheckpointProverInput, Buf32) {
+        let mut state = make_genesis_state();
+        let genesis = build_empty_chain(&mut state, 1, 9)
+            .unwrap()
+            .remove(0)
+            .into_header();
+        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+        let parent = tamper_state_root(&genesis, state.compute_state_root().unwrap());
+        let start_state = state.to_container();
+
+        let manifest = make_empty_manifest(state.last_l1_height() + 1, 0);
+        let terminal = execute_block(
+            &mut state,
+            &BlockInfo::new(1_001_000, 1, 1),
+            Some(&parent),
+            BlockComponents::new_manifests(vec![manifest]).as_terminal(),
+        )
+        .unwrap();
+        let diff = OLStateDiffV1::new(
+            GlobalStateDiffV1::new(DaCounter::new_changed(1), DaCounter::new_unchanged()),
+            LedgerDiffV1::default(),
+        );
+        let input = CheckpointProverInput {
+            start_state,
+            blocks: vec![OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(terminal.header().clone(), Buf64::zero()),
+                terminal.body().clone(),
+            )],
+            parent,
+            da_state_diff_bytes: encode_to_vec(&OLDaPayloadV1::new(diff)).unwrap(),
+        };
+        (input, state.chainstate().compute_chainstate_root())
+    }
+
+    #[test]
+    fn test_statements_accept_v0_start_state() {
+        let (input, terminal_chainstate_root) = prepare_v0_input();
+        assert_eq!(input.start_state.cur_spec(), OLSpecId::V0);
+        assert_eq!(
+            *input.parent.state_root(),
+            input.start_state.chainstate().compute_chainstate_root()
+        );
+        // The first V1 terminal commits to the wrapped root state.
+        assert_eq!(
+            *input.blocks[0].header().state_root(),
+            OLRootState::new(
+                OLSpecVersions::uniform(OLSpecId::V1),
+                terminal_chainstate_root
+            )
+            .compute_state_root()
+        );
+
+        let claim =
+            CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default())
+                .unwrap();
+        assert_eq!(claim.epoch(), 1);
+        assert_eq!(
+            *claim.l2_range().end().blkid(),
+            input.blocks[0].header().compute_blkid()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "epoch runs under spec V1, but this program proves spec V0")]
+    fn test_statements_reject_v0_start_state_under_v0_program() {
+        let (input, _) = prepare_v0_input();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V0, OLRuntimeParams::test_default());
+    }
+
+    #[test]
+    #[should_panic(expected = "epoch runs under spec V0, but this program proves spec V1")]
+    fn test_statements_reject_v1_start_state_staging_v0() {
+        let mut input = prepare_input();
+        let (_, chainstate) = input.start_state.clone().into_parts();
+        let versions = OLSpecVersions::new(OLSpecId::V1, 0).expect("V1 may stage any spec");
+        input.start_state = OLStateContainer::new(versions, chainstate);
+        // Authenticate the altered state so that the spec check is what fails.
+        input.parent.state_root = input.start_state.compute_state_root();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());
+    }
+
+    #[test]
+    #[should_panic(expected = "does not match initial state root")]
+    fn test_statements_reject_v0_start_state_with_mismatched_root() {
+        let (mut input, _) = prepare_v0_input();
+        // The V1 form of the same chainstate is not the V0 state's root.
+        let chainstate_root = input.start_state.chainstate().compute_chainstate_root();
+        input.parent.state_root =
+            OLRootState::new(OLSpecVersions::uniform(OLSpecId::V1), chainstate_root)
+                .compute_state_root();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());
     }
 
     #[test]
