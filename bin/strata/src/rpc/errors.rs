@@ -96,7 +96,7 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
             ErrorObjectOwned::owned(NOT_AVAILABLE_ON_NODE_CODE, err.to_string(), None::<()>)
         }
         // Internal errors
-        OLMempoolError::LogBudget(TxLogBudgetError::Encoding(_))
+        OLMempoolError::LogBudget(TxLogBudgetError::Prediction(_))
         | OLMempoolError::AccountStateAccess(_)
         | OLMempoolError::TransactionNotFound(_)
         | OLMempoolError::Database(_)

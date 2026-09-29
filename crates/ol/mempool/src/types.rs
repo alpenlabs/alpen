@@ -342,7 +342,7 @@ impl OLMempoolRejectReason {
             OLMempoolError::LogBudget(
                 TxLogBudgetError::LogCount { .. } | TxLogBudgetError::LogPayloadBytes { .. },
             ) => Some(Self::LogBudgetExceeded),
-            OLMempoolError::LogBudget(TxLogBudgetError::Encoding(_)) => None,
+            OLMempoolError::LogBudget(TxLogBudgetError::Prediction(_)) => None,
             OLMempoolError::MempoolFull { .. } => Some(Self::MempoolFull),
             OLMempoolError::MempoolByteLimitExceeded { .. } => Some(Self::MempoolFull),
             OLMempoolError::AccountDoesNotExist { .. } => Some(Self::AccountDoesNotExist),

@@ -9581,7 +9581,6 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-bridge-params",
- "strata-codec",
  "strata-identifiers",
  "strata-ol-chain-types-v1",
  "strata-ol-stf",

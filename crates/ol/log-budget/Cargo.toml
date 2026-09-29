@@ -9,8 +9,6 @@ workspace = true
 [dependencies]
 strata-asm-checkpoint-types.workspace = true
 strata-bridge-params.workspace = true
-strata-codec.workspace = true
-strata-identifiers.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-stf.workspace = true
 strata-ol-tx-types-v1.workspace = true
@@ -20,6 +18,7 @@ thiserror.workspace = true
 [dev-dependencies]
 strata-acct-types.workspace = true
 strata-bridge-params = { workspace = true, features = ["test-defaults"] }
+strata-identifiers.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 
 ssz.workspace = true

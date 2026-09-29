@@ -13,12 +13,10 @@ mod tests;
 
 use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 use strata_bridge_params::BridgeParams;
-use strata_codec::CodecError;
-use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
-use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, OLLogType};
-use strata_ol_stf::OLSpecId;
-use strata_ol_stf::sequencer::parse_bridge_withdrawal;
-use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
+use strata_ol_chain_types_v1::MAX_LOGS_PER_BLOCK;
+use strata_ol_stf::sequencer::predict_tx_log_payloads;
+use strata_ol_stf::{ExecError, OLSpecId};
+use strata_ol_tx_types_v1::OLTransactionV1;
 use thiserror::Error;
 
 /// Exclusive cap on checkpoint log payload bytes (16 KiB per SPS-ol-chain-structures).
@@ -29,7 +27,7 @@ use thiserror::Error;
 /// logs fit this byte budget. Total payload bytes must remain strictly below it.
 pub const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
 
-/// Reports failures to encode predicted logs or fit a standalone transaction log budget.
+/// Reports failures to predict logs or fit a standalone transaction log budget.
 #[derive(Debug, Error)]
 pub enum TxLogBudgetError {
     /// The predicted log count exceeds the reported inclusive maximum.
@@ -40,9 +38,9 @@ pub enum TxLogBudgetError {
     #[error("update emits {actual} log payload bytes, exceeding limit {limit}")]
     LogPayloadBytes { actual: usize, limit: usize },
 
-    /// Encoding a predicted log payload failed.
-    #[error("cannot encode transaction log: {0}")]
-    Encoding(#[from] CodecError),
+    /// The selected STF could not predict the transaction's log payloads.
+    #[error("cannot predict transaction logs: {0}")]
+    Prediction(#[from] ExecError),
 }
 
 fn check_limits(usage: &LogUsage) -> Result<(), TxLogBudgetError> {
@@ -63,11 +61,10 @@ fn check_limits(usage: &LogUsage) -> Result<(), TxLogBudgetError> {
     Ok(())
 }
 
-/// Returns a transaction's predicted log usage if it fits the standalone budget.
+/// Checks whether the selected STF's predicted transaction logs fit the standalone budget.
 ///
-/// Counts the account-update log and withdrawal logs accepted by the selected STF's
-/// bridge rules. Generic account messages return zero usage. This check does not
-/// execute the transaction, verify its proof, or establish DA/envelope fit.
+/// This check does not execute the transaction, verify its proof, or establish
+/// DA/envelope fit.
 ///
 /// Log count must fit [`MAX_LOGS_PER_BLOCK`] and remain below
 /// [`MAX_OL_LOGS_PER_CHECKPOINT`]. Encoded payload bytes must remain below
@@ -80,35 +77,10 @@ pub fn check_tx_log_budget(
     spec: OLSpecId,
     tx: &OLTransactionV1,
     bridge_params: &BridgeParams,
-) -> Result<LogUsage, TxLogBudgetError> {
+) -> Result<(), TxLogBudgetError> {
     let mut usage = LogUsage::default();
-    let TransactionPayloadV1::SnarkAccountUpdate(payload) = tx.payload() else {
-        return Ok(usage);
-    };
-    let update_log = payload
-        .operation()
-        .update()
-        .get_log_data()
-        .expect("SSZ update extra data fits the account-update log bound");
-    // Use the canonical envelope codec, including its type prefix. Discard
-    // each encoded log immediately rather than collecting a transaction's logs.
-    usage.add_payload(&update_log.encode_log()?);
-
-    for message in tx.data().effects().messages_iter() {
-        if message.dest() != BRIDGE_GATEWAY_ACCT_ID {
-            // Non-bridge messages emit no additional OL logs; the account-update
-            // log is already counted above.
-            continue;
-        }
-        if let Ok(log) = parse_bridge_withdrawal(
-            spec,
-            message.payload().value().to_sat(),
-            message.payload().data(),
-            bridge_params,
-        ) {
-            usage.add_payload(&log.encode_log()?);
-        }
-    }
-    check_limits(&usage)?;
-    Ok(usage)
+    predict_tx_log_payloads(spec, tx, bridge_params, |payload| {
+        usage.add_payload(payload);
+    })?;
+    check_limits(&usage)
 }

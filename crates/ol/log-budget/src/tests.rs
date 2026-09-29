@@ -1,7 +1,8 @@
 use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_ol_stf_v1::test_utils::{
-    OLStfFixture, SnarkUpdateBuilder, make_p2wpkh_bosd_descriptor, make_proof, make_state_root,
-    make_withdrawal_payload,
+    OLStfFixture, SnarkUpdateBuilder, make_gam_tx, make_p2wpkh_bosd_descriptor, make_proof,
+    make_state_root, make_withdrawal_payload,
 };
 
 use super::*;
@@ -40,15 +41,38 @@ fn withdrawal_update(count: usize, extra_len: usize) -> OLTransactionV1 {
         .build(account, make_state_root(2), make_proof(1))
 }
 
+fn predict_log_usage(tx: &OLTransactionV1, params: &BridgeParams) -> LogUsage {
+    let mut usage = LogUsage::default();
+    predict_tx_log_payloads(OLSpecId::V1, tx, params, |payload| {
+        usage.add_payload(payload);
+    })
+    .unwrap();
+    usage
+}
+
+#[test]
+fn test_unimplemented_spec_preserves_prediction_error() {
+    let (_, account, builder) = fixture_and_builder();
+    let tx = builder.build(account, make_state_root(2), make_proof(1));
+    let error = check_tx_log_budget(OLSpecId::V0, &tx, &BridgeParams::default())
+        .expect_err("V0 rules are not implemented");
+
+    assert!(matches!(
+        error,
+        TxLogBudgetError::Prediction(ExecError::UnimplementedSpec(OLSpecId::V0))
+    ));
+}
+
 #[test]
 fn test_payload_budget_includes_update_log_and_extra_data() {
     let params = BridgeParams::default();
-    let usage = check_tx_log_budget(OLSpecId::V1, &withdrawal_update(172, 0), &params).unwrap();
-    assert_eq!(usage.count(), 173);
-    assert_eq!(usage.payload_bytes(), 16_350);
-
-    let usage = check_tx_log_budget(OLSpecId::V1, &withdrawal_update(172, 33), &params).unwrap();
-    assert_eq!(usage.payload_bytes(), 16_383);
+    for (extra_len, expected_bytes) in [(0, 16_350), (33, 16_383)] {
+        let tx = withdrawal_update(172, extra_len);
+        check_tx_log_budget(OLSpecId::V1, &tx, &params).unwrap();
+        let usage = predict_log_usage(&tx, &params);
+        assert_eq!(usage.count(), 173);
+        assert_eq!(usage.payload_bytes(), expected_bytes);
+    }
     assert!(matches!(
         check_tx_log_budget(OLSpecId::V1, &withdrawal_update(172, 34), &params),
         Err(TxLogBudgetError::LogPayloadBytes {
@@ -98,7 +122,7 @@ fn test_log_measurement_matches_stf_with_mixed_messages() {
         .with_transfer(BRIDGE_GATEWAY_ACCT_ID, amount)
         .build(account, make_state_root(2), make_proof(1));
 
-    let usage = check_tx_log_budget(OLSpecId::V1, &tx, &params).unwrap();
+    let usage = predict_log_usage(&tx, &params);
     let output = fixture.child_block().with_tx(tx).execute_with_outputs();
     assert_eq!(output.log_count(), 3);
     assert_eq!(usage.count(), output.log_count());
@@ -110,6 +134,19 @@ fn test_log_measurement_matches_stf_with_mixed_messages() {
             .map(|log| log.payload().len())
             .sum::<usize>()
     );
+}
+
+#[test]
+fn test_generic_message_prediction_matches_execution() {
+    let (mut fixture, account, _) = fixture_and_builder();
+    let tx = make_gam_tx(account);
+    let params = BridgeParams::default();
+    let usage = predict_log_usage(&tx, &params);
+    check_tx_log_budget(OLSpecId::V1, &tx, &params).unwrap();
+
+    let output = fixture.child_block().with_tx(tx).execute_with_outputs();
+    assert_eq!(usage, LogUsage::default());
+    assert_eq!(output.log_count(), 0);
 }
 
 #[test]
