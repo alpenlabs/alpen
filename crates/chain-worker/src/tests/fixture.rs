@@ -26,7 +26,7 @@ use strata_ol_state_container::{OLStateContainer, test_utils::create_test_contai
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
-use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLSpecId, OLSpecVersions};
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf_v1::{
     BlockComponents, execute_block_batch_predrain,
@@ -36,7 +36,7 @@ use strata_ol_stf_v1::{
         epoch_runner_run_genesis as run_genesis, epoch_runner_seed_accounts as seed_accounts,
         get_snark_state_expect, make_account_id, make_deposit_manifest_for_account,
         make_empty_manifest, make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload,
-        snark_inbox_msg_with_data,
+        snark_inbox_msg_with_data, tamper_state_root,
     },
     verify_block,
 };
@@ -66,6 +66,7 @@ pub fn make_marked_genesis_state() -> MemoryStateBaseLayer<OLStateV1> {
 pub struct EpochPlan {
     blocks: Vec<BlockPlan>,
     terminal: TerminalPlan,
+    on_v0_terminal: bool,
 }
 
 impl EpochPlan {
@@ -83,6 +84,14 @@ impl EpochPlan {
     /// Replaces the explicit epoch terminal block.
     pub fn terminal(mut self, terminal: impl Into<TerminalPlan>) -> Self {
         self.terminal = terminal.into();
+        self
+    }
+
+    /// Builds the epoch on genesis relabelled as the last V0 terminal: the
+    /// same chainstate as a V0 state, under a header committing to its bare
+    /// root. The epoch then runs as the first V1 epoch and wraps it.
+    pub fn on_v0_terminal(mut self) -> Self {
+        self.on_v0_terminal = true;
         self
     }
 }
@@ -158,6 +167,8 @@ pub struct BuiltEpoch {
     pub checkpoint_payload: CheckpointPayload,
     /// Epoch final state root produced by block-sync execution.
     pub block_sync_state_root: Buf32,
+    /// Spec versions of the epoch's final state under block-sync execution.
+    pub block_sync_spec_versions: OLSpecVersions,
     /// Epoch summary produced by block-sync execution.
     pub block_sync_summary: EpochSummary,
     /// Merged indexer writes captured by block-sync execution.
@@ -185,13 +196,20 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     let snark_serial = seed_accounts(&mut state);
 
     let genesis = run_genesis(&mut state);
+    let genesis_header = if plan.on_v0_terminal {
+        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+        let v0_root = state.compute_state_root().expect("V0 root");
+        tamper_state_root(genesis.header(), v0_root)
+    } else {
+        genesis.header().clone()
+    };
     let pre_epoch_state = state.to_container();
     let pre_epoch_layer = state.clone();
 
     // Build ordinary blocks first. Manifests may appear in any block; the
     // explicit terminal below is what applies their buffered L1 logs.
     let mut blocks: Vec<OLBlockV1> = Vec::new();
-    let mut prev = genesis.header().clone();
+    let mut prev = genesis_header.clone();
     let mut manifests_by_height = Vec::new();
     let pre_terminal_pending_asm_logs = {
         let mut executor = PlannedBlockExecutor {
@@ -220,11 +238,12 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
         state_root: block_sync_state_root,
         indexer_writes: block_sync_indexer_writes,
         logs: block_sync_logs,
-    } = run_block_sync(&pre_epoch_layer, &blocks, genesis.header());
+    } = run_block_sync(&pre_epoch_layer, &blocks, &genesis_header);
+    let block_sync_spec_versions = block_sync_state.spec_versions();
 
     // Genesis commitment / summary for epoch 0.
     let genesis_commitment =
-        OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid());
+        OLBlockCommitment::new(genesis_header.slot(), genesis_header.compute_blkid());
     let genesis_l1 = L1BlockCommitment::new(
         pre_epoch_layer.last_l1_height(),
         *pre_epoch_layer.last_l1_blkid(),
@@ -234,7 +253,7 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
         genesis_commitment,
         OLBlockCommitment::null(),
         genesis_l1,
-        *genesis.header().state_root(),
+        *genesis_header.state_root(),
     );
 
     // Epoch 1 commitment from the terminal block.
@@ -257,7 +276,7 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     );
 
     // DA blob and per-update OL logs the checkpoint payload carries.
-    let (da_blob, ol_logs) = rebuild_da_and_logs(&pre_epoch_layer, &blocks, genesis.header());
+    let (da_blob, ol_logs) = rebuild_da_and_logs(&pre_epoch_layer, &blocks, &genesis_header);
 
     let tip_l1_height = post_epoch_l1.height();
     let checkpoint_payload = assemble_checkpoint_payload(
@@ -278,6 +297,7 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
         manifests_by_height,
         checkpoint_payload,
         block_sync_state_root,
+        block_sync_spec_versions,
         block_sync_summary,
         block_sync_indexer_writes,
         block_sync_logs,

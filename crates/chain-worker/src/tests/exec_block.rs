@@ -13,24 +13,27 @@ use strata_acct_types::BitcoinAmount;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
+use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
-    Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId, SubjectId,
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId, SubjectId,
 };
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
-use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLSpecId, OLSpecVersions};
 use strata_ol_state_types_v1::WriteBatch;
 use strata_ol_stf_v1::test_utils::{
     EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
     epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
-    make_deposit_manifest_for_account,
+    make_deposit_manifest_for_account, tamper_state_root,
 };
 
 use super::fixture::make_marked_genesis_state;
 use crate::{
-    WorkerError, WorkerResult, output::OLBlockExecutionOutput, state::exec_block,
+    WorkerError, WorkerResult,
+    output::OLBlockExecutionOutput,
+    state::{exec_block, merge_epoch_state},
     traits::ChainWorkerContext,
 };
 
@@ -54,6 +57,12 @@ struct OrderEnforcingContext {
     stored_summaries: Mutex<Vec<EpochSummary>>,
     /// Epochs passed to [`ChainWorkerContext::merge_epoch_data`].
     merged_epochs: Mutex<Vec<EpochCommitment>>,
+    /// States accepted by [`ChainWorkerContext::store_toplevel_state`] and
+    /// merged by [`ChainWorkerContext::merge_epoch_data`].
+    stored_states: Mutex<Vec<(OLBlockCommitment, OLStateContainer)>>,
+    /// Write batches accepted by [`ChainWorkerContext::store_block_output`],
+    /// encoded with the codec the OL state DB stores them with.
+    write_batches: Mutex<HashMap<OLBlockCommitment, Vec<u8>>>,
 }
 
 impl ChainWorkerContext for OrderEnforcingContext {
@@ -66,7 +75,11 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 
     fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeaderV1>> {
-        Ok(self.headers.get(blkid).cloned())
+        Ok(self
+            .headers
+            .get(blkid)
+            .cloned()
+            .or_else(|| self.blocks.get(blkid).map(|block| block.header().clone())))
     }
 
     fn fetch_ol_state(
@@ -83,9 +96,14 @@ impl ChainWorkerContext for OrderEnforcingContext {
     fn store_block_output(
         &self,
         block: &OLBlockV1,
-        _commitment: OLBlockCommitment,
-        _output: &OLBlockExecutionOutput,
+        commitment: OLBlockCommitment,
+        output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
+        let encoded = encode_to_vec(output.write_batch()).expect("write batch encodes");
+        self.write_batches
+            .lock()
+            .unwrap()
+            .insert(commitment, encoded);
         self.indexed_epochs
             .lock()
             .unwrap()
@@ -95,9 +113,10 @@ impl ChainWorkerContext for OrderEnforcingContext {
 
     fn store_toplevel_state(
         &self,
-        _commitment: OLBlockCommitment,
-        _state: OLStateContainer,
+        commitment: OLBlockCommitment,
+        state: OLStateContainer,
     ) -> WorkerResult<()> {
+        self.stored_states.lock().unwrap().push((commitment, state));
         Ok(())
     }
 
@@ -127,6 +146,11 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 
     fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
+        let merged = merge_epoch_state(self, summary)?;
+        self.stored_states
+            .lock()
+            .unwrap()
+            .push((*summary.terminal(), merged));
         self.merged_epochs
             .lock()
             .unwrap()
@@ -144,11 +168,13 @@ impl ChainWorkerContext for OrderEnforcingContext {
         unimplemented!("not used by exec_block")
     }
 
-    fn fetch_write_batch(
-        &self,
-        _commitment: OLBlockCommitment,
-    ) -> WorkerResult<Option<WriteBatch>> {
-        unimplemented!("not used by exec_block")
+    fn fetch_write_batch(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<WriteBatch>> {
+        Ok(self
+            .write_batches
+            .lock()
+            .unwrap()
+            .get(&commitment)
+            .map(|bytes| decode_buf_exact(bytes).expect("stored write batch decodes")))
     }
 
     fn prefill_l1_block_refs_mmr(&self) -> WorkerResult<()> {
@@ -175,15 +201,22 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 }
 
-/// Executing a terminal block that is also its epoch's first block must
-/// succeed: the block's own indexing persist creates the epoch row that epoch
-/// finalization stamps.
-#[test]
-fn test_exec_single_block_epoch_persists_before_summary() {
+/// Builds epoch 1 as a single terminal block on genesis and executes it
+/// through [`exec_block`], returning the context and the terminal header.
+///
+/// With `v0_parent`, genesis's result is first relabelled as the last V0
+/// terminal: the same chainstate as a V0 state, under a header committing to
+/// its bare root. The block then runs as the first V1 block and wraps it.
+fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHeaderV1) {
     let mut state = make_marked_genesis_state();
     let snark_serial = seed_accounts(&mut state);
     let genesis = run_genesis(&mut state);
-    let genesis_header = genesis.header().clone();
+    let mut genesis_header = genesis.header().clone();
+    if v0_parent {
+        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+        let v0_root = state.compute_state_root().expect("V0 root");
+        genesis_header = tamper_state_root(&genesis_header, v0_root);
+    }
     let pre_epoch_state = state.to_container();
     let genesis_l1 = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
 
@@ -224,10 +257,23 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         indexed_epochs: Mutex::new(Vec::new()),
         stored_summaries: Mutex::new(Vec::new()),
         merged_epochs: Mutex::new(Vec::new()),
+        stored_states: Mutex::new(Vec::new()),
+        write_batches: Mutex::new(HashMap::new()),
     };
 
     exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
         .expect("single-block epoch executes");
+    (ctx, terminal_header)
+}
+
+/// Executing a terminal block that is also its epoch's first block must
+/// succeed: the block's own indexing persist creates the epoch row that epoch
+/// finalization stamps.
+#[test]
+fn test_exec_single_block_epoch_persists_before_summary() {
+    let (ctx, terminal_header) = exec_single_block_epoch(false);
+    let terminal_commitment =
+        OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
 
     let summaries = ctx.stored_summaries.lock().unwrap();
     assert_eq!(summaries.len(), 1, "exactly one epoch summary stored");
@@ -239,4 +285,54 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         &[epoch],
         "epoch data merged before the summary was stored"
     );
+}
+
+/// Block sync of the first V1 block on a V0 terminal persists the wrapped
+/// state, whose root is the one the block header commits to. Both the block's
+/// post-state and the epoch merge of its codec-decoded write batch reach it.
+#[test]
+fn test_exec_first_v1_block_on_v0_terminal_persists_wrapped_state() {
+    let (ctx, terminal_header) = exec_single_block_epoch(true);
+    let terminal_commitment =
+        OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
+
+    let stored_states = ctx.stored_states.lock().unwrap();
+    let terminal_states: Vec<_> = stored_states
+        .iter()
+        .filter(|(commitment, _)| *commitment == terminal_commitment)
+        .map(|(_, state)| state)
+        .collect();
+    assert_eq!(
+        terminal_states.len(),
+        2,
+        "post-state and merged state stored"
+    );
+    for state in terminal_states {
+        assert_eq!(state.spec_versions(), OLSpecVersions::uniform(OLSpecId::V1));
+        assert_eq!(state.compute_state_root(), *terminal_header.state_root());
+    }
+
+    let summaries = ctx.stored_summaries.lock().unwrap();
+    assert_eq!(summaries[0].final_state(), terminal_header.state_root());
+}
+
+/// An epoch merge whose result does not hash to the summary's final state root
+/// fails instead of producing a terminal state to store.
+#[test]
+fn test_merge_epoch_state_rejects_root_mismatch() {
+    let (ctx, _) = exec_single_block_epoch(false);
+    let summary = ctx.stored_summaries.lock().unwrap()[0];
+    let wrong = EpochSummary::new(
+        summary.epoch(),
+        *summary.terminal(),
+        *summary.prev_terminal(),
+        *summary.new_l1(),
+        Buf32::from([0xab; 32]),
+    );
+
+    let err = merge_epoch_state(&ctx, &wrong).expect_err("merged root must match the summary");
+    assert!(matches!(
+        err,
+        WorkerError::MergedStateRootMismatch { merged, .. } if merged == *summary.final_state()
+    ));
 }

@@ -43,19 +43,21 @@ pub fn create_test_container_with_staged(staged_spec_version: u32) -> OLStateCon
     )
 }
 
-/// Strategy for containers over arbitrary V1 chainstates.
+/// Strategy for containers over arbitrary V1-layout chainstates.
 ///
-/// The staged version is either the current spec or an arbitrary raw value,
-/// so it often differs from the current version and often names no known
-/// spec.
+/// Most are V1 states whose staged version is either the current spec or an
+/// arbitrary raw value, so it often differs from the current version and often
+/// names no known spec. The rest are V0 states.
 pub fn ol_state_container_strategy() -> impl Strategy<Value = OLStateContainer> {
     let staged = prop_oneof![Just(u32::from(OLSpecId::V1)), any::<u32>()];
-    (ol_state_strategy(), staged).prop_map(|(state, staged_spec_version)| {
+    let v1 = (ol_state_strategy(), staged).prop_map(|(state, staged_spec_version)| {
         OLStateContainer::new(
             v1_versions_staging(staged_spec_version),
             OLStateSeries::V1(state),
         )
-    })
+    });
+    let v0 = ol_state_strategy().prop_map(v0_container);
+    prop_oneof![3 => v1, 1 => v0]
 }
 
 /// Returns V1 spec versions staging `staged_spec_version`, which V1 roots

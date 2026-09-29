@@ -38,7 +38,7 @@ use strata_ol_chain_types_v1::{
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
-use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_types::{IStateAccessor, OLSpecId, OLSpecVersions};
 
 use super::fixture::{
     BlockPlan, BuiltEpoch, EpochPlan, MARKER_STAGED_SPEC_VERSION, UpdateEffect, build_epoch,
@@ -210,6 +210,28 @@ fn mock_for(built: &BuiltEpoch) -> (MockChainWorkerContext, EpochCommitment) {
 #[test]
 fn test_apply_checkpoint_deposit_manifest_only() {
     let built = build_epoch(EpochPlan::new().terminal(BlockPlan::new().deposit_manifest()));
+    let (ctx, epoch) = mock_for(&built);
+
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    assert_consistent(&built, &artifacts);
+}
+
+/// Checkpoint sync of the first V1 epoch on a V0 terminal reconstructs the
+/// wrapped state and the terminal header block sync produced.
+#[test]
+fn test_apply_checkpoint_wraps_v0_terminal() {
+    let built = build_epoch(
+        EpochPlan::new()
+            .on_v0_terminal()
+            .add_block(BlockPlan::new().set_snark_updates(vec![UpdateEffect::Transfer(1_000_000)]))
+            .terminal(BlockPlan::new().deposit_manifest()),
+    );
+    assert_eq!(built.pre_epoch_state.cur_spec(), OLSpecId::V0);
+    assert_eq!(
+        built.prev_summary.final_state(),
+        &built.pre_epoch_state.chainstate().compute_chainstate_root(),
+        "the V0 terminal commits to its bare root"
+    );
     let (ctx, epoch) = mock_for(&built);
 
     let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
@@ -747,21 +769,28 @@ fn assert_state_consistent(built: &BuiltEpoch, artifacts: &AppliedEpochArtifacts
         "reconstructed state accessor must hash to the block-sync root"
     );
     assert_eq!(
-        (
-            artifacts.new_state.cur_spec_version(),
-            artifacts.new_state.staged_spec_version()
-        ),
-        (
-            built.pre_epoch_state.cur_spec_version(),
-            built.pre_epoch_state.staged_spec_version()
-        ),
-        "reconstruction must carry the spec versions through"
+        artifacts.new_state.spec_versions(),
+        built.block_sync_spec_versions,
+        "reconstruction must reach block sync's spec versions"
     );
-    assert_eq!(
-        artifacts.new_state.staged_spec_version(),
-        MARKER_STAGED_SPEC_VERSION,
-        "the fixture stages a non-genesis version so defaulted versions are caught"
-    );
+    if built.pre_epoch_state.cur_spec() == OLSpecId::V0 {
+        assert_eq!(
+            artifacts.new_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V1),
+            "the first V1 epoch wraps a V0 terminal"
+        );
+    } else {
+        assert_eq!(
+            artifacts.new_state.spec_versions(),
+            built.pre_epoch_state.spec_versions(),
+            "reconstruction must carry the spec versions through"
+        );
+        assert_eq!(
+            artifacts.new_state.staged_spec_version(),
+            MARKER_STAGED_SPEC_VERSION,
+            "the fixture stages a non-genesis version so defaulted versions are caught"
+        );
+    }
     assert_eq!(
         &artifacts.summary, &built.block_sync_summary,
         "reconstructed epoch summary must equal the block-sync summary"

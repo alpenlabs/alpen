@@ -10,12 +10,12 @@ use strata_identifiers::{OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{
-    DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
+    DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer, WriteTrackingState,
 };
 use strata_ol_state_types::{
-    IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState,
+    IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState, OLSpecVersions,
 };
-use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1};
 use strata_ol_stf::{
     BlockInfo, EpochInfo, OLSpecId, apply_da_epoch, execute_block_batch_predrain, verify_block,
 };
@@ -275,6 +275,100 @@ async fn test_da_rollback_on_failed_tx() {
     assert_eq!(
         blob_both, blob_valid,
         "DA with rolled-back failed tx must match DA with only valid tx"
+    );
+}
+
+/// Sequencer assembly of the first V1 epoch on a V0 terminal parent.
+///
+/// Each template's header must commit to the root node verification reaches
+/// from the V0 parent, through a write-tracking overlay as the chain worker
+/// runs it, and the epoch's resource state must rebuild from that parent to
+/// the incremental DA.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_assembly_on_v0_terminal_parent_matches_node_and_rebuild() {
+    let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+        .with_parent_slot(0)
+        .with_v0_genesis_parent()
+        .with_l1_manifest_height_range(1..=3)
+        .build_fixture()
+        .await;
+    let parent_block = fixture
+        .storage()
+        .ol_block()
+        .get_block_data_async(*parent_commitment.blkid())
+        .await
+        .expect("read parent block")
+        .expect("parent block stored");
+    let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+    let v0_parent = env
+        .ctx()
+        .fetch_state_for_tip(parent_commitment)
+        .await
+        .expect("fetch parent state")
+        .expect("parent state stored");
+    assert_eq!(
+        v0_parent.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V0)
+    );
+    assert_eq!(
+        v0_parent.compute_state_root().unwrap(),
+        *parent_block.header().state_root()
+    );
+
+    let (final_commitment, assembled_state, artifacts) =
+        build_blocks_with_resource_state_and_artifacts(&mut env, 4).await;
+
+    let mut node_state = (*v0_parent).clone();
+    let mut parent_header = parent_block.header().clone();
+    for (block, post_state) in &artifacts {
+        let header = block.header();
+        let mut tracking = WriteTrackingState::new_empty(&node_state);
+        verify_block(
+            OLSpecId::V1,
+            &mut tracking,
+            header,
+            Some(&parent_header),
+            block.body(),
+            &OLRuntimeParams::test_default(),
+        )
+        .expect("assembled block verifies");
+        let batch = tracking.into_batch();
+        node_state.apply_write_batch(batch).expect("batch applies");
+        assert_eq!(
+            node_state.compute_state_root().unwrap(),
+            *header.state_root(),
+            "node root differs at slot {}",
+            header.slot()
+        );
+        assert_eq!(
+            post_state.compute_state_root().unwrap(),
+            *header.state_root()
+        );
+        parent_header = header.clone();
+    }
+    assert_eq!(
+        node_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V1)
+    );
+
+    let (_, last_post_state) = artifacts.last().unwrap();
+    let (incremental_acc, incremental_logs) = assembled_state.da().clone().into_parts();
+    let incremental_blob = finalize_da_to_bytes(incremental_acc, last_post_state.clone());
+    let rebuilt_state = rebuild_epoch_resource_state_upto(
+        final_commitment,
+        artifacts[0].0.header().epoch(),
+        OLRuntimeParams::test_default(),
+        env.ctx(),
+    )
+    .await
+    .expect("rebuild from the V0 epoch parent succeeds");
+    let (rebuilt_acc, rebuilt_logs) = rebuilt_state.da().clone().into_parts();
+    let rebuilt_blob = finalize_da_to_bytes(rebuilt_acc, last_post_state.clone());
+    assert_eq!(incremental_blob, rebuilt_blob);
+    assert_eq!(incremental_logs, rebuilt_logs);
+    assert_eq!(
+        assembled_state.manifest_count(),
+        rebuilt_state.manifest_count()
     );
 }
 

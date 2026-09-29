@@ -134,6 +134,9 @@ mod tests {
         let tree = db.open_tree(OLStateSchema::TREE_NAME.0).unwrap();
 
         // Snapshots written before the root existed are bare `OLStateV1` SSZ.
+        // TODO(STR-4487): read legacy snapshots as V0 containers, and legacy
+        // write batches in their 0.3.0 encoding, through version-tagged records
+        // instead of rejecting them.
         let legacy = create_test_genesis_state().as_ssz_bytes();
         // The chainstate bytes end the encoding, so flipping the last byte
         // leaves a chainstate that no longer matches its committed root.

@@ -42,7 +42,7 @@ use strata_identifiers::{
 use strata_l1_txfmt::MagicBytes;
 use strata_msg_fmt::{Msg, MsgRef, OwnedMsg};
 use strata_ol_chain_types_v1::{
-    LogDecodeError, OLBlockBodyV1, OLBlockV1, OLLog, OLLogType, OLTxSegmentV1,
+    LogDecodeError, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType, OLTxSegmentV1,
     SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData, test_utils as ol_test_utils,
 };
 use strata_ol_log_budget::LogUsage;
@@ -1237,6 +1237,7 @@ pub struct TestStorageFixtureBuilder {
     asm_manifest_heights: Vec<L1Height>,
     expected_inbox_message_indices: Vec<(AccountId, Vec<u64>)>,
     accounts: Vec<TestAccount>,
+    v0_genesis_parent: bool,
 }
 
 impl TestStorageFixtureBuilder {
@@ -1249,6 +1250,14 @@ impl TestStorageFixtureBuilder {
     /// If not set, returns null commitment (for genesis testing).
     pub(crate) fn with_parent_slot(mut self, slot: u64) -> Self {
         self.parent_slot = Some(slot);
+        self
+    }
+
+    /// Relabels the slot-0 genesis parent as the last V0 terminal: the same
+    /// chainstate as a V0 state, under a header committing to its bare root.
+    /// The next block then runs as the first V1 block and wraps it.
+    pub(crate) fn with_v0_genesis_parent(mut self) -> Self {
+        self.v0_genesis_parent = true;
         self
     }
 
@@ -1450,8 +1459,23 @@ impl TestStorageFixtureBuilder {
                 .expect("Genesis block execution should succeed");
 
                 let completed_block = construct_output.completed_block();
-                let header = completed_block.header().clone();
+                let mut header = completed_block.header().clone();
                 let body = completed_block.body().clone();
+
+                if self.v0_genesis_parent {
+                    state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+                    let v0_root = state.compute_state_root().expect("V0 root");
+                    header = OLBlockHeaderV1::new(
+                        header.timestamp(),
+                        header.flags(),
+                        header.slot(),
+                        header.epoch(),
+                        *header.parent_blkid(),
+                        *header.body_root(),
+                        v0_root,
+                        *header.logs_root(),
+                    );
+                }
 
                 (state, header, body)
             } else {
