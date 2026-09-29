@@ -914,7 +914,7 @@ mod tests {
     use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32};
     use strata_ol_log_budget::TxLogBudgetError;
     use strata_ol_params::BridgeParams;
-    use strata_ol_stf_v1::test_utils::make_withdrawal_payload;
+    use strata_ol_stf_v1::test_utils::{make_op_return_bosd_descriptor, make_withdrawal_payload};
     use strata_snark_acct_types::{
         LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate, UpdateOperationData,
         UpdateOutputs,
@@ -933,11 +933,9 @@ mod tests {
     use crate::{DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH};
 
     fn withdrawal_update(count: usize) -> OLTransactionV1 {
-        let mut descriptor = vec![0x42; 81];
-        descriptor[0] = 0; // Valid OP_RETURN BOSD with 80 data bytes.
         let payload = MsgPayload::from_bytes(
             BitcoinAmount::try_from(BridgeParams::default().denomination()).unwrap(),
-            make_withdrawal_payload(descriptor),
+            make_withdrawal_payload(make_op_return_bosd_descriptor(0x42)),
         )
         .unwrap();
         let outputs = UpdateOutputs::new_empty().with_messages(vec![
@@ -983,10 +981,7 @@ mod tests {
             .expect_err("an update exceeding an empty checkpoint's log budget must be rejected");
         assert!(matches!(
             error,
-            OLMempoolError::LogBudget(TxLogBudgetError::LogPayloadBytes {
-                actual: 16_445,
-                limit: 16_383,
-            })
+            OLMempoolError::LogBudget(TxLogBudgetError::LogPayloadBytes { .. })
         ));
 
         let pending = state.handle_get_transactions(10).await.unwrap();

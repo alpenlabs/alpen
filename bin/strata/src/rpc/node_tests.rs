@@ -32,7 +32,7 @@ use strata_ol_rpc_types::*;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1, WriteBatch};
-use strata_ol_stf_v1::test_utils::make_withdrawal_payload;
+use strata_ol_stf_v1::test_utils::{make_op_return_bosd_descriptor, make_withdrawal_payload};
 use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
 use strata_primitives::{
@@ -3849,13 +3849,11 @@ async fn snark_acct_update_manifest_missing_extra_data_returns_null_extra_data()
 #[tokio::test]
 async fn submit_transaction_preserves_log_budget_error_data() {
     let account = test_account_id(1);
-    let mut descriptor = vec![0x42; 81];
-    descriptor[0] = 0;
     let message = OutputMessage::new(
         BRIDGE_GATEWAY_ACCT_ID,
         MsgPayload::from_bytes(
             BitcoinAmount::try_from(BridgeParams::default().denomination()).unwrap(),
-            make_withdrawal_payload(descriptor),
+            make_withdrawal_payload(make_op_return_bosd_descriptor(0x42)),
         )
         .unwrap(),
     );
@@ -3872,6 +3870,12 @@ async fn submit_transaction_preserves_log_budget_error_data() {
         HexBytes(operation.as_ssz_bytes()),
         HexBytes(vec![]),
     ));
+    let mempool_tx = OLTransactionV1::try_from(tx.clone()).unwrap();
+    let budget_error =
+        check_tx_log_budget(OLSpecId::V1, &mempool_tx, &BridgeParams::default()).unwrap_err();
+    let TxLogBudgetError::LogPayloadBytes { actual, limit } = budget_error else {
+        panic!("expected a payload-byte rejection, got {budget_error:?}");
+    };
     // Run real policy on the converted request. Mempool admission/persistence is
     // covered by its service-state tests; this test exercises the RPC boundary.
     let rpc = make_rpc(MockProvider::new().with_submit_fn(|tx| {
@@ -3883,7 +3887,7 @@ async fn submit_transaction_preserves_log_budget_error_data() {
     let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
     assert_eq!(
         data,
-        json!({"resource": "log_payload_bytes", "actual": 16445, "limit": 16383})
+        json!({"resource": "log_payload_bytes", "actual": actual, "limit": limit})
     );
 }
 

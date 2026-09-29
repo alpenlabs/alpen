@@ -1,8 +1,8 @@
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_ol_stf_v1::test_utils::{
-    OLStfFixture, SnarkUpdateBuilder, make_gam_tx, make_p2wpkh_bosd_descriptor, make_proof,
-    make_state_root, make_withdrawal_payload,
+    OLStfFixture, SnarkUpdateBuilder, make_gam_tx, make_op_return_bosd_descriptor,
+    make_p2wpkh_bosd_descriptor, make_proof, make_state_root, make_withdrawal_payload,
 };
 
 use super::*;
@@ -19,15 +19,9 @@ fn fixture_and_builder() -> (OLStfFixture, AccountId, SnarkUpdateBuilder) {
     (fixture, account, builder)
 }
 
-fn long_descriptor() -> Vec<u8> {
-    let mut descriptor = vec![0x42; 81];
-    descriptor[0] = 0; // OP_RETURN BOSD with 80 data bytes.
-    descriptor
-}
-
 fn withdrawal_update(count: usize, extra_len: usize) -> OLTransactionV1 {
     let (_, account, mut builder) = fixture_and_builder();
-    let payload = make_withdrawal_payload(long_descriptor());
+    let payload = make_withdrawal_payload(make_op_return_bosd_descriptor(0x42));
     for _ in 0..count {
         builder = builder.with_output_message(
             BRIDGE_GATEWAY_ACCT_ID,
@@ -94,7 +88,7 @@ fn test_log_measurement_matches_stf_with_mixed_messages() {
     let (mut fixture, account, builder) = fixture_and_builder();
     let params = BridgeParams::default();
     let amount = params.denomination();
-    let valid = make_withdrawal_payload(long_descriptor());
+    let valid = make_withdrawal_payload(make_op_return_bosd_descriptor(0x42));
     let tx = builder
         .try_with_extra_data(vec![0x77; 200])
         .unwrap()
