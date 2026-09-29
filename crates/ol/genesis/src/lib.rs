@@ -129,7 +129,7 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
 #[cfg(test)]
 mod tests {
     use strata_ol_params::OLRuntimeParams;
-    use strata_ol_state_types::OLRootState;
+    use strata_ol_state_types::{OLRootState, OLSpecVersions};
     use strata_ol_stf::OLSpecId;
 
     use super::*;
@@ -173,12 +173,14 @@ mod tests {
         let artifacts = build_genesis_artifacts(&params).unwrap();
         let header_root = *artifacts.ol_block.header().state_root();
 
-        let genesis_version = u32::from(params.genesis_spec());
         let chainstate_root = artifacts.ol_state.chainstate().compute_chainstate_root();
         assert_eq!(
             header_root,
-            OLRootState::new(genesis_version, genesis_version, chainstate_root)
-                .compute_state_root()
+            OLRootState::new(
+                OLSpecVersions::uniform(params.genesis_spec()),
+                chainstate_root
+            )
+            .compute_state_root()
         );
         assert_eq!(artifacts.epoch_summary.final_state(), &header_root);
 

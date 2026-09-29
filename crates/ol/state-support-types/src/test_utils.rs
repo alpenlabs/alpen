@@ -6,7 +6,8 @@ use strata_identifiers::{AccountSerial, Epoch, L1Height, Slot};
 use strata_ol_params::{GenesisHeaderParams, OLParams, OLRuntimeParams};
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::{
-    ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, PendingAsmLog,
+    ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState, OLSpecVersions,
+    PendingAsmLog,
 };
 use strata_ol_state_types_v1::{OLSnarkAccountStateV1, OLStateV1};
 use strata_predicate::PredicateKey;
@@ -104,11 +105,8 @@ pub(crate) fn with_staged_spec(
     staged_spec_version: u32,
 ) -> MemoryStateBaseLayer<OLStateV1> {
     let container = layer.into_container();
-    let cur_spec = container.cur_spec();
+    let versions = OLSpecVersions::new(container.cur_spec(), staged_spec_version)
+        .expect("test layers stage specs only from V1 on");
     let (_, chainstate) = container.into_parts();
-    MemoryStateBaseLayer::from_container(OLStateContainer::new(
-        cur_spec,
-        staged_spec_version,
-        chainstate,
-    ))
+    MemoryStateBaseLayer::from_container(OLStateContainer::new(versions, chainstate))
 }

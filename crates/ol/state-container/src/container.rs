@@ -4,7 +4,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ssz::DecodeError;
 use strata_identifiers::Buf32;
-use strata_ol_state_types::{OLRootState, OLSpecId};
+use strata_ol_state_types::{OLRootState, OLSpecId, OLSpecVersions};
 
 use crate::errors::OLStateDecodeError;
 use crate::layout::OLStateLayout;
@@ -20,7 +20,8 @@ use crate::series::OLStateSeries;
 /// The current spec is always one this binary supports, because it selects
 /// the chainstate layout. The staged spec may be unknown: the state still
 /// materializes, and executing the next epoch must halt until the node is
-/// upgraded.
+/// upgraded. A V0 container always stages V0, since its bare root commits no
+/// staged spec ([`OLSpecVersions`]).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OLStateContainer {
     root: OLRootState,
@@ -32,19 +33,15 @@ impl OLStateContainer {
     ///
     /// # Panics
     ///
-    /// In debug builds, if `chainstate` is not in the layout `cur_spec` maps
-    /// to.
-    pub fn new(cur_spec: OLSpecId, staged_spec_version: u32, chainstate: OLStateSeries) -> Self {
+    /// In debug builds, if `chainstate` is not in the layout the current spec
+    /// maps to.
+    pub fn new(versions: OLSpecVersions, chainstate: OLStateSeries) -> Self {
         debug_assert_eq!(
             chainstate.layout(),
-            OLStateLayout::for_spec(cur_spec),
+            OLStateLayout::for_spec(versions.cur_spec()),
             "ol/state-container: chainstate layout does not match the current spec"
         );
-        let root = OLRootState::new(
-            cur_spec.into(),
-            staged_spec_version,
-            chainstate.compute_chainstate_root(),
-        );
+        let root = OLRootState::new(versions, chainstate.compute_chainstate_root());
         Self { root, chainstate }
     }
 
@@ -70,6 +67,12 @@ impl OLStateContainer {
             .expect("ol/state-container: current spec checked at construction")
     }
 
+    /// Returns the spec versions.
+    pub fn spec_versions(&self) -> OLSpecVersions {
+        OLSpecVersions::new(self.cur_spec(), self.staged_spec_version())
+            .expect("ol/state-container: spec versions checked at construction")
+    }
+
     /// Returns the chainstate.
     pub fn chainstate(&self) -> &OLStateSeries {
         &self.chainstate
@@ -80,7 +83,8 @@ impl OLStateContainer {
         (self.root, self.chainstate)
     }
 
-    /// Computes the protocol state root, `hash_tree_root(OLRootState)`.
+    /// Computes the protocol state root: the bare chainstate root under V0,
+    /// `hash_tree_root(OLRootState)` from V1 on.
     pub fn compute_state_root(&self) -> Buf32 {
         self.root.compute_state_root()
     }
@@ -94,8 +98,9 @@ impl OLStateContainer {
         }
     }
 
-    /// Selects the chainstate layout from the current spec, decodes the
-    /// chainstate in it, and checks the chainstate against its committed root.
+    /// Checks the spec versions, selects the chainstate layout from the current
+    /// spec, decodes the chainstate in it, and checks the chainstate against
+    /// its committed root.
     pub(crate) fn from_serde(
         serde_form: SerdeOLStateContainer,
     ) -> Result<Self, OLStateDecodeError> {
@@ -105,10 +110,11 @@ impl OLStateContainer {
             chainstate_root,
             chainstate: chainstate_bytes,
         } = serde_form;
-        let root = OLRootState::new(cur_spec_version, staged_spec_version, chainstate_root);
-        let cur_spec = root
-            .cur_spec()
-            .map_err(OLStateDecodeError::UnsupportedSpec)?;
+        let cur_spec =
+            OLSpecId::try_from(cur_spec_version).map_err(OLStateDecodeError::UnsupportedSpec)?;
+        let versions = OLSpecVersions::new(cur_spec, staged_spec_version)
+            .map_err(OLStateDecodeError::NonCanonicalV0)?;
+        let root = OLRootState::new(versions, chainstate_root);
         let layout = OLStateLayout::for_spec(cur_spec);
 
         let chainstate = OLStateSeries::from_ssz_bytes(layout, &chainstate_bytes)

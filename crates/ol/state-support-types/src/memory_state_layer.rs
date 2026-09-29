@@ -25,14 +25,11 @@ use crate::write_tracking_layer::IComputeStateRootWithWrites;
 /// [`Self::new_genesis`] assigns versions.
 #[derive(Clone, Debug)]
 pub struct MemoryStateBaseLayer<S> {
-    /// Spec the chainstate was produced under.
+    /// Spec versions of the state.
     ///
-    /// Always a spec whose layout is `S`.
-    cur_spec: OLSpecId,
-
-    /// Raw spec version the next epoch runs under, which may name a spec this
-    /// binary does not know.
-    staged_spec_version: u32,
+    /// The current spec is always one whose layout is `S`. The staged version
+    /// may name a spec this binary does not know.
+    spec_versions: OLSpecVersions,
 
     /// The fully-materialized chainstate in memory.
     ///
@@ -55,10 +52,8 @@ impl MemoryStateBaseLayer<OLStateV1> {
     /// so it carries its own versions.
     pub fn new_genesis(params: &OLParams) -> StateResult<Self> {
         let chainstate = OLStateV1::from_genesis_params(params)?;
-        let genesis_spec = params.genesis_spec();
         Ok(Self::from_parts(
-            genesis_spec,
-            genesis_spec.into(),
+            OLSpecVersions::uniform(params.genesis_spec()),
             chainstate,
         ))
     }
@@ -69,15 +64,14 @@ impl MemoryStateBaseLayer<OLStateV1> {
     ///
     /// If the state's accounts have duplicated serials.
     pub fn from_container(container: OLStateContainer) -> Self {
-        let cur_spec = container.cur_spec();
-        let staged_spec_version = container.staged_spec_version();
+        let spec_versions = container.spec_versions();
         let (_, chainstate) = container.into_parts();
         let OLStateSeries::V1(chainstate) = chainstate;
-        Self::from_parts(cur_spec, staged_spec_version, chainstate)
+        Self::from_parts(spec_versions, chainstate)
     }
 
     /// Indexes the serials of `chainstate`.
-    fn from_parts(cur_spec: OLSpecId, staged_spec_version: u32, chainstate: OLStateV1) -> Self {
+    fn from_parts(spec_versions: OLSpecVersions, chainstate: OLStateV1) -> Self {
         let serials: BTreeMap<_, _> = chainstate
             .ledger
             .accounts
@@ -92,8 +86,7 @@ impl MemoryStateBaseLayer<OLStateV1> {
         );
 
         Self {
-            cur_spec,
-            staged_spec_version,
+            spec_versions,
             chainstate,
             serials,
         }
@@ -101,19 +94,14 @@ impl MemoryStateBaseLayer<OLStateV1> {
 
     /// Converts the layer into a container, computing the chainstate root.
     pub fn into_container(self) -> OLStateContainer {
-        OLStateContainer::new(
-            self.cur_spec,
-            self.staged_spec_version,
-            OLStateSeries::V1(self.chainstate),
-        )
+        OLStateContainer::new(self.spec_versions, OLStateSeries::V1(self.chainstate))
     }
 
     /// Builds a container from a copy of the layer's state, computing the
     /// chainstate root.
     pub fn to_container(&self) -> OLStateContainer {
         OLStateContainer::new(
-            self.cur_spec,
-            self.staged_spec_version,
+            self.spec_versions,
             OLStateSeries::V1(self.chainstate.clone()),
         )
     }
@@ -126,12 +114,8 @@ impl MemoryStateBaseLayer<OLStateV1> {
     /// Computes the protocol state root for `chainstate` under this layer's
     /// spec versions.
     fn compute_root_for(&self, chainstate: &OLStateV1) -> Buf32 {
-        OLRootState::new(
-            self.cur_spec.into(),
-            self.staged_spec_version,
-            chainstate.compute_chainstate_root(),
-        )
-        .compute_state_root()
+        OLRootState::new(self.spec_versions, chainstate.compute_chainstate_root())
+            .compute_state_root()
     }
 }
 
@@ -141,11 +125,11 @@ impl IStateAccessor for MemoryStateBaseLayer<OLStateV1> {
     // ===== Root state methods =====
 
     fn cur_spec_version(&self) -> u32 {
-        self.cur_spec.into()
+        self.spec_versions.cur_spec_version()
     }
 
     fn staged_spec_version(&self) -> u32 {
-        self.staged_spec_version
+        self.spec_versions.staged_spec_version()
     }
 
     // ===== Global state methods =====

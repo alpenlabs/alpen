@@ -354,6 +354,7 @@ mod tests {
     };
     use strata_identifiers::AccountSerial;
     use strata_ol_da_common::{DaScheme, U16LenBytes, U16LenList};
+    use strata_ol_state_container::test_utils::v0_container;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
     use strata_ol_state_types_v1::OLStateV1;
@@ -1611,13 +1612,14 @@ mod tests {
 
     /// A payload that 0.3.0 encoded decodes here and applies to the post-state 0.3.0 computes.
     #[test]
-    #[ignore = "0.3.0 recorded bare state roots; the V0 root form that reproduces them lands later in this PR"]
     fn test_v030_payload_applies_to_same_state_as_v030() {
         let pre_accounts = pre_state_with_accounts();
-        let pre_root = pre_accounts
-            .state
-            .compute_state_root()
-            .expect("pre-state root");
+        // 0.3.0 applied the payload to a V0 state, whose root is the bare
+        // chainstate root.
+        let pre_state = MemoryStateBaseLayer::from_container(v0_container(
+            pre_accounts.state.chainstate().clone(),
+        ));
+        let pre_root = pre_state.compute_state_root().expect("pre-state root");
         assert_eq!(
             bytes_to_hex(pre_root.as_ref()),
             V030_APPLY_PRE_STATE_ROOT,
@@ -1630,7 +1632,7 @@ mod tests {
         assert_eq!(encoded, golden, "encoder must reproduce the 0.3.0 bytes");
 
         let payload = decode_ol_da_payload_bytes(&golden).expect("decode 0.3.0 payload");
-        let mut state = pre_accounts.state.clone();
+        let mut state = pre_state;
         OLDaSchemeV1::apply_to_state(payload, &mut state).expect("apply 0.3.0 payload");
 
         let post_root = state.compute_state_root().expect("post-state root");

@@ -107,7 +107,7 @@ mod tests {
     use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::IStateAccessor;
+    use strata_ol_state_types::{IStateAccessor, OLSpecVersions};
     use strata_ol_stf::OLSpecId;
     use strata_ol_stf_v1::test_utils::{
         FixtureAsmManifestBuilder, OLStfFixture, build_empty_chain, make_genesis_state,
@@ -246,7 +246,8 @@ mod tests {
     fn test_statements_reject_start_state_staging_another_spec() {
         let mut input = prepare_input();
         let (_, chainstate) = input.start_state.clone().into_parts();
-        input.start_state = OLStateContainer::new(OLSpecId::V1, 2, chainstate);
+        let versions = OLSpecVersions::new(OLSpecId::V1, 2).expect("V1 may stage any spec");
+        input.start_state = OLStateContainer::new(versions, chainstate);
         // Authenticate the altered state so that the spec check is what fails.
         input.parent.state_root = input.start_state.compute_state_root();
         let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());

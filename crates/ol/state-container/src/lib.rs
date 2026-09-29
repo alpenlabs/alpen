@@ -8,9 +8,12 @@
 //!
 //! # Commitments
 //!
-//! - The protocol state root is the SSZ hash tree root of [`OLRootState`] over exactly its three
-//!   fields. Block headers, checkpoint terminal headers, and genesis commit to it. Neither the
-//!   container nor [`OLStateSeries`] is ever hashed as such.
+//! - From V1 on, the protocol state root is the SSZ hash tree root of [`OLRootState`] over exactly
+//!   its three fields. Block headers, checkpoint terminal headers, and genesis commit to it.
+//!   Neither the container nor [`OLStateSeries`] is ever hashed as such.
+//! - Under V0, the 0.3.0 rules, the protocol state root is the bare `chainstate_root`, so a V0
+//!   state commits no spec versions. A V0 container therefore always stages V0.
+//!   [`OLRootState::compute_state_root`] is the one place the root's form is chosen.
 //! - `chainstate_root` is the hash tree root of the layout's own state type
 //!   ([`OLStateV1`](strata_ol_state_types_v1::OLStateV1) for [`OLStateLayout::V1`]), with no union
 //!   selector mixed in.
@@ -30,12 +33,13 @@
 //! database stores that form as CBOR, and the checkpoint proof input carries
 //! it through the zkVM's serde input.
 //!
-//! Deserializing maps `cur_spec_version` to a layout, decodes the chainstate
-//! in that layout, requires the chainstate bytes to have the canonical
-//! encoding's length, and checks that their hash tree root equals
-//! `chainstate_root`. Unsupported specs, malformed chainstates, and root
-//! mismatches fail with distinct errors, which reach the caller as the
-//! deserializer's error.
+//! Deserializing rejects a V0 state that stages another spec, maps
+//! `cur_spec_version` to a layout, decodes the chainstate in that layout,
+//! requires the chainstate bytes to have the canonical encoding's length, and
+//! checks that their hash tree root equals `chainstate_root`. Unsupported
+//! specs, non-canonical V0 versions, malformed chainstates, and root mismatches
+//! fail with distinct errors, which reach the caller as the deserializer's
+//! error.
 
 mod container;
 mod errors;

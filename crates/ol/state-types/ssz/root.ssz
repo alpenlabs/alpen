@@ -1,9 +1,11 @@
 ### Root of the OL state.
 ###
-### The protocol state root that block headers, checkpoints, and genesis commit
-### to is the hash tree root of this container, over exactly these three fields.
-### Its layout never changes; a new chainstate layout changes only what
-### `chainstate_root` commits to.
+### From V1 on, the protocol state root that block headers, checkpoints, and
+### genesis commit to is the hash tree root of this container, over exactly
+### these three fields. Under V0, the 0.3.0 rules, the protocol state root is
+### the bare `chainstate_root` and this container is not committed. Its layout
+### never changes; a new chainstate layout changes only what `chainstate_root`
+### commits to.
 ###
 ### The version fields are raw integers rather than `OLSpecId`, whose decoding
 ### rejects unknown values. The current spec must be known, since it selects the

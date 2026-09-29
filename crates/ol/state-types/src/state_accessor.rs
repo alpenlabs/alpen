@@ -96,9 +96,11 @@ pub trait IStateAccessor {
 
     /// Computes the protocol state root, using whatever things we've updated.
     ///
-    /// This is the hash tree root of the [`OLRootState`](crate::OLRootState)
-    /// formed from the spec versions and the chainstate's own root, the value
-    /// block headers and checkpoints commit to.
+    /// This is the value block headers and checkpoints commit to, formed from
+    /// the spec versions and the chainstate's own root by
+    /// [`OLRootState::compute_state_root`](crate::OLRootState::compute_state_root):
+    /// the bare chainstate root under V0, and the hash tree root of the
+    /// [`OLRootState`](crate::OLRootState) from V1 on.
     fn compute_state_root(&self) -> StateResult<Buf32>;
 }
 

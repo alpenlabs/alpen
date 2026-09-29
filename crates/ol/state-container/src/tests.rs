@@ -4,20 +4,55 @@ use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_state_types_v1::test_utils::create_test_genesis_state;
 
 use crate::errors::OLStateDecodeError;
-use crate::test_utils::{create_test_container_with_staged, genesis_container};
+use crate::test_utils::{create_test_container_with_staged, genesis_container, v0_container};
 use crate::{OLStateContainer, OLStateLayout};
+
+fn cbor_round_trip(container: &OLStateContainer) -> OLStateContainer {
+    let mut bytes = Vec::new();
+    ciborium::into_writer(container, &mut bytes).unwrap();
+    ciborium::from_reader(bytes.as_slice()).unwrap()
+}
 
 #[test]
 fn test_cbor_round_trip_keeps_versions() {
     // The staged spec may name no known spec; the state must still load.
     for staged in [1, 2, u32::MAX] {
         let container = create_test_container_with_staged(staged);
-        let mut bytes = Vec::new();
-        ciborium::into_writer(&container, &mut bytes).unwrap();
-        let decoded: OLStateContainer = ciborium::from_reader(bytes.as_slice()).unwrap();
+        let decoded = cbor_round_trip(&container);
 
         assert_eq!(decoded.staged_spec_version(), staged);
         assert_eq!(decoded, container);
+    }
+
+    let v0 = v0_container(create_test_genesis_state());
+    assert_eq!(cbor_round_trip(&v0), v0);
+}
+
+#[test]
+fn test_v0_container_commits_to_bare_chainstate_root() {
+    let chainstate = create_test_genesis_state();
+    let v0 = v0_container(chainstate.clone());
+    assert_eq!(
+        v0.compute_state_root(),
+        chainstate.compute_chainstate_root()
+    );
+
+    // The same chainstate under V1 commits to the root state instead.
+    let v1 = genesis_container(chainstate);
+    assert_ne!(v1.compute_state_root(), v0.compute_state_root());
+}
+
+#[test]
+fn test_decode_rejects_v0_staging_another_spec() {
+    for staged in [1, 2, u32::MAX] {
+        let mut serde_form = v0_container(create_test_genesis_state()).to_serde();
+        serde_form.staged_spec_version = staged;
+
+        let err = OLStateContainer::from_serde(serde_form).unwrap_err();
+        assert!(
+            matches!(&err, OLStateDecodeError::NonCanonicalV0(versions) if versions.staged_spec_version() == staged),
+            "unexpected error for {staged}: {err:?}"
+        );
     }
 }
 
