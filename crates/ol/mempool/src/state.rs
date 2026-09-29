@@ -405,12 +405,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
     /// Checks whether a submitted or restored transaction can enter the mempool.
     fn validate_admission(&self, txid: OLTxId, tx: &OLTransactionV1) -> OLMempoolResult<()> {
-        validate_transaction(txid, tx, &self.state_accessor, &self.account_state)?;
-
         // TODO(STR-4086): use the spec scheduled for the snapshot state's epoch.
         let spec = OLSpecId::V1;
         check_tx_log_budget(spec, tx, &self.ctx.bridge_params)?;
-        Ok(())
+        validate_transaction(txid, tx, &self.state_accessor, &self.account_state)
     }
 
     /// Add a transaction to the mempool.
@@ -446,18 +444,18 @@ impl<P: StateProvider> MempoolServiceState<P> {
             });
         }
 
-        // Check mempool capacity limits
-        if let Err(e) = self.check_capacity_limits(tx_size) {
-            self.update_stats_on_reject(OLMempoolRejectReason::MempoolFull);
-            debug!(?txid, error = ?e, "rejecting transaction: capacity limit");
-            return Err(e);
-        }
-
         if let Err(e) = self.validate_admission(txid, &tx) {
             if let Some(reason) = OLMempoolRejectReason::from_error(&e) {
                 self.update_stats_on_reject(reason);
             }
             debug!(?txid, error = ?e, "rejecting transaction: validation failed");
+            return Err(e);
+        }
+
+        // Check mempool capacity limits
+        if let Err(e) = self.check_capacity_limits(tx_size) {
+            self.update_stats_on_reject(OLMempoolRejectReason::MempoolFull);
+            debug!(?txid, error = ?e, "rejecting transaction: capacity limit");
             return Err(e);
         }
 
@@ -953,10 +951,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_oversized_log_replacement_preserves_pending_update() {
+    async fn test_oversized_log_replacement_preserves_pending_update_when_full() {
         let tip = create_test_block_commitment(100);
         let context = Arc::new(create_test_context(
-            OLMempoolConfig::default(),
+            OLMempoolConfig {
+                max_tx_count: 1,
+                ..Default::default()
+            },
             Arc::new(create_test_state_provider(tip)),
         ));
         let mut state = MempoolServiceState::new_with_context(context, tip)
@@ -1082,12 +1083,17 @@ mod tests {
         let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
             .await
             .unwrap();
-        assert!(matches!(
-            state.add_transaction(withdrawal_update(173)).await,
-            Err(OLMempoolError::LogBudget(
-                TxLogBudgetError::LogPayloadBytes { .. }
-            ))
-        ));
+        for tx in [
+            withdrawal_update(173),
+            with_max_slot(withdrawal_update(173), Some(tip.slot() - 1)),
+        ] {
+            assert!(matches!(
+                state.add_transaction(tx).await,
+                Err(OLMempoolError::LogBudget(
+                    TxLogBudgetError::LogPayloadBytes { .. }
+                ))
+            ));
+        }
         assert_eq!(state.handle_get_transactions(10).await.unwrap().len(), 0);
         let mut reloaded = MempoolServiceState::new_with_context(context, tip)
             .await

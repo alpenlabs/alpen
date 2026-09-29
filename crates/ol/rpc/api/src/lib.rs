@@ -102,15 +102,19 @@ pub trait OLClientRpc {
 #[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
 #[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
 pub trait OLSubmitRpc {
-    /// Submit transaction to the node. Returns immediately with tx ID.
+    /// Submits a transaction to the mempool and returns its ID.
     ///
-    /// An update whose own logs exceed the checkpoint log budget is rejected with
-    /// invalid params (`-32602`). Error data contains `resource` (`log_count` or
+    /// For transactions not already in the mempool, checks the transaction-size
+    /// limit, then the standalone log budget, before stateful validation and
+    /// mempool capacity checks.
+    ///
+    /// Exceeding the log budget returns invalid params (`-32602`). The
+    /// `error.data` object contains `resource` (`log_count` or
     /// `log_payload_bytes`), `actual` usage, and the inclusive `limit`.
-    /// Usage includes the account-update log, its extra data, and valid withdrawal
-    /// logs. Count errors take precedence if both limits are exceeded.
-    /// Such rejections leave the mempool unchanged; callers must change the update
-    /// to fit the budget. Admission does not guarantee DA fit or inclusion.
+    /// Log-count errors take precedence over payload-byte errors.
+    ///
+    /// Log-budget rejection preserves any existing update being replaced.
+    /// Acceptance does not guarantee block inclusion or checkpoint fit.
     #[method(name = "submitTransaction")]
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId>;
 }
