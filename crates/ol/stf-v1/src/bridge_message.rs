@@ -11,7 +11,7 @@ use strata_ol_params::BridgeParams;
 
 /// Identifies why a bridge gateway message is not a valid withdrawal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BridgeMessageRejection {
+pub(crate) enum BridgeMessageRejection {
     /// The data does not decode as a [`MsgRef`].
     MalformedMessage,
 
@@ -39,7 +39,7 @@ pub enum BridgeMessageRejection {
 /// admission counts no withdrawal log for them.
 ///
 /// The caller must check that the message targets the bridge gateway first.
-pub fn parse_bridge_withdrawal(
+pub(crate) fn parse_bridge_withdrawal(
     amount: u64,
     data: &[u8],
     bridge_params: &BridgeParams,

@@ -23,7 +23,6 @@ pub mod test_utils;
 mod tests;
 
 pub use assembly::*;
-pub use bridge_message::{BridgeMessageRejection, parse_bridge_withdrawal};
 pub use chain_processing::{process_block_start, process_epoch_initial};
 pub use constants::*;
 pub use context::{BasicExecContext, BlockContext, BlockInfo, EpochInfo, TxExecContext};

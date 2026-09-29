@@ -6,11 +6,11 @@ use strata_ol_state_types::*;
 use strata_snark_acct_sys as snark_sys;
 use tracing::*;
 
+use crate::bridge_message::parse_bridge_withdrawal;
 use crate::context::BasicExecContext;
 use crate::errors::ExecResult;
 use crate::msg_payload_coin::MsgPayloadCoin;
 use crate::output::OutputCtx;
-use crate::parse_bridge_withdrawal;
 
 /// Credits `coin` to `target`'s balance and runs `post` for any additional
 /// account-specific processing, within a single [`IStateAccessorMut::update_account`]
