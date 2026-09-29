@@ -185,9 +185,14 @@ mod tests {
 
     #[test]
     fn verdict_one_hard_one_soft_yields_hard() {
-        // DA diff at soft, log count at hard — worst wins.
+        // DA diff at soft, log payload bytes at hard — worst wins.
         let da = OL_DA_DIFF_MAX_SIZE as usize * 9 / 10;
-        let metrics = make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize, 0);
+        let metrics = make_log_usage(4, MAX_TOTAL_LOG_PAYLOAD_BYTES / 4);
+        let envelope_size = CHECKPOINT_FIXED_OVERHEAD + da + metrics.ssz_size();
+        assert_eq!(
+            dimension_verdict(envelope_size, MAX_CHECKPOINT_PAYLOAD_SIZE),
+            CheckpointSizeVerdict::WithinLimits,
+        );
         assert_eq!(
             checkpoint_size_verdict(da, &metrics),
             CheckpointSizeVerdict::HardLimitExceeded,
