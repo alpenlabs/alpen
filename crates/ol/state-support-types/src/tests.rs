@@ -635,12 +635,8 @@ impl TestState {
 impl IStateAccessor for TestState {
     type AccountState = TestAccountState;
 
-    fn cur_spec_version(&self) -> u32 {
-        OLSpecId::V1.into()
-    }
-
-    fn staged_spec_version(&self) -> u32 {
-        OLSpecId::V1.into()
+    fn spec_versions(&self) -> OLSpecVersions {
+        OLSpecVersions::uniform(OLSpecId::V1)
     }
 
     fn cur_slot(&self) -> u64 {
@@ -713,6 +709,10 @@ impl IStateAccessor for TestState {
 
 impl IStateAccessorMut for TestState {
     type AccountStateMut = TestAccountState;
+
+    fn set_spec_versions(&mut self, _versions: OLSpecVersions) {
+        unimplemented!("not used by these tests")
+    }
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.cur_slot = slot;

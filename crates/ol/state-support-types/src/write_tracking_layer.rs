@@ -82,14 +82,10 @@ where
 
     // ===== Root state methods =====
 
-    // TODO(STR-4086): read version writes from the batch once `WriteBatch`
-    // carries them; until then the base's versions are the only source.
-    fn cur_spec_version(&self) -> u32 {
-        self.base.cur_spec_version()
-    }
-
-    fn staged_spec_version(&self) -> u32 {
-        self.base.staged_spec_version()
+    fn spec_versions(&self) -> OLSpecVersions {
+        self.batch
+            .spec_versions()
+            .unwrap_or_else(|| self.base.spec_versions())
     }
 
     // ===== Global state methods =====
@@ -256,6 +252,10 @@ where
     // doesn't have to be mut on its own
 {
     type AccountStateMut = S::AccountState; // Same type as AccountState for this layer
+
+    fn set_spec_versions(&mut self, versions: OLSpecVersions) {
+        self.batch.set_spec_versions(versions);
+    }
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.batch.global_writes_mut().cur_slot = Some(slot);

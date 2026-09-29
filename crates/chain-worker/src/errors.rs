@@ -89,6 +89,15 @@ pub enum WorkerError {
         source: StateError,
     },
 
+    /// The state merged from an epoch's write batches does not hash to the
+    /// final state root its summary records.
+    #[error("merged state root mismatch at epoch {epoch} (summary {expected}, merged {merged})")]
+    MergedStateRootMismatch {
+        epoch: Epoch,
+        expected: Buf32,
+        merged: Buf32,
+    },
+
     /// The indexer-derived state root and the post-batch state root diverge.
     #[error("state root divergence at epoch {epoch} (indexer {indexer_root}, batch {final_root})")]
     StateRootDivergence {

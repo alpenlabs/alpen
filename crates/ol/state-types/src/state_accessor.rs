@@ -3,6 +3,7 @@ use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
 use crate::account::{IAccountState, IAccountStateMut, NewAccountData};
 use crate::errors::StateResult;
+use crate::spec_versions::OLSpecVersions;
 use crate::{Coin, PendingAsmLog};
 
 /// Opaque interface for accessing the chainstate, for all of the parts directly
@@ -16,12 +17,17 @@ pub trait IStateAccessor {
 
     // ===== Root state methods =====
 
+    /// Gets the spec versions of the root state.
+    fn spec_versions(&self) -> OLSpecVersions;
+
     /// Gets the raw version of the spec the state was produced under.
     ///
     /// This is [`OLRootState::cur_spec_version`](crate::OLRootState::cur_spec_version).
     /// It selects the chainstate layout. Every block except the first of an
     /// epoch runs under it.
-    fn cur_spec_version(&self) -> u32;
+    fn cur_spec_version(&self) -> u32 {
+        self.spec_versions().cur_spec_version()
+    }
 
     /// Gets the raw version of the spec the next epoch runs under.
     ///
@@ -31,7 +37,9 @@ pub trait IStateAccessor {
     /// the first block of the next epoch, which runs under it. The value may
     /// name a spec this binary does not know; executing the next epoch must
     /// then halt.
-    fn staged_spec_version(&self) -> u32;
+    fn staged_spec_version(&self) -> u32 {
+        self.spec_versions().staged_spec_version()
+    }
 
     // ===== Global state methods =====
 
@@ -108,6 +116,16 @@ pub trait IStateAccessor {
 pub trait IStateAccessorMut: IStateAccessor {
     /// Same as above, but the mutable view.
     type AccountStateMut: IAccountStateMut;
+
+    // ===== Root state methods =====
+
+    /// Sets the spec versions of the root state.
+    ///
+    /// Wrapper layers record the write, so it reaches the base layer, the
+    /// write batch, and every root computed over it. The versions are not
+    /// part of the DA diff; DA replay reproduces them by running the same
+    /// epoch processing.
+    fn set_spec_versions(&mut self, versions: OLSpecVersions);
 
     // ===== Global state methods =====
 

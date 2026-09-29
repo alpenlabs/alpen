@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ol_params::OLParams;
-use strata_ol_state_container::{OLStateContainer, OLStateSeries};
+use strata_ol_state_container::{OLStateContainer, OLStateLayout, OLStateSeries};
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLAccountStateV1, OLStateV1, WriteBatch};
 
@@ -21,8 +21,9 @@ use crate::write_tracking_layer::IComputeStateRootWithWrites;
 /// The layer never stores `chainstate_root`. [`IStateAccessor::compute_state_root`]
 /// recomputes it from the chainstate, and [`Self::into_container`] computes it
 /// once, so no mutation can leave a stale root behind. States enter and leave
-/// the layer as [`OLStateContainer`]s, which keeps the spec versions; only
-/// [`Self::new_genesis`] assigns versions.
+/// the layer as [`OLStateContainer`]s, which keeps the spec versions.
+/// [`Self::new_genesis`] assigns the initial versions, and afterwards only the
+/// rules change them, through [`IStateAccessorMut::set_spec_versions`].
 #[derive(Clone, Debug)]
 pub struct MemoryStateBaseLayer<S> {
     /// Spec versions of the state.
@@ -111,11 +112,9 @@ impl MemoryStateBaseLayer<OLStateV1> {
         &self.chainstate
     }
 
-    /// Computes the protocol state root for `chainstate` under this layer's
-    /// spec versions.
-    fn compute_root_for(&self, chainstate: &OLStateV1) -> Buf32 {
-        OLRootState::new(self.spec_versions, chainstate.compute_chainstate_root())
-            .compute_state_root()
+    /// Computes the protocol state root for `chainstate` under `versions`.
+    fn compute_root_for(versions: OLSpecVersions, chainstate: &OLStateV1) -> Buf32 {
+        OLRootState::new(versions, chainstate.compute_chainstate_root()).compute_state_root()
     }
 }
 
@@ -124,12 +123,8 @@ impl IStateAccessor for MemoryStateBaseLayer<OLStateV1> {
 
     // ===== Root state methods =====
 
-    fn cur_spec_version(&self) -> u32 {
-        self.spec_versions.cur_spec_version()
-    }
-
-    fn staged_spec_version(&self) -> u32 {
-        self.spec_versions.staged_spec_version()
+    fn spec_versions(&self) -> OLSpecVersions {
+        self.spec_versions
     }
 
     // ===== Global state methods =====
@@ -205,12 +200,21 @@ impl IStateAccessor for MemoryStateBaseLayer<OLStateV1> {
     }
 
     fn compute_state_root(&self) -> StateResult<Buf32> {
-        Ok(self.compute_root_for(&self.chainstate))
+        Ok(Self::compute_root_for(self.spec_versions, &self.chainstate))
     }
 }
 
 impl IStateAccessorMut for MemoryStateBaseLayer<OLStateV1> {
     type AccountStateMut = OLAccountStateV1;
+
+    fn set_spec_versions(&mut self, versions: OLSpecVersions) {
+        debug_assert_eq!(
+            OLStateLayout::for_spec(versions.cur_spec()),
+            OLStateLayout::V1,
+            "ol/state-support: spec versions name a spec outside this layer's layout"
+        );
+        self.spec_versions = versions;
+    }
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.chainstate.global.set_cur_slot(slot);
@@ -312,10 +316,14 @@ impl IStateBatchApplicable for MemoryStateBaseLayer<OLStateV1> {
             new_accounts.push((serial, *id));
         }
 
+        let spec_versions = batch.spec_versions();
         self.chainstate.apply_write_batch(batch)?;
 
         for (serial, id) in new_accounts {
             self.serials.insert(serial, id);
+        }
+        if let Some(versions) = spec_versions {
+            self.set_spec_versions(versions);
         }
 
         Ok(())
@@ -328,17 +336,17 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer<OLStateV1> {
         writes: impl Iterator<Item = &'b WriteBatch>,
     ) -> StateResult<Buf32> {
         let mut chainstate = self.chainstate.clone();
+        let mut versions = self.spec_versions;
 
         for wb in writes {
             // Maybe we can avoid this clone?
             chainstate.apply_write_batch(wb.clone())?;
+            if let Some(written) = wb.spec_versions() {
+                versions = written;
+            }
         }
 
-        // Write batches carry no spec versions, so the root keeps this
-        // layer's versions.
-        // TODO(STR-4086): apply the batches' version writes once `WriteBatch`
-        // carries them, or overlay roots will miss staged and promoted specs.
-        Ok(self.compute_root_for(&chainstate))
+        Ok(Self::compute_root_for(versions, &chainstate))
     }
 }
 

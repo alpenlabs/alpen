@@ -8,7 +8,7 @@ use std::fmt;
 
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ol_state_types::{IStateAccessor, PendingAsmLog, StateResult};
+use strata_ol_state_types::{IStateAccessor, OLSpecVersions, PendingAsmLog, StateResult};
 use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLAccountStateV1, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
@@ -104,14 +104,12 @@ where
 
     // ===== Root state methods =====
 
-    // TODO(STR-4086): read version writes from the batch once `WriteBatch`
-    // carries them; until then the base's versions are the only source.
-    fn cur_spec_version(&self) -> u32 {
-        self.base.cur_spec_version()
-    }
-
-    fn staged_spec_version(&self) -> u32 {
-        self.base.staged_spec_version()
+    fn spec_versions(&self) -> OLSpecVersions {
+        self.write_batches
+            .iter()
+            .rev()
+            .find_map(WriteBatch::spec_versions)
+            .unwrap_or_else(|| self.base.spec_versions())
     }
 
     // ===== Global state methods =====
@@ -272,7 +270,7 @@ mod tests {
     use crate::write_tracking_layer::WriteTrackingState;
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_identifiers::{AccountSerial, Buf32, L1BlockId};
-    use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
+    use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut, OLSpecId};
     use strata_ol_state_types_v1::IStateBatchApplicable;
 
     /// Builds a [`BatchDiffState`] with no pending batches — a pure read-only
@@ -657,6 +655,8 @@ mod tests {
         );
         let mut second = WriteBatch::default();
         second.global_writes_mut().cur_slot = Some(9);
+        let versions = OLSpecVersions::new(OLSpecId::V1, 5).expect("V1 may stage any spec");
+        second.set_spec_versions(versions);
         let batches = [first, second];
 
         let mut materialized = base_layer.clone();
@@ -664,6 +664,8 @@ mod tests {
             materialized.apply_write_batch(batch.clone()).unwrap();
         }
         let diff_state = BatchDiffState::new(&base_layer, &batches);
+        assert_eq!(diff_state.spec_versions(), versions);
+        assert_eq!(materialized.spec_versions(), versions);
         assert_eq!(
             diff_state.compute_state_root().unwrap(),
             materialized.compute_state_root().unwrap()
@@ -677,7 +679,7 @@ mod tests {
             .apply_write_batch(tracking.into_batch())
             .unwrap();
         assert_eq!(nested_root, materialized.compute_state_root().unwrap());
-        assert_eq!(materialized.staged_spec_version(), 2);
+        assert_eq!(materialized.spec_versions(), versions);
     }
 
     #[test]

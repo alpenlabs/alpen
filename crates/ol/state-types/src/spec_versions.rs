@@ -1,5 +1,6 @@
 //! The spec versions an OL state carries.
 
+use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use thiserror::Error;
 
 use crate::spec_id::{OLSpecId, UnknownOLSpecId};
@@ -69,6 +70,24 @@ impl OLSpecVersions {
     }
 }
 
+/// Encodes both versions as raw `u32` values. Decoding rejects an unknown
+/// current spec and a non-canonical V0 pair, so a decoded write batch cannot
+/// carry versions a constructed one could not.
+impl Codec for OLSpecVersions {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.cur_spec_version().encode(enc)?;
+        self.staged_spec_version.encode(enc)
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let cur_spec = OLSpecId::try_from(u32::decode(dec)?)
+            .map_err(|_| CodecError::MalformedField("OLSpecVersions::cur_spec"))?;
+        let staged_spec_version = u32::decode(dec)?;
+        Self::new(cur_spec, staged_spec_version)
+            .map_err(|_| CodecError::MalformedField("OLSpecVersions::staged_spec_version"))
+    }
+}
+
 /// Error returned when a V0 state would stage a spec other than V0.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Error)]
 #[error("V0 OL state cannot stage spec version {staged_spec_version}")]
@@ -85,6 +104,8 @@ impl NonCanonicalV0Versions {
 
 #[cfg(test)]
 mod tests {
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+
     use super::*;
 
     #[test]
@@ -98,6 +119,27 @@ mod tests {
         for staged in [0, 1, 2, u32::MAX] {
             let versions = OLSpecVersions::new(OLSpecId::V1, staged).unwrap();
             assert_eq!(versions.staged_spec_version(), staged);
+        }
+    }
+
+    #[test]
+    fn test_codec_rejects_versions_a_constructor_rejects() {
+        for versions in [
+            OLSpecVersions::uniform(OLSpecId::V0),
+            OLSpecVersions::new(OLSpecId::V1, u32::MAX).unwrap(),
+        ] {
+            let bytes = encode_to_vec(&versions).unwrap();
+            assert_eq!(
+                decode_buf_exact::<OLSpecVersions>(&bytes).unwrap(),
+                versions
+            );
+        }
+
+        // (V0, V1) and an unknown current spec.
+        for (cur, staged) in [(0u32, 1u32), (2, 2)] {
+            let mut bytes = encode_to_vec(&cur).unwrap();
+            bytes.extend(encode_to_vec(&staged).unwrap());
+            assert!(decode_buf_exact::<OLSpecVersions>(&bytes).is_err());
         }
     }
 }

@@ -48,7 +48,8 @@ use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, L1BlockRecord};
 use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Height, OLBlockId};
 use strata_ol_state_types::{
     Coin, IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
-    IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState, StateError,
+    IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState, OLSpecId,
+    OLSpecVersions, StateError,
 };
 use strata_ol_state_types_v1::OLStateV1;
 use strata_snark_acct_types::Seqno;
@@ -265,6 +266,21 @@ pub(crate) fn find_account_by_serial_from_base<S: IStateAccessor>(fx: &Fixture, 
     assert_eq!(
         layer.find_account_id_by_serial(fx.serial()).unwrap(),
         Some(fx.account_id())
+    );
+}
+
+/// A spec version write reads back through the layer and moves its root.
+pub(crate) fn spec_versions_write_reads_back<S: IStateAccessorMut>(_fx: &Fixture, layer: &mut S) {
+    let before = layer.compute_state_root().expect("state root before write");
+    let versions = OLSpecVersions::new(OLSpecId::V1, Fixture::STAGED_SPEC_VERSION + 1)
+        .expect("V1 may stage any spec");
+
+    layer.set_spec_versions(versions);
+
+    assert_eq!(layer.spec_versions(), versions);
+    assert_ne!(
+        layer.compute_state_root().expect("state root after write"),
+        before
     );
 }
 
@@ -912,6 +928,11 @@ macro_rules! read_layer_test {
 /// site.
 macro_rules! impl_mut_layer_tests {
     ($build:ident) => {
+        $crate::common_tests::mut_layer_test!(
+            $build,
+            common_spec_versions_write_reads_back,
+            spec_versions_write_reads_back
+        );
         $crate::common_tests::mut_layer_test!(
             $build,
             common_update_account_isolated_from_base,

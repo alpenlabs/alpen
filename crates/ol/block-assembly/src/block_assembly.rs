@@ -333,7 +333,7 @@ where
         parent_state.as_ref(),
         &block_context,
         epoch_cumulative_da,
-    );
+    )?;
     let runtime_params = ctx.runtime_params();
 
     // Phase 2: Process transactions, filtering out invalid ones.
@@ -595,24 +595,28 @@ fn select_and_process_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>
 ///
 /// Uses the same initialization as block verification, so the sequencer and
 /// verifiers apply the phases in the same order.
+///
+/// # Errors
+///
+/// Returns [`BlockAssemblyError::BlockConstruction`] if the rules reject the
+/// parent state, such as a V0 parent that does not end an epoch.
 fn execute_block_initialization<S: BlockAssemblyStateAccess>(
     spec: OLSpecId,
     parent_state: &S,
     block_context: &BlockContext<'_>,
     accumulated_da: AccumulatedDaData,
-) -> (WriteBatch, AccumulatedDaData) {
+) -> BlockAssemblyResult<(WriteBatch, AccumulatedDaData)> {
     let (accumulator, logs) = accumulated_da.into_parts();
     let write_state = WriteTrackingState::new_empty(parent_state);
     let mut da_state = DaAccumulatingState::new_with_accumulator(write_state, accumulator);
 
-    stf_execute_block_initialization(spec, &mut da_state, block_context)
-        .expect("block initialization should not fail on a sequencer-derived context");
+    stf_execute_block_initialization(spec, &mut da_state, block_context)?;
 
     let (accumulator, write_state) = da_state.into_parts();
-    (
+    Ok((
         write_state.into_batch(),
         AccumulatedDaData::new(accumulator, logs),
-    )
+    ))
 }
 
 /// Processes transactions with per-tx staging, filtering out failed ones.

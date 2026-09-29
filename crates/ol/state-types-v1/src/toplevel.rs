@@ -188,7 +188,9 @@ impl OLStateV1 {
     /// Applies a write batch to this state.
     ///
     /// This updates the global state, epochal state, and ledger accounts
-    /// with the modifications from the batch.
+    /// with the modifications from the batch. The batch's spec versions belong
+    /// to the root state above the chainstate, so the layer holding them
+    /// applies those.
     ///
     /// If this returns an error then the state is left unmodified.
     pub fn apply_write_batch(&mut self, batch: WriteBatch) -> StateResult<()> {

@@ -1,7 +1,7 @@
 //! General bookkeeping to ensure that the chain evolves correctly.
 
 use strata_identifiers::EpochCommitment;
-use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
+use strata_ol_state_types::{IStateAccessorMut, OLSpecId, OLSpecVersions};
 
 use crate::context::{BlockContext, EpochInitialContext};
 use crate::errors::{ExecError, ExecResult};
@@ -9,7 +9,7 @@ use crate::errors::{ExecError, ExecResult};
 /// Preliminary processing we do at the start of every epoch.
 ///
 /// This is done outside of the checked DA range.
-pub fn process_epoch_initial<S: IStateAccessor>(
+pub fn process_epoch_initial<S: IStateAccessorMut>(
     state: &mut S,
     context: &EpochInitialContext,
 ) -> ExecResult<()> {
@@ -33,12 +33,20 @@ pub fn process_epoch_initial<S: IStateAccessor>(
         // TODO(STR-3677): insert into MMR
     }
 
-    // 4. Promote the staged spec to the current spec. The epoch runs under the
+    // 4. Take over a V0 state. Its bare root commits no spec versions, so even
+    // the last V0 terminal stages V0. These rules run V0's successor, V1, so
+    // the first V1 epoch wraps the state as `cur = staged = V1`, and from this
+    // block on its root is `hash_tree_root(OLRootState)`. Every driver runs
+    // this function at the epoch start, including DA replay, so they all
+    // produce the same wrapped root and the DA diff never carries the versions.
+    if state.cur_spec_version() == u32::from(OLSpecId::V0) {
+        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V1));
+    }
+
+    // 5. Promote the staged spec to the current spec. The epoch runs under the
     // spec its predecessor's terminal state staged, and DA replay reproduces
-    // the promotion by calling this function, so the DA diff never carries
-    // the spec versions.
-    // TODO(STR-4086): set `cur_spec_version = staged_spec_version` here, which
-    // needs an `IStateAccessorMut` bound.
+    // the promotion by calling this function.
+    // TODO(STR-4086): set `cur_spec_version = staged_spec_version` here.
 
     Ok(())
 }

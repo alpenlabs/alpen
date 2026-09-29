@@ -458,8 +458,16 @@ fn handle_terminal_block_exec_post_ops(
 /// Rebuilds an epoch's terminal state by applying the write batches of its
 /// canonical blocks, in order, to the previous terminal state.
 ///
-/// The merged state keeps the previous terminal state's spec versions, since
-/// it goes through the base layer rather than a bare chainstate.
+/// The merged state starts from the previous terminal state's spec versions,
+/// since it goes through the base layer rather than a bare chainstate, and
+/// takes any version write the blocks' batches carry, such as the first V1
+/// epoch's wrap of a V0 state.
+///
+/// # Errors
+///
+/// Returns [`WorkerError::MergedStateRootMismatch`] if the merged state does
+/// not hash to the summary's final state root, so a wrong or incomplete set of
+/// batches is never stored as the epoch's terminal state.
 pub(crate) fn merge_epoch_state(
     ctx: &impl ChainWorkerContext,
     summary: &EpochSummary,
@@ -506,7 +514,17 @@ pub(crate) fn merge_epoch_state(
             .map_err(|e| WorkerError::Unexpected(format!("failed to apply batch: {e}")))?;
     }
 
-    Ok(cur_state.into_container())
+    let merged = cur_state.into_container();
+    let merged_root = merged.compute_state_root();
+    if merged_root != *summary.final_state() {
+        return Err(WorkerError::MergedStateRootMismatch {
+            epoch: summary.epoch(),
+            expected: *summary.final_state(),
+            merged: merged_root,
+        });
+    }
+
+    Ok(merged)
 }
 
 /// Gets the terminal commitment of the epoch before `cur_epoch`.
@@ -635,7 +653,8 @@ pub(crate) fn apply_checkpoint_epoch(
 
     indexer_writes.set_snark_acct_state_updates(recons_data.updates);
 
-    // The container keeps the base state's spec versions; its root is the
+    // The container keeps the base state's spec versions as epoch replay left
+    // them, including the first V1 epoch's wrap of a V0 state; its root is the
     // reconstructed protocol state root.
     let new_state = new_state.into_container();
     let final_state_root = new_state.compute_state_root();
