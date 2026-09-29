@@ -880,6 +880,20 @@ fn transaction_too_large_maps_to_invalid_params() {
 }
 
 #[test]
+fn log_count_budget_maps_to_invalid_params_with_data() {
+    let error = map_mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
+        actual: 65_537,
+        limit: 16_383,
+    }));
+    assert_eq!(error.code(), INVALID_PARAMS_CODE);
+    let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
+    assert_eq!(
+        data,
+        json!({"resource": "log_count", "actual": 65537, "limit": 16383})
+    );
+}
+
+#[test]
 fn used_sequence_number_maps_to_invalid_params() {
     let err = OLMempoolError::UsedSequenceNumber {
         txid: OLTxId::from(Buf32::zero()),
@@ -3888,20 +3902,6 @@ async fn submit_transaction_preserves_log_budget_error_data() {
     assert_eq!(
         data,
         json!({"resource": "log_payload_bytes", "actual": actual, "limit": limit})
-    );
-}
-
-#[test]
-fn log_count_rejection_preserves_limit_data() {
-    let error = map_mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
-        actual: 65_537,
-        limit: 16_383,
-    }));
-    assert_eq!(error.code(), INVALID_PARAMS_CODE);
-    let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
-    assert_eq!(
-        data,
-        json!({"resource": "log_count", "actual": 65537, "limit": 16383})
     );
 }
 
