@@ -116,6 +116,7 @@ fn validate_snark_account_update_tx_seq_no(
 /// - Sequence number validation (for
 ///   [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions)
 pub(crate) fn validate_transaction(
+    spec: OLSpecId,
     txid: OLTxId,
     tx: &OLTransactionV1,
     state_accessor: &impl IStateAccessorMut,
@@ -124,9 +125,6 @@ pub(crate) fn validate_transaction(
     let target_account = tx
         .target()
         .expect("all OL payload variants must have a target");
-
-    // TODO(STR-4086): use the spec scheduled for the snapshot state's epoch.
-    let spec = OLSpecId::V1;
 
     // 1. Slot bounds check.
     check_tx_constraints(spec, tx.constraints(), state_accessor).map_err(|e| match e {
@@ -199,7 +197,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -213,7 +217,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -228,7 +238,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_ok());
     }
 
@@ -239,7 +255,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_ok());
     }
 
@@ -250,7 +272,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_ok());
     }
 
@@ -260,7 +288,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_ok());
     }
 
@@ -271,7 +305,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_ok());
     }
 
@@ -281,7 +321,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(tx_target(&tx), 100);
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_ok());
     }
 
@@ -292,7 +338,13 @@ mod tests {
         let state_accessor = create_test_ol_state_with_account(create_test_account_id(), 100); // Different account
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -318,7 +370,13 @@ mod tests {
         // state
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_ok());
     }
 
@@ -342,7 +400,13 @@ mod tests {
 
         let account_state = HashMap::new();
 
-        let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
+        let result = validate_transaction(
+            OLSpecId::V1,
+            tx.compute_txid(),
+            &tx,
+            &state_accessor,
+            &account_state,
+        );
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
@@ -380,8 +444,13 @@ mod tests {
             },
         );
 
-        let result2 =
-            validate_transaction(tx2.compute_txid(), &tx2, &state_accessor2, &account_state2);
+        let result2 = validate_transaction(
+            OLSpecId::V1,
+            tx2.compute_txid(),
+            &tx2,
+            &state_accessor2,
+            &account_state2,
+        );
         assert!(result2.is_err());
         assert!(matches!(
             result2.unwrap_err(),

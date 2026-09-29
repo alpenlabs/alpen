@@ -403,12 +403,17 @@ impl<P: StateProvider> MempoolServiceState<P> {
         None
     }
 
+    /// Selects the protocol spec for the mempool's state snapshot.
+    fn select_spec(&self) -> OLSpecId {
+        // TODO(STR-4086): use the spec scheduled for the snapshot state's epoch.
+        OLSpecId::V1
+    }
+
     /// Checks whether a submitted or restored transaction can enter the mempool.
     fn validate_admission(&self, txid: OLTxId, tx: &OLTransactionV1) -> OLMempoolResult<()> {
-        // TODO(STR-4086): use the spec scheduled for the snapshot state's epoch.
-        let spec = OLSpecId::V1;
+        let spec = self.select_spec();
         check_tx_log_budget(spec, tx, &self.ctx.bridge_params)?;
-        validate_transaction(txid, tx, &self.state_accessor, &self.account_state)
+        validate_transaction(spec, txid, tx, &self.state_accessor, &self.account_state)
     }
 
     /// Add a transaction to the mempool.
@@ -722,12 +727,19 @@ impl<P: StateProvider> MempoolServiceState<P> {
     ///
     /// Returns a list of transaction IDs that failed validation.
     fn revalidate_all_transactions(&self) -> Vec<OLTxId> {
+        let spec = self.select_spec();
         self.entries
             .iter()
             .filter_map(|(txid, entry)| {
-                validate_transaction(*txid, &entry.tx, &self.state_accessor, &self.account_state)
-                    .is_err()
-                    .then_some(*txid)
+                validate_transaction(
+                    spec,
+                    *txid,
+                    &entry.tx,
+                    &self.state_accessor,
+                    &self.account_state,
+                )
+                .is_err()
+                .then_some(*txid)
             })
             .collect()
     }
