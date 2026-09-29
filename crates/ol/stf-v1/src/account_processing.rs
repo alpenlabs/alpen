@@ -173,7 +173,6 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
         }
     };
 
-    // 4. If it is, then we can emit a OL log with the amount and destination.
     let selected_operator = log_data.selected_operator;
     let dest_desc_len = log_data.dest.len();
     // Defuse the payload on error so it doesn't drop while still live (the log

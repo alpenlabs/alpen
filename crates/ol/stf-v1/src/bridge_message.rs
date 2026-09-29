@@ -9,15 +9,21 @@ use strata_ol_chain_types_v1::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
 use strata_ol_params::BridgeParams;
 
-/// Reason a bridge gateway message sends its value to limbo instead of withdrawing.
+/// Identifies why a bridge gateway message is not a valid withdrawal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BridgeMessageRejection {
-    /// Invalid message format, sweep to limbo.
+    /// The data does not decode as a [`MsgRef`].
     MalformedMessage,
-    /// Not a withdrawal message, or malformed, sweep to limbo.
+
+    /// The message is not a withdrawal or its withdrawal body cannot be decoded.
     NotWithdrawal,
+
+    /// The amount is zero, not a denomination multiple, or above the withdrawal cap.
     InvalidAmount,
+
+    /// The descriptor length is outside the configured bounds or its BOSD encoding is invalid.
     InvalidDescriptor {
+        /// The rejected descriptor's length in bytes.
         len: usize,
     },
 }
