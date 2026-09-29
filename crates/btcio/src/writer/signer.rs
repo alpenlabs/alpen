@@ -132,8 +132,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
                     envelope.commit_fee,
                 ),
             )
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+            .await?;
         put_tx_node(
             broadcast_handle,
             TxNodeKind::SingleEnvelopeCommit { payload_idx },
@@ -153,8 +152,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
                     envelope.reveal_fee,
                 ),
             )
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+            .await?;
 
         info!(?cid, reveal_txid = ?rid, "envelope signed and stored for broadcast");
         Ok((cid, rid))
@@ -189,8 +187,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
             &envelope.reveal_script,
             &envelope.taproot_spend_info,
             signature,
-        )
-        .map_err(EnvelopeError::Other)?;
+        )?;
         let max_fee_rate = broadcast_handle.max_fee_rate();
         ensure_built_fee_rate_within_max(&envelope.commit_tx, envelope.commit_fee, max_fee_rate)?;
         ensure_built_fee_rate_within_max(&reveal_tx, envelope.reveal_fee, max_fee_rate)?;
@@ -257,11 +254,7 @@ pub(crate) async fn complete_pending_reveal_replacement(
     broadcast_handle: &L1BroadcastHandle,
 ) -> Result<Option<L1TxId>, EnvelopeError> {
     let node_id = TxNodeId::from_kind(&TxNodeKind::SingleEnvelopeReveal { payload_idx });
-    let Some(mut record) = broadcast_handle
-        .get_tx_node(node_id)
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?
-    else {
+    let Some(mut record) = broadcast_handle.get_tx_node(node_id).await? else {
         return Ok(None);
     };
     let Some(previous_signed_attempt) = record.active_attempt().cloned() else {
@@ -276,25 +269,20 @@ pub(crate) async fn complete_pending_reveal_replacement(
     };
     let previous_active_entry = broadcast_handle
         .get_tx_entry_by_id_async(to_raw_buf32(previous_active_txid))
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
+        .await?;
     if matches!(
         previous_active_entry.as_ref().map(|entry| &entry.status),
         Some(L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. })
     ) {
         record.discard_pending_signature_replacement();
-        broadcast_handle
-            .put_tx_node(record)
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        broadcast_handle.put_tx_node(record).await?;
         return Ok(None);
     }
 
     let previous_signed_tx = previous_signed_attempt
         .try_to_tx()
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
-    let (reveal_script, control_block) =
-        extract_reveal_witness(&previous_signed_tx).map_err(|e| EnvelopeError::Other(e.into()))?;
+        .map_err(EnvelopeError::InvalidStoredTransaction)?;
+    let (reveal_script, control_block) = extract_reveal_witness(&previous_signed_tx)?;
 
     // The replacement reuses the original tapscript, so its witness only validates under the key
     // that script commits to. If the canonical predicate rotated while the attempt was waiting, the
@@ -303,8 +291,7 @@ pub(crate) async fn complete_pending_reveal_replacement(
     // with one whose witness can never satisfy the script. Refuse and stop bumping this reveal,
     // matching what the fee bumper does when it notices the rotation before initiating one: the
     // original stays live at its current fee and a rebuild under the new key clears the error.
-    let reveal_pubkey =
-        reveal_script_pubkey(&reveal_script).map_err(|e| EnvelopeError::Other(e.into()))?;
+    let reveal_pubkey = reveal_script_pubkey(&reveal_script)?;
     if !matches!(signing_mode, EnvelopeSigningMode::External { pubkey } if pubkey == reveal_pubkey)
     {
         warn!(
@@ -315,32 +302,25 @@ pub(crate) async fn complete_pending_reveal_replacement(
         );
         record.discard_pending_signature_replacement();
         record.set_terminal_error(TerminalError::UnsupportedRbfKind);
-        broadcast_handle
-            .put_tx_node(record)
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        broadcast_handle.put_tx_node(record).await?;
         return Ok(None);
     }
 
     let mut signed_tx = pending_attempt
         .try_to_tx()
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
-    attach_reveal_witness(&mut signed_tx, &reveal_script, &control_block, signature)
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
+        .map_err(EnvelopeError::InvalidStoredTransaction)?;
+    attach_reveal_witness(&mut signed_tx, &reveal_script, &control_block, signature)?;
 
-    let fee_rate = FeeRate::from_sat_per_vb(pending_attempt.fee_rate_sat_vb).ok_or_else(|| {
-        EnvelopeError::Other(anyhow::anyhow!(
-            "invalid pending reveal fee rate {}",
-            pending_attempt.fee_rate_sat_vb
-        ))
-    })?;
+    let fee_rate = FeeRate::from_sat_per_vb(pending_attempt.fee_rate_sat_vb).ok_or(
+        EnvelopeError::InvalidPendingFeeRate(pending_attempt.fee_rate_sat_vb),
+    )?;
     let fee_sats = Amount::from_sat(pending_attempt.fee_sats);
     let txid = to_l1_txid(signed_tx.compute_txid());
 
     if previous_active_entry.is_none() {
-        return Err(EnvelopeError::Other(anyhow::anyhow!(
-            "previous reveal tx entry missing for pending replacement"
-        )));
+        return Err(EnvelopeError::MissingPreviousRevealEntry(
+            previous_active_txid,
+        ));
     }
 
     // One transaction: the replacement is inserted and the original superseded together, so there
@@ -351,8 +331,7 @@ pub(crate) async fn complete_pending_reveal_replacement(
             to_raw_buf32(txid),
             L1TxEntry::from_tx_with_fee(&signed_tx, fee_rate, fee_sats),
         )
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?
+        .await?
     {
         // One reason the swap is refused is that it already happened: a previous run committed it
         // and stopped before the tx-node record caught up. Re-signing lands on the same txid,
@@ -371,10 +350,7 @@ pub(crate) async fn complete_pending_reveal_replacement(
                 "original reveal left the publishable state before the replacement could supersede it"
             );
             record.discard_pending_signature_replacement();
-            broadcast_handle
-                .put_tx_node(record)
-                .await
-                .map_err(|e| EnvelopeError::Other(e.into()))?;
+            broadcast_handle.put_tx_node(record).await?;
             return Ok(None);
         }
 
@@ -388,14 +364,9 @@ pub(crate) async fn complete_pending_reveal_replacement(
     // The durable swap is done, so the record must follow it. Activation cannot fail here: the
     // pending attempt was read above and nothing has removed it since.
     if !record.activate_pending_signature(attempt_parts(&signed_tx, fee_rate, fee_sats)) {
-        return Err(EnvelopeError::Other(anyhow::anyhow!(
-            "pending reveal replacement vanished while it was being activated"
-        )));
+        return Err(EnvelopeError::PendingReplacementVanished(payload_idx));
     }
-    broadcast_handle
-        .put_tx_node(record)
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
+    broadcast_handle.put_tx_node(record).await?;
 
     info!(
         ?txid,
@@ -417,8 +388,7 @@ async fn replacement_swap_already_applied(
 ) -> Result<bool, EnvelopeError> {
     let Some(original) = broadcast_handle
         .get_tx_entry_by_id_async(to_raw_buf32(original_txid))
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?
+        .await?
     else {
         return Ok(false);
     };
@@ -428,8 +398,7 @@ async fn replacement_swap_already_applied(
 
     Ok(broadcast_handle
         .get_tx_entry_by_id_async(to_raw_buf32(replacement_txid))
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?
+        .await?
         .is_some())
 }
 
@@ -442,8 +411,7 @@ async fn put_tx_entry_if_missing(
 ) -> Result<(), EnvelopeError> {
     if broadcast_handle
         .get_tx_entry_by_id_async(to_raw_buf32(txid))
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?
+        .await?
         .is_some()
     {
         return Ok(());
@@ -454,8 +422,7 @@ async fn put_tx_entry_if_missing(
             to_raw_buf32(txid),
             L1TxEntry::from_tx_with_fee(tx, fee_rate, fee),
         )
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
+        .await?;
     Ok(())
 }
 
@@ -468,27 +435,17 @@ async fn put_tx_node(
 ) -> Result<(), EnvelopeError> {
     let node_id = TxNodeId::from_kind(&kind);
     let attempt = TxAttempt::active(attempt_parts(tx, fee_rate, fee_sats), 0);
-    if let Some(mut record) = broadcast_handle
-        .get_tx_node(node_id)
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?
-    {
+    if let Some(mut record) = broadcast_handle.get_tx_node(node_id).await? {
         if record.active_txid == attempt.txid {
             return Ok(());
         }
         record.replace_initial_attempt(attempt);
-        broadcast_handle
-            .put_tx_node(record)
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        broadcast_handle.put_tx_node(record).await?;
         return Ok(());
     }
 
     let record = TxNodeRecord::new(kind, attempt);
-    broadcast_handle
-        .put_tx_node(record)
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
+    broadcast_handle.put_tx_node(record).await?;
     Ok(())
 }
 

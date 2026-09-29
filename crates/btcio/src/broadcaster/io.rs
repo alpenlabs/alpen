@@ -1,6 +1,5 @@
 use std::{future::Future, sync::Arc};
 
-use anyhow::anyhow;
 use bitcoin::{BlockHash, FeeRate, Transaction, Txid};
 use bitcoind_async_client::{
     error::ClientError, traits::Broadcaster, types::BroadcastOptions, Client, ClientResult,
@@ -121,11 +120,10 @@ impl TryFrom<WalletTxConfirmationResponse> for TxConfirmationInfo {
     fn try_from(value: WalletTxConfirmationResponse) -> Result<Self, Self::Error> {
         let block_height = value
             .block_height
-            .map(L1Height::try_from)
-            .transpose()
-            .map_err(|_| {
-                BroadcasterError::Rpc(anyhow!("Bitcoin RPC returned invalid blockheight"))
-            })?;
+            .map(|height| {
+                L1Height::try_from(height).map_err(|_| BroadcasterError::InvalidBlockHeight(height))
+            })
+            .transpose()?;
 
         Ok(Self {
             confirmations: value.confirmations,
@@ -148,8 +146,7 @@ impl WalletTxLookup for Client {
         &'a self,
         txid: &'a Txid,
     ) -> BroadcasterResult<TxLookupOutcome> {
-        let params = [bitcoind_async_client::to_value(txid.to_string())
-            .map_err(|err| BroadcasterError::Rpc(anyhow!(err)))?];
+        let params = [bitcoind_async_client::to_value(txid.to_string())?];
 
         match self
             .call_raw::<WalletTxConfirmationResponse>("gettransaction", &params)
@@ -168,7 +165,7 @@ impl WalletTxLookup for Client {
             }
             Err(err) => {
                 warn!(%err, %txid, "get_transaction failed");
-                Err(BroadcasterError::Rpc(anyhow!(err)))
+                Err(BroadcasterError::Rpc(err))
             }
         }
     }
@@ -196,7 +193,7 @@ mod test_impls {
                 Err(err) if is_retryable_client_error(&err) => Ok(TxLookupOutcome::RetryLater {
                     reason: err.to_string(),
                 }),
-                Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
+                Err(err) => Err(BroadcasterError::Rpc(err)),
             }
         }
     }
@@ -349,13 +346,11 @@ where
             }
             Err(ClientError::Server(code, msg)) => {
                 warn!(%txid, %code, %msg, "sendrawtransaction returned unhandled bitcoin server error");
-                Err(BroadcasterError::Rpc(anyhow!(
-                    "bitcoin server error {code}: {msg}"
-                )))
+                Err(BroadcasterError::Rpc(ClientError::Server(code, msg)))
             }
             Err(err) => {
                 warn!(%txid, %err, "sendrawtransaction returned unexpected error");
-                Err(BroadcasterError::Rpc(anyhow!(err)))
+                Err(BroadcasterError::Rpc(err))
             }
         }
     }

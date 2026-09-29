@@ -995,7 +995,6 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
-    use anyhow::anyhow;
     use bitcoin::{
         absolute::LockTime,
         blockdata::{opcodes, script::Builder as ScriptBuilder},
@@ -1010,6 +1009,7 @@ mod tests {
     use strata_csm_types::L1Payload;
     use strata_db_types::{
         common::L1TxId,
+        errors::DbError,
         fee_bump::{TerminalError, TxAttemptStatus, TxNodeId, TxNodeKind, TxNodeRecord},
         l1_broadcast::L1TxEntry,
         l1_writer::{BundledPayloadEntry, L1BundleStatus},
@@ -1019,7 +1019,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        broadcaster::L1BroadcastHandle,
+        broadcaster::{BroadcasterError, L1BroadcastHandle},
         tx_entry::L1TxEntryExt,
         writer::{
             builder::{EnvelopeData, EnvelopeError},
@@ -1051,13 +1051,15 @@ mod tests {
                     resolved_sat_vb: 101,
                     ceiling_sat_vb: 100,
                 },
-                Self::PrereqFetch => EnvelopeError::PrereqFetch(anyhow::Error::from(
-                    ClientError::Connection("mock connection failure".to_string()),
+                Self::PrereqFetch => EnvelopeError::PrereqFetch(ClientError::Connection(
+                    "mock connection failure".to_string(),
                 )),
                 Self::SignRawTransaction => EnvelopeError::SignRawTransaction(
                     ClientError::Connection("mock signing failure".to_string()),
                 ),
-                Self::Other => EnvelopeError::Other(anyhow!("mock storage failure")),
+                Self::Other => EnvelopeError::Broadcaster(BroadcasterError::Db(DbError::Other(
+                    "mock storage failure".to_string(),
+                ))),
             }
         }
     }

@@ -3,7 +3,10 @@ use std::fmt;
 use anyhow::Error as AnyhowError;
 use bitcoind_async_client::error::ClientError;
 
-use crate::writer::{builder::EnvelopeError, FeeRateError};
+use crate::{
+    broadcaster::BroadcasterError,
+    writer::{builder::EnvelopeError, FeeRateError},
+};
 
 /// Returns `true` when a Bitcoin RPC error may be resolved by retrying later.
 pub(crate) fn is_retryable_client_error(err: &ClientError) -> bool {
@@ -15,6 +18,27 @@ fn is_bitcoin_rpc_timeout(err: &FeeRateError) -> bool {
         FeeRateError::BitcoinRpcTimeout { .. } => true,
         FeeRateError::Fallback { bitcoin_rpc, .. } => is_bitcoin_rpc_timeout(bitcoin_rpc),
         _ => false,
+    }
+}
+
+/// Returns `true` when a fee rate resolution failure may be resolved by retrying later.
+///
+/// A fallback failure is classified by its Bitcoin RPC leg, since that is the source of last
+/// resort: an explorer outage alone does not make the lookup retryable.
+pub(crate) fn is_retryable_fee_rate_error(err: &FeeRateError) -> bool {
+    match err {
+        FeeRateError::BitcoinRpcTimeout { .. } => true,
+        FeeRateError::BitcoinRpc { source, .. } => is_retryable_client_error(source),
+        FeeRateError::Fallback { bitcoin_rpc, .. } => is_retryable_fee_rate_error(bitcoin_rpc),
+        FeeRateError::InvalidExplorerResponse { source, .. } => {
+            source.is_connect() || source.is_timeout()
+        }
+        FeeRateError::ExplorerTimeout { .. }
+        | FeeRateError::InvalidExplorerConfiguration { .. }
+        | FeeRateError::ExplorerResponseTooLarge { .. }
+        | FeeRateError::InvalidExplorerJson { .. }
+        | FeeRateError::InvalidExplorerFeeRate(_)
+        | FeeRateError::SmartFeeUnavailable { .. } => false,
     }
 }
 
@@ -71,11 +95,21 @@ pub(crate) fn is_retryable_anyhow_error(err: &AnyhowError) -> bool {
 /// Returns `true` when an envelope error represents a retryable Bitcoin RPC outage.
 pub(crate) fn is_retryable_envelope_error(err: &EnvelopeError) -> bool {
     match err {
-        EnvelopeError::PrereqFetch(err) | EnvelopeError::Other(err) => {
-            is_retryable_anyhow_error(err)
-        }
-        EnvelopeError::SignRawTransaction(err) => is_retryable_client_error(err),
-        EnvelopeError::EmptyPayload
+        EnvelopeError::PrereqFetch(err)
+        | EnvelopeError::SignRawTransaction(err)
+        | EnvelopeError::Broadcaster(BroadcasterError::Rpc(err)) => is_retryable_client_error(err),
+        EnvelopeError::FeeRate(err) => is_retryable_fee_rate_error(err),
+        EnvelopeError::RevealReplacement(err) => err.is_retryable(),
+        EnvelopeError::Broadcaster(_)
+        | EnvelopeError::TaprootFinalize
+        | EnvelopeError::MissingControlBlock
+        | EnvelopeError::KeyGeneration(_)
+        | EnvelopeError::InvalidRevealSignature(_)
+        | EnvelopeError::InvalidStoredTransaction(_)
+        | EnvelopeError::InvalidPendingFeeRate(_)
+        | EnvelopeError::MissingPreviousRevealEntry(_)
+        | EnvelopeError::PendingReplacementVanished(_)
+        | EnvelopeError::EmptyPayload
         | EnvelopeError::FeeOverflow
         | EnvelopeError::ResolvedFeeRateAboveMax { .. }
         | EnvelopeError::BuiltFeeRateAboveMax { .. }
@@ -106,7 +140,10 @@ mod tests {
         is_retryable_anyhow_error, is_retryable_client_error, is_retryable_envelope_error,
         retryable_reason,
     };
-    use crate::writer::{builder::EnvelopeError, FeeRateError};
+    use crate::{
+        broadcaster::BroadcasterError,
+        writer::{builder::EnvelopeError, FeeRateError},
+    };
 
     fn fallback_prereq_error(bitcoin_rpc: FeeRateError) -> EnvelopeError {
         let source = FeeRateError::Fallback {
@@ -115,7 +152,7 @@ mod tests {
             }),
             bitcoin_rpc: Box::new(bitcoin_rpc),
         };
-        EnvelopeError::PrereqFetch(source.into())
+        EnvelopeError::FeeRate(source)
     }
 
     #[test]
@@ -166,8 +203,16 @@ mod tests {
 
     #[test]
     fn envelope_prereq_fetch_uses_wrapped_retry_classification() {
-        let source = anyhow::Error::from(ClientError::Timeout).context("network unavailable");
-        let err = EnvelopeError::PrereqFetch(source);
+        let err = EnvelopeError::PrereqFetch(ClientError::Timeout);
+
+        assert!(is_retryable_envelope_error(&err));
+    }
+
+    #[test]
+    fn envelope_broadcaster_rpc_outages_are_retryable() {
+        let err = EnvelopeError::Broadcaster(BroadcasterError::Rpc(ClientError::Connection(
+            "connection refused".into(),
+        )));
 
         assert!(is_retryable_envelope_error(&err));
     }
