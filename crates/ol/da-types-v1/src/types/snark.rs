@@ -178,59 +178,66 @@ impl CompoundMember for DaProofStateDiffV1 {
 
 /// Diff for snark account state.
 ///
-/// Field order mirrors `SnarkAccountState` for consistency.
+/// The member order is the wire layout of the snark diffs MN0 has already
+/// posted to L1, so it must not change. The encoding writes a `u8` presence
+/// bitmap in member order followed by the set members, and decoding reads
+/// members positionally without framing. New members may therefore only be
+/// appended, and a decoder that predates a member cannot read a diff that sets
+/// it. Four of the eight bitmap bits are in use.
 #[derive(Debug)]
 pub struct SnarkAccountDiffV1 {
-    /// Update predicate key (VK) register, set when an update declares a
-    /// rotation. Carries the serialized key bytes, as in
-    /// [`SnarkAccountInitV1`](super::ledger::SnarkAccountInitV1).
-    pub update_vk: DaRegister<U16LenBytes>,
+    /// Sequence number counter diff.
+    pub seq_no: DaCounter<CtrU64ByU16>,
 
     /// Proof state diff.
     pub proof_state: DaProofStateDiffV1,
 
-    /// Sequence number counter diff.
-    pub seq_no: DaCounter<CtrU64ByU16>,
-
     /// Inbox append-only diff.
     pub inbox: DaLinacc<InboxBufferV1>,
+
+    /// Update predicate key (VK) register, set when an update declares a
+    /// rotation. Carries the serialized key bytes, as in
+    /// [`SnarkAccountInitV1`](super::ledger::SnarkAccountInitV1).
+    ///
+    /// Appended after the 0.3.0 members, so 0.3.0 diffs decode with it unset.
+    pub update_vk: DaRegister<U16LenBytes>,
 }
 
 impl Default for SnarkAccountDiffV1 {
     fn default() -> Self {
         Self {
-            update_vk: DaRegister::new_unset(),
-            proof_state: <DaProofStateDiffV1 as Default>::default(),
             seq_no: DaCounter::new_unchanged(),
+            proof_state: <DaProofStateDiffV1 as Default>::default(),
             inbox: DaLinacc::new(),
+            update_vk: DaRegister::new_unset(),
         }
     }
 }
 
 impl SnarkAccountDiffV1 {
-    /// Creates a new [`SnarkAccountDiffV1`] from an update VK register, proof
-    /// state, sequence number, and inbox diff.
+    /// Creates a new [`SnarkAccountDiffV1`] from a sequence number, proof
+    /// state, inbox diff, and update VK register.
     pub fn new(
-        update_vk: DaRegister<U16LenBytes>,
-        proof_state: DaProofStateDiffV1,
         seq_no: DaCounter<CtrU64ByU16>,
+        proof_state: DaProofStateDiffV1,
         inbox: DaLinacc<InboxBufferV1>,
+        update_vk: DaRegister<U16LenBytes>,
     ) -> Self {
         Self {
-            update_vk,
-            proof_state,
             seq_no,
+            proof_state,
             inbox,
+            update_vk,
         }
     }
 }
 
 make_compound_impl! {
     SnarkAccountDiffV1 < (), DaError > u8 => SnarkAccountTargetV1 {
-        update_vk: register (U16LenBytes),
-        proof_state: compound (DaProofStateDiffV1),
         seq_no: counter (CtrU64ByU16),
+        proof_state: compound (DaProofStateDiffV1),
         inbox: compound (DaLinacc<InboxBufferV1>),
+        update_vk: register (U16LenBytes),
     }
 }
 
@@ -240,10 +247,10 @@ make_compound_impl! {
 /// higher-level account diff targets during DA application.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SnarkAccountTargetV1 {
-    pub update_vk: U16LenBytes,
-    pub proof_state: DaProofStateV1,
     pub seq_no: u64,
+    pub proof_state: DaProofStateV1,
     pub inbox: InboxBufferV1,
+    pub update_vk: U16LenBytes,
 }
 
 impl CompoundMember for SnarkAccountDiffV1 {
@@ -252,10 +259,10 @@ impl CompoundMember for SnarkAccountDiffV1 {
     }
 
     fn is_default(&self) -> bool {
-        CompoundMember::is_default(&self.update_vk)
+        CompoundMember::is_default(&self.seq_no)
             && CompoundMember::is_default(&self.proof_state)
-            && CompoundMember::is_default(&self.seq_no)
             && CompoundMember::is_default(&self.inbox)
+            && CompoundMember::is_default(&self.update_vk)
     }
 
     fn decode_set(dec: &mut impl Decoder) -> Result<Self, CodecError> {

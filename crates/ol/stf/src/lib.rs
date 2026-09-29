@@ -18,17 +18,23 @@
 //! The caller chooses the spec from the epoch being executed: a block runs
 //! under its header's epoch, and an epoch's terminal block, including the
 //! drain that advances state to the next epoch, runs under the spec of the
-//! epoch it ends. Genesis always runs under [`OLSpecId::V1`].
+//! epoch it ends. Genesis runs under the network's genesis spec,
+//! [`OLParams::genesis_spec`](strata_ol_params::OLParams::genesis_spec).
 //!
-//! # Unknown specs
+//! # Unknown and unimplemented specs
 //!
-//! An [`OLSpecId`] value always names rules this binary implements: decoding
-//! rejects unknown identifiers, and dispatch matches every variant. A node
-//! therefore never runs an epoch under older rules because it lacks newer
+//! Decoding rejects unknown identifiers, and dispatch matches every variant,
+//! so a node never runs an epoch under older rules because it lacks newer
 //! ones. Halting with upgrade instructions when a predicate enactment
 //! activates a spec this binary does not know belongs to enactment discovery
 //! (STR-4086), which must run before any operation here is called for the new
 //! epoch. Until it lands, enactments do not advance the spec.
+//!
+//! [`OLSpecId::V0`] names the 0.3.0 rules, which networks launched on that
+//! release run from genesis. This binary does not implement them yet
+//! (STR-4486), so every operation under V0 returns
+//! [`ExecError::UnimplementedSpec`] instead of running V0 epochs under V1
+//! rules. Building genesis from V0 params therefore fails.
 //!
 //! # V1-compatible surface
 //!

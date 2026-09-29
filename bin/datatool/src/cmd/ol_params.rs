@@ -16,7 +16,8 @@ use crate::{
 /// Generates the OL params for a Strata network by retrieving the genesis L1
 /// anchor and constructing an [`OLParams`] from the bridge params and the
 /// genesis snark accounts. Outputs the result as pretty-printed JSON, either to
-/// the specified file or to stdout.
+/// the specified file or to stdout. The params start the new network at genesis
+/// spec V1, the [`OLParams`] builder default, and write it explicitly.
 ///
 /// Genesis snark accounts are supplied whole via `--genesis-accounts`. Their
 /// inner state roots and predicates are computed by whoever owns the account's
