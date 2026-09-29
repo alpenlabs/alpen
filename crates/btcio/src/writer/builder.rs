@@ -1,14 +1,15 @@
 use core::result::Result::Ok;
 use std::{cmp::Reverse, slice};
 
-use anyhow::anyhow;
 use bitcoin::{
     absolute::LockTime,
     blockdata::script,
+    consensus::encode::Error as ConsensusEncodeError,
     hashes::Hash,
     key::UntweakedKeypair,
     secp256k1::{
-        constants::SCHNORR_SIGNATURE_SIZE, schnorr::Signature, Message, XOnlyPublicKey, SECP256K1,
+        constants::SCHNORR_SIGNATURE_SIZE, schnorr::Signature, Error as Secp256k1Error, Message,
+        XOnlyPublicKey, SECP256K1,
     },
     sighash::{Prevouts, SighashCache, TapSighashType, TaprootError},
     taproot::{
@@ -27,12 +28,17 @@ use bitcoind_async_client::{
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeeBumpingConfig;
 use strata_csm_types::L1Payload;
+use strata_db_types::common::L1TxId;
 use strata_l1_envelope_fmt::{EnvelopeBuildError, EnvelopeScriptBuilder};
 use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
 use strata_primitives::buf::Buf32;
 use thiserror::Error;
 
-use super::{context::WriterContext, resolve_fee_rate, FeeRateResolutionTimeouts};
+use super::{
+    context::WriterContext, replacement::build::ReplacementError, resolve_fee_rate, FeeRateError,
+    FeeRateResolutionTimeouts,
+};
+use crate::broadcaster::BroadcasterError;
 
 pub(crate) const BITCOIN_DUST_LIMIT: u64 = 546;
 
@@ -140,10 +146,25 @@ pub enum EnvelopeError {
     P2trChangeAddressUnsupported,
 
     #[error("failed to fetch envelope prerequisites: {0}")]
-    PrereqFetch(#[source] anyhow::Error),
+    PrereqFetch(#[source] ClientError),
 
-    #[error("Error building taproot")]
+    #[error("failed to resolve envelope fee rate: {0}")]
+    FeeRate(#[source] FeeRateError),
+
+    #[error("failed to build taproot: {0}")]
     Taproot(#[from] TaprootBuilderError),
+
+    #[error("could not finalize taproot spend info")]
+    TaprootFinalize,
+
+    #[error("could not create control block for reveal script")]
+    MissingControlBlock,
+
+    #[error("could not generate envelope keypair: {0}")]
+    KeyGeneration(#[source] Secp256k1Error),
+
+    #[error("invalid reveal schnorr signature: {0}")]
+    InvalidRevealSignature(#[source] Secp256k1Error),
 
     #[error("sps tx fmt")]
     Tag(#[from] TxFmtError),
@@ -154,8 +175,23 @@ pub enum EnvelopeError {
     #[error("failed to compute sighash")]
     Sighash(#[from] TaprootError),
 
-    #[error("{0}")]
-    Other(#[from] anyhow::Error),
+    #[error("broadcaster: {0}")]
+    Broadcaster(#[from] BroadcasterError),
+
+    #[error("invalid stored reveal transaction: {0}")]
+    InvalidStoredTransaction(#[source] ConsensusEncodeError),
+
+    #[error("reveal replacement: {0}")]
+    RevealReplacement(#[from] ReplacementError),
+
+    #[error("invalid pending reveal fee rate {0} sat/vB")]
+    InvalidPendingFeeRate(u64),
+
+    #[error("previous reveal tx entry {0} missing for pending replacement")]
+    MissingPreviousRevealEntry(L1TxId),
+
+    #[error("pending reveal replacement for payload {0} vanished while it was being activated")]
+    PendingReplacementVanished(u64),
 }
 
 impl EnvelopeError {
@@ -309,12 +345,12 @@ async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
         .client
         .network()
         .await
-        .map_err(|error| EnvelopeError::PrereqFetch(error.into()))?;
+        .map_err(EnvelopeError::PrereqFetch)?;
     let utxos = ctx
         .client
         .list_unspent(None, None, None, None, None)
         .await
-        .map_err(|error| EnvelopeError::PrereqFetch(error.into()))?
+        .map_err(EnvelopeError::PrereqFetch)?
         .0;
     let fee_rate = resolve_fee_rate(
         ctx.client.as_ref(),
@@ -322,7 +358,7 @@ async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
         FeeRateResolutionTimeouts::default(),
     )
     .await
-    .map_err(|error| EnvelopeError::PrereqFetch(error.into()))?;
+    .map_err(EnvelopeError::FeeRate)?;
     ensure_initial_fee_rate_within_max(fee_rate, ctx.max_fee_rate)?;
     Ok((network, utxos, fee_rate))
 }
@@ -504,7 +540,7 @@ pub fn create_envelope_transactions(
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())?
         .finalize(SECP256K1, public_key)
-        .map_err(|_| anyhow!("Could not build taproot spend info"))?;
+        .map_err(|_| EnvelopeError::TaprootFinalize)?;
 
     // Create reveal address
     let reveal_address = Address::p2tr(
@@ -565,7 +601,7 @@ pub fn create_envelope_transactions(
         tag_script,
         &taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
-            .ok_or(anyhow!("Cannot create control block".to_string()))?,
+            .ok_or(EnvelopeError::MissingControlBlock)?,
     )?;
     let reveal_fee_sats = output_to_reveal.value.to_sat().saturating_sub(
         reveal_tx
@@ -1065,10 +1101,11 @@ pub(crate) fn fee_sats_for_vsize(vsize: usize, fee_rate: FeeRate) -> Result<u64,
 /// Used by the unchecked single-payload envelope path when no external
 /// reveal signer is configured. The normal signed single-payload path uses
 /// `envelope_pubkey` and attaches the external signer's signature later.
-pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
+pub fn generate_key_pair() -> Result<UntweakedKeypair, EnvelopeError> {
     let mut rand_bytes = [0; 32];
     OsRng.fill_bytes(&mut rand_bytes);
-    Ok(UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)?)
+    UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)
+        .map_err(EnvelopeError::KeyGeneration)
 }
 
 /// Signs and attaches a taproot script-spend witness to the reveal transaction.
@@ -1081,13 +1118,13 @@ pub(crate) fn sign_reveal_transaction(
     reveal_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
     key_pair: &UntweakedKeypair,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), EnvelopeError> {
     let sighash = compute_reveal_sighash(reveal_tx, output_to_reveal, reveal_script)?;
 
     let mut randbytes = [0; 32];
     OsRng.fill_bytes(&mut randbytes);
     let sig = SECP256K1.sign_schnorr_with_aux_rand(
-        &Message::from_digest_slice(&sighash.0)?,
+        &Message::from_digest(sighash.0),
         key_pair,
         &randbytes,
     );
@@ -1104,9 +1141,8 @@ pub fn attach_reveal_signature(
     reveal_script: &script::ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
     signature: &[u8; 64],
-) -> Result<(), anyhow::Error> {
-    let sig =
-        Signature::from_slice(signature).map_err(|e| anyhow!("invalid schnorr signature: {e}"))?;
+) -> Result<(), EnvelopeError> {
+    let sig = Signature::from_slice(signature).map_err(EnvelopeError::InvalidRevealSignature)?;
 
     let witness = &mut reveal_tx.input[0].witness;
     witness.push(sig.as_ref());
@@ -1114,7 +1150,7 @@ pub fn attach_reveal_signature(
     witness.push(
         taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
-            .ok_or(anyhow!("Could not create control block"))?
+            .ok_or(EnvelopeError::MissingControlBlock)?
             .serialize(),
     );
 

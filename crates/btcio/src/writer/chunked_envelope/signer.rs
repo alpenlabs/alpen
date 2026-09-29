@@ -87,7 +87,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .client
             .network()
             .await
-            .map_err(|e| EnvelopeError::PrereqFetch(e.into()))?;
+            .map_err(EnvelopeError::PrereqFetch)?;
 
         // NOTE: passing `min_conf = 0` would also include unconfirmed UTXOs and mitigate the
         // lack-of-UTXO problem, but it complicates fee bumping (RBF/CPFP over chained unconfirmed
@@ -97,7 +97,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .client
             .list_unspent(None, None, None, None, None)
             .await
-            .map_err(|e| EnvelopeError::PrereqFetch(e.into()))?
+            .map_err(EnvelopeError::PrereqFetch)?
             .0;
 
         let spendable_utxo_count = utxos
@@ -117,7 +117,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             FeeRateResolutionTimeouts::default(),
         )
         .await
-        .map_err(|err| EnvelopeError::PrereqFetch(err.into()))?;
+        .map_err(EnvelopeError::FeeRate)?;
         ensure_initial_fee_rate_within_max(fee_rate, ctx.max_fee_rate)?;
 
         debug!(

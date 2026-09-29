@@ -6,8 +6,8 @@ use bitcoin::{
     hashes::Hash,
     key::Keypair,
     script::Instruction,
-    secp256k1::{schnorr::Signature, Message, XOnlyPublicKey, SECP256K1},
-    sighash::{Prevouts, SighashCache, TapSighashType},
+    secp256k1::{schnorr::Signature, Error as Secp256k1Error, Message, XOnlyPublicKey, SECP256K1},
+    sighash::{Prevouts, SighashCache, TapSighashType, TaprootError},
     taproot::{ControlBlock, LeafVersion, TapLeafHash},
     Amount, FeeRate, ScriptBuf, Sequence, Transaction, TxOut, Txid,
 };
@@ -27,7 +27,7 @@ use crate::{
 
 /// Errors raised while building a replacement transaction.
 #[derive(Debug, Error)]
-pub(crate) enum ReplacementError {
+pub enum ReplacementError {
     #[error("Bitcoin wallet could not bump fee: {0}")]
     PsbtBumpFee(#[source] ClientError),
     #[error("Bitcoin wallet could not sign replacement PSBT: {0}")]
@@ -60,8 +60,10 @@ pub(crate) enum ReplacementError {
     IncompatibleCommitLayout(String),
     #[error("replacement would spend {0} wallet input(s) the original did not")]
     ReplacementAddsInputs(usize),
-    #[error("failed to sign reveal replacement: {0}")]
-    RevealSigning(#[source] anyhow::Error),
+    #[error("failed to compute reveal replacement sighash: {0}")]
+    RevealSighash(#[source] TaprootError),
+    #[error("invalid reveal schnorr signature: {0}")]
+    InvalidRevealSignature(#[source] Secp256k1Error),
 }
 
 impl ReplacementError {
@@ -87,7 +89,8 @@ impl ReplacementError {
             | Self::ReplacementWouldDustOutput
             | Self::IncompatibleCommitLayout(_)
             | Self::ReplacementAddsInputs(_)
-            | Self::RevealSigning(_) => false,
+            | Self::RevealSighash(_)
+            | Self::InvalidRevealSignature(_) => false,
         }
     }
 
@@ -109,7 +112,8 @@ impl ReplacementError {
             | Self::InvalidControlBlock(_)
             | Self::InvalidRevealPubkey(_)
             | Self::RevealKeyRotated { .. }
-            | Self::RevealSigning(_)
+            | Self::RevealSighash(_)
+            | Self::InvalidRevealSignature(_)
             | Self::IncompatibleCommitLayout(_) => TerminalError::UnsupportedRbfKind,
             Self::ReplacementAddsInputs(_) => TerminalError::ReplacementAddsInputs,
             Self::ReplacementWouldDustOutput => TerminalError::ReplacementWouldDustOutput,
@@ -365,9 +369,8 @@ pub(crate) fn build_chunked_reveal_replacement(
     replacement_tx.input[0].witness.clear();
     let sighash =
         compute_taproot_script_spend_sighash(&replacement_tx, commit_output, &reveal_script)
-            .map_err(ReplacementError::RevealSigning)?;
-    let message = Message::from_digest_slice(sighash.as_ref())
-        .map_err(|error| ReplacementError::RevealSigning(error.into()))?;
+            .map_err(ReplacementError::RevealSighash)?;
+    let message = Message::from_digest(sighash);
     let signature = SECP256K1.sign_schnorr(&message, sequencer_keypair);
     attach_reveal_witness(
         &mut replacement_tx,
@@ -398,7 +401,7 @@ pub(crate) fn build_pending_single_reveal_replacement(
     replacement_tx.input[0].witness.clear();
     let sighash =
         compute_taproot_script_spend_sighash(&replacement_tx, commit_output, &reveal_script)
-            .map_err(ReplacementError::RevealSigning)?;
+            .map_err(ReplacementError::RevealSighash)?;
     let fee = reveal_fee(&replacement_tx, commit_output);
 
     Ok((
@@ -434,9 +437,8 @@ pub(crate) fn rebuild_reveal_for_replaced_commit(
         replacement_commit_output,
         &reveal_script,
     )
-    .map_err(ReplacementError::RevealSigning)?;
-    let message = Message::from_digest_slice(sighash.as_ref())
-        .map_err(|error| ReplacementError::RevealSigning(error.into()))?;
+    .map_err(ReplacementError::RevealSighash)?;
+    let message = Message::from_digest(sighash);
     let signature = SECP256K1.sign_schnorr(&message, sequencer_keypair);
     attach_reveal_witness(
         &mut replacement_reveal,
@@ -494,7 +496,7 @@ pub(crate) fn compute_taproot_script_spend_sighash(
     reveal_tx: &Transaction,
     output_to_reveal: &TxOut,
     reveal_script: &ScriptBuf,
-) -> anyhow::Result<[u8; 32]> {
+) -> Result<[u8; 32], TaprootError> {
     let mut sighash_cache = SighashCache::new(reveal_tx);
     let signature_hash = sighash_cache.taproot_script_spend_signature_hash(
         0,
@@ -511,9 +513,8 @@ pub(crate) fn attach_reveal_witness(
     control_block: &ControlBlock,
     signature: &[u8; 64],
 ) -> Result<(), ReplacementError> {
-    let signature = Signature::from_slice(signature).map_err(|error| {
-        ReplacementError::RevealSigning(anyhow::anyhow!("invalid schnorr signature: {error}"))
-    })?;
+    let signature =
+        Signature::from_slice(signature).map_err(ReplacementError::InvalidRevealSignature)?;
     let witness = &mut reveal_tx
         .input
         .first_mut()

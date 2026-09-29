@@ -8,7 +8,6 @@
 
 use core::iter;
 
-use anyhow::anyhow;
 use bitcoin::{
     absolute::LockTime,
     blockdata::script,
@@ -107,7 +106,7 @@ fn build_reveal_artifacts(
         let spend_info = TaprootBuilder::new()
             .add_leaf(0, reveal_script.clone())?
             .finalize(SECP256K1, sequencer_xonly)
-            .map_err(|_| anyhow!("could not finalize taproot spend info"))?;
+            .map_err(|_| EnvelopeError::TaprootFinalize)?;
 
         // A reveal has one sequencer-address output plus its tapscript spend.
         let commit_value = calculate_reveal_commit_value(
@@ -161,7 +160,7 @@ fn build_reveals_for_commit(
         let control_block = artifact
             .spend_info
             .control_block(&(artifact.reveal_script.clone(), LeafVersion::TapScript))
-            .ok_or_else(|| anyhow!("cannot create control block for reveal {i}"))?;
+            .ok_or(EnvelopeError::MissingControlBlock)?;
 
         // Verify the commit output covers reveal fee + dust.
         let reveal_vsize = get_size(

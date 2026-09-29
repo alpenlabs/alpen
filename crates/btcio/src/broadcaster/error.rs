@@ -1,4 +1,5 @@
 use bitcoin::consensus::encode::Error as ConsensusEncodeError;
+use bitcoind_async_client::error::ClientError;
 use strata_db_types::{common::L1TxId, errors::DbError};
 use thiserror::Error;
 
@@ -8,7 +9,10 @@ pub enum BroadcasterError {
     Db(#[from] DbError),
 
     #[error("rpc: {0}")]
-    Rpc(#[from] anyhow::Error),
+    Rpc(#[from] ClientError),
+
+    #[error("Bitcoin RPC returned invalid blockheight {0}")]
+    InvalidBlockHeight(i64),
 
     #[error("missing transaction entry index for txid {0}")]
     MissingEntryIndex(L1TxId),
