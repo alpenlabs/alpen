@@ -60,7 +60,7 @@ fn test_unimplemented_spec_preserves_prediction_error() {
 #[test]
 fn test_payload_budget_includes_update_log_and_extra_data() {
     let params = BridgeParams::default();
-    for (extra_len, expected_bytes) in [(0, 16_350), (33, 16_383)] {
+    for (extra_len, expected_bytes) in [(0, 16_350), (33, 16_383), (34, 16_384)] {
         let tx = create_test_snark_tx_with_withdrawals(172, extra_len);
         check_tx_log_budget(OLSpecId::V1, &tx, &params).unwrap();
         let usage = predict_log_usage(&tx, &params);
@@ -70,12 +70,12 @@ fn test_payload_budget_includes_update_log_and_extra_data() {
     assert!(matches!(
         check_tx_log_budget(
             OLSpecId::V1,
-            &create_test_snark_tx_with_withdrawals(172, 34),
+            &create_test_snark_tx_with_withdrawals(172, 35),
             &params
         ),
         Err(TxLogBudgetError::LogPayloadBytes {
-            actual: 16_384,
-            limit: 16_383
+            actual: 16_385,
+            limit: 16_384
         })
     ));
     assert!(matches!(
@@ -86,7 +86,7 @@ fn test_payload_budget_includes_update_log_and_extra_data() {
         ),
         Err(TxLogBudgetError::LogPayloadBytes {
             actual: 16_445,
-            limit: 16_383
+            limit: 16_384
         })
     ));
 }
@@ -152,19 +152,18 @@ fn test_generic_message_prediction_matches_execution() {
 }
 
 #[test]
-fn test_maximal_update_exceeds_log_count_budget() {
-    // Exercise #2274's full message capacity, including the update's own log.
+fn test_maximal_update_exceeds_log_payload_budget() {
     let error = check_tx_log_budget(
         OLSpecId::V1,
-        &create_test_snark_tx_with_withdrawals(65_536, 0),
+        &create_test_snark_tx_with_withdrawals(255, 0),
         &BridgeParams::default(),
     )
     .unwrap_err();
     assert!(matches!(
         error,
-        TxLogBudgetError::LogCount {
-            actual: 65_537,
-            limit: 16_383
+        TxLogBudgetError::LogPayloadBytes {
+            actual: 24_235,
+            limit: 16_384
         }
     ));
 }
@@ -172,7 +171,7 @@ fn test_maximal_update_exceeds_log_count_budget() {
 #[test]
 fn test_log_count_limit_is_inclusive_for_the_admission_error() {
     // Isolate the count dimension; real withdrawal payloads hit the byte limit sooner.
-    let limit = (MAX_LOGS_PER_BLOCK as usize).min(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
+    let limit = (MAX_LOGS_PER_BLOCK as usize).min(MAX_OL_LOGS_PER_CHECKPOINT as usize);
     let mut usage = LogUsage::default();
     for _ in 0..limit {
         usage.add_payload(&[]);

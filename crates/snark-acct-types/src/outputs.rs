@@ -2,7 +2,8 @@
 
 use ssz_types::VariableList;
 use strata_acct_types::{
-    AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
+    AccountId, BitcoinAmount, MAX_MESSAGES as MAX_EFFECT_MESSAGES,
+    MAX_TRANSFERS as MAX_EFFECT_TRANSFERS, MsgPayload, SentMessage, SentTransfer, TxEffects,
 };
 use strata_predicate::PredicateKey;
 
@@ -127,7 +128,10 @@ impl UpdateOutputs {
         let needed = self.transfers.len() + iter.len();
 
         if needed > MAX_TRANSFERS as usize {
-            return Err(OutputsError::TransfersCapacityExceeded);
+            return Err(OutputsError::TransfersCapacityExceeded {
+                actual: needed,
+                limit: MAX_TRANSFERS as usize,
+            });
         }
 
         for item in iter {
@@ -150,7 +154,10 @@ impl UpdateOutputs {
         let needed = self.messages.len() + iter.len();
 
         if needed > MAX_MESSAGES as usize {
-            return Err(OutputsError::MessagesCapacityExceeded);
+            return Err(OutputsError::MessagesCapacityExceeded {
+                actual: needed,
+                limit: MAX_MESSAGES as usize,
+            });
         }
 
         for item in iter {
@@ -160,17 +167,39 @@ impl UpdateOutputs {
         Ok(())
     }
 
-    /// Converts these outputs to [`TxEffects`] for use in transaction
-    /// processing.
-    pub fn to_tx_effects(&self) -> TxEffects {
+    /// Converts all outputs to [`TxEffects`], rejecting updates that exceed either capacity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if insertion fails despite the checked effect capacities.
+    pub fn try_to_tx_effects(&self) -> Result<TxEffects, OutputsError> {
+        if self.transfers().len() > MAX_EFFECT_TRANSFERS as usize {
+            return Err(OutputsError::TransfersCapacityExceeded {
+                actual: self.transfers().len(),
+                limit: MAX_EFFECT_TRANSFERS as usize,
+            });
+        }
+        if self.messages().len() > MAX_EFFECT_MESSAGES as usize {
+            return Err(OutputsError::MessagesCapacityExceeded {
+                actual: self.messages().len(),
+                limit: MAX_EFFECT_MESSAGES as usize,
+            });
+        }
+
         let mut effects = TxEffects::default();
         for t in self.transfers() {
-            effects.add_transfer(SentTransfer::new(t.dest(), t.value()));
+            assert!(
+                effects.add_transfer(SentTransfer::new(t.dest(), t.value())),
+                "transfer count fits TxEffects capacity"
+            );
         }
         for m in self.messages() {
-            effects.add_message(SentMessage::new(m.dest(), m.payload().clone()));
+            assert!(
+                effects.add_message(SentMessage::new(m.dest(), m.payload().clone())),
+                "message count fits TxEffects capacity"
+            );
         }
-        effects
+        Ok(effects)
     }
 
     /// Computes the total value across all transfers and messages.
