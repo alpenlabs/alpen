@@ -117,17 +117,25 @@ resource rebuild, and genesis. `ol/stf` maps each spec to an STF implementation 
 one place. Outside `ol/stf`, only tests and the prover benchmark's input fixtures
 use `ol/stf-v1` directly.
 
-The OL state root is not the root of `OLStateV1`. Block headers, checkpoint terminal
-headers, and genesis commit to `hash_tree_root(OLRootState)`, a fixed container of
-`cur_spec_version: uint32`, `staged_spec_version: uint32`, and `chainstate_root`, which
-is the root of the chainstate in its layout (`OLStateV1` today). `cur_spec_version`
-selects the layout through `OLStateLayout::for_spec`; the staged version names the spec
+From V1 on, the OL state root is not the root of `OLStateV1`. Block headers, checkpoint
+terminal headers, and genesis commit to `hash_tree_root(OLRootState)`, a fixed container
+of `cur_spec_version: uint32`, `staged_spec_version: uint32`, and `chainstate_root`, which
+is the root of the chainstate in its layout (`OLStateV1` today). Under V0, the 0.3.0 rules
+that MN0 and testnet-prod ran from genesis, the root is the bare `chainstate_root`, so V0
+states commit no spec versions and always stage V0 (`OLSpecVersions`).
+`OLRootState::compute_state_root` is the one place the form is chosen. The first block of
+the first V1 epoch after a V0 state wraps it as `cur = staged = V1` in epoch-initial
+processing, so every driver, DA replay included, reaches the same root; a V1 block that
+does not start an epoch rejects a V0 state. `cur_spec_version` selects the layout through
+`OLStateLayout::for_spec` (V0 and V1 share `OLStateV1`); the staged version names the spec
 the next epoch runs under. `OLStateContainer` (`ol/state-container`) pairs the root with
 an `OLStateSeries` chainstate and is what storage, the chain worker, and the checkpoint
 proof input carry. It serializes through serde as the root's fields plus the chainstate's
 SSZ bytes, and decoding checks the chainstate against the root. Execution uses
 `MemoryStateBaseLayer<OLStateV1>`, built with `from_container` and converted back with
-`into_container`; only genesis construction assigns versions (`new_genesis`).
+`into_container`. Genesis construction assigns the initial versions (`new_genesis`), and
+afterwards only the rules change them, through `IStateAccessorMut::set_spec_versions` and
+the `WriteBatch` version slot.
 
 #### EE Layer (Execution Environment)
 
