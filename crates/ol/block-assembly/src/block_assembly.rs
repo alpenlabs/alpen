@@ -3270,7 +3270,7 @@ mod tests {
         let independent = MempoolSnarkTxBuilder::new(account2).build();
         let independent_id = independent.compute_txid();
 
-        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 2);
+        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
         let control = env
             .construct_block_with_da(
                 [(independent_id, independent.clone())],
@@ -3926,7 +3926,7 @@ mod tests {
 
         let out = run_process_transactions_with_seeded_checkpoint_logs(
             account_id,
-            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 1,
             vec![(tx1_id, tx1), (tx2_id, tx2)],
         )
         .await;

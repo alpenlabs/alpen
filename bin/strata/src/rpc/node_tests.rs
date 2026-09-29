@@ -907,13 +907,13 @@ fn transaction_too_large_maps_to_invalid_params() {
 fn log_count_budget_maps_to_invalid_params_with_data() {
     let error = map_mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
         actual: 65_537,
-        limit: 16_383,
+        limit: 16_384,
     }));
     assert_eq!(error.code(), INVALID_PARAMS_CODE);
     let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
     assert_eq!(
         data,
-        json!({"resource": "log_count", "actual": 65537, "limit": 16383})
+        json!({"resource": "log_count", "actual": 65537, "limit": 16384})
     );
 }
 
