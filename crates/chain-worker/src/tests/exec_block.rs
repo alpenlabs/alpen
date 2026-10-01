@@ -70,6 +70,14 @@ impl ChainWorkerContext for OrderEnforcingContext {
         OLRuntimeParams::test_default()
     }
 
+    fn genesis_l1_block(&self) -> L1BlockCommitment {
+        unimplemented!("not used by block execution")
+    }
+
+    fn fetch_l1_manifest(&self, _height: u32) -> WorkerResult<Option<AsmManifest>> {
+        unimplemented!("not used by block execution")
+    }
+
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
         Ok(self.blocks.get(blkid).cloned())
     }

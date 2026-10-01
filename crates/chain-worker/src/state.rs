@@ -20,7 +20,7 @@ use strata_checkpoint_types::{
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_CHAIN_WORKER_AFTER_MMR_INDEX, check_bail_trigger};
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment};
+use strata_identifiers::{AccountId, Buf32, Epoch, L1BlockCommitment, OLBlockCommitment};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType,
@@ -36,7 +36,8 @@ use strata_ol_state_types::{
 };
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf::{
-    BlockInfo, EpochDaReplayError, EpochInfo, OLSpecId, apply_da_epoch, verify_block,
+    BlockInfo, EpochDaReplayError, EpochInfo, EpochSpecSelectionError, OLSpecId, apply_da_epoch,
+    select_next_epoch_spec, verify_block,
 };
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
@@ -597,8 +598,7 @@ pub(crate) fn apply_checkpoint_epoch(
     // `ol_logs`, which records the changes made during the epoch.
     let pre_cursors = collect_pre_snark_account_cursors(&base_state, &ol_logs)?;
 
-    // TODO(STR-4086): use the spec scheduled for this checkpoint's epoch.
-    let spec = OLSpecId::V1;
+    let spec = select_checkpoint_epoch_spec(ctx, epoch, &base_state)?;
 
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
     // run apply_da_epoch, then extract the batch and indexer writes.
@@ -683,6 +683,50 @@ pub(crate) fn apply_checkpoint_epoch(
         summary,
         output,
     })
+}
+
+/// Selects the spec of the checkpoint epoch `epoch`, which starts from
+/// `parent_state`, the previous epoch's terminal state, with
+/// [`select_next_epoch_spec`].
+fn select_checkpoint_epoch_spec(
+    ctx: &impl ChainWorkerContext,
+    epoch: EpochCommitment,
+    parent_state: &MemoryStateBaseLayer<OLStateV1>,
+) -> WorkerResult<OLSpecId> {
+    let parent_versions = parent_state.spec_versions();
+    let parent_last_l1 =
+        L1BlockCommitment::new(parent_state.last_l1_height(), *parent_state.last_l1_blkid());
+    let spec = select_next_epoch_spec(
+        parent_versions,
+        parent_last_l1,
+        ctx.genesis_l1_block(),
+        |height| ctx.fetch_l1_manifest(height),
+    )
+    .map_err(|err| match err {
+        EpochSpecSelectionError::ManifestLookup { source, .. } => source,
+        EpochSpecSelectionError::MissingLastManifest { height } => {
+            WorkerError::MissingLastManifest { height }
+        }
+        EpochSpecSelectionError::LastManifestMismatch {
+            height,
+            expected,
+            found,
+        } => WorkerError::LastManifestMismatch {
+            height,
+            expected,
+            found,
+        },
+        EpochSpecSelectionError::Exec(source) => WorkerError::StfExecution(source),
+    })?;
+
+    if parent_versions.cur_spec() == OLSpecId::V0 && spec == OLSpecId::V1 {
+        info!(
+            %epoch,
+            enactment_l1_height = parent_last_l1.height(),
+            "switching checkpoint sync from V0 to V1 rules after the checkpoint predicate enactment"
+        );
+    }
+    Ok(spec)
 }
 
 /// Validates the epoch's L1 range and builds the manifest list and [`EpochInfo`]
