@@ -105,7 +105,8 @@ pub struct RetryConfig {
     /// this many rechecks is promoted to `PermanentFailure`. A dependency that
     /// never materializes (e.g. a receipt for an abandoned batch) would
     /// otherwise recheck forever and hang every waiter, since parking doesn't
-    /// notify. Sized as a last resort, not a normal timeout.
+    /// notify. Sized as a last resort, not a normal timeout. Does not apply to
+    /// [`AdmissionDecision::AwaitingConfiguration`](crate::AdmissionDecision::AwaitingConfiguration).
     pub max_blocked_rechecks: u32,
     /// In-attempt retry budget for idempotent backend ops (see
     /// [`LocalRetryConfig`]).

@@ -48,7 +48,7 @@ The key zkaleido types prover-core depends on:
 - **`ZkVmProgram`** — defines a provable program (`Input`, `Output`, `prove()`).
   Consumed via `ProofSpec::Program`.
 - **`ZkVmHost`** / **`ZkVmRemoteHost`** — local and remote proving backends.
-  Captured inside strategy implementations at build time.
+  Supplied as a fixed host when constructing the prover.
 - **`ZkVmError`** / **`RemoteProofFailureReason`** — the *typed* failure surface
   prover-core classifies into a retry decision (see [Failure classification](#failure-classification-the-heart-of-the-crate)).
 - **`ProofReceiptWithMetadata`** — the proof artifact that comes out the other end.
@@ -135,6 +135,26 @@ transient failure?" decision: it's `Blocked`.
 > `ProverError::transient(..)` / `permanent(..)`)? `InputResolution::from_result`
 > bridges a legacy `Result<Input>` into a resolution: `Ok` → `Ready`, a permanent
 > failure → `Rejected`, a transient one → `Blocked`, infra errors stay `Err`.
+
+### Operational admission
+
+An optional `TaskAdmission<Spec>` checks operational readiness before witness
+input assembly. Install it with `ProverBuilder::task_admission`. It receives the
+task identifier and returns `AdmissionDecision::Admit` or
+`AdmissionDecision::AwaitingConfiguration { reason, recheck_after }`. Errors use
+the normal failure classification.
+
+Admission runs for fresh tasks, startup recovery and retries, before
+`ProofSpec::resolve_input` is called. The task first enters `Proving` to prevent
+retry scans from starting duplicate attempts while admission awaits. A stored receipt can
+still finish its post-prove hook without admission because it needs no new proof.
+
+Configuration waits persist as the existing `Blocked` status and use the same
+recheck cadence, but preserve all attempt counters and saved remote metadata.
+Unlike ordinary witness dependency waits, they do not exhaust
+`max_blocked_rechecks`; restarting with the required configuration lets the
+normal task scanner resume. The first configuration block emits an error in the
+task's tracing span; identical rechecks stay quiet until the cause changes.
 
 ### Failure classification — the heart of the crate
 
@@ -287,6 +307,20 @@ The consumer API is intentionally small:
 | `wait_for_tasks(tasks)` | Block until all tasks reach a terminal state (watch-channel, zero-poll). Blocked is *not* terminal — waiters keep waiting, until the `max_blocked_rechecks` backstop promotes a never-resolving dependency to `PermanentFailure`. |
 | `get_receipt(task)` | Read the stored receipt (requires a configured `ReceiptStore`). |
 | `get_status(task)` | Current `TaskStatus` for a task. |
+
+### Fixed hosts and remote recovery
+
+Each prover uses one fixed host through `native`, `remote`, or
+`remote_with_interval`. Consumers that support multiple program versions create
+one service per host and isolate their task stores so each recovery scanner sees
+only that service's tasks. Program selection belongs to the consumer.
+
+Remote submissions persist the opaque request ID in the existing metadata
+field. On restart the service resumes the same request without submitting a
+second proof. The remote strategy fetches the receipt and decodes its public
+output without adding local cryptographic proof verification. Consumers keep
+recovery bound to the same program through stable service routing and task-store
+isolation.
 
 ### RetryConfig knobs
 
