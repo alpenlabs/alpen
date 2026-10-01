@@ -1,0 +1,58 @@
+[package]
+name = "strata-ol-checkpoint-artifacts"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[features]
+node = [
+  "dep:strata-asm-common",
+  "dep:strata-asm-proto-checkpoint",
+  "dep:strata-db-types",
+  "dep:strata-storage",
+]
+native = [
+  "dep:strata-ol-params",
+  "dep:strata-proofimpl-checkpoint",
+  "dep:zkaleido-native-adapter",
+]
+sp1 = [
+  "dep:hex",
+  "dep:strata-ol-params",
+  "dep:zkaleido-sp1-host",
+  "dep:tokio",
+  "dep:strata-proofimpl-predicate-keys",
+  "strata-proofimpl-predicate-keys/sp1",
+]
+
+[dependencies]
+hex = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+strata-asm-common = { workspace = true, optional = true }
+strata-asm-proto-checkpoint = { workspace = true, optional = true }
+strata-db-types = { workspace = true, optional = true }
+strata-identifiers.workspace = true
+strata-ol-params = { workspace = true, optional = true }
+strata-ol-state-types.workspace = true
+strata-predicate.workspace = true
+strata-proofimpl-checkpoint = { workspace = true, optional = true }
+strata-proofimpl-predicate-keys = { workspace = true, optional = true }
+strata-storage = { workspace = true, optional = true }
+thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+zkaleido.workspace = true
+zkaleido-native-adapter = { workspace = true, optional = true }
+zkaleido-sp1-host = { workspace = true, optional = true }
+
+[dev-dependencies]
+hex.workspace = true
+strata-db-tests.workspace = true
+strata-db-store-sled.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
+strata-asm-checkpoint-types.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
+tempfile.workspace = true
+toml.workspace = true

@@ -29,6 +29,7 @@ members = [
   "crates/ol/mmr-index",
   "crates/ol/msg-types",
   "crates/ol/params",
+  "crates/ol/checkpoint-artifacts",
   "crates/ol/rpc/api",
   "crates/ol/rpc/types",
   "crates/ol/sequencer",
@@ -119,6 +120,7 @@ strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
 strata-ol-chain-types-v1 = { path = "crates/ol/chain-types-v1" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
+strata-ol-checkpoint-artifacts = { path = "crates/ol/checkpoint-artifacts" }
 strata-ol-da-common = { path = "crates/ol/da-common" }
 strata-ol-da-types-v1 = { path = "crates/ol/da-types-v1" }
 strata-ol-genesis = { path = "crates/ol/genesis" }

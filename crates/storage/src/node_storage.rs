@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use strata_asm_common::AnchorState;
 use strata_db_store_sled::SledBackend;
 
 use crate::managers::asm::AsmStateManager;
@@ -185,9 +186,35 @@ impl NodeStorage {
     pub fn fetch_canonical_asm_state_blocking(
         &self,
     ) -> DbResult<Option<(L1BlockCommitment, AsmExecOutput)>> {
-        let Some((recent_block, recent_state)) =
-            self.asm_state_manager.fetch_most_recent_state_blocking()?
-        else {
+        self.resolve_canonical_asm_state_blocking(
+            self.asm_state_manager.fetch_most_recent_state_blocking()?,
+            |block| self.asm_state_manager.get_state_blocking(block),
+        )
+    }
+
+    /// Returns the latest persisted anchor state on the canonical L1 chain.
+    ///
+    /// Unlike [`Self::fetch_canonical_asm_state_blocking`], this does not require
+    /// ASM logs, so it includes the genesis anchor. It returns [`None`] when no
+    /// canonical snapshot is available, including when no canonical L1 index exists.
+    /// It never treats the most recent orphan as canonical.
+    pub fn fetch_canonical_asm_anchor_state_blocking(
+        &self,
+    ) -> DbResult<Option<(L1BlockCommitment, AnchorState)>> {
+        self.resolve_canonical_asm_state_blocking(
+            self.asm_state_manager
+                .fetch_most_recent_anchor_state_blocking()?,
+            |block| self.asm_state_manager.get_anchor_state_blocking(block),
+        )
+    }
+
+    /// Resolves either ASM record shape against the same uncached canonical index.
+    fn resolve_canonical_asm_state_blocking<S>(
+        &self,
+        recent: Option<(L1BlockCommitment, S)>,
+        get_state: impl Fn(L1BlockCommitment) -> DbResult<Option<S>>,
+    ) -> DbResult<Option<(L1BlockCommitment, S)>> {
+        let Some((recent_block, recent_state)) = recent else {
             return Ok(None);
         };
 
@@ -213,7 +240,7 @@ impl NodeStorage {
                 continue;
             };
             let block = L1BlockCommitment::new(height, blockid);
-            if let Some(state) = self.asm_state_manager.get_state_blocking(block)? {
+            if let Some(state) = get_state(block)? {
                 return Ok(Some((block, state)));
             }
         }
@@ -369,6 +396,81 @@ mod tests {
                 .extend_canonical_chain(&blkid(height as u8), height)
                 .expect("test: extend canonical chain");
         }
+    }
+
+    #[test]
+    fn canonical_anchor_resolution_includes_genesis_without_logs() {
+        let storage = setup();
+        extend_canonical(&storage, 10);
+        let genesis = L1BlockCommitment::new(10, blkid(10));
+        let anchor = make_test_asm_state().state().clone();
+        storage
+            .asm()
+            .put_anchor_state_blocking(genesis, anchor.clone())
+            .unwrap();
+
+        assert!(storage
+            .fetch_canonical_asm_state_blocking()
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            storage.fetch_canonical_asm_anchor_state_blocking().unwrap(),
+            Some((genesis, anchor))
+        );
+    }
+
+    #[test]
+    fn canonical_anchor_resolution_skips_latest_orphan_without_requiring_logs() {
+        for orphan in [
+            L1BlockCommitment::new(12, blkid(99)),
+            L1BlockCommitment::new(10, blkid(200)),
+        ] {
+            let storage = setup();
+            extend_canonical(&storage, 10);
+            let canonical = L1BlockCommitment::new(10, blkid(10));
+            let anchor = make_test_asm_state().state().clone();
+            storage
+                .asm()
+                .put_anchor_state_blocking(canonical, anchor.clone())
+                .unwrap();
+            storage
+                .asm()
+                .put_anchor_state_blocking(orphan, anchor.clone())
+                .unwrap();
+            assert_eq!(
+                storage
+                    .asm()
+                    .fetch_most_recent_anchor_state_blocking()
+                    .unwrap()
+                    .unwrap()
+                    .0,
+                orphan
+            );
+            assert_eq!(
+                storage.fetch_canonical_asm_anchor_state_blocking().unwrap(),
+                Some((canonical, anchor))
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_anchor_resolution_requires_a_canonical_snapshot() {
+        let storage = setup();
+        let anchor = make_test_asm_state().state().clone();
+        let orphan = L1BlockCommitment::new(12, blkid(99));
+        storage
+            .asm()
+            .put_anchor_state_blocking(orphan, anchor)
+            .unwrap();
+        assert!(storage
+            .fetch_canonical_asm_anchor_state_blocking()
+            .unwrap()
+            .is_none());
+        extend_canonical(&storage, 10);
+        assert!(storage
+            .fetch_canonical_asm_anchor_state_blocking()
+            .unwrap()
+            .is_none());
     }
 
     #[test]
