@@ -182,7 +182,7 @@ strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4
 # asm
 strata-asm-admin-threshold-sig = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0-rc.6" }
 strata-asm-admin-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0-rc.6" }
-strata-asm-bridge-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0-rc.6" }
+strata-asm-bridge-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0-rc.4" }
 strata-asm-checkpoint-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0-rc.6" }
 strata-asm-common = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0-rc.6" }
 strata-asm-logs = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0-rc.6" }
