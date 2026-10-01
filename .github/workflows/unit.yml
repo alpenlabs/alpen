@@ -65,12 +65,12 @@ jobs:
           rustup default "$RUST_NIGHTLY"
 
       - name: Install latest nextest release
-        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
+        uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2.87.14
         with:
           tool: nextest
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@5b4d68e2e660441203ab128a23676f1e4faf1532 # v2.86.3
+        uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2.87.14
         with:
           tool: cargo-llvm-cov
 
@@ -150,6 +150,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Decide whether the needed jobs succeeded or failed
-        uses: re-actors/alls-green@05ac9388f0aebcb5727afa17fcccfecd6f8ec5fe # release/v1
+        uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # release/v1
         with:
           jobs: ${{ toJSON(needs) }}
