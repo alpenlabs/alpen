@@ -6,8 +6,8 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use strata_chain_worker::{ChainWorkerHandle, WorkerError};
 use strata_consensus_logic::{
-    BlockExecutionOutcome, ChainController, CsmStatusReader, ExecutionDeferral, FcmContext,
-    FcmServiceHandle, FcmStartupReconciler, FcmStorage,
+    BlockExecutionOutcome, BlockValidationOutcome, ChainController, CsmStatusReader,
+    ExecutionDeferral, FcmContext, FcmServiceHandle, FcmStartupReconciler, FcmStorage,
     ol_mmr_reconcile::{
         OLMmrReconcileResult, OLMmrReconcileTarget, reconcile_ol_mmr_index_to_target,
     },
@@ -23,6 +23,7 @@ use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLParams;
+use strata_ol_state_types::ExecError;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
@@ -39,6 +40,93 @@ struct StrataFcmContext {
     chain_worker: Arc<ChainWorkerHandle>,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     status_channel: Arc<StatusChannel>,
+}
+
+enum WorkerFailureOutcome {
+    Deferred(ExecutionDeferral),
+    Rejected(ExecError),
+}
+
+/// Retries explicit contention and temporary I/O, including exhausted attempts.
+fn is_retryable_database_error(error: &DbError) -> bool {
+    error.is_retryable()
+}
+
+fn classify_worker_failure(
+    block: OLBlockCommitment,
+    error: WorkerError,
+) -> anyhow::Result<WorkerFailureOutcome> {
+    match error {
+        WorkerError::MissingPreState(_)
+        | WorkerError::MissingOLBlock(_)
+        | WorkerError::MissingSummaryForEpoch(_) => Ok(WorkerFailureOutcome::Deferred(
+            ExecutionDeferral::Dependency,
+        )),
+        WorkerError::ManifestPending { height, reason } => {
+            debug!(%block, height, ?reason, "deferring unvalidated ASM manifest");
+            Ok(WorkerFailureOutcome::Deferred(
+                ExecutionDeferral::Dependency,
+            ))
+        }
+        WorkerError::ManifestStorage(err) if is_retryable_database_error(&err) => {
+            warn!(%block, %err, "canonical manifest storage unavailable");
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        }
+        error @ WorkerError::ManifestStorage(_) => Err(error).with_context(|| {
+            format!(
+                "cannot validate block {block}: canonical manifest storage failed; repair required"
+            )
+        }),
+        WorkerError::Database(DbError::BlockIndexingConflict {
+            attempted,
+            last_applied,
+            ..
+        }) if attempted == block
+            && last_applied.slot() >= block.slot()
+            && last_applied.blkid() != block.blkid() =>
+        {
+            debug!(%block, %last_applied, "deferring competing block until indexing is reconciled");
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Indexing))
+        }
+        error @ WorkerError::Database(DbError::BlockIndexingConflict { .. }) => Err(error)
+            .with_context(|| {
+                format!(
+                    "cannot execute block {block}: inconsistent local indexing; repair required"
+                )
+            }),
+        WorkerError::Database(error) if is_retryable_database_error(&error) => {
+            warn!(%block, %error, "deferring block after local worker failure");
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        }
+        WorkerError::StfExecution(error) => {
+            warn!(%block, %error, "rejecting invalid block inputs");
+            Ok(WorkerFailureOutcome::Rejected(error))
+        }
+        error => Err(error.into()),
+    }
+}
+
+/// Missing durable OL inputs require repair before restored blocks can be validated.
+fn classify_stored_input_failure(
+    block: OLBlockCommitment,
+    error: WorkerError,
+) -> anyhow::Result<WorkerFailureOutcome> {
+    match error {
+        error @ (WorkerError::MissingPreState(_) | WorkerError::MissingOLBlock(_)) => Err(error)
+            .with_context(|| {
+                format!(
+                    "cannot validate stored block {block}: missing durable OL data; repair required"
+                )
+            }),
+        // Input validation performs no indexing writes, so a conflict here is unexpected.
+        error @ WorkerError::Database(DbError::BlockIndexingConflict { .. }) => Err(error)
+            .with_context(|| {
+                format!("cannot validate stored block {block}: unexpected indexing conflict; repair required")
+            }),
+        error => classify_worker_failure(block, error).with_context(|| {
+            format!("cannot validate stored block {block}: local failure; repair required")
+        }),
+    }
 }
 
 impl StrataFcmContext {
@@ -59,11 +147,6 @@ impl StrataFcmContext {
     }
 }
 
-/// Retries explicit contention and temporary I/O, including exhausted attempts.
-fn is_retryable_database_error(error: &DbError) -> bool {
-    error.is_retryable()
-}
-
 #[async_trait]
 impl ChainController for StrataFcmContext {
     async fn try_exec_block(
@@ -72,52 +155,29 @@ impl ChainController for StrataFcmContext {
     ) -> anyhow::Result<BlockExecutionOutcome> {
         match self.chain_worker.try_exec_block(block).await {
             Ok(()) => Ok(BlockExecutionOutcome::Accepted),
-            Err(
-                WorkerError::MissingPreState(_)
-                | WorkerError::MissingOLBlock(_)
-                | WorkerError::MissingSummaryForEpoch(_),
-            ) => Ok(BlockExecutionOutcome::Deferred(
-                ExecutionDeferral::Dependency,
-            )),
-            Err(WorkerError::Database(DbError::BlockIndexingConflict {
-                attempted,
-                last_applied,
-                ..
-            })) if attempted == block
-                && last_applied.slot() >= block.slot()
-                && last_applied.blkid() != block.blkid() =>
-            {
-                debug!(%block, %last_applied, "deferring competing block until indexing is reconciled");
-                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Indexing))
-            }
-            Err(err @ WorkerError::Database(DbError::BlockIndexingConflict { .. })) => Err(err)
-                .with_context(|| {
-                    format!(
-                        "cannot execute block {block}: inconsistent local indexing; repair required"
-                    )
-                }),
-            Err(WorkerError::Database(err)) if is_retryable_database_error(&err) => {
-                warn!(%block, %err, "deferring block after local worker failure");
-                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
-            }
-            Err(WorkerError::ManifestPending { height, reason }) => {
-                debug!(%block, height, ?reason, "deferring unvalidated ASM manifest");
-                Ok(BlockExecutionOutcome::Deferred(
-                    ExecutionDeferral::Dependency,
-                ))
-            }
-            Err(WorkerError::ManifestStorage(err)) if is_retryable_database_error(&err) => {
-                warn!(%block, %err, "canonical manifest storage unavailable");
-                Ok(BlockExecutionOutcome::Deferred(ExecutionDeferral::Storage))
-            }
-            Err(err @ WorkerError::ManifestStorage(_)) => Err(err).with_context(|| {
-                format!("cannot validate block {block}: canonical manifest storage failed; repair required")
-            }),
-            Err(WorkerError::StfExecution(err)) => {
-                warn!(%block, %err, "rejecting invalid block execution");
-                Ok(BlockExecutionOutcome::Rejected)
-            }
-            Err(err) => Err(err.into()),
+            Err(error) => match classify_worker_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockExecutionOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(_) => Ok(BlockExecutionOutcome::Rejected),
+            },
+        }
+    }
+
+    async fn validate_block_inputs(
+        &self,
+        block: OLBlockCommitment,
+    ) -> anyhow::Result<BlockValidationOutcome> {
+        match self.chain_worker.validate_block_inputs(block).await {
+            Ok(()) => Ok(BlockValidationOutcome::Authenticated),
+            Err(error) => match classify_stored_input_failure(block, error)? {
+                WorkerFailureOutcome::Deferred(reason) => {
+                    Ok(BlockValidationOutcome::Deferred(reason))
+                }
+                WorkerFailureOutcome::Rejected(error) => {
+                    Ok(BlockValidationOutcome::Rejected(error))
+                }
+            },
         }
     }
 
@@ -336,6 +396,216 @@ pub(crate) fn start(
         checkpoint_state_rx,
         nodectx.executor().clone(),
     ))
+}
+
+#[cfg(test)]
+mod worker_failure_tests {
+    use strata_ol_state_types::StateError;
+    use strata_primitives::Buf32;
+
+    use super::*;
+
+    #[test]
+    fn internal_worker_failures_propagate_without_rejecting_blocks() {
+        let block = OLBlockCommitment::null();
+        for error in [
+            WorkerError::ApplyWriteBatch {
+                commitment: block,
+                source: StateError::InsufficientState,
+            },
+            WorkerError::SnarkUpdateLogMismatch {
+                expected: 1,
+                found: 2,
+            },
+            WorkerError::WorkerExited,
+            WorkerError::Unexpected("injected invariant failure".to_owned()),
+            WorkerError::Database(DbError::BlockIndexingConflict {
+                epoch: 1,
+                attempted: block,
+                last_applied: block,
+            }),
+        ] {
+            let expected = error.to_string();
+            let failure = match classify_worker_failure(block, error) {
+                Err(failure) => failure,
+                Ok(_) => panic!("internal failures must propagate"),
+            };
+            assert_eq!(
+                failure.downcast::<WorkerError>().unwrap().to_string(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn missing_predecessor_summary_defers_execution() {
+        assert!(matches!(
+            classify_worker_failure(
+                OLBlockCommitment::null(),
+                WorkerError::MissingSummaryForEpoch(1)
+            ),
+            Ok(WorkerFailureOutcome::Deferred(
+                ExecutionDeferral::Dependency
+            ))
+        ));
+    }
+
+    #[test]
+    fn indexing_conflicts_defer_only_a_matching_competing_block() {
+        let block = OLBlockCommitment::new(2, OLBlockId::from(Buf32::from([1; 32])));
+        let other = OLBlockId::from(Buf32::from([2; 32]));
+        for last_applied in [
+            OLBlockCommitment::new(2, other),
+            OLBlockCommitment::new(3, other),
+        ] {
+            assert!(matches!(
+                classify_worker_failure(
+                    block,
+                    WorkerError::Database(DbError::BlockIndexingConflict {
+                        epoch: 1,
+                        attempted: block,
+                        last_applied,
+                    })
+                ),
+                Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Indexing))
+            ));
+        }
+        for (attempted, last_applied) in [
+            (OLBlockCommitment::new(2, other), block),
+            (block, OLBlockCommitment::new(1, other)),
+            (block, block),
+            (block, OLBlockCommitment::new(3, *block.blkid())),
+        ] {
+            let failure = match classify_worker_failure(
+                block,
+                WorkerError::Database(DbError::BlockIndexingConflict {
+                    epoch: 1,
+                    attempted,
+                    last_applied,
+                }),
+            ) {
+                Err(failure) => failure,
+                Ok(_) => panic!("inconsistent indexing conflict must propagate"),
+            };
+            assert!(failure.to_string().contains("repair required"));
+        }
+    }
+
+    #[test]
+    fn storage_failures_defer_and_protocol_failures_reject() {
+        let block = OLBlockCommitment::null();
+        assert!(matches!(
+            classify_worker_failure(block, WorkerError::Database(DbError::Busy)),
+            Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+        ));
+        assert!(matches!(
+            classify_worker_failure(block, WorkerError::StfExecution(ExecError::ChainIntegrity)),
+            Ok(WorkerFailureOutcome::Rejected(ExecError::ChainIntegrity))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod stored_input_failure_tests {
+    use strata_chain_worker::ManifestPendingReason;
+    use strata_primitives::Buf32;
+
+    use super::*;
+
+    #[test]
+    fn missing_durable_inputs_require_repair_only_for_stored_validation() {
+        let block = OLBlockCommitment::null();
+        for error in [
+            WorkerError::MissingPreState(block),
+            WorkerError::MissingOLBlock(*block.blkid()),
+        ] {
+            let failure = match classify_stored_input_failure(block, error) {
+                Err(failure) => failure,
+                Ok(_) => panic!("missing durable inputs must fail validation"),
+            };
+            assert!(failure.to_string().contains("repair required"));
+            let error = failure.downcast::<WorkerError>().unwrap();
+            assert!(matches!(
+                classify_worker_failure(block, error),
+                Ok(WorkerFailureOutcome::Deferred(
+                    ExecutionDeferral::Dependency
+                ))
+            ));
+        }
+    }
+
+    #[test]
+    fn stored_validation_propagates_permanent_database_failures() {
+        let block = OLBlockCommitment::null();
+        for database_error in [
+            DbError::CodecError("corrupt parent header".to_owned()),
+            DbError::WorkerFailedStrangely("database worker exited".to_owned()),
+            DbError::BlockIndexingConflict {
+                epoch: 1,
+                attempted: block,
+                last_applied: OLBlockCommitment::new(1, OLBlockId::from(Buf32::from([1; 32]))),
+            },
+            DbError::RetriesExhausted {
+                attempts: 3,
+                last_error: Box::new(DbError::CodecError("corrupt parent state".to_owned())),
+            },
+        ] {
+            for error in [
+                WorkerError::Database(database_error.clone()),
+                WorkerError::ManifestStorage(database_error.clone()),
+            ] {
+                let expected = error.to_string();
+                let failure = match classify_stored_input_failure(block, error) {
+                    Err(failure) => failure,
+                    Ok(_) => panic!("permanent failures must abort restored validation"),
+                };
+                assert!(failure.to_string().contains("repair required"));
+                assert_eq!(
+                    failure.downcast::<WorkerError>().unwrap().to_string(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stored_validation_retries_database_contention() {
+        let block = OLBlockCommitment::null();
+        for database_error in [
+            DbError::Busy,
+            DbError::RetriesExhausted {
+                attempts: 3,
+                last_error: Box::new(DbError::Busy),
+            },
+        ] {
+            for error in [
+                WorkerError::Database(database_error.clone()),
+                WorkerError::ManifestStorage(database_error.clone()),
+            ] {
+                assert!(matches!(
+                    classify_stored_input_failure(block, error),
+                    Ok(WorkerFailureOutcome::Deferred(ExecutionDeferral::Storage))
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn stored_validation_still_waits_for_asm_output() {
+        let block = OLBlockCommitment::null();
+        assert!(matches!(
+            classify_stored_input_failure(
+                block,
+                WorkerError::ManifestPending {
+                    height: 1,
+                    reason: ManifestPendingReason::MissingManifest,
+                },
+            ),
+            Ok(WorkerFailureOutcome::Deferred(
+                ExecutionDeferral::Dependency
+            ))
+        ));
+    }
 }
 
 #[cfg(test)]
