@@ -13,5 +13,9 @@ pub(crate) fn open_database(path: &Path) -> Result<Arc<SledBackend>, DisplayedEr
         .internal_error("Could not open sled backend")
         .map(Arc::new)?;
 
+    backend
+        .initialize_status_scan_index()
+        .internal_error("Could not initialize OL status scan index")?;
+
     Ok(backend)
 }

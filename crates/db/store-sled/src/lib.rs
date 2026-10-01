@@ -69,9 +69,10 @@ pub fn open_sled_backend(
     ops_config: SledDbConfig,
 ) -> anyhow::Result<Arc<SledBackend>> {
     let sled_db = open_sled_database(datadir, dbname)?;
-    SledBackend::new(sled_db, ops_config)
-        .map_err(|e| anyhow::anyhow!("Failed to initialize sled backend: {}", e))
-        .map(Arc::new)
+    let backend = SledBackend::new(sled_db, ops_config)
+        .map_err(|e| anyhow::anyhow!("Failed to initialize sled backend: {}", e))?;
+    backend.initialize_status_scan_index()?;
+    Ok(Arc::new(backend))
 }
 
 /// Complete Sled backend with all database types
@@ -93,6 +94,11 @@ pub struct SledBackend {
 }
 
 impl SledBackend {
+    /// Initializes the OL status scan index before starting database users.
+    pub fn initialize_status_scan_index(&self) -> DbResult<()> {
+        self.ol_block_db.initialize_status_scan_index()
+    }
+
     pub fn new(sled_db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Self> {
         let db_ref = &sled_db;
         let config_ref = &config;
