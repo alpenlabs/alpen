@@ -15,7 +15,7 @@ use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 
 use crate::{
     BlockComponents, BlockInfo, EpochDaReplayError, EpochInfo, ExecError, OLSpecId, apply_da_epoch,
-    verify_block,
+    validate_manifest_heights, verify_block, verify_header_continuity,
 };
 
 /// An epoch built with the V1 STF, with its pre-genesis and pre-epoch states.
@@ -184,5 +184,23 @@ fn test_apply_da_epoch_under_v0_is_unimplemented() {
     assert!(matches!(
         err,
         EpochDaReplayError::Exec(ExecError::UnimplementedSpec(OLSpecId::V0))
+    ));
+}
+
+#[test]
+fn test_input_preflight_under_v0_is_unimplemented() {
+    let epoch = build_v1_epoch();
+    let header_error = verify_header_continuity(OLSpecId::V0, epoch.genesis.header(), None)
+        .expect_err("V0 input validation must not use V1 rules");
+    assert!(matches!(
+        header_error,
+        ExecError::UnimplementedSpec(OLSpecId::V0)
+    ));
+
+    let height_error = validate_manifest_heights(OLSpecId::V0, 0, &[])
+        .expect_err("even empty manifest ranges require implemented rules");
+    assert!(matches!(
+        height_error,
+        ExecError::UnimplementedSpec(OLSpecId::V0)
     ));
 }

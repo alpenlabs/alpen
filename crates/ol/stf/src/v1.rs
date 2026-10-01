@@ -1,6 +1,7 @@
 //! The genesis OL rules, implemented by [`strata_ol_stf_v1`].
 
 use strata_acct_types::{AccountId, TxEffects};
+use strata_identifiers::L1Height;
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_params::OLRuntimeParams;
@@ -142,6 +143,20 @@ impl OLStfSpec for StfV1 {
         context: &BasicExecContext<'_>,
     ) -> ExecResult<()> {
         v1::process_epoch_terminal(state, context)
+    }
+
+    fn verify_header_continuity(
+        header: &OLBlockHeaderV1,
+        parent_header: Option<&OLBlockHeaderV1>,
+    ) -> ExecResult<()> {
+        v1::verify_header_continuity(header, parent_header)
+    }
+
+    fn validate_manifest_heights(
+        last_l1_height: L1Height,
+        manifests: &[AsmManifest],
+    ) -> ExecResult<()> {
+        v1::validate_manifest_heights(last_l1_height, manifests)
     }
 
     fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) -> ExecResult<()> {

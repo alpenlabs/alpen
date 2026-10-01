@@ -1,6 +1,7 @@
 //! The operations an OL rules version implements, and dispatch by spec.
 
 use strata_acct_types::{AccountId, TxEffects};
+use strata_identifiers::L1Height;
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_types::{IAccountState, IStateAccessorMut, TxProofIndexer};
@@ -103,6 +104,16 @@ pub(crate) trait OLStfSpec {
     fn process_epoch_terminal<S: IStateAccessorMut>(
         state: &mut S,
         context: &BasicExecContext<'_>,
+    ) -> ExecResult<()>;
+
+    fn verify_header_continuity(
+        header: &OLBlockHeaderV1,
+        parent_header: Option<&OLBlockHeaderV1>,
+    ) -> ExecResult<()>;
+
+    fn validate_manifest_heights(
+        last_l1_height: L1Height,
+        manifests: &[AsmManifest],
     ) -> ExecResult<()>;
 
     fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) -> ExecResult<()>;

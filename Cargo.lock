@@ -9822,6 +9822,7 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-codec",
+ "strata-identifiers",
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
  "strata-ol-params",

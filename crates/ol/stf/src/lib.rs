@@ -52,7 +52,8 @@ mod spec;
 mod v1;
 
 pub use block::{
-    construct_block, execute_and_complete_block, execute_block_batch_predrain, verify_block,
+    construct_block, execute_and_complete_block, execute_block_batch_predrain,
+    validate_manifest_heights, verify_block, verify_header_continuity,
 };
 pub use da::{EpochDaReplayError, apply_da_epoch, verify_epoch_with_diff};
 pub use strata_ol_state_types::OLSpecId;
