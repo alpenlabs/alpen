@@ -10651,7 +10651,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.59.0",
@@ -11313,12 +11313,12 @@ checksum = "9ea3136b675547379c4bd395ca6b938e5ad3c3d20fad76e7fe85f9e0d011419c"
 [[package]]
 name = "typed-sled"
 version = "0.1.1"
-source = "git+https://github.com/alpenlabs/typed-sled#91ec668184350b8121625942c03152aade330b4b"
+source = "git+https://github.com/alpenlabs/typed-sled#b26b0c13cc47b1b34254de83c9ca66317725023c"
 dependencies = [
  "dashmap",
  "rkyv",
  "sled",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
