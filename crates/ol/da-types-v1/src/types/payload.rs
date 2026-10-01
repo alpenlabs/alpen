@@ -30,7 +30,9 @@ use super::{
 /// nested types must either append a member to a compound type or introduce a new payload version;
 /// never edit V1 in place or regenerate its fixtures. Appending is compatible in one direction
 /// only: decoders read compound members positionally, so a decoder that predates a member cannot
-/// read a payload that sets it, and rules that predate a member must leave it unset.
+/// read a payload that sets it, and rules that predate a member must leave it unset. Older
+/// decoders also ignored the presence bits past their members, so payloads written under older
+/// rules decode by those rules: V0.s with [`decode_v0_payload_bytes`](super::decode_v0_payload_bytes).
 #[derive(Debug, Codec)]
 pub struct OLDaPayloadV1 {
     /// State diff for the epoch.
@@ -365,7 +367,7 @@ mod tests {
     use super::*;
     use crate::{
         AccountDiffEntryV1, DaMessageEntryV1, DaProofStateDiffV1, NewAccountEntryV1, OLDaSchemeV1,
-        SnarkAccountInitV1,
+        SnarkAccountInitV1, decode_v0_payload_bytes,
     };
 
     fn test_account_id(seed: u8) -> AccountId {
@@ -1549,11 +1551,60 @@ mod tests {
         );
     }
 
-    /// Diff that `releases/0.3.0` encoded into [`V030_APPLY_PAYLOAD_HEX`].
+    /// Returns `canonical` with the snark diff presence bit after the V0
+    /// members set and nothing else changed.
+    ///
+    /// `with_update_vk` is the encoding of the same diff with `update_vk` set,
+    /// which differs from `canonical` first in that bit, then in the key bytes.
+    fn set_bit_past_v0_snark_members(canonical: &[u8], with_update_vk: &[u8]) -> Vec<u8> {
+        let offset = canonical
+            .iter()
+            .zip(with_update_vk)
+            .position(|(canonical, with_update_vk)| canonical != with_update_vk)
+            .expect("the encodings differ");
+        assert_eq!(
+            canonical[offset] | 0b1000,
+            with_update_vk[offset],
+            "the encodings first differ in the update_vk presence bit"
+        );
+        let mut bytes = canonical.to_vec();
+        bytes[offset] |= 0b1000;
+        bytes
+    }
+
+    /// The V0 decoder reads a canonical V0 payload as the V1 decoder
+    /// does.
+    #[test]
+    fn test_v0_decoder_reads_golden_payload_like_v1() {
+        let golden = hex_to_bytes(GOLDEN_PAYLOAD_V1_HEX);
+
+        let v0 = decode_v0_payload_bytes(&golden).expect("V0 decoder reads the golden");
+        let v1 = decode_ol_da_payload_bytes(&golden).expect("V1 decoder reads the golden");
+
+        assert_eq!(encode_to_vec(&v0).expect("re-encode"), golden);
+        assert_eq!(encode_to_vec(&v1).expect("re-encode"), golden);
+    }
+
+    /// The V0 decoder ignores the snark diff presence bits past its three
+    /// members. A payload that sets the next one decodes by the V0 rules as the
+    /// canonical payload, while the V1 decoder reads the bit as `update_vk`
+    /// and fails.
+    #[test]
+    fn test_v0_decoder_ignores_snark_bits_past_its_members() {
+        let golden = hex_to_bytes(GOLDEN_PAYLOAD_V1_HEX);
+        let flagged =
+            set_bit_past_v0_snark_members(&golden, &hex_to_bytes(GOLDEN_PAYLOAD_V1_UPDATE_VK_HEX));
+
+        let v0 = decode_v0_payload_bytes(&flagged).expect("V0 decoder ignores the bit");
+        assert_eq!(encode_to_vec(&v0).expect("re-encode"), golden);
+        assert!(decode_ol_da_payload_bytes(&flagged).is_err());
+    }
+
+    /// Diff that `releases/0.3.0` encoded into [`V0_APPLY_PAYLOAD_HEX`].
     ///
     /// It has the shape of [`populated_state_diff`] but targets the accounts of
     /// [`pre_state_with_accounts`], so it applies to a real pre-state.
-    fn v030_apply_fixture_diff(pre_accounts: &PreStateAccounts) -> OLStateDiffV1 {
+    fn v0_apply_fixture_diff(pre_accounts: &PreStateAccounts) -> OLStateDiffV1 {
         let snark_acct = build::snark_init(
             500,
             Hash::from([0x11u8; 32]),
@@ -1592,27 +1643,27 @@ mod tests {
     }
 
     /// OL DA payload that the `releases/0.3.0` (`4221af71`) encoder produced from
-    /// [`v030_apply_fixture_diff`].
+    /// [`v0_apply_fixture_diff`].
     ///
     /// A scratch test on that branch built the diff with its own test builders against its
     /// `pre_state_with_accounts`, encoded it, and applied it through `OLDaSchemeV1::apply_to_state`.
-    /// It recorded [`V030_APPLY_PRE_STATE_ROOT`] and [`V030_APPLY_POST_STATE_ROOT`]. Unlike
+    /// It recorded [`V0_APPLY_PRE_STATE_ROOT`] and [`V0_APPLY_POST_STATE_ROOT`]. Unlike
     /// [`GOLDEN_PAYLOAD_V1_HEX`], whose account-diff serials fall in the system-reserved range,
     /// this payload applies to a real pre-state.
-    const V030_APPLY_PAYLOAD_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000008001ba030000008102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+    const V0_APPLY_PAYLOAD_HEX: &str = "030005840e0002a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a100000000000003e800a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a200000000000001f401111111111111111111111111111111111111111111111111111111111111111100010100020000008001ba030000008102070003032222222222222222222222222222222222222222222222222222222222222222020002b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b100000007000000000000000004eeeeeeeeb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b200000008000000000000000010cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
 
     /// State root `releases/0.3.0` computes for its `pre_state_with_accounts`.
-    const V030_APPLY_PRE_STATE_ROOT: &str =
+    const V0_APPLY_PRE_STATE_ROOT: &str =
         "5a1444b0158da7beeee080b771a4a075ef77ee0eed5d5411c6f4f01c1f72dcb4";
 
-    /// State root `releases/0.3.0` computes after applying [`V030_APPLY_PAYLOAD_HEX`] to its
+    /// State root `releases/0.3.0` computes after applying [`V0_APPLY_PAYLOAD_HEX`] to its
     /// `pre_state_with_accounts`.
-    const V030_APPLY_POST_STATE_ROOT: &str =
+    const V0_APPLY_POST_STATE_ROOT: &str =
         "15d6ea56864d907df65e642790ae4214b64870fa69e717dd891f7c091523493a";
 
     /// A payload that 0.3.0 encoded decodes here and applies to the post-state 0.3.0 computes.
     #[test]
-    fn test_v030_payload_applies_to_same_state_as_v030() {
+    fn test_v0_payload_applies_to_recorded_state() {
         let pre_accounts = pre_state_with_accounts();
         // 0.3.0 applied the payload to a V0 state, whose root is the bare
         // chainstate root.
@@ -1622,12 +1673,12 @@ mod tests {
         let pre_root = pre_state.compute_state_root().expect("pre-state root");
         assert_eq!(
             bytes_to_hex(pre_root.as_ref()),
-            V030_APPLY_PRE_STATE_ROOT,
+            V0_APPLY_PRE_STATE_ROOT,
             "pre-state must match the one 0.3.0 applied the payload to"
         );
 
-        let golden = hex_to_bytes(V030_APPLY_PAYLOAD_HEX);
-        let encoded = encode_to_vec(&OLDaPayloadV1::new(v030_apply_fixture_diff(&pre_accounts)))
+        let golden = hex_to_bytes(V0_APPLY_PAYLOAD_HEX);
+        let encoded = encode_to_vec(&OLDaPayloadV1::new(v0_apply_fixture_diff(&pre_accounts)))
             .expect("encode fixture diff");
         assert_eq!(encoded, golden, "encoder must reproduce the 0.3.0 bytes");
 
@@ -1636,7 +1687,7 @@ mod tests {
         OLDaSchemeV1::apply_to_state(payload, &mut state).expect("apply 0.3.0 payload");
 
         let post_root = state.compute_state_root().expect("post-state root");
-        assert_eq!(bytes_to_hex(post_root.as_ref()), V030_APPLY_POST_STATE_ROOT);
+        assert_eq!(bytes_to_hex(post_root.as_ref()), V0_APPLY_POST_STATE_ROOT);
 
         // The post-state root covers everything; these name the expected changes.
         assert_eq!(state.cur_slot(), 5);

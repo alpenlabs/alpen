@@ -7,6 +7,7 @@
 //! - [`account`]: Account diff types (AccountDiffV1)
 //! - [`snark`]: Snark account diff types (SnarkAccountDiffV1)
 //! - [`inbox`]: Inbox message buffer types (DaMessageEntryV1, InboxBufferV1)
+//! - [`v0`]: Decoding of V0 payloads, by the V0 rules
 
 mod account;
 mod global;
@@ -14,6 +15,7 @@ mod inbox;
 mod ledger;
 mod payload;
 mod snark;
+mod v0;
 
 // Re-export all public types for API stability
 pub use account::{AccountDiffTargetV1, AccountDiffV1};
@@ -25,6 +27,7 @@ pub use ledger::{
 };
 pub use payload::{OLDaPayloadV1, OLStateDiffV1, OLStateDiffWriterV1, decode_ol_da_payload_bytes};
 pub use snark::{DaProofStateDiffV1, DaProofStateV1, SnarkAccountDiffV1, SnarkAccountTargetV1};
+pub use v0::decode_v0_payload_bytes;
 
 /// Maximum size for snark account update VK in DA payloads.
 ///
