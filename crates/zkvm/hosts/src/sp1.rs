@@ -1,7 +1,6 @@
 use std::{
     env::var,
     fs,
-    path::PathBuf,
     sync::{Arc, LazyLock},
 };
 
@@ -12,12 +11,6 @@ use zkaleido_sp1_host::{SP1Host, SP1HostConfig};
 
 pub static ELF_BASE_PATH: LazyLock<String> =
     LazyLock::new(|| var("ELF_BASE_PATH").unwrap_or_else(|_| "elfs/sp1".to_string()));
-
-const GUEST_CHECKPOINT_ARTIFACT_MANIFEST_FILE: &str = "guest-checkpoint.artifact-manifest.json";
-
-pub fn checkpoint_runtime_params_manifest_path() -> PathBuf {
-    PathBuf::from(&*ELF_BASE_PATH).join(GUEST_CHECKPOINT_ARTIFACT_MANIFEST_FILE)
-}
 
 /// Defines a lazily initialized host for one guest program.
 ///

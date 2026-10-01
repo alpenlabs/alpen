@@ -1,13 +1,12 @@
 //! Task-key wrapper used by the integrated checkpoint prover.
 //!
-//! Lives in a shared crate so the running node (`bin/strata`) and offline
-//! admin tooling (`bin/strata-dbtool`) agree on the on-disk byte format
-//! for entries in the [`strata_db_types::prover_task::ProverTaskDatabase`].
+//! Shares the task-key encoding between the running node and offline admin tools.
+//! The versioned task store adds the spec prefix used in the database.
 //!
 //! Wire format is the fixed-width big-endian concatenation
 //! `epoch(4) ‖ last_slot(8) ‖ last_blkid(32)`, 44 bytes total. Fixed-width
 //! big-endian keeps the encoding deterministic and lexicographically ordered
-//! by epoch, which is what the byte-keyed task tree relies on.
+//! by epoch within each spec in the database.
 
 use std::fmt;
 
@@ -41,7 +40,7 @@ impl CheckpointProofTask {
         self.0
     }
 
-    /// Encodes the task as its database key bytes.
+    /// Encodes the task as key bytes.
     ///
     /// See the module docs for the layout.
     pub fn to_key_bytes(&self) -> Vec<u8> {
@@ -52,7 +51,7 @@ impl CheckpointProofTask {
         out
     }
 
-    /// Decodes a task from its database key bytes.
+    /// Decodes a task from its key bytes.
     pub fn from_key_bytes(bytes: &[u8]) -> Result<Self, CheckpointProofTaskKeyError> {
         if bytes.len() != KEY_LEN {
             return Err(CheckpointProofTaskKeyError(bytes.len()));

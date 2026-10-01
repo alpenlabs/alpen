@@ -55,3 +55,7 @@ max_fee_rate_sat_vb = 1000
 # Uncomment for real SP1 proving (requires strata built with prover,sp1 features)
 # [prover]
 # backend = "sp1"
+# At least one explicit artifact bundle is required for SP1 proving.
+# [[prover.artifacts]]
+# spec = 1
+# bundle_dir = "elfs/sp1"

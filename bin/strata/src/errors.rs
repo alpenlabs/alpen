@@ -60,10 +60,6 @@ pub(crate) enum InitError {
 
     #[error("database: {0}")]
     Database(#[from] DbError),
-
-    #[cfg(feature = "prover")]
-    #[error("invalid prover configuration: {0}")]
-    InvalidProverConfig(String),
 }
 
 #[derive(Debug, Error)]

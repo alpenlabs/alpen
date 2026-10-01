@@ -31,6 +31,17 @@ impl ProverTaskDbManager {
         Self { ops }
     }
 
+    /// Lists every persisted task, including terminal records.
+    ///
+    /// Namespace adapters use this complete view for accurate scoped task counts.
+    pub fn list_all_tasks(&self) -> ProverResult<Vec<TaskRecord>> {
+        let items = self.ops.list_all_tasks_blocking().map_err(db_err)?;
+        Ok(items
+            .into_iter()
+            .map(|(key, data)| TaskRecord::from_parts(key, data))
+            .collect())
+    }
+
     /// Deletes a task record by key.
     pub fn delete_task(&self, key: &[u8]) -> DbResult<bool> {
         self.ops.delete_task_blocking(key.to_vec())
