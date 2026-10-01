@@ -64,8 +64,8 @@ impl ProcessorArtifactData {
     /// Attempts to decode the artifact data according to some concrete type.
     ///
     /// The caller is responsible for checking [`ProcessorArtifactData::exec_version`]
-    /// against the stage's current version first; decoding data written by a
-    /// different version may succeed while producing a stale artifact.
+    /// with the stage first; decoding data written by a version the stage
+    /// doesn't accept may succeed while producing a stale artifact.
     pub fn try_decode_artifact<A: ProcArtifact>(&self) -> Result<A, ProcError> {
         A::from_buf(self.artifact())
     }

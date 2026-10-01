@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use strata_gchain_types::*;
 
 use crate::store::{ArtifactRecord, ExecutorStore};
-use crate::tracking::TrackingState;
+use crate::tracking::{CommitIndex, TrackingState};
 
 /// In-memory [`ExecutorStore`], for tests and executors that don't need to
 /// survive a restart.
@@ -17,6 +17,7 @@ pub struct MemExecutorStore<S: GChainSpec> {
 struct MemStoreInner<S: GChainSpec> {
     artifacts: BTreeMap<(LinkRef<S>, ProcId), ProcessorArtifactData>,
     tracking: Option<TrackingState<S>>,
+    segments: BTreeMap<CommitIndex, LinkPath<S>>,
 }
 
 impl<S: GChainSpec> MemExecutorStore<S> {
@@ -25,6 +26,7 @@ impl<S: GChainSpec> MemExecutorStore<S> {
             inner: Mutex::new(MemStoreInner {
                 artifacts: BTreeMap::new(),
                 tracking: None,
+                segments: BTreeMap::new(),
             }),
         }
     }
@@ -53,6 +55,24 @@ impl<S: GChainSpec> ExecutorStore for MemExecutorStore<S> {
 
     fn load_tracking(&self) -> Result<Option<TrackingState<S>>, BoxedError> {
         self.with_inner(|inner| inner.tracking.clone())
+    }
+
+    fn store_commit_segment(&self, idx: CommitIndex, path: &LinkPath<S>) -> Result<(), BoxedError> {
+        self.with_inner(|inner| {
+            inner.segments.insert(idx, path.clone());
+        })
+    }
+
+    fn load_commit_segment(&self, idx: CommitIndex) -> Result<Option<LinkPath<S>>, BoxedError> {
+        self.with_inner(|inner| inner.segments.get(&idx).cloned())
+    }
+
+    fn discard_commit_segments_from(&self, idx: CommitIndex) -> Result<(), BoxedError> {
+        self.with_inner(|inner| inner.segments.retain(|i, _| *i < idx))
+    }
+
+    fn discard_commit_segments_before(&self, idx: CommitIndex) -> Result<(), BoxedError> {
+        self.with_inner(|inner| inner.segments.retain(|i, _| *i >= idx))
     }
 
     fn store_artifact(&self, record: &ArtifactRecord<S>) -> Result<(), BoxedError> {

@@ -1,15 +1,15 @@
 //! Running the pipeline's stages and keeping what they produce.
 //!
 //! This is the execution half of an executor's bookkeeping: which artifacts
-//! each stage has produced for which links, and which committed links a stage
-//! could no longer undo.  It never decides which links to run or which paths
+//! each stage has for which links, whether it still stands behind them or
+//! only committed with them.  It never decides which links to run or which paths
 //! to commit, and it does no store I/O: the executor hands it paths it worked
 //! out from the provider, feeds it the stored artifacts those paths need,
 //! and persists the artifacts a run hands back.  The stages' own side effects
 //! (committing, pruning) do happen here, since driving them is the runner's
 //! job.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use strata_gchain_types::*;
@@ -55,10 +55,11 @@ pub(crate) struct StageRunner<S: GChainSpec> {
     pipeline: StagePipeline<S>,
     cache: ArtifactCache<S>,
 
-    /// Committed links with the stages whose artifact for them can't be used:
-    /// either stored by another version of the stage, or never produced
-    /// because the stage was added after the link was committed.
-    stale_links: BTreeMap<LinkRef<S>, Vec<ProcId>>,
+    /// Artifacts stored by versions of their stages that no longer stand for
+    /// their links.  They don't count as artifacts for anything but rolling
+    /// the stage back over what they committed.
+    // TODO(trey): try to rework this so that it only exists in the reproc executor
+    outdated: ArtifactCache<S>,
 }
 
 impl<S: GChainSpec> StageRunner<S> {
@@ -66,7 +67,7 @@ impl<S: GChainSpec> StageRunner<S> {
         Self {
             pipeline,
             cache: ArtifactCache::new(),
-            stale_links: BTreeMap::new(),
+            outdated: ArtifactCache::new(),
         }
     }
 
@@ -82,22 +83,48 @@ impl<S: GChainSpec> StageRunner<S> {
         self.cache.get_artifact(lref, proc_id)
     }
 
-    /// Takes in a stored artifact, keeping it if it came from the current
-    /// version of a stage still in the pipeline.
-    pub(crate) fn insert_stored(&mut self, record: ArtifactRecord<S>) -> Result<(), GExecError> {
+    /// Whether taking in a stored artifact needs its link's header, which is
+    /// what a stage judges an older version's artifact by.
+    pub(crate) fn check_needs_header(&self, record: &ArtifactRecord<S>) -> bool {
+        self.pipeline
+            .get_stage(record.proc_id())
+            .is_some_and(|stage| record.data().exec_version() < stage.chain_proc().proc_version())
+    }
+
+    /// Takes in a stored artifact from a stage still in the pipeline.
+    ///
+    /// It counts as the stage's artifact for the link if it came from the
+    /// stage's current version or an older one the stage still accepts for
+    /// the link.  Otherwise it's only kept for undoing what it committed, and
+    /// not even that if it no longer decodes.  Without the header an older
+    /// version's artifact is never accepted.
+    pub(crate) fn insert_stored(
+        &mut self,
+        record: ArtifactRecord<S>,
+        header: Option<&LinkHeader<S>>,
+    ) -> Result<(), GExecError> {
         let (lref, proc_id, data) = record.into_parts();
         let Some(stage) = self.pipeline.get_stage(proc_id) else {
             return Ok(());
         };
-        if data.exec_version() != stage.chain_proc().proc_version() {
-            return Ok(());
+        let chain_proc = stage.chain_proc();
+
+        let stored = data.exec_version();
+        let current = chain_proc.proc_version();
+        if stored > current {
+            return Err(GExecError::artifact_from_newer_version(&lref, proc_id));
         }
 
-        let artifact = stage
-            .chain_proc()
-            .decode_artifact(&data)
-            .map_err(|e| GExecError::Proc(proc_id, e))?;
-        self.cache.insert_artifact(lref, proc_id, artifact);
+        let acceptable = stored == current
+            || header.is_some_and(|h| chain_proc.check_artifact_acceptable(stored, &lref, h));
+        if acceptable {
+            let artifact = chain_proc
+                .decode_artifact(&data)
+                .map_err(|e| GExecError::Proc(proc_id, e))?;
+            self.cache.insert_artifact(lref, proc_id, artifact);
+        } else if let Ok(artifact) = chain_proc.decode_artifact(&data) {
+            self.outdated.insert_artifact(lref, proc_id, artifact);
+        }
         Ok(())
     }
 
@@ -106,19 +133,19 @@ impl<S: GChainSpec> StageRunner<S> {
     pub(crate) fn missing_stages(&self, lref: &LinkRef<S>) -> Vec<ProcId> {
         self.pipeline
             .proc_ids()
-            .filter(|proc_id| self.cache.get_artifact_dyn(lref, *proc_id).is_none())
+            .filter(|proc_id| !self.has_current(lref, *proc_id))
             .collect()
+    }
+
+    /// Whether a stage has a current artifact cached for a link.
+    pub(crate) fn has_current(&self, lref: &LinkRef<S>, proc_id: ProcId) -> bool {
+        self.cache.get_artifact_dyn(lref, proc_id).is_some()
     }
 
     /// Drops the cached artifacts of every link outside a set.
     pub(crate) fn retain_links(&mut self, keep: &HashSet<LinkRef<S>>) {
         self.cache.retain_links(keep);
-        self.stale_links.retain(|lref, _| keep.contains(lref));
-    }
-
-    /// Records that some stages have no usable artifact for a committed link.
-    pub(crate) fn mark_stale(&mut self, lref: LinkRef<S>, missing: Vec<ProcId>) {
-        self.stale_links.insert(lref, missing);
+        self.outdated.retain_links(keep);
     }
 
     /// Runs some stages on a link in canonical order, caching each artifact
@@ -163,6 +190,7 @@ impl<S: GChainSpec> StageRunner<S> {
             let data = ProcessorArtifactData::new(stage.chain_proc().proc_version(), encoded);
             produced.push(ArtifactRecord::new(lref.clone(), proc_id, data));
             self.cache.insert_artifact(lref.clone(), proc_id, artifact);
+            self.outdated.remove_artifact(lref, proc_id);
         }
         Ok(StageRun {
             outcome: LinkOutcome::Accepted,
@@ -184,13 +212,25 @@ impl<S: GChainSpec> StageRunner<S> {
         }
 
         self.cache.remove_link(lref);
-        self.stale_links.remove(lref);
+        self.outdated.remove_link(lref);
         Ok(())
+    }
+
+    /// Asks a stage whether it can pick up processing from a node.
+    pub(crate) fn check_can_resume_at(
+        &self,
+        proc_id: ProcId,
+        node: &NodeRef<S>,
+    ) -> Result<bool, GExecError> {
+        self.get_proc_stage(proc_id)
+            .chain_proc()
+            .check_can_resume_at(node)
+            .map_err(|e| GExecError::Proc(proc_id, e))
     }
 
     /// Initializes a stage's aggregated state at a node.
     pub(crate) fn init_stage(&self, proc_id: ProcId, node: &NodeRef<S>) -> Result<(), GExecError> {
-        self.stage(proc_id)
+        self.get_proc_stage(proc_id)
             .chain_proc()
             .on_init(node)
             .map_err(|e| GExecError::Proc(proc_id, e))
@@ -203,48 +243,32 @@ impl<S: GChainSpec> StageRunner<S> {
         proc_id: ProcId,
         path: &LinkPath<S>,
     ) -> Result<(), GExecError> {
-        for lref in path.links() {
-            let stale = self
-                .stale_links
-                .get(lref)
-                .is_some_and(|missing| missing.contains(&proc_id));
-            if stale {
-                return Err(GExecError::StaleArtifact {
-                    link: format!("{lref:?}"),
-                    proc_id,
-                });
-            }
-        }
-
         let artifacts = self.cached_artifacts(proc_id, path.links())?;
-        self.stage(proc_id)
+        self.get_proc_stage(proc_id)
             .chain_proc()
             .commit_outputs(path, &artifacts)
             .map_err(|e| GExecError::Proc(proc_id, e))
     }
 
-    /// Checks that every stage could undo a committed path, which needs a
-    /// usable artifact from each for every link on it.
+    /// Checks that every stage could undo a committed path, which needs the
+    /// artifact each committed every link on it with.  A stage added after a
+    /// link was committed has none for it.
     pub(crate) fn check_undoable(&self, path: &LinkPath<S>) -> Result<(), GExecError> {
-        for lref in path.links() {
-            if let Some(missing) = self.stale_links.get(lref) {
-                return Err(GExecError::StaleArtifact {
-                    link: format!("{lref:?}"),
-                    proc_id: missing[0],
-                });
-            }
+        for proc_id in self.pipeline.proc_ids() {
+            self.committed_artifacts(proc_id, path.links())?;
         }
         Ok(())
     }
 
-    /// Undoes a committed path in one stage.
+    /// Undoes a committed path in one stage, with the artifacts that
+    /// committed it even if they no longer stand for their links.
     pub(crate) fn uncommit_stage(
         &self,
         proc_id: ProcId,
         path: &LinkPath<S>,
     ) -> Result<(), GExecError> {
-        let artifacts = self.cached_artifacts(proc_id, path.links())?;
-        self.stage(proc_id)
+        let artifacts = self.committed_artifacts(proc_id, path.links())?;
+        self.get_proc_stage(proc_id)
             .chain_proc()
             .uncommit_outputs(path, &artifacts)
             .map_err(|e| GExecError::Proc(proc_id, e))
@@ -262,10 +286,10 @@ impl<S: GChainSpec> StageRunner<S> {
         Ok(())
     }
 
-    fn stage(&self, proc_id: ProcId) -> &Stage<S> {
+    fn get_proc_stage(&self, proc_id: ProcId) -> &Stage<S> {
         self.pipeline
             .get_stage(proc_id)
-            .expect("gchain: stage is in the pipeline")
+            .expect("gchain: proc ID doesn't point to stage")
     }
 
     /// Collects a stage's cached artifacts for a run of links, in order.
@@ -280,10 +304,26 @@ impl<S: GChainSpec> StageRunner<S> {
                 self.cache
                     .get_artifact_dyn(lref, proc_id)
                     .cloned()
-                    .ok_or_else(|| GExecError::MissingArtifact {
-                        link: format!("{lref:?}"),
-                        proc_id,
-                    })
+                    .ok_or_else(|| GExecError::missing_artifact(lref, proc_id))
+            })
+            .collect()
+    }
+
+    /// Collects the artifacts a stage committed a run of links with, in
+    /// order, which are the outdated ones where there are any.
+    fn committed_artifacts(
+        &self,
+        proc_id: ProcId,
+        links: &[LinkRef<S>],
+    ) -> Result<Vec<Arc<dyn DynProcArtifact>>, GExecError> {
+        links
+            .iter()
+            .map(|lref| {
+                self.outdated
+                    .get_artifact_dyn(lref, proc_id)
+                    .or_else(|| self.cache.get_artifact_dyn(lref, proc_id))
+                    .cloned()
+                    .ok_or_else(|| GExecError::stale_artifact(lref, proc_id))
             })
             .collect()
     }
@@ -348,32 +388,39 @@ mod tests {
         StageRunner::new(pipeline_of(procs))
     }
 
-    /// Runs every stage on link 10 (1→2) and hands back the path through it.
-    fn run_link_10(runner: &mut StageRunner<TestSpec>) -> LinkPath<TestSpec> {
-        let missing = runner.missing_stages(&TestRef(10));
-        let run = runner
-            .run(&TestRef(10), &TestLink(10), &path(1, &[]), &missing)
-            .expect("test: run stages");
-        assert_eq!(run.outcome(), LinkOutcome::Accepted);
-        path(1, &[(10, 2)])
-    }
-
     #[test]
     fn test_stored_artifacts_count_only_at_the_current_version() {
         let mut runner = runner(vec![TestProc::new(), TestProc::new()]);
         assert_eq!(runner.missing_stages(&TestRef(10)), ids(&["a", "b"]));
 
-        for rec in [
-            record(10, "a", 1),
-            record(11, "a", 2),
-            record(12, "gone", 1),
-        ] {
-            runner.insert_stored(rec).expect("test: insert stored");
+        for rec in [record(10, "a", 1), record(12, "gone", 1)] {
+            runner
+                .insert_stored(rec, None)
+                .expect("test: insert stored");
         }
 
         assert_eq!(runner.missing_stages(&TestRef(10)), ids(&["b"]));
-        assert_eq!(runner.missing_stages(&TestRef(11)), ids(&["a", "b"]));
         assert_eq!(runner.missing_stages(&TestRef(12)), ids(&["a", "b"]));
+
+        let err = runner.insert_stored(record(11, "a", 2), None).unwrap_err();
+        assert!(matches!(err, GExecError::ArtifactFromNewerVersion { .. }));
+    }
+
+    #[test]
+    fn test_older_artifacts_count_where_the_stage_accepts_them() {
+        let proc = TestProc::new().with_version(2).accepting_old([10]);
+        let mut runner = runner(vec![proc]);
+
+        for lref in [10, 11] {
+            assert!(runner.check_needs_header(&record(lref, "a", 1)));
+            runner
+                .insert_stored(record(lref, "a", 1), Some(&TestLink(lref)))
+                .expect("test: insert stored");
+        }
+        assert!(!runner.check_needs_header(&record(12, "a", 2)));
+
+        assert!(runner.missing_stages(&TestRef(10)).is_empty());
+        assert_eq!(runner.missing_stages(&TestRef(11)), ids(&["a"]));
     }
 
     #[test]
@@ -423,22 +470,31 @@ mod tests {
         );
     }
 
+    /// A stage can undo a link with the artifact it committed it with, even
+    /// one it wouldn't stand behind any more, but not with nothing.
     #[test]
-    fn test_stale_marks_block_undo_but_only_that_stages_commit() {
-        let mut runner = runner(vec![TestProc::new(), TestProc::new()]);
-        let path = run_link_10(&mut runner);
-        runner.mark_stale(TestRef(10), vec![id("a")]);
+    fn test_undo_takes_the_artifact_each_stage_committed_with() {
+        let first = TestProc::new().with_version(2);
+        let first_events = first.events();
+        let mut runner = runner(vec![first, TestProc::new()]);
+        let path = path(1, &[(10, 2)]);
+        runner
+            .insert_stored(record(10, "a", 1), Some(&TestLink(10)))
+            .expect("test: insert stored");
 
+        assert_eq!(runner.missing_stages(&TestRef(10)), ids(&["a", "b"]));
         let err = runner.check_undoable(&path).unwrap_err();
-        assert!(matches!(err, GExecError::StaleArtifact { proc_id, .. } if proc_id == id("a")));
-
-        runner.commit_stage(id("b"), &path).expect("test: commit b");
+        assert!(matches!(err, GExecError::StaleArtifact { proc_id, .. } if proc_id == id("b")));
         let err = runner.commit_stage(id("a"), &path).unwrap_err();
-        assert!(matches!(err, GExecError::StaleArtifact { proc_id, .. } if proc_id == id("a")));
+        assert!(matches!(err, GExecError::MissingArtifact { proc_id, .. } if proc_id == id("a")));
 
-        // Discarding the link clears the mark with it.
-        runner.discard(&TestRef(10)).expect("test: discard");
-        runner.check_undoable(&path).expect("test: undoable again");
+        runner
+            .uncommit_stage(id("a"), &path)
+            .expect("test: uncommit a");
+        assert_eq!(
+            take_events(&first_events),
+            vec![ProcEvent::Uncommit(vec![TestRef(10)])]
+        );
     }
 
     #[test]

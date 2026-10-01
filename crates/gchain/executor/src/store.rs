@@ -4,13 +4,15 @@
 //! little in memory beyond what's here: the tracking state is mirrored whole,
 //! and artifacts are loaded per link as they're needed.  The tracking state is
 //! written as one unit so its parts can never disagree; artifacts are written
-//! only once every stage has accepted their link.
+//! only once every stage has accepted their link.  The commit log is written
+//! around the tracking state such that a crash leaves at worst segments the
+//! tracking state doesn't cover, which are trimmed off on open.
 //!
 //! A store should only be used by one executor at a time.
 
 use strata_gchain_types::*;
 
-use crate::tracking::TrackingState;
+use crate::tracking::{CommitIndex, TrackingState};
 
 /// An artifact with the link and stage it belongs to, as the store keeps it.
 pub struct ArtifactRecord<S: GChainSpec> {
@@ -71,14 +73,37 @@ pub trait ExecutorStore {
     /// Loads where the pipeline stands, if it has ever been initialized.
     fn load_tracking(&self) -> Result<Option<TrackingState<Self::Spec>>, BoxedError>;
 
+    /// Records the path a commit covered under its index, replacing what was
+    /// there.
+    ///
+    /// The segments in index order make up the commit history, each starting
+    /// from the node the one before it ended at.
+    fn store_commit_segment(
+        &self,
+        idx: CommitIndex,
+        path: &LinkPath<Self::Spec>,
+    ) -> Result<(), BoxedError>;
+
+    /// Loads the path a commit covered.
+    fn load_commit_segment(
+        &self,
+        idx: CommitIndex,
+    ) -> Result<Option<LinkPath<Self::Spec>>, BoxedError>;
+
+    /// Discards the commit segment at an index and every one after it.
+    fn discard_commit_segments_from(&self, idx: CommitIndex) -> Result<(), BoxedError>;
+
+    /// Discards every commit segment before an index.
+    fn discard_commit_segments_before(&self, idx: CommitIndex) -> Result<(), BoxedError>;
+
     /// Persists the artifact a stage produced for a link, replacing any it had
     /// already stored for it.
     fn store_artifact(&self, record: &ArtifactRecord<Self::Spec>) -> Result<(), BoxedError>;
 
     /// Loads every artifact stored for a link.
     ///
-    /// The executor checks each [`ProcessorArtifactData::exec_version`]
-    /// against the stage's current version before trusting the contents.
+    /// The executor checks each [`ProcessorArtifactData::exec_version`] with
+    /// the stage before trusting the contents.
     fn load_link_artifacts(
         &self,
         lref: &LinkRef<Self::Spec>,

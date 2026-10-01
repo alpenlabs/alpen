@@ -1,5 +1,9 @@
-use strata_gchain_types::{BoxedError, ProcError, ProcId, ProviderError};
+use std::fmt::Debug;
+
+use strata_gchain_types::{BoxedError, GLinkRef, GNodeRef, ProcError, ProcId, ProviderError};
 use thiserror::Error;
+
+use crate::tracking::CommitIndex;
 
 /// Failures the executor reports while driving a processor pipeline.
 ///
@@ -38,12 +42,29 @@ pub enum GExecError {
     #[error("missing artifact from proc {proc_id} for link {link}")]
     MissingArtifact { link: String, proc_id: ProcId },
 
-    /// A stage has no usable artifact for a committed link, because the
-    /// stored one was produced by a different version of the stage or the
-    /// stage was added after the link was committed, so the link can't be
-    /// rolled back or committed again.
+    /// A stage has no artifact for a committed link, because the stage was
+    /// added after the link was committed, so the link can't be rolled back
+    /// or committed again.
     #[error("no usable artifact from proc {proc_id} for committed link {link}")]
     StaleArtifact { link: String, proc_id: ProcId },
+
+    /// A stored artifact came from a later version of a stage than the one in
+    /// the pipeline, so the store was last used by newer software.
+    #[error("artifact from proc {proc_id} for link {link} was stored by a newer version")]
+    ArtifactFromNewerVersion { link: String, proc_id: ProcId },
+
+    /// Committed links have to be processed again by a stage, but it can't
+    /// pick up from any node they could be processed from.
+    #[error("proc {0} has nowhere to resume reprocessing from")]
+    NoResumePoint(ProcId),
+
+    /// A commit the tracking state counts on isn't in the commit log.
+    #[error("missing commit segment {0}")]
+    MissingCommitSegment(CommitIndex),
+
+    /// The stored commit segments don't cover the committed path.
+    #[error("commit log does not match the committed path at {0}")]
+    CorruptCommitLog(String),
 
     /// Two stages were registered under the same ID, which would make a dep
     /// naming that ID ambiguous.
@@ -88,4 +109,72 @@ pub enum GExecError {
     /// The executor's own tracking or artifact storage failed.
     #[error("executor storage failure: {0}")]
     Storage(#[source] BoxedError),
+}
+
+/// Constructors for the variants naming a link or node, which take the ref
+/// itself so that rendering it is done in one place.
+impl GExecError {
+    pub fn missing_link(lref: &impl GLinkRef) -> Self {
+        Self::MissingLink(render_link_ref(lref))
+    }
+
+    pub fn missing_link_endpoints(lref: &impl GLinkRef) -> Self {
+        Self::MissingLinkEndpoints(render_link_ref(lref))
+    }
+
+    pub fn missing_artifact(lref: &impl GLinkRef, proc_id: ProcId) -> Self {
+        Self::MissingArtifact {
+            link: render_link_ref(lref),
+            proc_id,
+        }
+    }
+
+    pub fn stale_artifact(lref: &impl GLinkRef, proc_id: ProcId) -> Self {
+        Self::StaleArtifact {
+            link: render_link_ref(lref),
+            proc_id,
+        }
+    }
+
+    pub fn artifact_from_newer_version(lref: &impl GLinkRef, proc_id: ProcId) -> Self {
+        Self::ArtifactFromNewerVersion {
+            link: render_link_ref(lref),
+            proc_id,
+        }
+    }
+
+    pub fn corrupt_commit_log(node: &impl GNodeRef) -> Self {
+        Self::CorruptCommitLog(render_node_ref(node))
+    }
+
+    pub fn origin_unreachable(lref: &impl GLinkRef) -> Self {
+        Self::OriginUnreachable(render_link_ref(lref))
+    }
+
+    pub fn link_not_processed(lref: &impl GLinkRef) -> Self {
+        Self::LinkNotProcessed(render_link_ref(lref))
+    }
+
+    pub fn link_on_committed_path(lref: &impl GLinkRef) -> Self {
+        Self::LinkOnCommittedPath(render_link_ref(lref))
+    }
+
+    pub fn node_not_on_committed_path(node: &impl GNodeRef) -> Self {
+        Self::NodeNotOnCommittedPath(render_node_ref(node))
+    }
+
+    pub fn stage_diverged(proc_id: ProcId, node: &impl GNodeRef) -> Self {
+        Self::StageDiverged {
+            proc_id,
+            node: render_node_ref(node),
+        }
+    }
+}
+
+fn render_link_ref(lref: &impl GLinkRef) -> String {
+    format!("{lref:?}")
+}
+
+fn render_node_ref(node: &impl GNodeRef) -> String {
+    format!("{node:?}")
 }

@@ -21,6 +21,17 @@ pub(crate) trait GChainProcDyn<S: GChainSpec>: 'static {
     /// See [`GChainProc::proc_version`].
     fn proc_version(&self) -> ProcVersion;
 
+    /// See [`GChainProc::check_artifact_acceptable`].
+    fn check_artifact_acceptable(
+        &self,
+        stored: ProcVersion,
+        lref: &LinkRef<S>,
+        header: &LinkHeader<S>,
+    ) -> bool;
+
+    /// See [`GChainProc::check_can_resume_at`].
+    fn check_can_resume_at(&self, node: &NodeRef<S>) -> Result<bool, ProcError>;
+
     /// See [`GChainProc::on_init`].
     fn on_init(&self, cur_node: &NodeRef<S>) -> Result<(), ProcError>;
 
@@ -41,8 +52,8 @@ pub(crate) trait GChainProcDyn<S: GChainSpec>: 'static {
 
     /// Decodes a persisted artifact back into the stage's artifact type.
     ///
-    /// The caller checks the data's version against [`Self::proc_version`]
-    /// first; this only decodes.
+    /// The caller decides what the data's version means for it first; this
+    /// only decodes.
     fn decode_artifact(
         &self,
         data: &ProcessorArtifactData,
@@ -96,6 +107,19 @@ impl<S: GChainSpec, P: GChainProc<Spec = S>> GChainProcDyn<S> for ProcShim<P> {
 
     fn proc_version(&self) -> ProcVersion {
         self.proc.proc_version()
+    }
+
+    fn check_artifact_acceptable(
+        &self,
+        stored: ProcVersion,
+        lref: &LinkRef<S>,
+        header: &LinkHeader<S>,
+    ) -> bool {
+        self.proc.check_artifact_acceptable(stored, lref, header)
+    }
+
+    fn check_can_resume_at(&self, node: &NodeRef<S>) -> Result<bool, ProcError> {
+        self.proc.check_can_resume_at(node)
     }
 
     fn on_init(&self, cur_node: &NodeRef<S>) -> Result<(), ProcError> {

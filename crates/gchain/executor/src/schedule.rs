@@ -31,7 +31,8 @@ impl StageSchedule {
         self.by_id.get(&proc_id).copied()
     }
 
-    fn deps(&self, proc_id: ProcId) -> Option<&ProcDeps> {
+    /// The deps a stage was registered with.
+    pub(crate) fn get_deps(&self, proc_id: ProcId) -> Option<&ProcDeps> {
         self.index_of(proc_id).map(|idx| &self.stages[idx].1)
     }
 
@@ -50,7 +51,7 @@ impl StageSchedule {
         coverage: &LinkCoverage,
     ) -> Result<(), GExecError> {
         let deps = self
-            .deps(proc_id)
+            .get_deps(proc_id)
             .expect("gchain: readiness check for unregistered stage");
 
         let unmet_cur = deps.cur_node().iter().find(|dep| !coverage.has_cur(**dep));

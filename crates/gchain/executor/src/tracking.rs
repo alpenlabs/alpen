@@ -1,11 +1,63 @@
 //! Where the pipeline stands.
 
 use std::collections::BTreeMap;
-use std::fmt::{self, Debug};
+use std::fmt::{self, Debug, Display};
 
 use strata_gchain_types::*;
 
 use crate::errors::GExecError;
+
+/// Position of a commit segment in the store's commit log.
+///
+/// Every commit is stored as the path it committed under the index after the
+/// one before it, so the log can be walked back a segment at a time.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct CommitIndex(u64);
+
+impl CommitIndex {
+    /// The index the first commit into a fresh store goes under.
+    pub fn first() -> Self {
+        Self(0)
+    }
+
+    /// The index after this one.
+    pub fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+
+    /// The index before this one, if there is one.
+    pub fn prev(self) -> Option<Self> {
+        self.0.checked_sub(1).map(Self)
+    }
+}
+
+impl Display for CommitIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl From<u64> for CommitIndex {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<CommitIndex> for u64 {
+    fn from(value: CommitIndex) -> Self {
+        value.0
+    }
+}
+
+/// Where a stage's aggregated state is, and where its history starts.
+struct StagePosition<S: GChainSpec> {
+    /// The last node the stage has processed and committed.
+    committed_node: NodeRef<S>,
+
+    /// The node the stage was initialized at.  It has nothing for the links
+    /// committed before it.
+    inited_at: NodeRef<S>,
+}
 
 /// The committed path and how far each stage has committed along it.
 ///
@@ -19,8 +71,14 @@ pub struct TrackingState<S: GChainSpec> {
     /// the committed node.
     committed: LinkPath<S>,
 
-    /// The last nodes that each processor stage has processed and committed.
-    stage_nodes: BTreeMap<ProcId, NodeRef<S>>,
+    /// The oldest commit segment still covering part of the committed path.
+    first_commit: CommitIndex,
+
+    /// The index the next commit goes under.
+    next_commit: CommitIndex,
+
+    /// The position information for each processor stage.
+    stages: BTreeMap<ProcId, StagePosition<S>>,
 }
 
 impl<S: GChainSpec> TrackingState<S> {
@@ -29,7 +87,9 @@ impl<S: GChainSpec> TrackingState<S> {
     pub fn new_at(base_node: NodeRef<S>) -> Self {
         Self {
             committed: LinkPath::new_at(base_node),
-            stage_nodes: BTreeMap::new(),
+            first_commit: CommitIndex::first(),
+            next_commit: CommitIndex::first(),
+            stages: BTreeMap::new(),
         }
     }
 
@@ -41,14 +101,48 @@ impl<S: GChainSpec> TrackingState<S> {
         &self.committed
     }
 
+    /// The oldest commit segment still covering part of the committed path,
+    /// if there is one.
+    pub fn first_commit(&self) -> CommitIndex {
+        self.first_commit
+    }
+
+    /// The index the next commit goes under.
+    pub fn next_commit(&self) -> CommitIndex {
+        self.next_commit
+    }
+
+    /// The newest commit segment, if anything is committed.
+    pub fn last_commit(&self) -> Option<CommitIndex> {
+        self.next_commit
+            .prev()
+            .filter(|last| *last >= self.first_commit)
+    }
+
     /// The node a processor stage has committed up to, if it has ever been
     /// initialized.
     pub fn get_stage_node(&self, proc_id: ProcId) -> Option<&NodeRef<S>> {
-        self.stage_nodes.get(&proc_id)
+        self.stages.get(&proc_id).map(|pos| &pos.committed_node)
     }
 
+    /// The node a processor stage was initialized at, if it ever has been.
+    pub fn get_stage_floor(&self, proc_id: ProcId) -> Option<&NodeRef<S>> {
+        self.stages.get(&proc_id).map(|pos| &pos.inited_at)
+    }
+
+    /// Records the node a stage has committed up to.  The first node recorded
+    /// for a stage is the one it was initialized at.
     pub fn set_stage_node(&mut self, proc_id: ProcId, node: NodeRef<S>) {
-        self.stage_nodes.insert(proc_id, node);
+        match self.stages.get_mut(&proc_id) {
+            Some(pos) => pos.committed_node = node,
+            None => {
+                let pos = StagePosition {
+                    committed_node: node.clone(),
+                    inited_at: node,
+                };
+                self.stages.insert(proc_id, pos);
+            }
+        }
     }
 
     pub fn is_committed(&self, lref: &LinkRef<S>) -> bool {
@@ -63,43 +157,76 @@ impl<S: GChainSpec> TrackingState<S> {
     }
 
     /// Extends the committed path by a path continuing from the committed
-    /// node.
+    /// node, as the commit stored under [`Self::next_commit`].
     pub fn extend_committed(&mut self, path: &LinkPath<S>) {
         let extended = self.committed.try_extend(path);
         debug_assert!(
             extended,
             "gchain: committed path continues from its terminal"
         );
+        self.next_commit = self.next_commit.next();
     }
 
-    /// Cuts the committed path back to a node on it.
-    pub fn truncate_committed_to(&mut self, node: &NodeRef<S>) -> Result<(), GExecError> {
+    /// Cuts the committed path back to a node on it, with the index the next
+    /// commit goes under once the commit log is cut back to match.
+    pub fn truncate_committed_to(
+        &mut self,
+        node: &NodeRef<S>,
+        next_commit: CommitIndex,
+    ) -> Result<(), GExecError> {
         let idx = self.get_committed_index_of(node)?;
         self.committed = self.committed.slice(0, idx);
+        self.next_commit = next_commit;
         Ok(())
     }
 
     /// Moves the oldest node the pipeline can roll back to forward to a node
-    /// on the committed path, giving up the links before it.
-    pub fn advance_base_to(&mut self, node: &NodeRef<S>) -> Result<(), GExecError> {
+    /// on the committed path, giving up the links before it, with the oldest
+    /// commit segment left once the commit log is cut to match.
+    pub fn advance_base_to(
+        &mut self,
+        node: &NodeRef<S>,
+        first_commit: CommitIndex,
+    ) -> Result<(), GExecError> {
         let idx = self.get_committed_index_of(node)?;
         self.committed = self.committed.slice(idx, self.committed.len());
+        self.first_commit = first_commit;
         Ok(())
     }
 
     fn get_committed_index_of(&self, node: &NodeRef<S>) -> Result<usize, GExecError> {
         self.committed
             .get_node_index(node)
-            .ok_or_else(|| GExecError::NodeNotOnCommittedPath(format!("{node:?}")))
+            .ok_or_else(|| GExecError::node_not_on_committed_path(node))
     }
 }
 
 // Bounds fall on the ref types, not the marker spec type.
+impl<S: GChainSpec> Clone for StagePosition<S> {
+    fn clone(&self) -> Self {
+        Self {
+            committed_node: self.committed_node.clone(),
+            inited_at: self.inited_at.clone(),
+        }
+    }
+}
+
+impl<S: GChainSpec> Debug for StagePosition<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StagePosition")
+            .field("node", &self.committed_node)
+            .field("floor", &self.inited_at)
+            .finish()
+    }
+}
+
 impl<S: GChainSpec> Clone for TrackingState<S> {
     fn clone(&self) -> Self {
         Self {
             committed: self.committed.clone(),
-            stage_nodes: self.stage_nodes.clone(),
+            first_commit: self.first_commit,
+            next_commit: self.next_commit,
+            stages: self.stages.clone(),
         }
     }
 }
@@ -108,7 +235,9 @@ impl<S: GChainSpec> Debug for TrackingState<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TrackingState")
             .field("committed", &self.committed)
-            .field("stage_nodes", &self.stage_nodes)
+            .field("first_commit", &self.first_commit)
+            .field("next_commit", &self.next_commit)
+            .field("stages", &self.stages)
             .finish()
     }
 }
@@ -134,10 +263,23 @@ mod tests {
 
         assert_eq!(tracking.committed_node(), &TestRef(1));
         assert!(tracking.committed_path().is_empty());
+        assert_eq!(tracking.last_commit(), None);
         assert_eq!(
             tracking.get_stage_node(ProcId::from_str("a").expect("test: parse ProcId")),
             None
         );
+    }
+
+    #[test]
+    fn test_stage_floor_stays_where_stage_was_first_put() {
+        let proc_id = ProcId::from_str("a").expect("test: parse ProcId");
+        let mut tracking = TrackingState::<TestSpec>::new_at(TestRef(1));
+
+        tracking.set_stage_node(proc_id, TestRef(2));
+        tracking.set_stage_node(proc_id, TestRef(3));
+
+        assert_eq!(tracking.get_stage_node(proc_id), Some(&TestRef(3)));
+        assert_eq!(tracking.get_stage_floor(proc_id), Some(&TestRef(2)));
     }
 
     #[test]
@@ -159,18 +301,22 @@ mod tests {
         );
         assert!(matches!(err, GExecError::NodeNotOnCommittedPath(_)));
 
+        assert_eq!(tracking.last_commit(), Some(CommitIndex::from(0)));
+
         tracking
-            .truncate_committed_to(&TestRef(2))
+            .truncate_committed_to(&TestRef(2), CommitIndex::from(1))
             .expect("test: truncate");
         assert_eq!(*tracking.committed_path(), path(1, &[(10, 2)]));
 
         tracking.extend_committed(&suffix);
+        assert_eq!(tracking.last_commit(), Some(CommitIndex::from(1)));
         tracking
-            .advance_base_to(&TestRef(2))
+            .advance_base_to(&TestRef(2), CommitIndex::from(1))
             .expect("test: advance base");
         assert_eq!(*tracking.committed_path(), path(2, &[(11, 3)]));
+        assert_eq!(tracking.first_commit(), CommitIndex::from(1));
         let err = expect_err(
-            tracking.truncate_committed_to(&TestRef(1)),
+            tracking.truncate_committed_to(&TestRef(1), CommitIndex::from(1)),
             "node before the base to be refused",
         );
         assert!(matches!(err, GExecError::NodeNotOnCommittedPath(_)));

@@ -120,8 +120,43 @@ pub trait GChainProc: Sized + 'static {
     /// The executor records this alongside every artifact it persists, so that
     /// opening a database written by a client whose behavior has since changed
     /// can be detected and the affected links reprocessed.  Bump it whenever a
-    /// change would produce a different artifact for the same link.
+    /// change would produce a different artifact for some link.
+    ///
+    /// Versions never decrease along a path: if a link was processed at some
+    /// version, the links after it were processed at that version or a later
+    /// one.  The executor relies on this to find where reprocessing has to
+    /// start from without looking at the whole history.
     fn proc_version(&self) -> ProcVersion;
+
+    /// Checks if an artifact this stage stored for a link under an older
+    /// version still stands, so the link doesn't have to be processed again.
+    ///
+    /// Only asked about versions other than [`Self::proc_version`].  Accepting
+    /// one obliges [`ProcArtifact::from_buf`] to keep decoding what that
+    /// version wrote.
+    ///
+    /// Default impl accepts nothing, so every version bump has every link
+    /// reprocessed.
+    fn check_artifact_acceptable(
+        &self,
+        _stored: ProcVersion,
+        _lref: &LinkRef<Self::Spec>,
+        _header: &LinkHeader<Self::Spec>,
+    ) -> bool {
+        false
+    }
+
+    /// Checks if the stage can pick up processing from a node, which takes
+    /// being able to rebuild the state there.
+    ///
+    /// The executor asks this when committed links have to be processed
+    /// again, to find the node to roll this stage back to.
+    ///
+    /// Default impl assumes it can, which suits stages that keep no state of
+    /// their own to build on.
+    fn check_can_resume_at(&self, _node: &NodeRef<Self::Spec>) -> Result<bool, ProcError> {
+        Ok(true)
+    }
 
     /// Called when the processor is first initialized, with the node its
     /// aggregated state is expected to be at.

@@ -4,9 +4,13 @@ use std::sync::Arc;
 
 use strata_gchain_types::*;
 
+use crate::core::*;
 use crate::errors::GExecError;
+use crate::open::*;
 use crate::process::{GChainProcDyn, ProcShim};
+use crate::reprocess::*;
 use crate::schedule::{StageSchedule, StageScheduleBuilder};
+use crate::store::ExecutorStore;
 
 /// A processor stage as registered in a pipeline.
 pub(crate) struct Stage<S: GChainSpec> {
@@ -98,6 +102,46 @@ impl<S: GChainSpec> PipelineBuilder<S> {
 impl<S: GChainSpec> Default for PipelineBuilder<S> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct ExecutorBuilder<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>> {
+    pipeline: StagePipeline<S>,
+    provider: Arc<P>,
+    store: Arc<X>,
+    base_node: NodeRef<S>,
+}
+
+impl<S: GChainSpec, P: ChainProvider<Spec = S>, X: ExecutorStore<Spec = S>>
+    ExecutorBuilder<S, P, X>
+{
+    pub fn new(
+        pipeline: StagePipeline<S>,
+        provider: Arc<P>,
+        store: Arc<X>,
+        base_node: NodeRef<S>,
+    ) -> Self {
+        Self {
+            pipeline,
+            provider,
+            store,
+            base_node,
+        }
+    }
+
+    // TODO(trey): rework this to behave more like a builder
+
+    /// Opens the executor on top of the database.
+    pub fn open(self) -> Result<OpenResult<S, P, X>, GExecError> {
+        let core = ExecutorCore::open(self.pipeline, self.provider, self.store, self.base_node)?;
+        let plans = plan_reprocessing(&core)?;
+        if !plans.is_empty() {
+            let pending = ReprocExecutor::new(core, plans);
+            return Ok(OpenResult::NeedsReprocess(pending));
+        }
+
+        let (exec, report) = finish_open(core, Vec::new(), Vec::new())?;
+        Ok(OpenResult::Ready(exec, report))
     }
 }
 

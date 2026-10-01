@@ -10,7 +10,7 @@ use strata_asm_checkpoint_types::{
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_gchain_executor::{
-    ArtifactCache, GExecError, LinearExecutor, LinkOutcome, MemExecutorStore, PipelineBuilder,
+    ArtifactCache, ExecutorBuilder, GExecError, LinkOutcome, MemExecutorStore, PipelineBuilder,
     ProcContextImpl,
 };
 use strata_gchain_types::*;
@@ -649,13 +649,16 @@ fn test_linear_executor_drives_ol_stages() {
         .expect("add index")
         .build();
 
-    let (mut exec, report) = LinearExecutor::open(
+    let (mut exec, report) = ExecutorBuilder::new(
         pipeline,
         Arc::new(OLChainProvider::new(chain_store)),
         Arc::new(MemExecutorStore::new()),
         chain.node(0),
     )
-    .expect("open");
+    .open()
+    .expect("open")
+    .finish()
+    .expect("finish open");
     assert_eq!(report.initialized(), &[proc_id("exec"), proc_id("index")]);
 
     let block_refs: Vec<OLLinkRef> = (1..=2).map(|s| chain.commitment(s).into()).collect();

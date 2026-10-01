@@ -71,6 +71,12 @@ impl<S: OLStateStore, M: L1ManifestProvider, I: OLIndexStore> GChainProc for OLI
         Self::VERSION.into()
     }
 
+    fn check_can_resume_at(&self, node: &OLStateNode) -> Result<bool, ProcError> {
+        // The pre-state is built on the exec stage's committed state at the
+        // node processing starts from.
+        Ok(self.state_store.fetch_state(node)?.is_some())
+    }
+
     fn on_init(&self, _cur_node: &OLStateNode) -> Result<(), ProcError> {
         Ok(())
     }

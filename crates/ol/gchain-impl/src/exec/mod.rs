@@ -57,6 +57,12 @@ impl<S: OLStateStore, M: L1ManifestProvider> GChainProc for OLExecProc<S, M> {
         Self::VERSION.into()
     }
 
+    fn check_can_resume_at(&self, node: &OLStateNode) -> Result<bool, ProcError> {
+        // Processing builds on the committed state at the node it starts
+        // from, which is only kept where a commit ended.
+        Ok(self.state_store.fetch_state(node)?.is_some())
+    }
+
     fn on_init(&self, cur_node: &OLStateNode) -> Result<(), ProcError> {
         // The committed state is the whole aggregated state, so there's nothing
         // to set up beyond making sure it's there to build on.

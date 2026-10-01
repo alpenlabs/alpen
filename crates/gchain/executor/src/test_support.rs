@@ -11,6 +11,7 @@ use strata_gchain_types::*;
 use crate::config::{PipelineBuilder, StagePipeline};
 use crate::mem_store::MemExecutorStore;
 use crate::store::ExecutorStore;
+use crate::tracking::CommitIndex;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct TestRef(pub u8);
@@ -160,6 +161,8 @@ pub(crate) type EventLog = Arc<Mutex<Vec<ProcEvent>>>;
 pub(crate) struct TestProc {
     version: u32,
     reject: HashSet<TestRef>,
+    accept_old: HashSet<TestRef>,
+    no_resume: HashSet<TestRef>,
     events: EventLog,
 }
 
@@ -168,8 +171,22 @@ impl TestProc {
         Self {
             version: 1,
             reject: HashSet::new(),
+            accept_old: HashSet::new(),
+            no_resume: HashSet::new(),
             events: EventLog::default(),
         }
+    }
+
+    /// Accepts artifacts from older versions for some links.
+    pub(crate) fn accepting_old(mut self, lrefs: impl IntoIterator<Item = u8>) -> Self {
+        self.accept_old = lrefs.into_iter().map(TestRef).collect();
+        self
+    }
+
+    /// Can't resume processing from some nodes.
+    pub(crate) fn not_resuming_at(mut self, nodes: impl IntoIterator<Item = u8>) -> Self {
+        self.no_resume = nodes.into_iter().map(TestRef).collect();
+        self
     }
 
     pub(crate) fn with_version(mut self, version: u32) -> Self {
@@ -228,6 +245,14 @@ pub(crate) fn has_stored(store: &MemExecutorStore<TestSpec>, lref: u8) -> bool {
         .expect("test: check artifacts")
 }
 
+/// The links of the commit segment stored under an index.
+pub(crate) fn stored_segment(store: &MemExecutorStore<TestSpec>, idx: u64) -> Option<Vec<TestRef>> {
+    store
+        .load_commit_segment(CommitIndex::from(idx))
+        .expect("test: load segment")
+        .map(|segment| segment.links().to_vec())
+}
+
 /// Drains the events recorded so far.
 pub(crate) fn take_events(log: &EventLog) -> Vec<ProcEvent> {
     mem::take(&mut *log.lock().unwrap())
@@ -247,6 +272,19 @@ impl GChainProc for TestProc {
 
     fn proc_version(&self) -> ProcVersion {
         self.version.into()
+    }
+
+    fn check_artifact_acceptable(
+        &self,
+        _stored: ProcVersion,
+        lref: &TestRef,
+        _header: &TestLink,
+    ) -> bool {
+        self.accept_old.contains(lref)
+    }
+
+    fn check_can_resume_at(&self, node: &TestRef) -> Result<bool, ProcError> {
+        Ok(!self.no_resume.contains(node))
     }
 
     fn on_init(&self, cur_node: &TestRef) -> Result<(), ProcError> {

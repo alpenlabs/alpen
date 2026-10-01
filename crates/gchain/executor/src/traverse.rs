@@ -90,7 +90,7 @@ fn fetch_endpoints<S: GChainSpec>(
 ) -> Result<LinkEndpoints<S>, GExecError> {
     provider
         .fetch_link_endpoints(lref)?
-        .ok_or_else(|| GExecError::MissingLinkEndpoints(format!("{lref:?}")))
+        .ok_or_else(|| GExecError::missing_link_endpoints(lref))
 }
 
 #[cfg(test)]
