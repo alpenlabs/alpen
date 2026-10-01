@@ -26,7 +26,9 @@ workspace = true
 [dev-dependencies]
 strata-asm-proto-txs-test-utils.workspace = true
 strata-l1-envelope-fmt.workspace = true
+strata-ol-state-container = { workspace = true, features = ["test-utils"] }
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-state-support-types.workspace = true
+strata-ol-state-types-v1.workspace = true
 
 proptest.workspace = true

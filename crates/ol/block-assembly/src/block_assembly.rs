@@ -333,7 +333,7 @@ where
         parent_state.as_ref(),
         &block_context,
         epoch_cumulative_da,
-    );
+    )?;
     let runtime_params = ctx.runtime_params();
 
     // Phase 2: Process transactions, filtering out invalid ones.
@@ -595,24 +595,28 @@ fn select_and_process_asm_manifests<E: EpochSealingPolicy, S: IStateAccessorMut>
 ///
 /// Uses the same initialization as block verification, so the sequencer and
 /// verifiers apply the phases in the same order.
+///
+/// # Errors
+///
+/// Returns [`BlockAssemblyError::BlockConstruction`] if the rules reject the
+/// parent state, such as a V0 parent that does not end an epoch.
 fn execute_block_initialization<S: BlockAssemblyStateAccess>(
     spec: OLSpecId,
     parent_state: &S,
     block_context: &BlockContext<'_>,
     accumulated_da: AccumulatedDaData,
-) -> (WriteBatch, AccumulatedDaData) {
+) -> BlockAssemblyResult<(WriteBatch, AccumulatedDaData)> {
     let (accumulator, logs) = accumulated_da.into_parts();
     let write_state = WriteTrackingState::new_empty(parent_state);
     let mut da_state = DaAccumulatingState::new_with_accumulator(write_state, accumulator);
 
-    stf_execute_block_initialization(spec, &mut da_state, block_context)
-        .expect("block initialization should not fail on a sequencer-derived context");
+    stf_execute_block_initialization(spec, &mut da_state, block_context)?;
 
     let (accumulator, write_state) = da_state.into_parts();
-    (
+    Ok((
         write_state.into_batch(),
         AccumulatedDaData::new(accumulator, logs),
-    )
+    ))
 }
 
 /// Processes transactions with per-tx staging, filtering out failed ones.
@@ -1043,13 +1047,76 @@ mod tests {
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
-    use strata_ol_chain_types_v1::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
+    use strata_ol_chain_types_v1::{
+        BlockFlagsV1, MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog,
+    };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
+    use strata_ol_state_types_v1::OLStateV1;
+    use strata_ol_stf::BlockInfo;
+    use strata_ol_stf_v1::test_utils::OLStfFixture;
     use strata_predicate::PredicateKey;
 
     use super::*;
     use crate::test_utils::*;
     use crate::{FixedSlotSealing, LimitAwareSealing};
+
+    /// Returns the post-genesis state relabelled as the last V0 terminal leaves
+    /// it, and the genesis header, which is terminal.
+    fn v0_terminal_parent() -> (MemoryStateBaseLayer<OLStateV1>, OLBlockHeaderV1) {
+        let fixture = OLStfFixture::builder().execute_genesis();
+        let mut state = fixture.state().clone();
+        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+        (state, fixture.parent_header().clone())
+    }
+
+    #[test]
+    fn test_block_initialization_wraps_terminal_v0_parent() {
+        let (parent_state, parent) = v0_terminal_parent();
+        let block_info = BlockInfo::new(
+            parent.timestamp() + 1,
+            parent.slot() + 1,
+            parent.epoch() + 1,
+        );
+        let block_context = BlockContext::new(&block_info, Some(&parent));
+
+        let (batch, _) =
+            execute_block_initialization(OLSpecId::V1, &parent_state, &block_context, seeded_da(0))
+                .expect("the first V1 block wraps a V0 terminal");
+
+        assert_eq!(
+            batch.spec_versions(),
+            Some(OLSpecVersions::uniform(OLSpecId::V1))
+        );
+    }
+
+    #[test]
+    fn test_block_initialization_rejects_nonterminal_v0_parent() {
+        let (parent_state, genesis) = v0_terminal_parent();
+        let mut flags = BlockFlagsV1::zero();
+        flags.set_is_terminal(false);
+        let parent = OLBlockHeaderV1::new(
+            genesis.timestamp(),
+            flags,
+            genesis.slot(),
+            genesis.epoch(),
+            *genesis.parent_blkid(),
+            *genesis.body_root(),
+            *genesis.state_root(),
+            *genesis.logs_root(),
+        );
+        let block_info = BlockInfo::new(parent.timestamp() + 1, parent.slot() + 1, parent.epoch());
+        let block_context = BlockContext::new(&block_info, Some(&parent));
+
+        let err =
+            execute_block_initialization(OLSpecId::V1, &parent_state, &block_context, seeded_da(0))
+                .expect_err("V1 rules must not continue a V0 epoch");
+
+        assert!(matches!(
+            err,
+            BlockAssemblyError::BlockConstruction(ExecError::ContinuesV0Epoch)
+        ));
+    }
 
     type OLWriteBatch = WriteBatch;
 
@@ -1135,7 +1202,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1180,7 +1247,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1222,7 +1289,7 @@ mod tests {
         let err = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         )
         .expect_err("missing target account should fail");
@@ -1253,7 +1320,7 @@ mod tests {
         let out_tx = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         )
         .expect("GAM tx should pass through unchanged");
@@ -1307,7 +1374,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
         assert!(result.is_err(), "Should fail with hash mismatch");
@@ -1352,7 +1419,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1397,7 +1464,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1497,7 +1564,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1547,7 +1614,7 @@ mod tests {
         let result = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         );
 
@@ -1608,7 +1675,7 @@ mod tests {
         let tx = add_accumulator_proofs(
             OLSpecId::V1,
             &ctx,
-            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            &MemoryStateBaseLayer::from_container(state.as_ref().clone()),
             mempool_tx,
         )
         .expect("proof generation should succeed");
@@ -3040,7 +3107,7 @@ mod tests {
         timestamp: u64,
         slot_offset: u64,
     ) -> (
-        Arc<MemoryStateBaseLayer>,
+        Arc<MemoryStateBaseLayer<OLStateV1>>,
         OLBlockHeaderV1,
         BlockInfo,
         OLWriteBatch,

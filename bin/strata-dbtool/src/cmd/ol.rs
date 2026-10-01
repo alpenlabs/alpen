@@ -420,8 +420,8 @@ mod tests {
     use strata_ol_chain_types_v1::{
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
-    use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+    use strata_ol_state_container::{test_utils::create_test_genesis_container, OLStateContainer};
+    use strata_ol_state_types_v1::WriteBatch;
 
     use super::*;
 
@@ -450,8 +450,8 @@ mod tests {
         OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body)
     }
 
-    fn genesis_state() -> OLStateV1 {
-        OLStateV1::from_genesis_params(&OLParams::test_default()).expect("valid genesis params")
+    fn genesis_state() -> OLStateContainer {
+        create_test_genesis_container()
     }
 
     fn seed_sibling_blocks() -> (Arc<SledBackend>, OLBlockV1, OLBlockV1) {

@@ -20,7 +20,7 @@ use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLParams;
-use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_state_container::OLStateContainer;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceMonitor;
@@ -153,7 +153,7 @@ impl FcmStorage for StrataFcmContext {
     async fn get_toplevel_ol_state(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLStateV1>>> {
+    ) -> DbResult<Option<Arc<OLStateContainer>>> {
         self.storage
             .ol_state()
             .get_toplevel_ol_state_async(commitment)

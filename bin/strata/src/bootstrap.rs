@@ -4,12 +4,11 @@ use anyhow::{Context, Result, anyhow, bail};
 use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_checkpoint_types::reconstruct_terminal_header;
-use strata_identifiers::{Buf32, EpochCommitment};
+use strata_identifiers::EpochCommitment;
 use strata_node_context::NodeContext;
 use strata_primitives::l1::compute_confirmation_depth;
 use strata_storage::NodeStorage;
 use tracing::info;
-use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::startup_checks::verify_anchor_summary_and_state;
 
@@ -179,8 +178,9 @@ fn promote_from_checkpoint_storage(storage: &NodeStorage, l1_reorg_safe_depth: u
         .get_toplevel_ol_state_blocking(anchor.to_block_commitment())
         .context("checkpoint promotion: failed to reload anchor OL state for root verification")?
         .expect("anchor state presence was verified before root verification");
-    let computed_state_root: Buf32 =
-        TreeHash::tree_hash_root::<Sha256Hasher>(anchor_state.as_ref()).into();
+    // Decoding checked the chainstate against the stored root, so the
+    // container root is the anchor state's protocol state root.
+    let computed_state_root = anchor_state.compute_state_root();
     if computed_state_root != *stored_header.state_root() {
         bail!(
             "checkpoint promotion: stored OL state root mismatch for {anchor}: computed {computed_state_root}, checkpoint commits to {}",
@@ -312,7 +312,7 @@ mod tests {
                 .get_toplevel_ol_state_blocking(genesis)
                 .expect("read genesis state")
                 .expect("genesis state exists");
-            let mut anchor_state = MemoryStateBaseLayer::new((*genesis_state).clone());
+            let mut anchor_state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
             anchor_state.set_cur_slot(1);
             anchor_state.set_cur_epoch(2);
             let anchor_state_root = anchor_state
@@ -347,7 +347,7 @@ mod tests {
             if store_anchor_state {
                 storage
                     .ol_state()
-                    .put_toplevel_ol_state_blocking(anchor_block, anchor_state.into_inner())
+                    .put_toplevel_ol_state_blocking(anchor_block, anchor_state.into_container())
                     .expect("insert anchor state");
             }
             if store_terminal_header {
@@ -445,14 +445,14 @@ mod tests {
                 .get_toplevel_ol_state_blocking(self.anchor.to_block_commitment())
                 .expect("read anchor state")
                 .expect("anchor state exists");
-            let mut state = MemoryStateBaseLayer::new((*state).clone());
+            let mut state = MemoryStateBaseLayer::from_container((*state).clone());
             state.set_cur_slot(slot);
             state.set_cur_epoch(epoch);
             self.storage
                 .ol_state()
                 .put_toplevel_ol_state_blocking(
                     self.anchor.to_block_commitment(),
-                    state.into_inner(),
+                    state.into_container(),
                 )
                 .expect("overwrite anchor state");
         }
@@ -464,7 +464,7 @@ mod tests {
                 .get_toplevel_ol_state_blocking(self.anchor.to_block_commitment())
                 .expect("read anchor state")
                 .expect("anchor state exists");
-            let mut state = MemoryStateBaseLayer::new((*state).clone());
+            let mut state = MemoryStateBaseLayer::from_container((*state).clone());
             state.set_asm_recorded_epoch(EpochCommitment::new(
                 99,
                 99,
@@ -474,7 +474,7 @@ mod tests {
                 .ol_state()
                 .put_toplevel_ol_state_blocking(
                     self.anchor.to_block_commitment(),
-                    state.into_inner(),
+                    state.into_container(),
                 )
                 .expect("overwrite anchor state root");
         }

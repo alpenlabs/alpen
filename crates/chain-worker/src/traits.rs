@@ -6,7 +6,8 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_types_v1::WriteBatch;
 use strata_primitives::epoch::EpochCommitment;
 
 use crate::{OLBlockExecutionOutput, WorkerResult};
@@ -43,7 +44,10 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     // =========================================================================
 
     /// Fetches the OL state at a given block commitment.
-    fn fetch_ol_state(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<OLStateV1>>;
+    fn fetch_ol_state(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> WorkerResult<Option<OLStateContainer>>;
 
     /// Fetches the write batch for a given block commitment.
     fn fetch_write_batch(&self, commitment: OLBlockCommitment) -> WorkerResult<Option<WriteBatch>>;
@@ -65,7 +69,7 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     fn store_toplevel_state(
         &self,
         commitment: OLBlockCommitment,
-        state: OLStateV1,
+        state: OLStateContainer,
     ) -> WorkerResult<()>;
 
     /// Stores an unsigned checkpoint terminal [`OLBlockHeaderV1`].

@@ -1,0 +1,68 @@
+//! Test fixtures and proptest strategies for OL state containers.
+
+use proptest::prelude::*;
+use strata_ol_state_types::{OLSpecId, OLSpecVersions};
+use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_state_types_v1::test_utils::{create_test_genesis_state, ol_state_strategy};
+
+use crate::{OLStateContainer, OLStateSeries};
+
+/// Wraps a V1 chainstate in a container with both spec versions at
+/// [`OLSpecId::V1`], the spec test networks start at.
+pub fn genesis_container(chainstate: OLStateV1) -> OLStateContainer {
+    OLStateContainer::new(
+        OLSpecVersions::uniform(OLSpecId::V1),
+        OLStateSeries::V1(chainstate),
+    )
+}
+
+/// Wraps a chainstate in a V0 container, as the 0.3.0 rules produced it. Its
+/// root is the bare chainstate root.
+pub fn v0_container(chainstate: OLStateV1) -> OLStateContainer {
+    OLStateContainer::new(
+        OLSpecVersions::uniform(OLSpecId::V0),
+        OLStateSeries::V1(chainstate),
+    )
+}
+
+/// Creates a container over the test genesis chainstate with both spec
+/// versions at [`OLSpecId::V1`].
+pub fn create_test_genesis_container() -> OLStateContainer {
+    genesis_container(create_test_genesis_state())
+}
+
+/// Creates a container over the test genesis chainstate with the current spec
+/// at [`OLSpecId::V1`] and `staged_spec_version` staged.
+///
+/// A staged version that differs from the current one makes any path that
+/// drops or defaults the versions commit to a different root.
+pub fn create_test_container_with_staged(staged_spec_version: u32) -> OLStateContainer {
+    OLStateContainer::new(
+        v1_versions_staging(staged_spec_version),
+        OLStateSeries::V1(create_test_genesis_state()),
+    )
+}
+
+/// Strategy for containers over arbitrary V1-layout chainstates.
+///
+/// Most are V1 states whose staged version is either the current spec or an
+/// arbitrary raw value, so it often differs from the current version and often
+/// names no known spec. The rest are V0 states.
+pub fn ol_state_container_strategy() -> impl Strategy<Value = OLStateContainer> {
+    let staged = prop_oneof![Just(u32::from(OLSpecId::V1)), any::<u32>()];
+    let v1 = (ol_state_strategy(), staged).prop_map(|(state, staged_spec_version)| {
+        OLStateContainer::new(
+            v1_versions_staging(staged_spec_version),
+            OLStateSeries::V1(state),
+        )
+    });
+    let v0 = ol_state_strategy().prop_map(v0_container);
+    prop_oneof![3 => v1, 1 => v0]
+}
+
+/// Returns V1 spec versions staging `staged_spec_version`, which V1 roots
+/// commit whatever its value.
+fn v1_versions_staging(staged_spec_version: u32) -> OLSpecVersions {
+    OLSpecVersions::new(OLSpecId::V1, staged_spec_version)
+        .expect("V1 versions accept any staged version")
+}

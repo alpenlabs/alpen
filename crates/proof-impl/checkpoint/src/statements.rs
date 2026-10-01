@@ -10,14 +10,14 @@ use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash
 use strata_crypto::hash;
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1};
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::IStateAccessor;
 use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, EpochDaReplayError, EpochExecExpectations, EpochInfo,
     OLSpecId, construct_block, verify_epoch_with_diff,
 };
-use zkaleido::ZkVmEnv;
+use zkaleido::ZkVmEnvSerde;
 
 /// Processes a batch of OL blocks and generates a checkpoint claim.
 ///
@@ -29,7 +29,7 @@ use zkaleido::ZkVmEnv;
 ///
 /// # Inputs (read from zkVM)
 ///
-/// - Initial OL state (SSZ-encoded [`OLStateV1`])
+/// - Initial OL state ([`OLStateContainer`], serde-encoded)
 /// - Block batch (SSZ-encoded `Vec<OLBlockV1>`)
 /// - Parent block header (SSZ-encoded [`OLBlockHeaderV1`])
 /// - DA state diff bytes (the epoch's encoded DA payload under `spec`)
@@ -40,13 +40,13 @@ use zkaleido::ZkVmEnv;
 ///
 /// # Panics
 ///
-/// This function panics if any SSZ deserialization fails.
-/// See [`process_ol_stf_core`] for additional panic conditions.
-pub fn process_ol_stf(zkvm: &impl ZkVmEnv, spec: OLSpecId, runtime_params: &OLRuntimeParams) {
-    // Read and deserialize the initial OL state from zkVM input
-    let initial_state_ssz_bytes = zkvm.read_buf();
-    let state = OLStateV1::from_ssz_bytes(&initial_state_ssz_bytes)
-        .expect("failed to deserialize initial OL state from SSZ bytes");
+/// This function panics if any input fails to decode, including an initial
+/// state whose chainstate does not match its root. See [`process_ol_stf_core`]
+/// for additional panic conditions.
+pub fn process_ol_stf(zkvm: &impl ZkVmEnvSerde, spec: OLSpecId, runtime_params: &OLRuntimeParams) {
+    // Read and decode the initial OL state from zkVM input. Decoding checks
+    // the chainstate against the root's chainstate root.
+    let state: OLStateContainer = zkvm.read_serde();
 
     // Read and deserialize the batch of blocks to process from zkVM input
     let blocks_ssz_bytes = zkvm.read_buf();
@@ -84,14 +84,27 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv, spec: OLSpecId, runtime_params: &OLRu
 ///
 /// It:
 /// 1. Validates state consistency between parent block and initial state
-/// 2. Applies each block's state transition sequentially
-/// 3. Accumulates ASM manifests and OL logs across the batch
-/// 4. Constructs and returns a [`CheckpointClaim`]
+/// 2. Checks that the epoch runs under `spec`
+/// 3. Applies each block's state transition sequentially
+/// 4. Accumulates ASM manifests and OL logs across the batch
+/// 5. Constructs and returns a [`CheckpointClaim`]
+///
+/// The initial state is the previous epoch's terminal state, and the epoch
+/// runs under that state's staged spec. After an epoch processes a checkpoint
+/// predicate enactment its terminal state stages the successor while its
+/// current spec is still the old one; the promotion happens during the next
+/// epoch's first block. Checking the current spec would therefore reject the
+/// first epoch after every upgrade.
+///
+/// A V0 initial state is the exception. Its root is the bare chainstate root,
+/// which commits no staged spec, so the epoch runs under V0's successor and
+/// its first block wraps the state as V1.
 ///
 /// # Panics
 ///
 /// This function panics if:
 /// - The parent state root doesn't match the initial state root
+/// - The epoch's spec, derived from the initial state, is not `spec`
 /// - The block batch is empty
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
@@ -99,20 +112,16 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv, spec: OLSpecId, runtime_params: &OLRu
 ///   terminal header's state root
 pub fn process_ol_stf_core(
     spec: OLSpecId,
-    state: OLStateV1,
+    state: OLStateContainer,
     blocks: Vec<OLBlockV1>,
     parent: OLBlockHeaderV1,
     da_state_diff_bytes: Vec<u8>,
     runtime_params: &OLRuntimeParams,
 ) -> CheckpointClaim {
-    // Wrap OLStateV1 in MemoryStateBaseLayer to satisfy IStateAccessor requirements.
-    let mut state = MemoryStateBaseLayer::new(state);
-
-    // Verify that the parent block's state root matches the initial state's computed root.
-    // This ensures state continuity and prevents invalid state transitions.
-    let initial_state_root = state
-        .compute_state_root()
-        .expect("failed to compute initial state root");
+    // Verify that the parent block's state root matches the initial state's
+    // root. This authenticates the spec versions and, through the chainstate
+    // root checked at decoding, the chainstate, before anything reads them.
+    let initial_state_root = state.compute_state_root();
     assert_eq!(
         *parent.state_root(),
         initial_state_root,
@@ -120,6 +129,38 @@ pub fn process_ol_stf_core(
         parent.state_root(),
         initial_state_root
     );
+
+    // The epoch runs under the staged spec of the authenticated start state,
+    // except that a V0 start state commits no staged spec. The epoch then runs
+    // under V0's successor.
+    //
+    // Accepting any V0 start state here is sound because only the first V1
+    // range can start from a V0 state:
+    // - The ASM binds a claim's range start to its verified tip, so a proof can only extend the
+    //   chain the ASM has already accepted.
+    // - The ASM has one active checkpoint key, so no range proven by this program verifies before
+    //   the V1 key is active.
+    // - V1 rules always wrap a V0 state at the start of an epoch: the parent must be terminal
+    //   (asserted below), and a V0 state outside an epoch start fails with `ContinuesV0Epoch`. Once
+    //   the first V1 range is accepted, the verified tip is a V1 state.
+    // That the first V1 range starts at the enactment boundary B relies on the
+    // ASM's v0.4.0-rc.6 predicate handover, which MN0 gets through STR-4489
+    // before the OlStfVk transaction.
+    let epoch_spec = if state.cur_spec() == OLSpecId::V0 {
+        OLSpecId::V0.successor().expect("V0 has a successor spec")
+    } else {
+        state.root().staged_spec().unwrap_or_else(|err| {
+            panic!("initial state stages a spec this program does not prove: {err}")
+        })
+    };
+    assert_eq!(
+        epoch_spec, spec,
+        "epoch runs under spec {epoch_spec:?}, but this program proves spec {spec:?}"
+    );
+
+    // Build the V1 state accessor, keeping the spec versions. For a V0 start
+    // state, the first block's epoch-initial processing wraps them.
+    let mut state = MemoryStateBaseLayer::from_container(state);
 
     // The block batch must contain at least one block to process
     assert!(
@@ -134,8 +175,9 @@ pub fn process_ol_stf_core(
         "parent header must be the terminal block of the previous epoch"
     );
 
-    // Capture epoch-start state for DA witness verification.
-    let initial_state = MemoryStateBaseLayer::new(state.state().clone());
+    // Capture epoch-start state for DA witness verification. Cloning the whole
+    // layer keeps the spec versions, which the reconstructed root commits to.
+    let initial_state = state.clone();
 
     // SAFETY: blocks is guaranteed non-empty by the assertion above.
     // Validate the last block is terminal (epoch terminality is signalled by
@@ -273,7 +315,7 @@ struct EpochExecTrace {
 /// - The computed block header doesn't match the input block header
 fn execute_block_batch(
     spec: OLSpecId,
-    state: &mut MemoryStateBaseLayer,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
     blocks: &[OLBlockV1],
     initial_parent: &OLBlockHeaderV1,
     runtime_params: &OLRuntimeParams,

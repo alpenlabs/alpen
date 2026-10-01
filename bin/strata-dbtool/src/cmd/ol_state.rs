@@ -97,11 +97,13 @@ pub(crate) fn get_ol_state(
         })?;
 
     // OL state currently exposes ASM-recorded epoch for previous-epoch view.
-    let recorded_epoch = top_level_state.epoch_state().asm_recorded_epoch();
+    let chainstate = top_level_state.chainstate();
+    let recorded_epoch = chainstate.asm_recorded_epoch();
     // Finalized epoch should come from client-state declared final epoch (L1-confirmed).
     let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
         .unwrap_or_else(EpochCommitment::null);
-    let l1_safe_block_height = top_level_state.epoch_state().last_l1_height();
+    let l1_safe_block = chainstate.last_l1_block();
+    let l1_safe_block_height = l1_safe_block.height();
     let ol_state_info = OLStateInfo {
         block_id: &block_id,
         current_slot: block_slot,
@@ -111,7 +113,7 @@ pub(crate) fn get_ol_state(
         finalized_epoch: &finalized_epoch,
         l1_next_expected_height: l1_safe_block_height.saturating_add(1),
         l1_safe_block_height,
-        l1_safe_block_blkid: top_level_state.epoch_state().last_l1_blkid(),
+        l1_safe_block_blkid: l1_safe_block.blkid(),
     };
 
     output(&ol_state_info, args.output_format)
@@ -375,15 +377,14 @@ mod tests {
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
         SignedOLBlockHeaderV1,
     };
-    use strata_ol_params::OLParams;
-    use strata_ol_state_types_v1::OLStateV1;
+    use strata_ol_state_container::{test_utils::create_test_genesis_container, OLStateContainer};
     use strata_storage::MmrIndexManager;
     use tokio::runtime::Runtime;
 
     use super::*;
 
-    fn genesis_target_state() -> OLStateV1 {
-        OLStateV1::from_genesis_params(&OLParams::test_default()).expect("valid genesis params")
+    fn genesis_target_state() -> OLStateContainer {
+        create_test_genesis_container()
     }
 
     fn make_block(slot: u64, epoch: u32, parent_blkid: OLBlockId) -> OLBlockV1 {

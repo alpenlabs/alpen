@@ -354,8 +354,10 @@ mod tests {
     };
     use strata_identifiers::AccountSerial;
     use strata_ol_da_common::{DaScheme, U16LenBytes, U16LenList};
+    use strata_ol_state_container::test_utils::v0_container;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
+    use strata_ol_state_types_v1::OLStateV1;
     use strata_ol_stf_v1::test_utils::make_genesis_state;
     use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 
@@ -372,7 +374,7 @@ mod tests {
 
     /// Creates an empty account with the given balance, returning its serial.
     fn seed_empty_account(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         id: AccountId,
         sats: u64,
     ) -> AccountSerial {
@@ -389,7 +391,7 @@ mod tests {
     }
 
     /// Reads an existing account's balance.
-    fn account_balance(state: &MemoryStateBaseLayer, id: AccountId) -> BitcoinAmount {
+    fn account_balance(state: &MemoryStateBaseLayer<OLStateV1>, id: AccountId) -> BitcoinAmount {
         state
             .get_account_state(id)
             .expect("read account")
@@ -399,20 +401,20 @@ mod tests {
 
     /// Applies an [`OLStateDiffV1`] to the state via [`OLStateDiffWriterV1`] + [`DaWrite::apply`].
     fn apply_ol_state_diff(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         diff: OLStateDiffV1,
     ) -> Result<(), DaError> {
-        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(diff);
+        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer<OLStateV1>>::new(diff);
         DaWrite::apply(&ol_diff, state, &())
     }
 
     /// Polls an [`OLStateDiffV1`] against the state via [`OLStateDiffWriterV1`] +
     /// [`DaWrite::poll_context`].
     fn poll_ol_state_diff(
-        state: &MemoryStateBaseLayer,
+        state: &MemoryStateBaseLayer<OLStateV1>,
         diff: OLStateDiffV1,
     ) -> Result<(), DaError> {
-        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(diff);
+        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer<OLStateV1>>::new(diff);
         DaWrite::poll_context(&ol_diff, state, &())
     }
 
@@ -1045,7 +1047,7 @@ mod tests {
     }
 
     struct PreStateAccounts {
-        state: MemoryStateBaseLayer,
+        state: MemoryStateBaseLayer<OLStateV1>,
         empty: AcctRef,
         snark: AcctRef,
     }
@@ -1310,7 +1312,8 @@ mod tests {
             .expect("root before");
 
         let mut state = pre_accounts.state.clone();
-        let ol_diff = OLStateDiffWriterV1::<MemoryStateBaseLayer>::new(OLStateDiffV1::default());
+        let ol_diff =
+            OLStateDiffWriterV1::<MemoryStateBaseLayer<OLStateV1>>::new(OLStateDiffV1::default());
         assert!(DaWrite::is_default(&ol_diff));
         OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(OLStateDiffV1::default()), &mut state)
             .expect("apply empty diff");
@@ -1611,10 +1614,12 @@ mod tests {
     #[test]
     fn test_v030_payload_applies_to_same_state_as_v030() {
         let pre_accounts = pre_state_with_accounts();
-        let pre_root = pre_accounts
-            .state
-            .compute_state_root()
-            .expect("pre-state root");
+        // 0.3.0 applied the payload to a V0 state, whose root is the bare
+        // chainstate root.
+        let pre_state = MemoryStateBaseLayer::from_container(v0_container(
+            pre_accounts.state.chainstate().clone(),
+        ));
+        let pre_root = pre_state.compute_state_root().expect("pre-state root");
         assert_eq!(
             bytes_to_hex(pre_root.as_ref()),
             V030_APPLY_PRE_STATE_ROOT,
@@ -1627,7 +1632,7 @@ mod tests {
         assert_eq!(encoded, golden, "encoder must reproduce the 0.3.0 bytes");
 
         let payload = decode_ol_da_payload_bytes(&golden).expect("decode 0.3.0 payload");
-        let mut state = pre_accounts.state.clone();
+        let mut state = pre_state;
         OLDaSchemeV1::apply_to_state(payload, &mut state).expect("apply 0.3.0 payload");
 
         let post_root = state.compute_state_root().expect("post-state root");

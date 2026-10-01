@@ -1,13 +1,22 @@
 //! Direct tests for chain-processing error branches.
 
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types_v1::OLBlockHeaderV1;
-use strata_ol_state_types::IStateAccessor;
+use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
+use strata_ol_state_support_types::MemoryStateBaseLayer;
+use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLSpecId, OLSpecVersions};
+use strata_ol_state_types_v1::OLStateV1;
 
 use crate::context::{BlockContext, BlockInfo, EpochInitialContext};
 use crate::errors::ExecError;
 use crate::test_utils::{OLStfFixture, make_genesis_state, tamper_epoch, tamper_slot};
 use crate::{execute_block_initialization, process_block_start, process_epoch_initial};
+
+/// Returns the test genesis state as a V0 state, as the 0.3.0 rules left it.
+fn make_v0_genesis_state() -> MemoryStateBaseLayer<OLStateV1> {
+    let mut state = make_genesis_state();
+    state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+    state
+}
 
 fn terminal_genesis_header() -> OLBlockHeaderV1 {
     OLStfFixture::builder()
@@ -15,6 +24,46 @@ fn terminal_genesis_header() -> OLBlockHeaderV1 {
         .last_completed_block()
         .header()
         .clone()
+}
+
+#[test]
+fn test_epoch_initial_wraps_v0_state() {
+    let mut state = make_v0_genesis_state();
+    let v0_root = state.compute_state_root().unwrap();
+    assert_eq!(v0_root, state.chainstate().compute_chainstate_root());
+
+    let context = EpochInitialContext::new(0, OLBlockCommitment::null());
+    process_epoch_initial(&mut state, &context).expect("epoch initial processing");
+
+    assert_eq!(state.spec_versions(), OLSpecVersions::uniform(OLSpecId::V1));
+    assert_ne!(state.compute_state_root().unwrap(), v0_root);
+}
+
+#[test]
+fn test_block_initialization_rejects_v0_state_mid_epoch() {
+    let mut state = make_v0_genesis_state();
+    let genesis = terminal_genesis_header();
+    let mut flags = BlockFlagsV1::zero();
+    flags.set_is_terminal(false);
+    let nonterminal_parent = OLBlockHeaderV1::new(
+        genesis.timestamp(),
+        flags,
+        genesis.slot(),
+        genesis.epoch(),
+        *genesis.parent_blkid(),
+        *genesis.body_root(),
+        *genesis.state_root(),
+        *genesis.logs_root(),
+    );
+    let block_info = BlockInfo::new(1_001_000, 1, 0);
+    let context = BlockContext::new(&block_info, Some(&nonterminal_parent));
+
+    let err = execute_block_initialization(&mut state, &context)
+        .expect_err("later rules must not continue a V0 epoch");
+
+    assert!(matches!(err, ExecError::ContinuesV0Epoch));
+    assert_eq!(state.spec_versions(), OLSpecVersions::uniform(OLSpecId::V0));
+    assert_eq!(state.cur_slot(), 0);
 }
 
 #[test]

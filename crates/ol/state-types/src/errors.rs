@@ -226,6 +226,19 @@ pub enum ExecError {
     #[error("OL spec {0:?} rules are not implemented")]
     UnimplementedSpec(OLSpecId),
 
+    /// A block that does not start an epoch runs on a V0 state.
+    ///
+    /// Later rules take over a V0 state only at the first block of an epoch,
+    /// which wraps it, so they cannot continue an epoch that started under V0.
+    ///
+    /// [`Self::kind`] reports it as [`ErrorKind::Execution`], like
+    /// [`Self::UnimplementedSpec`], because the block may be valid under the
+    /// V0 rules this binary does not run. Nothing acts on the kind yet
+    /// (STR-2141), so the classification does not change how a node treats
+    /// the block.
+    #[error("OL rules after V0 cannot continue an epoch that started under V0")]
+    ContinuesV0Epoch,
+
     /// Wrapper to provide additional context about tx processing.
     #[error("tx {0} at idx {1} processing failed: {2}")]
     TxExec(OLTxId, usize, Box<Self>),
@@ -268,7 +281,7 @@ impl ExecError {
     pub fn kind(&self) -> ErrorKind {
         match self.base() {
             // The block may be valid; this binary just cannot run its rules.
-            Self::UnimplementedSpec(_) => ErrorKind::Execution,
+            Self::UnimplementedSpec(_) | Self::ContinuesV0Epoch => ErrorKind::Execution,
 
             // All other errors indicate the block is invalid.
             _ => ErrorKind::Correctness,

@@ -7,7 +7,8 @@ use futures::TryFutureExt;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_db_types::DbResult;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_types_v1::WriteBatch;
 use tokio::runtime::Handle;
 
 use crate::cache::CacheTable;
@@ -22,7 +23,7 @@ const DEFAULT_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(64).expect("64 is
 )]
 pub struct OLStateManager {
     ops: OLStateOps,
-    state_cache: CacheTable<OLBlockCommitment, Option<Arc<OLStateV1>>>,
+    state_cache: CacheTable<OLBlockCommitment, Option<Arc<OLStateContainer>>>,
     wb_cache: CacheTable<OLBlockCommitment, Option<WriteBatch>>,
 }
 
@@ -38,11 +39,11 @@ impl OLStateManager {
         }
     }
 
-    /// Stores a toplevel OLStateV1 snapshot for a given block commitment.
+    /// Stores a toplevel OL state snapshot for a given block commitment.
     pub async fn put_toplevel_ol_state_async(
         &self,
         commitment: OLBlockCommitment,
-        state: OLStateV1,
+        state: OLStateContainer,
     ) -> DbResult<()> {
         self.ops
             .put_toplevel_ol_state_async(commitment, state.clone())
@@ -53,11 +54,11 @@ impl OLStateManager {
         Ok(())
     }
 
-    /// Stores a toplevel OLStateV1 snapshot for a given block commitment.
+    /// Stores a toplevel OL state snapshot for a given block commitment.
     pub fn put_toplevel_ol_state_blocking(
         &self,
         commitment: OLBlockCommitment,
-        state: OLStateV1,
+        state: OLStateContainer,
     ) -> DbResult<()> {
         self.ops
             .put_toplevel_ol_state_blocking(commitment, state.clone())?;
@@ -66,11 +67,11 @@ impl OLStateManager {
         Ok(())
     }
 
-    /// Retrieves a toplevel OLStateV1 snapshot for a given block commitment.
+    /// Retrieves a toplevel OL state snapshot for a given block commitment.
     pub async fn get_toplevel_ol_state_async(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLStateV1>>> {
+    ) -> DbResult<Option<Arc<OLStateContainer>>> {
         self.state_cache
             .get_or_fetch(&commitment, || async move {
                 self.ops
@@ -82,11 +83,11 @@ impl OLStateManager {
             .await
     }
 
-    /// Retrieves a toplevel OLStateV1 snapshot for a given block commitment.
+    /// Retrieves a toplevel OL state snapshot for a given block commitment.
     pub fn get_toplevel_ol_state_blocking(
         &self,
         commitment: OLBlockCommitment,
-    ) -> DbResult<Option<Arc<OLStateV1>>> {
+    ) -> DbResult<Option<Arc<OLStateContainer>>> {
         self.state_cache.get_or_fetch_blocking(&commitment, || {
             self.ops
                 .get_toplevel_ol_state_blocking(commitment)
@@ -94,33 +95,33 @@ impl OLStateManager {
         })
     }
 
-    /// Gets the latest toplevel OLStateV1 (highest slot).
+    /// Gets the latest toplevel OL state snapshot (highest slot).
     pub async fn get_latest_toplevel_ol_state_async(
         &self,
-    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLStateV1>)>> {
+    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLStateContainer>)>> {
         self.ops
             .get_latest_toplevel_ol_state_async()
             .map_ok(|opt| opt.map(|(c, s)| (c, Arc::new(s))))
             .await
     }
 
-    /// Gets the latest toplevel OLStateV1 (highest slot).
+    /// Gets the latest toplevel OL state snapshot (highest slot).
     pub fn get_latest_toplevel_ol_state_blocking(
         &self,
-    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLStateV1>)>> {
+    ) -> DbResult<Option<(OLBlockCommitment, Arc<OLStateContainer>)>> {
         self.ops
             .get_latest_toplevel_ol_state_blocking()
             .map(|opt| opt.map(|(c, s)| (c, Arc::new(s))))
     }
 
-    /// Deletes a toplevel OLStateV1 snapshot for a given block commitment.
+    /// Deletes a toplevel OL state snapshot for a given block commitment.
     pub async fn del_toplevel_ol_state_async(&self, commitment: OLBlockCommitment) -> DbResult<()> {
         self.ops.del_toplevel_ol_state_async(commitment).await?;
         self.state_cache.purge_async(&commitment).await;
         Ok(())
     }
 
-    /// Deletes a toplevel OLStateV1 snapshot for a given block commitment.
+    /// Deletes a toplevel OL state snapshot for a given block commitment.
     pub fn del_toplevel_ol_state_blocking(&self, commitment: OLBlockCommitment) -> DbResult<()> {
         self.ops.del_toplevel_ol_state_blocking(commitment)?;
         self.state_cache.purge_blocking(&commitment);
@@ -198,8 +199,9 @@ mod tests {
     use strata_db_types::backend::DatabaseBackend;
     use strata_identifiers::test_utils::ol_block_commitment_strategy;
     use strata_identifiers::OLBlockCommitment;
-    use strata_ol_state_types_v1::test_utils::ol_state_strategy;
-    use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+    use strata_ol_state_container::test_utils::ol_state_container_strategy;
+    use strata_ol_state_container::OLStateContainer;
+    use strata_ol_state_types_v1::WriteBatch;
     use tokio::runtime::Runtime;
 
     use super::*;
@@ -215,7 +217,10 @@ mod tests {
     // Proptest helper functions (blocking)
     // =============================================================================
 
-    fn proptest_put_and_get_toplevel_blocking(commitment: OLBlockCommitment, state: OLStateV1) {
+    fn proptest_put_and_get_toplevel_blocking(
+        commitment: OLBlockCommitment,
+        state: OLStateContainer,
+    ) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_blocking(commitment, state.clone())
@@ -224,16 +229,13 @@ mod tests {
             .get_toplevel_ol_state_blocking(commitment)
             .expect("test: get")
             .unwrap();
-        assert_eq!(
-            retrieved.global_state().get_cur_slot(),
-            state.global_state().get_cur_slot()
-        );
+        assert_eq!(*retrieved, state);
     }
 
     fn proptest_get_latest_toplevel_blocking(
         commitment1: OLBlockCommitment,
         commitment2: OLBlockCommitment,
-        state: OLStateV1,
+        state: OLStateContainer,
     ) {
         let manager = setup_manager();
         let (lower, higher) = if commitment1.slot() < commitment2.slot() {
@@ -256,13 +258,10 @@ mod tests {
             .expect("test: get latest")
             .unwrap();
         assert_eq!(latest_commitment, higher);
-        assert_eq!(
-            latest_state.global_state().get_cur_slot(),
-            state.global_state().get_cur_slot()
-        );
+        assert_eq!(*latest_state, state);
     }
 
-    fn proptest_delete_toplevel_blocking(commitment: OLBlockCommitment, state: OLStateV1) {
+    fn proptest_delete_toplevel_blocking(commitment: OLBlockCommitment, state: OLStateContainer) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_blocking(commitment, state)
@@ -307,7 +306,10 @@ mod tests {
     // Proptest helper functions (async)
     // =============================================================================
 
-    async fn proptest_put_and_get_toplevel_async(commitment: OLBlockCommitment, state: OLStateV1) {
+    async fn proptest_put_and_get_toplevel_async(
+        commitment: OLBlockCommitment,
+        state: OLStateContainer,
+    ) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_async(commitment, state.clone())
@@ -318,16 +320,13 @@ mod tests {
             .await
             .expect("test: get")
             .unwrap();
-        assert_eq!(
-            retrieved.global_state().get_cur_slot(),
-            state.global_state().get_cur_slot()
-        );
+        assert_eq!(*retrieved, state);
     }
 
     async fn proptest_get_latest_toplevel_async(
         commitment1: OLBlockCommitment,
         commitment2: OLBlockCommitment,
-        state: OLStateV1,
+        state: OLStateContainer,
     ) {
         let manager = setup_manager();
         let (lower, higher) = if commitment1.slot() < commitment2.slot() {
@@ -353,13 +352,13 @@ mod tests {
             .expect("test: get latest")
             .unwrap();
         assert_eq!(latest_commitment, higher);
-        assert_eq!(
-            latest_state.global_state().get_cur_slot(),
-            state.global_state().get_cur_slot()
-        );
+        assert_eq!(*latest_state, state);
     }
 
-    async fn proptest_delete_toplevel_async(commitment: OLBlockCommitment, state: OLStateV1) {
+    async fn proptest_delete_toplevel_async(
+        commitment: OLBlockCommitment,
+        state: OLStateContainer,
+    ) {
         let manager = setup_manager();
         manager
             .put_toplevel_ol_state_async(commitment, state)
@@ -416,7 +415,7 @@ mod tests {
         #[test]
         fn test_put_and_get_toplevel_blocking(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
+            state in ol_state_container_strategy(),
         ) {
             proptest_put_and_get_toplevel_blocking(commitment, state);
         }
@@ -425,7 +424,7 @@ mod tests {
         fn test_get_latest_toplevel_blocking(
             commitment1 in ol_block_commitment_strategy(),
             commitment2 in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
+            state in ol_state_container_strategy(),
         ) {
             proptest_get_latest_toplevel_blocking(commitment1, commitment2, state);
         }
@@ -433,7 +432,7 @@ mod tests {
         #[test]
         fn test_delete_toplevel_blocking(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
+            state in ol_state_container_strategy(),
         ) {
             proptest_delete_toplevel_blocking(commitment, state);
         }
@@ -461,7 +460,7 @@ mod tests {
         #[test]
         fn test_put_and_get_toplevel_async(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
+            state in ol_state_container_strategy(),
         ) {
             Runtime::new().unwrap().block_on(async {
                 proptest_put_and_get_toplevel_async(commitment, state).await;
@@ -472,7 +471,7 @@ mod tests {
         fn test_get_latest_toplevel_async(
             commitment1 in ol_block_commitment_strategy(),
             commitment2 in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
+            state in ol_state_container_strategy(),
         ) {
             Runtime::new().unwrap().block_on(async {
                 proptest_get_latest_toplevel_async(commitment1, commitment2, state).await;
@@ -482,7 +481,7 @@ mod tests {
         #[test]
         fn test_delete_toplevel_async(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
+            state in ol_state_container_strategy(),
         ) {
             Runtime::new().unwrap().block_on(async {
                 proptest_delete_toplevel_async(commitment, state).await;

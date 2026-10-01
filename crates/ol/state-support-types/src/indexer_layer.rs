@@ -371,6 +371,12 @@ impl<S: IStateAccessor> IndexerState<S> {
 impl<S: IStateAccessor> IStateAccessor for IndexerState<S> {
     type AccountState = S::AccountState;
 
+    // ===== Root state methods =====
+
+    fn spec_versions(&self) -> OLSpecVersions {
+        self.inner.spec_versions()
+    }
+
     // ===== Global state methods (pass through) =====
 
     fn cur_slot(&self) -> u64 {
@@ -449,6 +455,10 @@ where
     <S::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     type AccountStateMut = IndexerAccountStateMut<S::AccountStateMut>;
+
+    fn set_spec_versions(&mut self, versions: OLSpecVersions) {
+        self.inner.set_spec_versions(versions);
+    }
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.inner.set_cur_slot(slot);

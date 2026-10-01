@@ -10,7 +10,7 @@ use strata_ol_chain_types_v1::{
     sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlockV1,
 };
 use strata_predicate::PredicateKey;
-use strata_primitives::{Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId};
+use strata_primitives::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
 use strata_status::OLSyncStatus;
 use strata_tasks::TaskExecutor;
@@ -373,13 +373,9 @@ async fn check_finalization_progress<C: FcmContext>(
 }
 
 async fn publish_sync_status<C: FcmContext>(fcm_state: &FcmServiceState<C>) -> anyhow::Result<()> {
-    let last_l1_blk = L1BlockCommitment::new(
-        fcm_state.cur_ol_state().epoch_state().last_l1_height(),
-        *fcm_state.cur_ol_state().epoch_state().last_l1_blkid(),
-    );
-
     let cur_state = fcm_state.cur_ol_state();
-    let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
+    let last_l1_blk = cur_state.chainstate().last_l1_block();
+    let prev_epoch_num = cur_state.chainstate().cur_epoch().saturating_sub(1);
     let prev_epoch = fcm_state
         .ctx()
         .get_canonical_epoch_commitment_at(prev_epoch_num)
@@ -813,8 +809,9 @@ mod tests {
         BlockFlagsV1, OLBlockBodyV1, OLBlockCredentialV1, OLBlockHeaderV1, OLBlockV1,
         OLTxSegmentV1, SignedOLBlockHeaderV1,
     };
+    use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types_v1::{OLStateV1, WriteBatch};
+    use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
     use strata_ol_stf_v1::{
         test_utils::{execute_block, make_genesis_state},
         BlockComponents, BlockInfo, CompletedBlock,
@@ -847,7 +844,7 @@ mod tests {
         canonical_blocks: HashMap<Slot, OLBlockCommitment>,
         block_high_watermark: Option<OLBlockCommitment>,
         history_base: Option<EpochCommitment>,
-        states: HashMap<OLBlockCommitment, Arc<OLStateV1>>,
+        states: HashMap<OLBlockCommitment, Arc<OLStateContainer>>,
         canonical_epochs: HashMap<Epoch, EpochCommitment>,
         indexing_rollbacks: Vec<(Epoch, OLBlockCommitment)>,
         epoch_summary_deletes: Vec<EpochCommitment>,
@@ -872,7 +869,7 @@ mod tests {
         fn put_executed_block(
             &self,
             block: OLBlockV1,
-            state: OLStateV1,
+            state: OLStateContainer,
             status: BlockStatus,
         ) -> OLBlockCommitment {
             self.put_block_parts(block, Some(state), Some(status))
@@ -881,7 +878,7 @@ mod tests {
         fn put_block_parts(
             &self,
             block: OLBlockV1,
-            state: Option<OLStateV1>,
+            state: Option<OLStateContainer>,
             status: Option<BlockStatus>,
         ) -> OLBlockCommitment {
             let blkid = block.header().compute_blkid();
@@ -904,7 +901,7 @@ mod tests {
             commitment
         }
 
-        fn put_toplevel_ol_state(&self, block: OLBlockCommitment, state: OLStateV1) {
+        fn put_toplevel_ol_state(&self, block: OLBlockCommitment, state: OLStateContainer) {
             let mut inner = self.inner.lock().unwrap();
             assert!(
                 inner.blocks.contains_key(block.blkid())
@@ -1087,7 +1084,7 @@ mod tests {
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
-        ) -> DbResult<Option<Arc<OLStateV1>>> {
+        ) -> DbResult<Option<Arc<OLStateContainer>>> {
             Ok(self.inner.lock().unwrap().states.get(&commitment).cloned())
         }
 
@@ -1225,7 +1222,7 @@ mod tests {
         async fn get_toplevel_ol_state(
             &self,
             commitment: OLBlockCommitment,
-        ) -> DbResult<Option<Arc<OLStateV1>>> {
+        ) -> DbResult<Option<Arc<OLStateContainer>>> {
             self.storage.get_toplevel_ol_state(commitment).await
         }
 
@@ -1274,16 +1271,16 @@ mod tests {
     #[derive(Clone)]
     struct ExecutedBlock {
         block: OLBlockV1,
-        state: OLStateV1,
+        state: OLStateContainer,
     }
 
     impl ExecutedBlock {
-        fn new(completed: CompletedBlock, state: &MemoryStateBaseLayer) -> Self {
+        fn new(completed: CompletedBlock, state: &MemoryStateBaseLayer<OLStateV1>) -> Self {
             let signed_header =
                 SignedOLBlockHeaderV1::new(completed.header().clone(), Buf64::zero());
             Self {
                 block: OLBlockV1::new(signed_header, completed.body().clone()),
-                state: state.state().clone(),
+                state: state.to_container(),
             }
         }
 
@@ -1332,7 +1329,7 @@ mod tests {
         }
     }
 
-    fn execute_test_genesis() -> (ExecutedBlock, MemoryStateBaseLayer) {
+    fn execute_test_genesis() -> (ExecutedBlock, MemoryStateBaseLayer<OLStateV1>) {
         let mut genesis_state = make_genesis_state();
         let genesis_manifest = AsmManifest::new(
             1,
@@ -1354,7 +1351,7 @@ mod tests {
     }
 
     fn execute_test_block(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
@@ -1363,7 +1360,7 @@ mod tests {
     }
 
     fn execute_test_block_in_epoch(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
@@ -1380,7 +1377,7 @@ mod tests {
     }
 
     fn execute_terminal_test_block_in_epoch(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
@@ -1397,7 +1394,7 @@ mod tests {
     }
 
     fn execute_test_block_with_components(
-        state: &mut MemoryStateBaseLayer,
+        state: &mut MemoryStateBaseLayer<OLStateV1>,
         parent: &OLBlockV1,
         timestamp: u64,
         slot: u64,
@@ -1657,7 +1654,7 @@ mod tests {
         seed_executed_block(ctx.storage(), &chain.x2, BlockStatus::Valid);
         ctx.storage().put_canonical_epoch_commitment(pending_epoch);
         let tracker = tracker_with_blocks(&chain.genesis, &[&chain.x1, &chain.x2]);
-        let mut finalizable_state = chain.x2.state.clone();
+        let mut finalizable_state = MemoryStateBaseLayer::from_container(chain.x2.state.clone());
         let mut epoch_update = WriteBatch::default();
         epoch_update.epochal_writes_mut().cur_epoch = Some(2);
         finalizable_state
@@ -1667,7 +1664,7 @@ mod tests {
         let inner = FcmInnerState::new(
             tracker,
             chain.x2.commitment(),
-            Arc::new(finalizable_state),
+            Arc::new(finalizable_state.into_container()),
             Vec::new(),
         );
         let mut fcm_state = FcmServiceState::new(ctx.clone(), PredicateKey::always_accept(), inner);
@@ -1697,8 +1694,8 @@ mod tests {
 
         assert_eq!(fcm_state.cur_best_block(), fork.b3.commitment());
         assert_eq!(
-            fcm_state.cur_ol_state().global_state().get_cur_slot(),
-            fork.b3.state.global_state().get_cur_slot()
+            fcm_state.cur_ol_state().chainstate().cur_slot(),
+            fork.b3.state.chainstate().cur_slot()
         );
         assert_eq!(
             fixture.ctx.safe_tip_updates(),
@@ -1725,8 +1722,8 @@ mod tests {
 
         assert_eq!(fcm_state.cur_best_block(), fork.b1.commitment());
         assert_eq!(
-            fcm_state.cur_ol_state().global_state().get_cur_slot(),
-            fork.b1.state.global_state().get_cur_slot()
+            fcm_state.cur_ol_state().chainstate().cur_slot(),
+            fork.b1.state.chainstate().cur_slot()
         );
         assert_eq!(
             fixture.ctx.safe_tip_updates(),
@@ -1961,7 +1958,7 @@ mod tests {
     #[tokio::test]
     async fn test_startup_reconciles_mmr_to_repaired_tip() -> anyhow::Result<()> {
         let chain = LinearChain::new();
-        let mut state = MemoryStateBaseLayer::new(chain.x4.state.clone());
+        let mut state = MemoryStateBaseLayer::from_container(chain.x4.state.clone());
         let terminal =
             execute_terminal_test_block_in_epoch(&mut state, &chain.x4.block, 3_500, 5, 1);
         let fixture = FcmTestFixture::new(
@@ -1970,7 +1967,7 @@ mod tests {
         );
 
         assert_eq!(terminal.block.header().epoch(), 1);
-        assert_eq!(terminal.state.epoch_state().cur_epoch(), 2);
+        assert_eq!(terminal.state.chainstate().cur_epoch(), 2);
 
         let fcm_state =
             init_fcm_service_state(PredicateKey::always_accept(), fixture.ctx.clone()).await?;
@@ -1982,8 +1979,8 @@ mod tests {
         assert_eq!(reconcile_target.block, terminal.commitment());
         assert_eq!(reconcile_target.epoch, terminal.block.header().epoch());
         assert_eq!(
-            reconcile_target.state.global_state().get_cur_slot(),
-            terminal.state.global_state().get_cur_slot()
+            reconcile_target.state.chainstate().cur_slot(),
+            terminal.state.chainstate().cur_slot()
         );
         assert!(reconcile_target.rejected_indexing_blocks.is_empty());
 
@@ -1993,7 +1990,7 @@ mod tests {
     #[tokio::test]
     async fn test_startup_mmr_reconcile_stops_at_promoted_history_base() -> anyhow::Result<()> {
         let chain = LinearChain::new();
-        let mut state = MemoryStateBaseLayer::new(chain.x4.state.clone());
+        let mut state = MemoryStateBaseLayer::from_container(chain.x4.state.clone());
         let terminal =
             execute_terminal_test_block_in_epoch(&mut state, &chain.x4.block, 3_500, 5, 1);
         let history_base = EpochCommitment::new(
@@ -2048,8 +2045,8 @@ mod tests {
 
         assert_eq!(fcm_state.cur_best_block(), chain.x4.commitment());
         assert_eq!(
-            fcm_state.cur_ol_state().global_state().get_cur_slot(),
-            chain.x4.state.global_state().get_cur_slot()
+            fcm_state.cur_ol_state().chainstate().cur_slot(),
+            chain.x4.state.chainstate().cur_slot()
         );
         assert_eq!(
             fixture.ctx.safe_tip_updates(),
@@ -2178,7 +2175,7 @@ mod tests {
 
         ctx.storage().put_executed_block(
             genesis,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         for (block, commitment) in [(block1, commitment1), (block2, commitment2)] {
@@ -2188,7 +2185,7 @@ mod tests {
                 .set_block_status(blkid, BlockStatus::Unchecked)
                 .await?;
             ctx.storage()
-                .put_toplevel_ol_state(commitment, make_genesis_state().state().clone());
+                .put_toplevel_ol_state(commitment, make_genesis_state().into_container());
         }
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
         ctx.storage().seed_canonical_genesis(genesis_blkid);
@@ -2251,7 +2248,7 @@ mod tests {
     #[tokio::test]
     async fn stub_storage_round_trips_executed_blocks_and_epochs() {
         let storage = StubFcmStorage::new();
-        let state = make_genesis_state().state().clone();
+        let state = make_genesis_state().into_container();
         let block = make_storage_block(0, OLBlockId::from(Buf32::zero()));
         let blkid = block.header().compute_blkid();
         let commitment = OLBlockCommitment::new(block.header().slot(), blkid);
@@ -2328,7 +2325,7 @@ mod tests {
 
         ctx.storage().put_executed_block(
             genesis,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(block);
@@ -2337,7 +2334,7 @@ mod tests {
             .await
             .expect("set unchecked status");
         ctx.storage()
-            .put_toplevel_ol_state(block_commitment, make_genesis_state().state().clone());
+            .put_toplevel_ol_state(block_commitment, make_genesis_state().into_container());
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
         ctx.storage().seed_canonical_genesis(genesis_blkid);
 
@@ -2386,7 +2383,7 @@ mod tests {
 
         ctx.storage().put_executed_block(
             genesis,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(block);
@@ -2438,7 +2435,7 @@ mod tests {
 
         ctx.storage().put_executed_block(
             genesis,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(block);
@@ -2497,12 +2494,12 @@ mod tests {
 
         ctx.storage().put_executed_block(
             genesis,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         ctx.storage().put_executed_block(
             canonical,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(fork);
@@ -2558,12 +2555,12 @@ mod tests {
 
         ctx.storage().put_executed_block(
             genesis,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         ctx.storage().put_executed_block(
             canonical,
-            make_genesis_state().state().clone(),
+            make_genesis_state().into_container(),
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(fork);

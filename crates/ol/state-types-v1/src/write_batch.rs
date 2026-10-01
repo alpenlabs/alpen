@@ -6,7 +6,7 @@ use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_utils::CodecSsz;
 use strata_identifiers::{EpochCommitment, L1BlockId, L1Height, Slot};
-use strata_ol_state_types::{IAccountState, NewAccountData, PendingAsmLog};
+use strata_ol_state_types::{IAccountState, NewAccountData, OLSpecVersions, PendingAsmLog};
 
 use crate::{OLAccountStateV1, SerialMap};
 
@@ -92,9 +92,12 @@ pub struct EpochalStateWrites {
 /// A batch of writes to the OL state.
 ///
 /// This tracks all modifications made during block execution so they can be
-/// applied atomically or discarded.
+/// applied atomically or discarded. It covers the chainstate and the spec
+/// versions of the root state above it.
 #[derive(Clone, Debug, Default)]
 pub struct WriteBatch {
+    /// New spec versions of the root state, if changed.
+    pub(crate) spec_versions: Option<OLSpecVersions>,
     pub(crate) global_writes: GlobalStateWrites,
     pub(crate) epochal_writes: EpochalStateWrites,
     pub(crate) intraepoch_writes: IntraepochStateWrites,
@@ -102,6 +105,16 @@ pub struct WriteBatch {
 }
 
 impl WriteBatch {
+    /// Returns the new spec versions of the root state, if changed.
+    pub fn spec_versions(&self) -> Option<OLSpecVersions> {
+        self.spec_versions
+    }
+
+    /// Records new spec versions for the root state.
+    pub fn set_spec_versions(&mut self, versions: OLSpecVersions) {
+        self.spec_versions = Some(versions);
+    }
+
     /// Returns a reference to the global state writes.
     pub fn global_writes(&self) -> &GlobalStateWrites {
         &self.global_writes
@@ -142,7 +155,10 @@ impl WriteBatch {
         &mut self.ledger
     }
 
-    /// Consumes the batch and returns its component parts.
+    /// Consumes the batch and returns its chainstate parts.
+    ///
+    /// The spec versions are not among them; read them with
+    /// [`Self::spec_versions`] first.
     pub fn into_parts(
         self,
     ) -> (
@@ -375,6 +391,10 @@ impl Codec for WriteBatch {
         self.epochal_writes.encode(enc)?;
         self.intraepoch_writes.encode(enc)?;
         self.ledger.encode(enc)?;
+        self.spec_versions.is_some().encode(enc)?;
+        if let Some(versions) = &self.spec_versions {
+            versions.encode(enc)?;
+        }
         Ok(())
     }
 
@@ -383,7 +403,13 @@ impl Codec for WriteBatch {
         let epochal_writes = EpochalStateWrites::decode(dec)?;
         let intraepoch_writes = IntraepochStateWrites::decode(dec)?;
         let ledger = LedgerWriteBatch::decode(dec)?;
+        let spec_versions = if bool::decode(dec)? {
+            Some(OLSpecVersions::decode(dec)?)
+        } else {
+            None
+        };
         Ok(Self {
+            spec_versions,
             global_writes,
             epochal_writes,
             intraepoch_writes,
@@ -424,10 +450,33 @@ impl Codec for LedgerWriteBatch {
 
 #[cfg(test)]
 mod tests {
-    use strata_codec::encode_to_vec;
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_ol_state_types::OLSpecId;
 
     use super::*;
     use crate::OLAccountTypeStateV1;
+
+    #[test]
+    fn test_spec_versions_round_trip_and_stay_canonical() {
+        let mut batch = WriteBatch::default();
+        let decoded: WriteBatch = decode_buf_exact(&encode_to_vec(&batch).unwrap()).unwrap();
+        assert_eq!(decoded.spec_versions(), None);
+
+        batch.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V1));
+        let bytes = encode_to_vec(&batch).unwrap();
+        let decoded: WriteBatch = decode_buf_exact(&bytes).unwrap();
+        assert_eq!(
+            decoded.spec_versions(),
+            Some(OLSpecVersions::uniform(OLSpecId::V1))
+        );
+
+        // The versions are encoded last, as a presence flag and two `u32`s.
+        // Rewriting them to (V0, V1) must not decode.
+        let mut non_canonical = bytes[..bytes.len() - 8].to_vec();
+        non_canonical.extend(encode_to_vec(&0u32).unwrap());
+        non_canonical.extend(encode_to_vec(&1u32).unwrap());
+        assert!(decode_buf_exact::<WriteBatch>(&non_canonical).is_err());
+    }
 
     #[test]
     fn account_write_encoding_matches_bare_state_ssz_encoding() {

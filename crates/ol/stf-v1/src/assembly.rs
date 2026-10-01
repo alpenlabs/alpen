@@ -6,11 +6,11 @@ use strata_identifiers::Buf32;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_v1::*;
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_types::IStateAccessorMut;
+use strata_ol_state_types::{IStateAccessorMut, OLSpecId};
 use strata_ol_tx_types_v1::*;
 
 use crate::context::{BasicExecContext, BlockContext, TxExecContext};
-use crate::errors::ExecResult;
+use crate::errors::{ExecError, ExecResult};
 use crate::manifest_processing::ManifestProcessingOutcome;
 use crate::output::ExecOutputBuffer;
 use crate::verification::{
@@ -79,6 +79,11 @@ impl BlockExecOutputs {
 /// Block verification, STF block construction, and sequencer block assembly
 /// all open a block through this function so that they apply the phases in
 /// the same order.
+///
+/// # Errors
+///
+/// Returns [`ExecError::ContinuesV0Epoch`] if the block does not start an
+/// epoch and `state` is still a V0 state.
 pub fn execute_block_initialization<S: IStateAccessorMut>(
     state: &mut S,
     block_context: &BlockContext<'_>,
@@ -86,6 +91,11 @@ pub fn execute_block_initialization<S: IStateAccessorMut>(
     if block_context.is_epoch_initial() {
         let init_ctx = block_context.get_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &init_ctx)?;
+    } else if state.cur_spec_version() == u32::from(OLSpecId::V0) {
+        // Epoch initial processing wraps a V0 state, so reaching a V0 state
+        // here means these rules would continue an epoch that started under
+        // V0, which would keep committing bare roots.
+        return Err(ExecError::ContinuesV0Epoch);
     }
     chain_processing::process_block_start(state, block_context)
 }

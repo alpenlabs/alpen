@@ -5,8 +5,21 @@ use proptest::test_runner::TestRunner;
 use strata_db_types::ol_state::OLStateDatabase;
 use strata_identifiers::test_utils::{account_id_strategy, account_serial_strategy};
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types_v1::test_utils::ol_snark_account_state_strategy;
-use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1, WriteBatch};
+use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, WriteBatch};
+
+/// Asserts that a retrieved snapshot reproduces the stored one, including both
+/// spec versions and the committed state root.
+fn assert_same_snapshot(retrieved: &OLStateContainer, stored: &OLStateContainer) {
+    assert_eq!(retrieved.cur_spec_version(), stored.cur_spec_version());
+    assert_eq!(
+        retrieved.staged_spec_version(),
+        stored.staged_spec_version()
+    );
+    assert_eq!(retrieved.compute_state_root(), stored.compute_state_root());
+    assert_eq!(retrieved, stored);
+}
 
 // =============================================================================
 // Proptest-based test functions
@@ -15,7 +28,7 @@ use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1
 pub fn proptest_put_and_get_toplevel_ol_state(
     db: &impl OLStateDatabase,
     commitment: OLBlockCommitment,
-    state: OLStateV1,
+    state: OLStateContainer,
 ) {
     db.put_toplevel_ol_state(commitment, state.clone())
         .expect("test: put toplevel");
@@ -23,17 +36,14 @@ pub fn proptest_put_and_get_toplevel_ol_state(
         .get_toplevel_ol_state(commitment)
         .expect("test: get toplevel")
         .unwrap();
-    assert_eq!(
-        retrieved_state.global_state().get_cur_slot(),
-        state.global_state().get_cur_slot()
-    );
+    assert_same_snapshot(&retrieved_state, &state);
 }
 
 pub fn proptest_get_latest_toplevel_ol_state(
     db: &impl OLStateDatabase,
     commitment1: OLBlockCommitment,
     commitment2: OLBlockCommitment,
-    state: OLStateV1,
+    state: OLStateContainer,
 ) {
     // Ensure commitment2 has higher slot for deterministic "latest"
     let (lower, higher) = if commitment1.slot() < commitment2.slot() {
@@ -59,16 +69,13 @@ pub fn proptest_get_latest_toplevel_ol_state(
         .expect("test: get latest")
         .unwrap();
     assert_eq!(latest_commitment, higher);
-    assert_eq!(
-        latest_state.global_state().get_cur_slot(),
-        state.global_state().get_cur_slot()
-    );
+    assert_same_snapshot(&latest_state, &state);
 }
 
 pub fn proptest_delete_toplevel_ol_state(
     db: &impl OLStateDatabase,
     commitment: OLBlockCommitment,
-    state: OLStateV1,
+    state: OLStateContainer,
 ) {
     db.put_toplevel_ol_state(commitment, state)
         .expect("test: put toplevel");
@@ -165,7 +172,7 @@ macro_rules! ol_state_db_tests {
             #[test]
             fn proptest_put_and_get_toplevel_ol_state(
                 commitment in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types_v1::test_utils::ol_state_strategy(),
+                state in strata_ol_state_container::test_utils::ol_state_container_strategy(),
             ) {
                 let db = $setup_expr;
                 $crate::ol_state_tests::proptest_put_and_get_toplevel_ol_state(&db, commitment, state);
@@ -175,7 +182,7 @@ macro_rules! ol_state_db_tests {
             fn proptest_get_latest_toplevel_ol_state(
                 commitment1 in strata_identifiers::test_utils::ol_block_commitment_strategy(),
                 commitment2 in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types_v1::test_utils::ol_state_strategy(),
+                state in strata_ol_state_container::test_utils::ol_state_container_strategy(),
             ) {
                 let db = $setup_expr;
                 $crate::ol_state_tests::proptest_get_latest_toplevel_ol_state(&db, commitment1, commitment2, state);
@@ -184,7 +191,7 @@ macro_rules! ol_state_db_tests {
             #[test]
             fn proptest_delete_toplevel_ol_state(
                 commitment in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types_v1::test_utils::ol_state_strategy(),
+                state in strata_ol_state_container::test_utils::ol_state_container_strategy(),
             ) {
                 let db = $setup_expr;
                 $crate::ol_state_tests::proptest_delete_toplevel_ol_state(&db, commitment, state);

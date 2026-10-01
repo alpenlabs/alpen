@@ -413,6 +413,19 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
 /// Use this only when the diff has already been verified to bind the post-state root via an
 /// upstream proof — e.g. the CSM-verified `CheckpointPayload` path that drives checkpoint sync.
 /// Do not use with peer-supplied or RPC-supplied diffs.
+///
+/// # Spec versions
+///
+/// The DA diff does not carry the root state's spec versions; replay derives
+/// them. Starting from the previous terminal state `(cur, staged)`, epoch
+/// initial processing promotes the staged spec, and the terminal drain of an
+/// epoch that processes a checkpoint predicate enactment stages its successor:
+/// `(v, v)` becomes `(v, v + 1)` at that terminal and `(v + 1, v + 1)` at the
+/// first block of the next epoch. A V0 previous terminal state is wrapped the
+/// same way, as `(V1, V1)`, since V0 states commit no staged spec. Replaying
+/// the epoch once from the authenticated previous terminal state therefore
+/// reproduces both versions exactly. Staging and promotion arrive with
+/// STR-4086; until then only the V0 wrap changes the versions.
 pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,
@@ -461,6 +474,7 @@ mod tests {
         OLDaPayloadV1, OLDaSchemeV1, OLStateDiffV1,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types_v1::OLStateV1;
 
     use super::*;
     use crate::assembly::BlockExecOutputs;
@@ -478,7 +492,7 @@ mod tests {
         BlockExecOutputs::new(Buf32::zero(), logs).compute_block_logs_root()
     }
 
-    fn setup_epoch1_diff_state() -> (MemoryStateBaseLayer, EpochInfo) {
+    fn setup_epoch1_diff_state() -> (MemoryStateBaseLayer<OLStateV1>, EpochInfo) {
         let fixture = OLStfFixture::builder().execute_genesis();
         let state = fixture.state().clone();
         let terminal_info = BlockInfo::new(1_001_000, 1, state.cur_epoch());
@@ -514,7 +528,7 @@ mod tests {
     }
 
     fn compute_post_epoch_root_after_diff(
-        state: &MemoryStateBaseLayer,
+        state: &MemoryStateBaseLayer<OLStateV1>,
         epoch_info: &EpochInfo,
         state_diff: OLStateDiffV1,
         manifests: &OLAsmManifestContainerV1,

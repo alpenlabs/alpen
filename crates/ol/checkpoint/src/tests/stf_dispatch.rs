@@ -1,25 +1,33 @@
 //! Differential test across the STF drivers that share blocks: block
-//! construction, block verification, and checkpoint DA replay.
+//! construction, block verification, checkpoint DA replay, and the checkpoint
+//! proof program.
 //!
 //! Blocks built through [`construct_block`] must verify through
 //! [`verify_block`] with the same logs and state roots, and each epoch's DA,
 //! computed by [`compute_epoch_da`], must reproduce the epoch's terminal state
-//! root through both [`apply_da_epoch`] and [`verify_epoch_with_diff`].
+//! root through both [`apply_da_epoch`] and [`verify_epoch_with_diff`]. The
+//! checkpoint program must prove each epoch from its start state container.
+//! The drivers must also agree on the first V1 epoch after a V0 state, which
+//! wraps it.
 
 use std::iter;
 
 use strata_acct_types::BitcoinAmount;
-use strata_identifiers::{L1Height, SubjectId};
-use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockV1, OLLog};
+use strata_identifiers::{Buf64, L1Height, SubjectId};
+use strata_ol_chain_types_v1::{
+    AsmManifest, OLBlockHeaderV1, OLBlockV1, OLLog, SignedOLBlockHeaderV1,
+};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::IStateAccessor;
+use strata_ol_state_support_types::{MemoryStateBaseLayer, WriteTrackingState};
+use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLSpecVersions};
+use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1};
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, EpochDaReplayError, EpochExecExpectations, EpochInfo,
     ExecError, OLSpecId, apply_da_epoch, construct_block, verify_block, verify_epoch_with_diff,
 };
 use strata_ol_stf_v1::test_utils::*;
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
+use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 
 use crate::compute_epoch_da;
 
@@ -33,7 +41,7 @@ struct BuiltBlock {
 
 /// One epoch of built blocks and the state it started from.
 struct BuiltEpoch {
-    pre_epoch_state: MemoryStateBaseLayer,
+    pre_epoch_state: MemoryStateBaseLayer<OLStateV1>,
     previous_terminal: OLBlockHeaderV1,
     blocks: Vec<BuiltBlock>,
 }
@@ -72,7 +80,7 @@ impl BuiltEpoch {
 
 /// Builds a chain through [`construct_block`], tracking epoch boundaries.
 struct ChainBuilder {
-    state: MemoryStateBaseLayer,
+    state: MemoryStateBaseLayer<OLStateV1>,
     runtime_params: OLRuntimeParams,
     genesis: BuiltBlock,
     epochs: Vec<BuiltEpoch>,
@@ -81,7 +89,7 @@ struct ChainBuilder {
 
 impl ChainBuilder {
     /// Executes genesis on top of `pre_genesis_state`.
-    fn new(pre_genesis_state: MemoryStateBaseLayer) -> Self {
+    fn new(pre_genesis_state: MemoryStateBaseLayer<OLStateV1>) -> Self {
         let mut state = pre_genesis_state;
         let runtime_params = OLRuntimeParams::test_default();
         let genesis_info = BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP);
@@ -169,7 +177,7 @@ fn manifest_components(manifest: AsmManifest, is_terminal: bool) -> BlockCompone
 /// Builds three epochs covering inbox delivery, a snark account update, a
 /// deposit, a manifest in a non-terminal block, and a checkpoint predicate
 /// boundary at an epoch terminal.
-fn build_chain() -> (MemoryStateBaseLayer, ChainBuilder) {
+fn build_chain() -> (MemoryStateBaseLayer<OLStateV1>, ChainBuilder) {
     let mut pre_genesis_state = make_genesis_state();
     let snark_serial = epoch_runner_seed_accounts(&mut pre_genesis_state);
     let mut chain = ChainBuilder::new(pre_genesis_state.clone());
@@ -331,4 +339,179 @@ fn test_epoch_da_replay_reproduces_terminal_roots() {
             EpochDaReplayError::Exec(ExecError::ChainIntegrity)
         ));
     }
+}
+
+#[test]
+fn test_checkpoint_program_proves_each_epoch() {
+    let (_, chain) = build_chain();
+
+    for epoch in &chain.epochs {
+        let terminal = epoch.terminal();
+        let blocks = epoch.ol_blocks();
+        let (da_state_diff_bytes, _) = compute_epoch_da(
+            SPEC,
+            epoch.pre_epoch_state.clone(),
+            &blocks,
+            &epoch.previous_terminal,
+            &chain.runtime_params,
+        )
+        .expect("epoch DA computes")
+        .into_parts();
+
+        let input = CheckpointProverInput {
+            start_state: epoch.pre_epoch_state.to_container(),
+            blocks,
+            parent: epoch.previous_terminal.clone(),
+            da_state_diff_bytes,
+        };
+        let claim = CheckpointProgram::execute(&input, SPEC, chain.runtime_params)
+            .expect("checkpoint program proves the epoch");
+        assert_eq!(claim.epoch(), terminal.epoch());
+        assert_eq!(
+            *claim.l2_range().end().blkid(),
+            terminal.compute_blkid(),
+            "epoch {} claim must end at its terminal",
+            terminal.epoch()
+        );
+    }
+}
+
+/// Builds genesis under V1, relabels its result as the last V0 terminal, and
+/// builds one V1 epoch on it.
+///
+/// The relabelled terminal keeps genesis's chainstate as a V0 state, under a
+/// header committing to its bare root, as MN0's last 0.3.0 terminal does.
+fn build_chain_from_v0_terminal() -> ChainBuilder {
+    let mut pre_genesis_state = make_genesis_state();
+    epoch_runner_seed_accounts(&mut pre_genesis_state);
+    let mut chain = ChainBuilder::new(pre_genesis_state);
+
+    chain
+        .state
+        .set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+    let v0_root = chain.state.compute_state_root().expect("V0 root");
+    let header = tamper_state_root(chain.genesis.block.header(), v0_root);
+    let body = chain.genesis.block.body().clone();
+    chain.genesis.block = OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body);
+
+    chain.push(gam_components(
+        TEST_RECIPIENT_ID,
+        b"first V1 epoch".to_vec(),
+    ));
+    chain.push(manifest_components(make_empty_manifest(2, 1), true));
+    chain
+}
+
+#[test]
+fn test_drivers_agree_on_first_v1_epoch_after_v0() {
+    let chain = build_chain_from_v0_terminal();
+    let [epoch] = chain.epochs.as_slice() else {
+        panic!("chain has one epoch after the V0 terminal");
+    };
+    let terminal = epoch.terminal();
+    let wrapped = OLSpecVersions::uniform(OLSpecId::V1);
+
+    // The epoch starts from the V0 terminal, authenticated by its bare root.
+    assert_eq!(
+        epoch.pre_epoch_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V0)
+    );
+    assert_eq!(
+        epoch.pre_epoch_state.compute_state_root().expect("V0 root"),
+        epoch.pre_epoch_state.chainstate().compute_chainstate_root()
+    );
+    assert_eq!(
+        epoch.pre_epoch_state.compute_state_root().expect("V0 root"),
+        *epoch.previous_terminal.state_root()
+    );
+
+    // Block construction wrapped the state.
+    assert_eq!(chain.state.spec_versions(), wrapped);
+    assert_eq!(
+        chain.state.compute_state_root().expect("terminal root"),
+        *terminal.state_root()
+    );
+
+    // Node execution verifies each block on a write-tracking overlay and
+    // applies its batch, as the chain worker does, so the wrap travels in the
+    // first block's batch.
+    let mut node_state = epoch.pre_epoch_state.clone();
+    let mut parent = &epoch.previous_terminal;
+    for built in &epoch.blocks {
+        let header = built.block.header();
+        let mut tracking = WriteTrackingState::new_empty(&node_state);
+        verify_block(
+            SPEC,
+            &mut tracking,
+            header,
+            Some(parent),
+            built.block.body(),
+            &chain.runtime_params,
+        )
+        .expect("block verifies on the V0 terminal's chain");
+        let batch = tracking.into_batch();
+        node_state.apply_write_batch(batch).expect("batch applies");
+        assert_eq!(
+            node_state.compute_state_root().expect("node root"),
+            *header.state_root(),
+            "node root differs at slot {}",
+            header.slot()
+        );
+        parent = header;
+    }
+    assert_eq!(node_state.spec_versions(), wrapped);
+
+    // DA replay from the V0 terminal wraps the state the same way.
+    let (encoded_da, _) = compute_epoch_da(
+        SPEC,
+        epoch.pre_epoch_state.clone(),
+        &epoch.ol_blocks(),
+        &epoch.previous_terminal,
+        &chain.runtime_params,
+    )
+    .expect("epoch DA computes")
+    .into_parts();
+    let epoch_info = EpochInfo::new(
+        BlockInfo::from_header(terminal),
+        epoch.previous_terminal.compute_block_commitment(),
+    );
+    let mut replayed = epoch.pre_epoch_state.clone();
+    apply_da_epoch(
+        SPEC,
+        &mut replayed,
+        &epoch_info,
+        &encoded_da,
+        &epoch.manifests(),
+        &chain.runtime_params,
+    )
+    .expect("epoch DA applies");
+    assert_eq!(replayed.spec_versions(), wrapped);
+    assert_eq!(
+        replayed.compute_state_root().expect("replayed root"),
+        *terminal.state_root()
+    );
+    verify_epoch_with_diff(
+        SPEC,
+        &mut epoch.pre_epoch_state.clone(),
+        &epoch_info,
+        &encoded_da,
+        &epoch.manifests(),
+        &EpochExecExpectations::new(*terminal.state_root()),
+        &chain.runtime_params,
+    )
+    .expect("epoch DA verifies against the wrapped terminal root");
+
+    // The checkpoint program proves the epoch from the V0 start container.
+    let claim = CheckpointProgram::execute(
+        &CheckpointProverInput {
+            start_state: epoch.pre_epoch_state.to_container(),
+            blocks: epoch.ol_blocks(),
+            parent: epoch.previous_terminal.clone(),
+            da_state_diff_bytes: encoded_da,
+        },
+        SPEC,
+        chain.runtime_params,
+    )
+    .expect("checkpoint program proves the first V1 epoch");
+    assert_eq!(*claim.l2_range().end().blkid(), terminal.compute_blkid());
 }

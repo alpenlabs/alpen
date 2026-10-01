@@ -8,8 +8,8 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_stf::OLSpecId;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
@@ -71,7 +71,10 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlockV1>>;
 
     /// Gets the OL state snapshot at a given block commitment.
-    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLStateV1>>;
+    fn get_ol_state(
+        &self,
+        commitment: &OLBlockCommitment,
+    ) -> anyhow::Result<Option<OLStateContainer>>;
 
     /// Fetches da data for epoch. Returns state diff and OL logs.
     fn fetch_da_for_epoch(
@@ -313,7 +316,10 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
-    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLStateV1>> {
+    fn get_ol_state(
+        &self,
+        commitment: &OLBlockCommitment,
+    ) -> anyhow::Result<Option<OLStateContainer>> {
         let state = self
             .storage
             .ol_state()
@@ -378,7 +384,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     let spec = OLSpecId::V1;
     let da_output = compute_epoch_da(
         spec,
-        MemoryStateBaseLayer::new(ol_state_raw),
+        MemoryStateBaseLayer::from_container(ol_state_raw),
         &epoch_blocks,
         &prev_terminal_header,
         runtime_params,

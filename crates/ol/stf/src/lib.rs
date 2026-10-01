@@ -36,6 +36,16 @@
 //! [`ExecError::UnimplementedSpec`] instead of running V0 epochs under V1
 //! rules. Building genesis from V0 params therefore fails.
 //!
+//! # Root form
+//!
+//! The current spec selects the form of the state root: the bare chainstate
+//! root under V0, which is what 0.3.0 headers commit to, and
+//! `hash_tree_root(OLRootState)` from V1 on. V1 rules take over a V0 state at
+//! the first block of an epoch, whose epoch-initial processing wraps it as
+//! `cur = staged = V1`. Every driver runs that processing, DA replay included,
+//! so they all reach the same wrapped root. A V1 block that does not start an
+//! epoch fails on a V0 state with [`ExecError::ContinuesV0Epoch`].
+//!
 //! # V1-compatible surface
 //!
 //! The context, output, and error types re-exported here are the V1 types.

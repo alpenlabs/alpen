@@ -25,13 +25,34 @@
 //!
 //! These parts are committed to in the toplevel state, which is updated later
 //! when we finish a state transition.
+//!
+//! From V1 on, the protocol state root commits to [`OLRootState`], which never
+//! changes layout: two raw spec versions and the hash tree root of the
+//! chainstate. Under V0 it is the bare chainstate root
+//! ([`OLRootState::compute_state_root`]). The chainstate layout is versioned
+//! separately (`OLStateV1` today), and the layout a state uses is chosen from
+//! its current spec.
+
+// Include generated SSZ types from build.rs output
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
 
 mod account;
 mod coin;
 mod errors;
 mod pending_asm_log;
 mod proofs;
+mod root_state;
 mod spec_id;
+mod spec_versions;
 mod state_accessor;
 
 pub use account::*;
@@ -39,7 +60,9 @@ pub use coin::{Coin, CoinError};
 pub use errors::*;
 pub use pending_asm_log::PendingAsmLog;
 pub use proofs::*;
-pub use spec_id::OLSpecId;
+pub use spec_id::{OLSpecId, UnknownOLSpecId};
+pub use spec_versions::{NonCanonicalV0Versions, OLSpecVersions};
+pub use ssz_generated::ssz::root::OLRootState;
 pub use state_accessor::*;
 // transitional crap
 pub use strata_asm_manifest_types::AsmManifest;

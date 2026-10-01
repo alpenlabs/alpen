@@ -3,16 +3,43 @@ use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
 use crate::account::{IAccountState, IAccountStateMut, NewAccountData};
 use crate::errors::StateResult;
+use crate::spec_versions::OLSpecVersions;
 use crate::{Coin, PendingAsmLog};
 
 /// Opaque interface for accessing the chainstate, for all of the parts directly
-/// under the toplevel state.
+/// under the toplevel state, and the spec versions of the root state above it.
 ///
 /// This exists because we want to make this generic across the various
 /// different contexts we'll be manipulating state.
 pub trait IStateAccessor {
     /// Type representing a ledger account's state for read operations.
     type AccountState: IAccountState;
+
+    // ===== Root state methods =====
+
+    /// Gets the spec versions of the root state.
+    fn spec_versions(&self) -> OLSpecVersions;
+
+    /// Gets the raw version of the spec the state was produced under.
+    ///
+    /// This is [`OLRootState::cur_spec_version`](crate::OLRootState::cur_spec_version).
+    /// It selects the chainstate layout. Every block except the first of an
+    /// epoch runs under it.
+    fn cur_spec_version(&self) -> u32 {
+        self.spec_versions().cur_spec_version()
+    }
+
+    /// Gets the raw version of the spec the next epoch runs under.
+    ///
+    /// This is [`OLRootState::staged_spec_version`](crate::OLRootState::staged_spec_version).
+    /// It differs from [`Self::cur_spec_version`] only between the terminal
+    /// block of an epoch that processes a checkpoint predicate enactment and
+    /// the first block of the next epoch, which runs under it. The value may
+    /// name a spec this binary does not know; executing the next epoch must
+    /// then halt.
+    fn staged_spec_version(&self) -> u32 {
+        self.spec_versions().staged_spec_version()
+    }
 
     // ===== Global state methods =====
 
@@ -75,7 +102,13 @@ pub trait IStateAccessor {
     /// Returns the next account serial that will be assigned when creating a new account.
     fn next_account_serial(&self) -> AccountSerial;
 
-    /// Computes the full state root, using whatever things we've updated.
+    /// Computes the protocol state root, using whatever things we've updated.
+    ///
+    /// This is the value block headers and checkpoints commit to, formed from
+    /// the spec versions and the chainstate's own root by
+    /// [`OLRootState::compute_state_root`](crate::OLRootState::compute_state_root):
+    /// the bare chainstate root under V0, and the hash tree root of the
+    /// [`OLRootState`](crate::OLRootState) from V1 on.
     fn compute_state_root(&self) -> StateResult<Buf32>;
 }
 
@@ -83,6 +116,16 @@ pub trait IStateAccessor {
 pub trait IStateAccessorMut: IStateAccessor {
     /// Same as above, but the mutable view.
     type AccountStateMut: IAccountStateMut;
+
+    // ===== Root state methods =====
+
+    /// Sets the spec versions of the root state.
+    ///
+    /// Wrapper layers record the write, so it reaches the base layer, the
+    /// write batch, and every root computed over it. The versions are not
+    /// part of the DA diff; DA replay reproduces them by running the same
+    /// epoch processing.
+    fn set_spec_versions(&mut self, versions: OLSpecVersions);
 
     // ===== Global state methods =====
 

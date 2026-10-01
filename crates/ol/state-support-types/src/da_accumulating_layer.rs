@@ -681,6 +681,12 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
 impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
     type AccountState = S::AccountState;
 
+    // ===== Root state methods =====
+
+    fn spec_versions(&self) -> OLSpecVersions {
+        self.inner.spec_versions()
+    }
+
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {
@@ -760,6 +766,12 @@ where
     <S::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     type AccountStateMut = IndexerAccountStateMut<S::AccountStateMut>;
+
+    // The DA diff never carries spec versions: DA replay reproduces them by
+    // running the same epoch processing, so the write is only forwarded.
+    fn set_spec_versions(&mut self, versions: OLSpecVersions) {
+        self.inner.set_spec_versions(versions);
+    }
 
     fn set_cur_slot(&mut self, slot: u64) {
         let prior = self.inner.cur_slot();

@@ -81,14 +81,21 @@ pub enum WorkerError {
         source: CodecError,
     },
 
-    /// Failed to compute a state root during reconstruction.
-    /// `stage` discriminates the call site (e.g. "indexer", "final").
-    #[error("compute state root at epoch {epoch} ({stage}): {source}")]
+    /// Failed to compute the indexer-derived state root during reconstruction.
+    #[error("compute indexer state root at epoch {epoch}: {source}")]
     StateRootCompute {
         epoch: Epoch,
-        stage: &'static str,
         #[source]
         source: StateError,
+    },
+
+    /// The state merged from an epoch's write batches does not hash to the
+    /// final state root its summary records.
+    #[error("merged state root mismatch at epoch {epoch} (summary {expected}, merged {merged})")]
+    MergedStateRootMismatch {
+        epoch: Epoch,
+        expected: Buf32,
+        merged: Buf32,
     },
 
     /// The indexer-derived state root and the post-batch state root diverge.

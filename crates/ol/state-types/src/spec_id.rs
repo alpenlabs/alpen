@@ -4,6 +4,7 @@
 use arbitrary::Arbitrary;
 use ssz::DecodeError;
 use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
+use thiserror::Error;
 
 /// Identifies the OL rules active for an epoch.
 ///
@@ -17,6 +18,10 @@ use strata_identifiers::{SszDelegate, impl_ssz_via_delegate};
 /// renumbered. Ordering follows activation order. The SSZ representation is a
 /// single `uint8` equal to the explicit discriminant (`V1` is `1`); unknown values
 /// are rejected, never interpreted as genesis rules.
+///
+/// The OL state root stores spec versions as raw `uint32` values
+/// ([`OLRootState`](crate::OLRootState)). [`TryFrom<u32>`] converts them
+/// without truncation, and [`From<OLSpecId>`] for [`u32`] produces them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[repr(u8)]
@@ -42,6 +47,36 @@ impl OLSpecId {
     }
 }
 
+/// Error returned when a raw spec version names no spec this binary knows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Error)]
+#[error("unknown OL spec identifier '{0}'")]
+pub struct UnknownOLSpecId(u32);
+
+impl UnknownOLSpecId {
+    /// Returns the raw value that names no known spec.
+    pub fn raw(&self) -> u32 {
+        self.0
+    }
+}
+
+impl TryFrom<u32> for OLSpecId {
+    type Error = UnknownOLSpecId;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::V0),
+            1 => Ok(Self::V1),
+            _ => Err(UnknownOLSpecId(value)),
+        }
+    }
+}
+
+impl From<OLSpecId> for u32 {
+    fn from(spec: OLSpecId) -> Self {
+        spec as u32
+    }
+}
+
 impl SszDelegate for OLSpecId {
     type Delegate = u8;
 
@@ -50,13 +85,7 @@ impl SszDelegate for OLSpecId {
     }
 
     fn from_delegate(value: Self::Delegate) -> Result<Self, DecodeError> {
-        match value {
-            0 => Ok(Self::V0),
-            1 => Ok(Self::V1),
-            _ => Err(DecodeError::BytesInvalid(format!(
-                "unknown OL spec identifier: {value}"
-            ))),
-        }
+        Self::try_from(u32::from(value)).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 
@@ -146,6 +175,17 @@ mod tests {
             let spec = KNOWN_SPECS[index].0;
             let expected = KNOWN_SPECS.get(index + 1).map(|&(next, _)| next);
             prop_assert_eq!(spec.successor(), expected);
+        }
+
+        #[test]
+        fn test_u32_conversion_accepts_only_known_values(value in any::<u32>()) {
+            let expected = KNOWN_SPECS.iter()
+                .find_map(|&(spec, wire_value)| (value == u32::from(wire_value)).then_some(spec));
+
+            prop_assert_eq!(OLSpecId::try_from(value).ok(), expected);
+            if let Some(spec) = expected {
+                prop_assert_eq!(u32::from(spec), value);
+            }
         }
     }
 }

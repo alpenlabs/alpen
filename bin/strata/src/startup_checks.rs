@@ -634,7 +634,7 @@ pub(crate) fn verify_anchor_summary_and_state(
         .context("startup: failed to query OL history anchor state")?
         .ok_or_else(|| anyhow!("startup: missing OL history anchor state"))?;
 
-    let state_slot = state.global_state().get_cur_slot();
+    let state_slot = state.chainstate().cur_slot();
     if state_slot != header.slot() {
         bail!(
             "startup: OL history anchor state slot mismatch: expected {}, got {state_slot}",
@@ -648,7 +648,7 @@ pub(crate) fn verify_anchor_summary_and_state(
             header.epoch()
         )
     })?;
-    let state_epoch = state.epoch_state().cur_epoch();
+    let state_epoch = state.chainstate().cur_epoch();
     if state_epoch != expected_state_epoch {
         bail!(
             "startup: OL history anchor state epoch mismatch: expected {expected_state_epoch}, got {state_epoch}"
@@ -1164,12 +1164,12 @@ mod tests {
                 .get_toplevel_ol_state_blocking(genesis_commitment)
                 .expect("test: query genesis state")
                 .expect("test: genesis state exists");
-            let mut state = MemoryStateBaseLayer::new((*genesis_state).clone());
+            let mut state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
             state.set_cur_slot(state_slot);
             state.set_cur_epoch(state_epoch);
             storage
                 .ol_state()
-                .put_toplevel_ol_state_blocking(anchor_commitment, state.into_inner())
+                .put_toplevel_ol_state_blocking(anchor_commitment, state.into_container())
                 .expect("test: insert anchor state");
         }
 
@@ -1249,12 +1249,12 @@ mod tests {
             .get_toplevel_ol_state_blocking(genesis_commitment)
             .expect("test: query genesis state")
             .expect("test: genesis state exists");
-        let mut state = MemoryStateBaseLayer::new((*genesis_state).clone());
+        let mut state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
         state.set_cur_slot(anchor_commitment.slot());
         state.set_cur_epoch(header.epoch() + 1);
         storage
             .ol_state()
-            .put_toplevel_ol_state_blocking(anchor_commitment, state.into_inner())
+            .put_toplevel_ol_state_blocking(anchor_commitment, state.into_container())
             .expect("test: insert anchor state");
         storage
             .ol_block()

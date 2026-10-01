@@ -22,8 +22,8 @@ pub async fn reconcile_ol_mmr_index_to_target(
     // prefill path, so it must seed the genesis sentinel before classification.
     ctx.prefill_l1_block_refs_mmr().await?;
 
-    let target_snark_accounts = target.state.iter_snark_account_ids();
-    let target_state_accessor = MemoryStateBaseLayer::new(target.state.as_ref().clone());
+    let target_state_accessor = MemoryStateBaseLayer::from_container(target.state.as_ref().clone());
+    let target_snark_accounts = target_state_accessor.chainstate().iter_snark_account_ids();
     let entries = get_mmr_index_entries(ctx).await?;
     let plan =
         build_mmr_index_reconcile_plan(&target_state_accessor, entries, target_snark_accounts)?;
