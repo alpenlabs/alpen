@@ -269,6 +269,13 @@ pub fn make_p2wpkh_bosd_descriptor(byte: u8) -> Vec<u8> {
     dest_desc
 }
 
+/// Builds a valid OP_RETURN BOSD descriptor with 80 data bytes for withdrawal tests.
+pub fn make_op_return_bosd_descriptor(byte: u8) -> Vec<u8> {
+    let mut dest_desc = vec![byte; 81];
+    dest_desc[0] = 0;
+    dest_desc
+}
+
 /// Builds terminal genesis components with one empty manifest at L1 height 1.
 pub fn build_terminal_genesis_components() -> BlockComponents {
     BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]).as_terminal()
@@ -1604,6 +1611,11 @@ impl FixtureGenesisOutput {
 }
 
 impl FixtureBlockOutput {
+    /// Returns the logs emitted by block execution.
+    pub fn logs(&self) -> &[OLLog] {
+        self.output.outputs().logs()
+    }
+
     /// Returns the completed block.
     pub fn completed_block(&self) -> &CompletedBlock {
         self.output.completed_block()

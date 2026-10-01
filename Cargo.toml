@@ -24,6 +24,7 @@ members = [
   "crates/ol/checkpoint",
   "crates/ol/da-common",
   "crates/ol/da-types-v1",
+  "crates/ol/log-budget",
   "crates/ol/mempool",
   "crates/ol/mmr-index",
   "crates/ol/msg-types",
@@ -120,6 +121,7 @@ strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
 strata-ol-da-common = { path = "crates/ol/da-common" }
 strata-ol-da-types-v1 = { path = "crates/ol/da-types-v1" }
 strata-ol-genesis = { path = "crates/ol/genesis" }
+strata-ol-log-budget = { path = "crates/ol/log-budget" }
 strata-ol-mempool = { path = "crates/ol/mempool" }
 strata-ol-mmr-index = { path = "crates/ol/mmr-index" }
 strata-ol-msg-types = { path = "crates/ol/msg-types" }

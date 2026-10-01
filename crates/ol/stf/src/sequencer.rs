@@ -3,15 +3,16 @@
 //! Sequencer block assembly stages each transaction separately so it can drop
 //! failing ones, so it composes these phases in `strata-ol-block-assembly`
 //! instead of calling [`construct_block`](crate::construct_block). Its mempool
-//! uses [`check_tx_constraints`] to admit transactions. A rule set that changes
-//! the order or composition of these phases must also update sequencer block
-//! assembly, which no dispatch here enforces.
+//! uses [`check_tx_constraints`] and [`predict_tx_log_payloads`] for admission.
+//! A rule set that changes the order or composition of these phases must also
+//! update sequencer block assembly, which no dispatch here enforces.
 
 // TODO(STR-2863): deblockification removes block start and replaces these
 // per-block phases with epoch-level transaction processing.
 
 use strata_acct_types::{AccountId, TxEffects};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1};
+use strata_ol_params::BridgeParams;
 use strata_ol_state_types::{IAccountState, IStateAccessorMut, OLSpecId, TxProofIndexer};
 use strata_ol_stf_v1::{
     BasicExecContext, BlockContext, ExecResult, ManifestProcessingOutcome, TxExecContext,
@@ -43,6 +44,24 @@ pub fn process_single_tx<S: IStateAccessorMut>(
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     dispatch_spec!(spec => process_single_tx(state, tx, context))
+}
+
+/// Predicts the encoded log payloads under `spec` for a successful transaction.
+///
+/// See [`strata_ol_stf_v1::predict_tx_log_payloads`].
+///
+/// Returns an error if `spec` is unimplemented or a log payload cannot be encoded.
+///
+/// # Panics
+///
+/// Panics if the transaction's SSZ extra-data bound exceeds the account-update log bound.
+pub fn predict_tx_log_payloads(
+    spec: OLSpecId,
+    tx: &OLTransactionV1,
+    bridge_params: &BridgeParams,
+    on_payload: impl FnMut(&[u8]),
+) -> ExecResult<()> {
+    dispatch_spec!(spec => predict_tx_log_payloads(tx, bridge_params, on_payload))
 }
 
 /// Checks a transaction's constraints against `state` under `spec`.

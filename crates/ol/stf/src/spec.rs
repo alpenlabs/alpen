@@ -2,7 +2,7 @@
 
 use strata_acct_types::{AccountId, TxEffects};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
-use strata_ol_params::OLRuntimeParams;
+use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_types::{IAccountState, IStateAccessorMut, TxProofIndexer};
 use strata_ol_stf_v1::{
     BasicExecContext, BlockComponents, BlockContext, CompletedBlock, ConstructBlockOutput,
@@ -81,6 +81,12 @@ pub(crate) trait OLStfSpec {
         state: &mut S,
         tx: &OLTransactionV1,
         context: &TxExecContext<'_>,
+    ) -> ExecResult<()>;
+
+    fn predict_tx_log_payloads(
+        tx: &OLTransactionV1,
+        bridge_params: &BridgeParams,
+        on_payload: impl FnMut(&[u8]),
     ) -> ExecResult<()>;
 
     fn check_tx_constraints<S: IStateAccessorMut>(

@@ -176,6 +176,7 @@ Orchestration Layer implementation.
 | `ol/da-types-v1` | Concrete V1 OL DA payload types, scheme, and checkpoint-tx extractor |
 | `ol/block-assembly` | OL block construction |
 | `ol/mempool` | Transaction mempool |
+| `ol/log-budget` | Shared log accounting and standalone transaction log-budget checks |
 | `ol/state-support-types` | State access layers (batch diff, indexer, write tracking) |
 | `ol/state-provider` | OL state provider traits and implementations |
 | `ol/mmr-index` | OL-owned MMR index comparison and reconciliation helpers |

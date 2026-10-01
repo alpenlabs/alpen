@@ -1,11 +1,15 @@
 //! Block transactional processing.
 
 use strata_acct_types::*;
-use strata_ol_chain_types_v1::OLTxSegmentV1;
+use strata_codec::CodecError;
+use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
+use strata_ol_chain_types_v1::{OLLogType, OLTxSegmentV1};
+use strata_ol_params::BridgeParams;
 use strata_ol_state_types::*;
 use strata_ol_tx_types_v1::*;
 use tracing::{info, trace};
 
+use crate::bridge_message::parse_bridge_withdrawal;
 use crate::constants::SEQUENCER_ACCT_ID;
 use crate::context::{BasicExecContext, TxExecContext};
 use crate::errors::{ExecError, ExecResult};
@@ -70,6 +74,46 @@ pub fn process_single_tx<S: IStateAccessorMut>(
         context.basic_context(),
     )?;
 
+    Ok(())
+}
+
+/// Predicts the encoded log payloads for a successful transaction.
+///
+/// Supplies each payload, including its type prefix, in execution order without
+/// executing state changes or verifying proofs.
+///
+/// # Panics
+///
+/// Panics if the transaction's SSZ extra-data bound exceeds the account-update log bound.
+pub fn predict_tx_log_payloads(
+    tx: &OLTransactionV1,
+    bridge_params: &BridgeParams,
+    mut on_payload: impl FnMut(&[u8]),
+) -> Result<(), CodecError> {
+    let TransactionPayloadV1::SnarkAccountUpdate(payload) = tx.payload() else {
+        return Ok(());
+    };
+    let update_log = payload
+        .operation()
+        .update()
+        .get_log_data()
+        .expect("SSZ update extra data fits the account-update log bound");
+    on_payload(&update_log.encode_log()?);
+
+    for message in tx.data().effects().messages_iter() {
+        if message.dest() != BRIDGE_GATEWAY_ACCT_ID {
+            // Non-bridge messages emit no additional OL logs; the account-update
+            // log is already included above.
+            continue;
+        }
+        if let Ok(log) = parse_bridge_withdrawal(
+            message.payload().value().to_sat(),
+            message.payload().data(),
+            bridge_params,
+        ) {
+            on_payload(&log.encode_log()?);
+        }
+    }
     Ok(())
 }
 

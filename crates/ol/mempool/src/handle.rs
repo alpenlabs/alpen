@@ -118,6 +118,7 @@ mod tests {
         create_test_snark_tx_with_seq_no_and_slots,
     };
     use crate::types::OLMempoolConfig;
+    use strata_bridge_params::BridgeParams;
 
     /// Helper to set up mempool handle with storage for tests.
     /// Returns (handle, storage, status_channel) for triggering chain updates.
@@ -153,11 +154,16 @@ mod tests {
         let task_manager = TaskManager::new(Handle::current());
         let texec = task_manager.create_executor();
 
-        let handle =
-            MempoolBuilder::new(config, storage.clone(), status_channel.clone(), current_tip)
-                .launch(&texec)
-                .await
-                .unwrap();
+        let handle = MempoolBuilder::new(
+            config,
+            BridgeParams::default(),
+            storage.clone(),
+            status_channel.clone(),
+            current_tip,
+        )
+        .launch(&texec)
+        .await
+        .unwrap();
 
         (handle, storage, status_channel)
     }

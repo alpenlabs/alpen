@@ -4,6 +4,7 @@ use strata_ol_state_types_v1 as _;
 
 mod account_processing;
 mod assembly;
+mod bridge_message;
 mod chain_processing;
 mod constants;
 mod context;
@@ -34,6 +35,7 @@ pub use output::*;
 pub use proof_verification::TxProofVerifierImpl;
 pub use sau_processing::verify_snark_acct_update_proofs;
 pub use transaction_processing::{
-    check_tx_constraints, process_block_tx_segment, process_single_tx, verify_effects_safe,
+    check_tx_constraints, predict_tx_log_payloads, process_block_tx_segment, process_single_tx,
+    verify_effects_safe,
 };
 pub use verification::*;
