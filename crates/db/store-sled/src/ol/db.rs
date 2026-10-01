@@ -9,9 +9,9 @@ use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use typed_sled::error::Error as TSledError;
 
 use super::schemas::{
-    OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockSchema, OLBlockStatusScanReadySchema,
-    OLBlockStatusScanSchema, OLBlockStatusSchema, OLCanonicalBlockSchema, OLHistoryBaseSchema,
-    OLTerminalHeaderSchema,
+    OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockRejectionCompleteSchema, OLBlockSchema,
+    OLBlockStatusScanReadySchema, OLBlockStatusScanSchema, OLBlockStatusSchema,
+    OLCanonicalBlockSchema, OLHistoryBaseSchema, OLTerminalHeaderSchema,
 };
 use crate::define_sled_database;
 use crate::utils::{conv_sled_err, first};
@@ -25,6 +25,7 @@ define_sled_database!(
         blk_tree: OLBlockSchema,
         terminal_header_tree: OLTerminalHeaderSchema,
         blk_status_tree: OLBlockStatusSchema,
+        rejection_complete_tree: OLBlockRejectionCompleteSchema,
         status_scan_tree: OLBlockStatusScanSchema,
         status_scan_ready_tree: OLBlockStatusScanReadySchema,
         blk_height_tree: OLBlockHeightSchema,
@@ -80,8 +81,9 @@ impl OLBlockDatabase for OLBlockDBSled {
                 &self.blk_status_tree,
                 &self.blk_height_tree,
                 &self.status_scan_tree,
+                &self.rejection_complete_tree,
             ),
-            |(bt, bst, bht, sst)| {
+            |(bt, bst, bht, sst, rct)| {
                 let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
                 let is_new = !blocks_at_slot.contains(&block_id);
 
@@ -92,6 +94,7 @@ impl OLBlockDatabase for OLBlockDBSled {
                     // Only set status to Unchecked for new blocks
                     // This preserves Valid/Invalid status if block is re-inserted
                     bst.insert(&block_id, &BlockStatus::Unchecked)?;
+                    rct.remove(&block_id)?;
                 }
 
                 let status = bst.get(&block_id)?.unwrap_or(BlockStatus::Unchecked);
@@ -121,8 +124,9 @@ impl OLBlockDatabase for OLBlockDBSled {
                 &self.blk_height_tree,
                 &self.blk_high_watermark_tree,
                 &self.status_scan_tree,
+                &self.rejection_complete_tree,
             ),
-            |(bt, bst, bht, hwt, sst)| {
+            |(bt, bst, bht, hwt, sst, rct)| {
                 if let Some(current) = hwt.get(&OL_BLOCK_HIGH_WATERMARK_KEY)?
                     && commitment.slot() <= current.slot()
                 {
@@ -150,6 +154,8 @@ impl OLBlockDatabase for OLBlockDBSled {
                 sst.insert(&OLBlockCommitment::new(slot, block_id), &status)?;
                 bt.insert(&block_id, &block)?;
                 hwt.insert(&OL_BLOCK_HIGH_WATERMARK_KEY, &commitment)?;
+                // Reoffering an invalid block requires clearing its new high-watermark too.
+                rct.remove(&block_id)?;
 
                 Ok(commitment)
             },
@@ -174,8 +180,12 @@ impl OLBlockDatabase for OLBlockDBSled {
 
     fn rollback_block_high_watermark(&self, target: OLBlockCommitment) -> DbResult<bool> {
         self.config.with_retry(
-            (&self.blk_tree, &self.blk_high_watermark_tree),
-            |(bt, hwt)| {
+            (
+                &self.blk_tree,
+                &self.blk_high_watermark_tree,
+                &self.rejection_complete_tree,
+            ),
+            |(bt, hwt, rct)| {
                 let target_block_id = *target.blkid();
                 let Some(target_block) = bt.get(&target_block_id)? else {
                     return Err(ConflictableTransactionError::Abort(TSledError::abort(
@@ -198,6 +208,7 @@ impl OLBlockDatabase for OLBlockDBSled {
                 }
 
                 hwt.insert(&OL_BLOCK_HIGH_WATERMARK_KEY, &target)?;
+                rct.remove(&target_block_id)?;
                 Ok(true)
             },
         )
@@ -324,13 +335,15 @@ impl OLBlockDatabase for OLBlockDBSled {
                 &self.blk_height_tree,
                 &self.blk_canonical_tree,
                 &self.status_scan_tree,
+                &self.rejection_complete_tree,
             ),
-            |(bt, bst, bht, ct, sst)| {
+            |(bt, bst, bht, ct, sst, rct)| {
                 let mut blocks_at_slot = bht.get(&slot)?.unwrap_or(Vec::new());
                 blocks_at_slot.retain(|&bid| bid != id);
 
                 bt.remove(&id)?;
                 bst.remove(&id)?;
+                rct.remove(&id)?;
                 sst.remove(&OLBlockCommitment::new(slot, id))?;
                 if blocks_at_slot.is_empty() {
                     bht.remove(&slot)?;
@@ -353,18 +366,83 @@ impl OLBlockDatabase for OLBlockDBSled {
                 &self.blk_tree,
                 &self.blk_status_tree,
                 &self.status_scan_tree,
+                &self.rejection_complete_tree,
             ),
-            |(blocks, statuses, scan)| {
+            |(blocks, statuses, scan, rct)| {
                 let Some(block) = blocks.get(&id)? else {
                     return Err(ConflictableTransactionError::Abort(TSledError::abort(
                         DbError::NonExistentEntry,
                     )));
                 };
                 statuses.insert(&id, &status)?;
+                if status != BlockStatus::Invalid {
+                    rct.remove(&id)?;
+                }
                 scan.insert(&OLBlockCommitment::new(block.header().slot(), id), &status)?;
                 Ok(true)
             },
         )
+    }
+
+    fn is_block_rejection_complete(&self, id: OLBlockId) -> DbResult<bool> {
+        self.rejection_complete_tree
+            .get(&id)
+            .map(|complete| complete.unwrap_or(false))
+            .map_err(conv_sled_err)
+    }
+
+    fn mark_block_rejection_complete(&self, block: OLBlockCommitment) -> DbResult<()> {
+        self.config.with_retry(
+            (
+                &self.blk_status_tree,
+                &self.blk_high_watermark_tree,
+                &self.rejection_complete_tree,
+            ),
+            |(bst, hwt, rct)| {
+                let status = bst.get(block.blkid())?;
+                if status != Some(BlockStatus::Invalid) {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::BlockRejectionStatusMismatch {
+                            block_id: *block.blkid(),
+                            status,
+                        },
+                    )));
+                }
+                // Keep this check in the transaction so watermark changes cannot race
+                // with recording completed cleanup.
+                if let Some(current) = hwt
+                    .get(&OL_BLOCK_HIGH_WATERMARK_KEY)?
+                    .filter(|current| current.blkid() == block.blkid())
+                {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::BlockRejectionHighWatermark(current),
+                    )));
+                }
+                rct.insert(block.blkid(), &true)?;
+                Ok(())
+            },
+        )
+    }
+
+    fn scan_block_rejection_cleanup(
+        &self,
+        after: Option<OLBlockId>,
+        limit: usize,
+    ) -> DbResult<Vec<(OLBlockId, bool)>> {
+        let start = after.map_or(Unbounded, Excluded);
+        self.blk_status_tree
+            .range((start, Unbounded))
+            .map_err(conv_sled_err)?
+            .take(limit)
+            .map(|row| {
+                let (id, status) = row.map_err(conv_sled_err)?;
+                // An unreadable completion marker must not stall discovery of later rows.
+                // Cleanup retries the read with backoff before performing any writes.
+                let pending = status == BlockStatus::Invalid
+                    && !self.is_block_rejection_complete(id).unwrap_or(false);
+                Ok((id, pending))
+            })
+            .collect()
     }
 
     fn get_blocks_at_height(&self, slot: u64) -> DbResult<Vec<OLBlockId>> {
@@ -482,6 +560,7 @@ mod tests {
     use strata_db_tests::ol_block_db_tests;
     use strata_ol_chain_types_v1::test_utils as ol_test_utils;
     use typed_sled::SledDb;
+    use typed_sled::codec::KeyCodec;
 
     use super::*;
     use crate::{SledDbConfig, sled_db_test_setup};
@@ -589,6 +668,146 @@ mod tests {
             let rejected = block.header().compute_block_commitment();
             assert!(matches!(db.put_block_data_with_high_watermark(block), Err(DbError::BlockHighWatermarkConflict { .. })));
             assert!(db.status_scan_tree.get(&rejected).unwrap().is_none());
+        }
+
+        #[test]
+        fn rejection_scan_advances_past_unreadable_completion_markers(
+            mut block in ol_test_utils::ol_block_strategy(),
+        ) {
+            let raw_db = Config::new().temporary(true).open().unwrap();
+            let raw_markers = raw_db.open_tree("OLBlockRejectionCompleteSchema").unwrap();
+            let db = OLBlockDBSled::new(
+                Arc::new(SledDb::new(raw_db).unwrap()), SledDbConfig::test(),
+            ).unwrap();
+            let mut ids = Vec::new();
+            for slot in 0..2 {
+                block.signed_header.header.slot = slot;
+                db.put_block_data(block.clone()).unwrap();
+                let id = block.header().compute_blkid();
+                db.set_block_status(id, BlockStatus::Invalid).unwrap();
+                ids.push(id);
+            }
+            ids.sort_unstable();
+            raw_markers.insert(
+                <OLBlockId as KeyCodec<OLBlockRejectionCompleteSchema>>::encode_key(&ids[0]).unwrap(),
+                vec![0xff_u8],
+            ).unwrap();
+            assert!(db.is_block_rejection_complete(ids[0]).is_err());
+            assert_eq!(db.scan_block_rejection_cleanup(None, 2).unwrap(),
+                vec![(ids[0], true), (ids[1], true)]);
+            let first = db.scan_block_rejection_cleanup(None, 1).unwrap();
+            assert_eq!(first, vec![(ids[0], true)]);
+            assert_eq!(db.scan_block_rejection_cleanup(Some(first[0].0), 1).unwrap(),
+                vec![(ids[1], true)]);
+        }
+
+        #[test]
+        fn rejection_completion_survives_new_handles_and_resets_with_block_state(
+            block in ol_test_utils::ol_block_strategy(),
+        ) {
+            let raw_db = Config::new().temporary(true).open().unwrap();
+            let shared_db = Arc::new(SledDb::new(raw_db.clone()).unwrap());
+            let db = OLBlockDBSled::new(shared_db.clone(), SledDbConfig::test()).unwrap();
+            let commitment = block.header().compute_block_commitment();
+            let id = *commitment.blkid();
+            assert!(matches!(db.mark_block_rejection_complete(commitment),
+                Err(DbError::BlockRejectionStatusMismatch { block_id, status: None })
+                    if block_id == id));
+            assert!(!db.is_block_rejection_complete(id).unwrap());
+            db.put_block_data(block.clone()).unwrap();
+            assert!(matches!(db.mark_block_rejection_complete(commitment),
+                Err(DbError::BlockRejectionStatusMismatch {
+                    block_id, status: Some(BlockStatus::Unchecked)
+                }) if block_id == id));
+            db.set_block_status(id, BlockStatus::Invalid).unwrap();
+            // Existing invalid records have no marker and need one successful cleanup pass.
+            assert!(!db.is_block_rejection_complete(id).unwrap());
+            db.mark_block_rejection_complete(commitment).unwrap();
+            raw_db.flush().unwrap();
+            drop(db);
+
+            let db = OLBlockDBSled::new(shared_db, SledDbConfig::test()).unwrap();
+            assert!(db.is_block_rejection_complete(id).unwrap());
+            assert_eq!(db.get_block_status(id).unwrap(), Some(BlockStatus::Invalid));
+            db.set_block_status(id, BlockStatus::Invalid).unwrap();
+            db.put_block_data(block.clone()).unwrap();
+            assert!(db.is_block_rejection_complete(id).unwrap());
+
+            for status in [BlockStatus::Valid, BlockStatus::Unchecked] {
+                db.set_block_status(id, status).unwrap();
+                assert!(matches!(db.mark_block_rejection_complete(commitment),
+                    Err(DbError::BlockRejectionStatusMismatch { block_id, status: Some(actual) })
+                        if block_id == id && actual == status));
+                assert!(!db.is_block_rejection_complete(id).unwrap());
+                db.set_block_status(id, BlockStatus::Invalid).unwrap();
+                db.mark_block_rejection_complete(commitment).unwrap();
+            }
+
+            db.put_block_data_with_high_watermark(block.clone()).unwrap();
+            assert!(!db.is_block_rejection_complete(id).unwrap());
+            assert!(matches!(db.mark_block_rejection_complete(commitment),
+                Err(DbError::BlockRejectionHighWatermark(current)) if current == commitment));
+            assert!(db.clear_block_high_watermark(commitment).unwrap());
+            db.mark_block_rejection_complete(commitment).unwrap();
+            assert!(db.del_block_data(id).unwrap());
+            assert!(!db.is_block_rejection_complete(id).unwrap());
+            db.put_block_data(block).unwrap();
+            assert_eq!(db.get_block_status(id).unwrap(), Some(BlockStatus::Unchecked));
+            assert!(!db.is_block_rejection_complete(id).unwrap());
+        }
+
+        #[test]
+        fn rollback_watermark_reopens_rejection_cleanup(
+            mut block in ol_test_utils::ol_block_strategy(),
+        ) {
+            let db = setup_db();
+            block.signed_header.header.slot = 1;
+            let target = block.header().compute_block_commitment();
+            db.put_block_data(block.clone()).unwrap();
+            db.set_block_status(*target.blkid(), BlockStatus::Invalid).unwrap();
+            db.mark_block_rejection_complete(target).unwrap();
+
+            block.signed_header.header.slot = 2;
+            db.put_block_data_with_high_watermark(block).unwrap();
+            assert!(db.rollback_block_high_watermark(target).unwrap());
+            assert!(!db.is_block_rejection_complete(*target.blkid()).unwrap());
+            assert!(matches!(db.mark_block_rejection_complete(target),
+                Err(DbError::BlockRejectionHighWatermark(current)) if current == target));
+        }
+
+        #[test]
+        fn rejection_scan_advances_through_nonmatching_pages_without_block_bodies(
+            mut block in ol_test_utils::ol_block_strategy(),
+        ) {
+            let db = setup_db();
+            let mut commitments = Vec::new();
+            for slot in 0..5 {
+                block.signed_header.header.slot = slot;
+                db.put_block_data(block.clone()).unwrap();
+                let commitment = block.header().compute_block_commitment();
+                db.set_block_status(*commitment.blkid(), BlockStatus::Valid).unwrap();
+                commitments.push(commitment);
+            }
+            commitments.sort_by_key(|block| *block.blkid());
+            let completed = commitments[1];
+            let pending = commitments[4];
+            db.set_block_status(*completed.blkid(), BlockStatus::Invalid).unwrap();
+            db.mark_block_rejection_complete(completed).unwrap();
+            // Legacy invalid rows with no completion marker remain discoverable.
+            db.set_block_status(*pending.blkid(), BlockStatus::Invalid).unwrap();
+            assert!(db.scan_block_rejection_cleanup(None, 0).unwrap().is_empty());
+            let first = db.scan_block_rejection_cleanup(None, 2).unwrap();
+            assert_eq!(first, vec![(*commitments[0].blkid(), false), (*completed.blkid(), false)]);
+            db.del_block_data(*completed.blkid()).unwrap();
+            // Discovery must use only metadata even when bodies cannot be loaded.
+            for commitment in &commitments {
+                db.blk_tree.remove(commitment.blkid()).unwrap();
+            }
+            let second = db.scan_block_rejection_cleanup(Some(first[1].0), 2).unwrap();
+            assert_eq!(second, vec![(*commitments[2].blkid(), false), (*commitments[3].blkid(), false)]);
+            let third = db.scan_block_rejection_cleanup(Some(second[1].0), 2).unwrap();
+            assert_eq!(third, vec![(*pending.blkid(), true)]);
+            assert!(db.scan_block_rejection_cleanup(Some(third[0].0), 2).unwrap().is_empty());
         }
 
         #[test]
