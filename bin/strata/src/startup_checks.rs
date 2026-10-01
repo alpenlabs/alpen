@@ -796,7 +796,7 @@ mod tests {
     use strata_identifiers::{Buf32, Hash as StrataHash, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockId};
     use strata_ol_params::{OLParams, OLRuntimeParams};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::IStateAccessorMut;
+    use strata_ol_state_types::{IStateAccessorMut, OLSpecId, OLSpecVersions};
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;
@@ -1046,6 +1046,10 @@ mod tests {
     }
 
     fn setup_storage_with_genesis() -> (NodeStorage, OLBlockCommitment) {
+        setup_storage_with_genesis_spec(OLSpecId::V1)
+    }
+
+    fn setup_storage_with_genesis_spec(spec: OLSpecId) -> (NodeStorage, OLBlockCommitment) {
         let db = get_test_sled_backend();
         let storage = create_node_storage(db, strata_storage::test_runtime_handle())
             .expect("test: create node storage");
@@ -1057,6 +1061,7 @@ mod tests {
         )
         .expect("valid bridge params");
         let params = OLParams::builder(OLRuntimeParams::new(bridge_params))
+            .genesis_spec(spec)
             .genesis_l1_block(genesis_l1_block)
             .build();
         let genesis_commitment = init_ol_genesis(&params, &storage).expect("test: init ol genesis");
@@ -1330,6 +1335,45 @@ mod tests {
             .expect("test: genesis epoch summary should exist");
 
         assert_eq!(commitment, genesis_commitment);
+    }
+
+    /// A node on a network launched on 0.3.0 stores a V0 genesis whose state
+    /// decodes against the bare root the genesis header commits to.
+    #[test]
+    fn test_v0_genesis_passes_genesis_and_tip_checks() {
+        let (storage, genesis_commitment) = setup_storage_with_genesis_spec(OLSpecId::V0);
+
+        verify_genesis_ol_state(&storage, genesis_commitment)
+            .expect("test: genesis OL state should exist");
+        verify_genesis_epoch_summary(&storage, genesis_commitment)
+            .expect("test: genesis epoch summary should exist");
+        ensure_genesis_canonical_entry(&storage, genesis_commitment)
+            .expect("test: genesis canonical entry should match");
+        let tip_commitment = resolve_tip_ol_block(&storage).expect("test: resolve tip");
+        assert_eq!(tip_commitment, genesis_commitment);
+        let tip_block = verify_tip_ol_block(&storage, tip_commitment).expect("test: tip block");
+        verify_tip_parent(&storage, &tip_block, tip_commitment).expect("test: tip parent");
+        verify_tip_ol_state(&storage, tip_commitment).expect("test: tip state");
+        verify_previous_epoch_summary_for_tip(&storage, &tip_block)
+            .expect("test: previous epoch summary");
+
+        let genesis_state = storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(genesis_commitment)
+            .expect("test: query genesis state")
+            .expect("test: genesis state exists");
+        assert_eq!(
+            genesis_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V0)
+        );
+        assert_eq!(
+            genesis_state.compute_state_root(),
+            *tip_block.header().state_root()
+        );
+        assert_eq!(
+            genesis_state.compute_state_root(),
+            genesis_state.chainstate().compute_chainstate_root()
+        );
     }
 
     #[test]

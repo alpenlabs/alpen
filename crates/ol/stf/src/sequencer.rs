@@ -20,6 +20,7 @@ use strata_ol_stf_v1::{
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
 use crate::spec::{OLStfSpec, dispatch_spec};
+use crate::v0::StfV0;
 use crate::v1::StfV1;
 
 /// Opens a block under `spec`: epoch-initial processing for the first block of

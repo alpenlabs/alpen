@@ -1,4 +1,5 @@
-//! The genesis OL rules, implemented by [`strata_ol_stf_v1`].
+//! The V1 OL rules, implemented by [`strata_ol_stf_v1`]. Networks launched
+//! from this release run them from genesis.
 
 use strata_acct_types::{AccountId, TxEffects};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
@@ -15,7 +16,7 @@ use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraints
 use crate::da::EpochDaReplayError;
 use crate::spec::OLStfSpec;
 
-/// The genesis OL rules.
+/// The V1 OL rules.
 #[derive(Debug)]
 pub(crate) struct StfV1;
 

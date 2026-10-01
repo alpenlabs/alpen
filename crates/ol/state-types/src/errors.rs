@@ -219,12 +219,29 @@ pub enum ExecError {
     #[error("block logs exceeded limit (count {count}, max {max})")]
     LogsOverflow { count: usize, max: usize },
 
-    /// The rules the spec names are not implemented by this binary.
+    /// This binary does not implement the operation under the rules the spec
+    /// names.
     ///
     /// A spec this binary does not know cannot be represented, so this only
-    /// arises for a known spec whose implementation has not landed yet.
-    #[error("OL spec {0:?} rules are not implemented")]
+    /// arises for a known spec whose implementation lacks the operation, such
+    /// as block verification under V0.
+    #[error("OL spec {0:?} rules are not implemented for this operation")]
     UnimplementedSpec(OLSpecId),
+
+    /// The rules of `spec` ran on a state a later spec produced.
+    ///
+    /// A spec takes over the state of an earlier spec at the start of an
+    /// epoch, but never the state of a later one, so only a wrong spec
+    /// selection reaches this. [`Self::kind`] reports it as
+    /// [`ErrorKind::Execution`], because the block or epoch may be valid under
+    /// the state's own rules.
+    #[error(
+        "OL spec {spec:?} rules cannot run on a state produced under later spec version {state_spec_version}"
+    )]
+    StateFromLaterSpec {
+        spec: OLSpecId,
+        state_spec_version: u32,
+    },
 
     /// A block that does not start an epoch runs on a V0 state.
     ///
@@ -280,8 +297,11 @@ impl ExecError {
 
     pub fn kind(&self) -> ErrorKind {
         match self.base() {
-            // The block may be valid; this binary just cannot run its rules.
-            Self::UnimplementedSpec(_) | Self::ContinuesV0Epoch => ErrorKind::Execution,
+            // The block may be valid; this binary cannot run its rules, or ran
+            // rules other than its own.
+            Self::UnimplementedSpec(_)
+            | Self::StateFromLaterSpec { .. }
+            | Self::ContinuesV0Epoch => ErrorKind::Execution,
 
             // All other errors indicate the block is invalid.
             _ => ErrorKind::Correctness,
@@ -307,6 +327,12 @@ mod tests {
     #[test]
     fn test_unimplemented_spec_is_inconclusive() {
         let err = ExecError::UnimplementedSpec(OLSpecId::V0);
+        assert_eq!(err.kind(), ErrorKind::Execution);
+
+        let err = ExecError::StateFromLaterSpec {
+            spec: OLSpecId::V0,
+            state_spec_version: 1,
+        };
         assert_eq!(err.kind(), ErrorKind::Execution);
 
         let wrapped = err.with_tx(OLTxId::from(Buf32::from([1u8; 32])), 0);

@@ -14,11 +14,17 @@ strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
 
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
+
+serde_json.workspace = true
+
+[features]
+test-utils = ["dep:serde_json"]
 
 [lints]
 workspace = true
