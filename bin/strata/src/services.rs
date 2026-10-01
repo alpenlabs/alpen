@@ -21,6 +21,7 @@ use crate::{
     css, fcm,
     helpers::build_btcio_params,
     run_context::{RunContext, ServiceHandles},
+    startup_checks::verify_sequencer_tip_spec,
 };
 
 #[cfg(feature = "sequencer")]
@@ -281,6 +282,9 @@ pub(crate) fn start_strata_services(
     reconcile_unaccepted_checkpoint_artifacts(&nodectx)?;
 
     let is_sequencer = nodectx.config().client.is_sequencer;
+    if is_sequencer {
+        verify_sequencer_tip_spec(nodectx.storage().as_ref())?;
+    }
 
     // Checkpoint sync nodes do not have mempool, so start mempool for sequencer node only.
     // NOTE: When there are nodes supporting mempool the if condition needs to change.

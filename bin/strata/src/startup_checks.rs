@@ -11,6 +11,7 @@ use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_state_types::OLSpecId;
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -708,6 +709,30 @@ fn verify_tip_from_history_base(
     verify_previous_epoch_summary_for_tip(storage, &tip_block)
 }
 
+/// Checks that a sequencer can build on the canonical OL tip.
+///
+/// This release builds only V1 blocks, and V1 rules take over a V0 state only
+/// at the switch from V0 to V1. This check does not detect the switch, so it
+/// refuses every V0 tip, such as the genesis of a fresh datadir on a network
+/// launched on 0.3.0, where V1 blocks would fork the network at slot 1.
+///
+/// It runs once genesis exists, before the block producer starts.
+pub(crate) fn verify_sequencer_tip_spec(storage: &NodeStorage) -> Result<()> {
+    let tip_commitment = resolve_tip_ol_block(storage)?;
+    let tip_state = storage
+        .ol_state()
+        .get_toplevel_ol_state_blocking(tip_commitment)
+        .context("startup: failed to query OL state for tip block")?
+        .ok_or_else(|| anyhow!("startup: missing OL state for tip block {tip_commitment}"))?;
+
+    if tip_state.cur_spec() == OLSpecId::V0 {
+        bail!(
+            "startup: the sequencer cannot build on the V0 tip {tip_commitment}: this release builds only V1 blocks, and V1 rules can take over a V0 state only at the switch from V0 to V1. Run this node in checkpoint-sync mode instead"
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
     let bitcoin_network_check =
         ctx.executor()
@@ -796,7 +821,7 @@ mod tests {
     use strata_identifiers::{Buf32, Hash as StrataHash, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockId};
     use strata_ol_params::{OLParams, OLRuntimeParams};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::{IStateAccessorMut, OLSpecId, OLSpecVersions};
+    use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;
@@ -1335,6 +1360,21 @@ mod tests {
             .expect("test: genesis epoch summary should exist");
 
         assert_eq!(commitment, genesis_commitment);
+    }
+
+    /// A fresh sequencer datadir on a network launched on 0.3.0 has a V0 tip,
+    /// which the sequencer must not build V1 blocks on; a V1 tip is fine.
+    #[test]
+    fn test_sequencer_refuses_v0_tip() {
+        let (v0_storage, _) = setup_storage_with_genesis_spec(OLSpecId::V0);
+        let err = verify_sequencer_tip_spec(&v0_storage).expect_err("V0 tip is refused");
+        assert!(
+            format!("{err:#}").contains("cannot build on the V0 tip"),
+            "{err:#}"
+        );
+
+        let (v1_storage, _) = setup_storage_with_genesis_spec(OLSpecId::V1);
+        verify_sequencer_tip_spec(&v1_storage).expect("V1 tip is accepted");
     }
 
     /// A node on a network launched on 0.3.0 stores a V0 genesis whose state
