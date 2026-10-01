@@ -8811,7 +8811,9 @@ name = "strata-chain-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "hex",
  "serde",
+ "serde_json",
  "sled",
  "ssz",
  "strata-acct-types",
@@ -8827,6 +8829,7 @@ dependencies = [
  "strata-node-context",
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
+ "strata-ol-genesis",
  "strata-ol-params",
  "strata-ol-state-container",
  "strata-ol-state-support-types",

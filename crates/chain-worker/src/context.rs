@@ -17,7 +17,7 @@ use strata_db_types::{
     errors::DbError,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
 };
-use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{AccountId, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{
@@ -126,6 +126,10 @@ impl ChainWorkerContextImpl {
 impl ChainWorkerContext for ChainWorkerContextImpl {
     fn runtime_params(&self) -> OLRuntimeParams {
         self.runtime_params
+    }
+
+    fn genesis_l1_block(&self) -> L1BlockCommitment {
+        self.ol_params.genesis_l1_block()
     }
 
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
@@ -286,6 +290,10 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(self
             .ol_checkpoint_mgr
             .get_checkpoint_l1_observed_payload_blocking(*epoch)?)
+    }
+
+    fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>> {
+        Ok(self.l1_block_mgr.get_block_manifest_at_height(height)?)
     }
 
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {

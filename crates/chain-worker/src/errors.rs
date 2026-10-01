@@ -3,7 +3,9 @@
 use strata_acct_types::AccountSerial;
 use strata_codec::CodecError;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Buf32, Epoch, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{
+    AccountId, Buf32, Epoch, L1BlockId, L1Height, OLBlockCommitment, OLBlockId,
+};
 use strata_ol_state_types::StateError;
 use strata_ol_stf::ExecError;
 use strata_primitives::epoch::EpochCommitment;
@@ -115,6 +117,21 @@ pub enum WorkerError {
         epoch: Epoch,
         expected: OLBlockId,
         reconstructed: OLBlockId,
+    },
+
+    /// No ASM manifest is stored at the L1 height a state processed last.
+    #[error("missing the L1 manifest at height {height} the state processed last")]
+    MissingLastManifest { height: L1Height },
+
+    /// The stored manifest at a state's last L1 height is for another L1
+    /// block than the one the state processed.
+    #[error(
+        "stored L1 manifest at height {height} is for block {found}, but the state processed {expected}"
+    )]
+    LastManifestMismatch {
+        height: L1Height,
+        expected: L1BlockId,
+        found: L1BlockId,
     },
 
     /// A checkpoint log references an account serial unknown to the post-state.

@@ -1,0 +1,254 @@
+{
+  "source": "Recorded on releases/0.3.0 (4221af71) by a scratch generator, not committed: it built genesis from the params below in the 0.3.0 flat layout with that release's build_genesis_artifacts, built six epochs with its construct_block and test_utils builders, derived each epoch's DA payload and OL logs as its checkpoint builder does (execute_block_batch_predrain over a DaAccumulatingState), and recorded each terminal header, state root and limbo balance. The enactment log bytes come from main's encoder, since 0.3.0's ASM types lack CheckpointPredicateEnacted.",
+  "params": {
+    "genesis": {
+      "spec": 0,
+      "header": {
+        "timestamp": 0,
+        "slot": 0,
+        "epoch": 0,
+        "parent_blkid": "0000000000000000000000000000000000000000000000000000000000000000",
+        "body_root": "0000000000000000000000000000000000000000000000000000000000000000",
+        "logs_root": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "accounts": {
+        "0101010101010101010101010101010101010101010101010101010101010101": {
+          "predicate": "AlwaysAccept",
+          "inner_state": "308ce726a90fd45d3638fd86dec816cca262edc0d5acee9b130cfa33dbb740b0",
+          "balance": 0
+        }
+      },
+      "last_l1_block": {
+        "height": 961729,
+        "blkid": "0000000000000000000055fbd96192d25981163ea0f18accc6d1e22cafe84b6f"
+      }
+    },
+    "runtime": {
+      "bridge_params": {
+        "denomination": 200000000,
+        "max_withdrawal_amount": null,
+        "max_withdrawal_descriptor_len": 81
+      }
+    }
+  },
+  "ee_account": "0101010101010101010101010101010101010101010101010101010101010101",
+  "ee_key_update_epoch": 5,
+  "rotated_ee_key": {
+    "type_id": 1,
+    "condition": "7630206565206b6579"
+  },
+  "genesis": {
+    "blkid": "a4d059617b1d92175af23009ec462026606ffd9770567dd5d67e04df05aa2642",
+    "state_root": "3591a7d6d96d00536bf523389d24b4c9c892ff8ea8476868dfd10eede851d313"
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "l1_height": 961729,
+      "da_payload": "01000200000000",
+      "ol_logs": [],
+      "manifests": [],
+      "terminal": {
+        "blkid": "4ed9a494d3e250512aa423e60cb8e59f0df947dc2976ecabb4ca9a4d763d88a2",
+        "body_root": "2a21014d086b63ce2cdbaf1f0423941681bf7a2c224f7758c706c0a511850b65",
+        "epoch": 1,
+        "logs_root": "0000000000000000000000000000000000000000000000000000000000000000",
+        "parent_blkid": "76a071fa917399295de39cbb1ddb1e8688d1d088e6112dc583a53975d36706cc",
+        "slot": 2,
+        "state_root": "b5a87e5a5b6b81f5e0e41cc7a52ae96868d763eab68987a3767d0f5d066c7b23",
+        "timestamp": 1786300010000
+      },
+      "limbo_sat": 0
+    },
+    {
+      "epoch": 2,
+      "l1_height": 961731,
+      "da_payload": "01000200000000",
+      "ol_logs": [],
+      "manifests": [
+        {
+          "blkid": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+          "height": 961730,
+          "logs": [
+            "01220080a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1000000000bebc200"
+          ],
+          "wtxids_root": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2"
+        },
+        {
+          "blkid": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+          "height": 961731,
+          "logs": [
+            "0101ff000000000bebc200",
+            "012310270feeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee000000000bebc200",
+            "02abababababababab",
+            "0babababababababab",
+            "0cabababababababab",
+            "0dabababababababab"
+          ],
+          "wtxids_root": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+        }
+      ],
+      "terminal": {
+        "blkid": "c619f84c09d49d5b89483269cca78439766e21147cbaff9ac62ec81eed89fddd",
+        "body_root": "bc7ead0b19aac83b962af1e9c122bfc718ad949d11f9aa05d4f983b0a77916e6",
+        "epoch": 2,
+        "logs_root": "0000000000000000000000000000000000000000000000000000000000000000",
+        "parent_blkid": "dd5a9532de17b45122bbfc965e3408ce1ef353f1378365f214bcdced10ee9ac9",
+        "slot": 4,
+        "state_root": "b937c3ef9a93fd03bc2cc324738a6ccd845922fcf921de25d0ff7c5b166c8218",
+        "timestamp": 1786300020000
+      },
+      "limbo_sat": 400000000
+    },
+    {
+      "epoch": 3,
+      "l1_height": 961731,
+      "da_payload": "01000200000000",
+      "ol_logs": [],
+      "manifests": [],
+      "terminal": {
+        "blkid": "2c4ba7ee669c43f836f46c029566b4a5af1fb71f1294ad337cbb9e5d57bb3f45",
+        "body_root": "2a21014d086b63ce2cdbaf1f0423941681bf7a2c224f7758c706c0a511850b65",
+        "epoch": 3,
+        "logs_root": "0000000000000000000000000000000000000000000000000000000000000000",
+        "parent_blkid": "518e22f964c8b26af7a0eb35abcbac6892dbee66524e2f2d95ef570378b8f5fb",
+        "slot": 6,
+        "state_root": "24772b132e30c00a5cfce7835355e44d5308bb192d780135645b8f62f0ffc4b3",
+        "timestamp": 1786300030000
+      },
+      "limbo_sat": 400000000
+    },
+    {
+      "epoch": 4,
+      "l1_height": 961733,
+      "da_payload": "010002000000010000008003c088debe0103000103020202020202020202020202020202020202020202020202020202020202020201",
+      "ol_logs": [
+        {
+          "payload": "02000000000000000100",
+          "serial": 128
+        },
+        {
+          "payload": "01000000000bebc20015031111111111111111111111111111111111111111ffffffff",
+          "serial": 16
+        }
+      ],
+      "manifests": [
+        {
+          "blkid": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+          "height": 961732,
+          "logs": [
+            "033003000000c3ac0e0006000000000000002c4ba7ee669c43f836f46c029566b4a5af1fb71f1294ad337cbb9e5d57bb3f45"
+          ],
+          "wtxids_root": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4"
+        },
+        {
+          "blkid": "c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5",
+          "height": 961733,
+          "logs": [
+            "01220080b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2000000000bebc200"
+          ],
+          "wtxids_root": "c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5"
+        }
+      ],
+      "terminal": {
+        "blkid": "2973abb8f72dc84758263d5c395b00ba31f7ae899473786b29bed81dae2461ca",
+        "body_root": "9a898a15f22dd7b6bdbf33730db1ee56aa067c8dbd1b569e505d640ae5ebd3a8",
+        "epoch": 4,
+        "logs_root": "0000000000000000000000000000000000000000000000000000000000000000",
+        "parent_blkid": "a4ac4acc4e49a011cc9df92540803c6403e4f62f94b636ed26744881484fdade",
+        "slot": 8,
+        "state_root": "90f33b10345bb475d15ceada13511ed2529cec2ea1b36408fbda4951bad1ef5a",
+        "timestamp": 1786300040000
+      },
+      "limbo_sat": 400000000
+    },
+    {
+      "epoch": 5,
+      "l1_height": 961735,
+      "da_payload": "01000200000001000000800203000103030303030303030303030303030303030303030303030303030303030303030301",
+      "ol_logs": [
+        {
+          "payload": "02000000000000000200",
+          "serial": 128
+        }
+      ],
+      "manifests": [
+        {
+          "blkid": "c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6",
+          "height": 961734,
+          "logs": [
+            "04000000800e01050000007630206565206b6579"
+          ],
+          "wtxids_root": "c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6"
+        },
+        {
+          "blkid": "c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7",
+          "height": 961735,
+          "logs": [
+            "033004000000c5ac0e0008000000000000002973abb8f72dc84758263d5c395b00ba31f7ae899473786b29bed81dae2461ca"
+          ],
+          "wtxids_root": "c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7"
+        }
+      ],
+      "terminal": {
+        "blkid": "a01badc6215889b7cb722dec81a1482c334bcd45a7221ab1614bbcbc07b7e816",
+        "body_root": "b62a30d63284c2836c61a673e87d506c7c87f1bbc0bf7101170028270a852e16",
+        "epoch": 5,
+        "logs_root": "0000000000000000000000000000000000000000000000000000000000000000",
+        "parent_blkid": "6b39e0b6c011e5d852df383badc8109be0392db9e497f6807fef0c210cfdfb7e",
+        "slot": 10,
+        "state_root": "f655fd2cf12e88d2279f29cc1778f862ad58a5161b10a3390fcedd06f6044dad",
+        "timestamp": 1786300050000
+      },
+      "limbo_sat": 400000000
+    },
+    {
+      "epoch": 6,
+      "l1_height": 961738,
+      "da_payload": "010002000000010000008002030001010404040404040404040404040404040404040404040404040404040404040404",
+      "ol_logs": [
+        {
+          "payload": "02000000000000000200",
+          "serial": 128
+        }
+      ],
+      "manifests": [
+        {
+          "blkid": "c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8",
+          "height": 961736,
+          "logs": [
+            "033005000000c7ac0e000a00000000000000a01badc6215889b7cb722dec81a1482c334bcd45a7221ab1614bbcbc07b7e816"
+          ],
+          "wtxids_root": "c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8"
+        },
+        {
+          "blkid": "c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9",
+          "height": 961737,
+          "logs": [
+            "01220080c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3000000000bebc200"
+          ],
+          "wtxids_root": "c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9"
+        },
+        {
+          "blkid": "cacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca",
+          "height": 961738,
+          "logs": [
+            "05050105000000"
+          ],
+          "wtxids_root": "cacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca"
+        }
+      ],
+      "terminal": {
+        "blkid": "bd179f44328157fba2db781fffa4cd89ec3c82251e9271365ee0ccd291cbb070",
+        "body_root": "1921bc28d072a888f0f22f414285f8ca0373c4efa18211828f367342120e7a17",
+        "epoch": 6,
+        "logs_root": "0000000000000000000000000000000000000000000000000000000000000000",
+        "parent_blkid": "f082d98e0654d33721ec356e4968b087459830f968b21226080cafd3d8062a9d",
+        "slot": 12,
+        "state_root": "45d4fcb09efd2b934c10e30d4129bfb55c95a2858fc73866d1b3d928c876e923",
+        "timestamp": 1786300060000
+      },
+      "limbo_sat": 400000000
+    }
+  ]
+}
