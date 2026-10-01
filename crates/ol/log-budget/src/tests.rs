@@ -19,7 +19,7 @@ fn fixture_and_builder() -> (OLStfFixture, AccountId, SnarkUpdateBuilder) {
     (fixture, account, builder)
 }
 
-fn withdrawal_update(count: usize, extra_len: usize) -> OLTransactionV1 {
+fn create_test_snark_tx_with_withdrawals(count: usize, extra_len: usize) -> OLTransactionV1 {
     let (_, account, mut builder) = fixture_and_builder();
     let payload = make_withdrawal_payload(make_op_return_bosd_descriptor(0x42));
     for _ in 0..count {
@@ -61,21 +61,29 @@ fn test_unimplemented_spec_preserves_prediction_error() {
 fn test_payload_budget_includes_update_log_and_extra_data() {
     let params = BridgeParams::default();
     for (extra_len, expected_bytes) in [(0, 16_350), (33, 16_383)] {
-        let tx = withdrawal_update(172, extra_len);
+        let tx = create_test_snark_tx_with_withdrawals(172, extra_len);
         check_tx_log_budget(OLSpecId::V1, &tx, &params).unwrap();
         let usage = predict_log_usage(&tx, &params);
         assert_eq!(usage.count(), 173);
         assert_eq!(usage.payload_bytes(), expected_bytes);
     }
     assert!(matches!(
-        check_tx_log_budget(OLSpecId::V1, &withdrawal_update(172, 34), &params),
+        check_tx_log_budget(
+            OLSpecId::V1,
+            &create_test_snark_tx_with_withdrawals(172, 34),
+            &params
+        ),
         Err(TxLogBudgetError::LogPayloadBytes {
             actual: 16_384,
             limit: 16_383
         })
     ));
     assert!(matches!(
-        check_tx_log_budget(OLSpecId::V1, &withdrawal_update(173, 0), &params),
+        check_tx_log_budget(
+            OLSpecId::V1,
+            &create_test_snark_tx_with_withdrawals(173, 0),
+            &params
+        ),
         Err(TxLogBudgetError::LogPayloadBytes {
             actual: 16_445,
             limit: 16_383
@@ -148,7 +156,7 @@ fn test_maximal_update_exceeds_log_count_budget() {
     // Exercise #2274's full message capacity, including the update's own log.
     let error = check_tx_log_budget(
         OLSpecId::V1,
-        &withdrawal_update(65_536, 0),
+        &create_test_snark_tx_with_withdrawals(65_536, 0),
         &BridgeParams::default(),
     )
     .unwrap_err();

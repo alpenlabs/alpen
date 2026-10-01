@@ -932,7 +932,7 @@ mod tests {
     use crate::types::OLMempoolConfig;
     use crate::{DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH};
 
-    fn withdrawal_update(count: usize) -> OLTransactionV1 {
+    fn create_test_snark_tx_with_withdrawals(count: usize) -> OLTransactionV1 {
         let payload = MsgPayload::from_bytes(
             BitcoinAmount::try_from(BridgeParams::default().denomination()).unwrap(),
             make_withdrawal_payload(make_op_return_bosd_descriptor(0x42)),
@@ -973,10 +973,13 @@ mod tests {
         let mut state = MempoolServiceState::new_with_context(context, tip)
             .await
             .unwrap();
-        let original_id = state.add_transaction(withdrawal_update(172)).await.unwrap();
+        let original_id = state
+            .add_transaction(create_test_snark_tx_with_withdrawals(172))
+            .await
+            .unwrap();
 
         let error = state
-            .add_transaction(withdrawal_update(173))
+            .add_transaction(create_test_snark_tx_with_withdrawals(173))
             .await
             .expect_err("an update exceeding an empty checkpoint's log budget must be rejected");
         assert!(matches!(
@@ -1015,7 +1018,10 @@ mod tests {
         let mut state = MempoolServiceState::new_with_context(Arc::new(context), tip)
             .await
             .unwrap();
-        let txid = state.add_transaction(withdrawal_update(173)).await.unwrap();
+        let txid = state
+            .add_transaction(create_test_snark_tx_with_withdrawals(173))
+            .await
+            .unwrap();
         assert_eq!(state.handle_get_transactions(10).await.unwrap().len(), 1);
 
         let mut reloaded = MempoolServiceState::new_with_context(state.ctx.clone(), tip)
@@ -1041,7 +1047,7 @@ mod tests {
 
         // Bypass submission to simulate transactions stored before budget enforcement.
         for (timestamp, tx) in [
-            withdrawal_update(173),
+            create_test_snark_tx_with_withdrawals(173),
             create_test_snark_tx_with_seq_no(1, 1),
             independent,
             create_test_snark_tx_with_seq_no(1, 2),
@@ -1091,8 +1097,11 @@ mod tests {
             .await
             .unwrap();
         for tx in [
-            withdrawal_update(173),
-            with_max_slot(withdrawal_update(173), Some(tip.slot() - 1)),
+            create_test_snark_tx_with_withdrawals(173),
+            with_max_slot(
+                create_test_snark_tx_with_withdrawals(173),
+                Some(tip.slot() - 1),
+            ),
         ] {
             assert!(matches!(
                 state.add_transaction(tx).await,
