@@ -9528,6 +9528,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-checkpoint-artifacts"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "strata-asm-checkpoint-types",
+ "strata-asm-common",
+ "strata-asm-proto-checkpoint",
+ "strata-db-store-sled",
+ "strata-db-tests",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ol-params",
+ "strata-ol-state-types",
+ "strata-predicate",
+ "strata-proofimpl-checkpoint",
+ "strata-proofimpl-predicate-keys",
+ "strata-storage",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "toml 0.5.11",
+ "zkaleido",
+ "zkaleido-native-adapter",
+ "zkaleido-sp1-host",
+]
+
+[[package]]
 name = "strata-ol-da-common"
 version = "0.1.0"
 dependencies = [
@@ -10231,6 +10260,7 @@ dependencies = [
  "sp1-verifier",
  "ssz",
  "strata-ol-params",
+ "strata-ol-state-types",
  "zkaleido-sp1-groth16-verifier",
 ]
 

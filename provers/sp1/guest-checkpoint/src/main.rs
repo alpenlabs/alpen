@@ -3,14 +3,13 @@ zkaleido_sp1_guest_env::entrypoint!(main);
 
 use ssz::Decode;
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_types::OLSpecId;
 use strata_proofimpl_checkpoint::process_ol_stf;
 use zkaleido_sp1_guest_env::Sp1ZkVmEnv;
 
 mod runtime_params;
+mod spec;
 
-/// The OL spec whose rules this program build proves.
-const PROVED_SPEC: OLSpecId = OLSpecId::V1;
+use spec::PROVED_SPEC;
 
 fn main() {
     let runtime_params =
