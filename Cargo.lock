@@ -9279,7 +9279,7 @@ name = "strata-key-derivation"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
- "secp256k1 0.29.1",
+ "secp256k1 0.30.0",
  "strata-crypto",
  "thiserror 2.0.20",
  "zeroize",
@@ -9461,7 +9461,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "rand 0.8.7",
- "secp256k1 0.29.1",
+ "secp256k1 0.30.0",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -10251,7 +10251,7 @@ dependencies = [
  "hex",
  "k256",
  "musig2",
- "secp256k1 0.29.1",
+ "secp256k1 0.30.0",
  "serde_json",
  "shrex",
  "shrex_macros",
