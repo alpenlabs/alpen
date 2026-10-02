@@ -1,4 +1,4 @@
-//! Parser for the console's deliberately small textual read surface.
+//! Parser for the console's deliberately small textual surface.
 
 use std::iter::Peekable;
 use std::str::Chars;

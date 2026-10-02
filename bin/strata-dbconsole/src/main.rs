@@ -175,19 +175,26 @@ fn evaluate(datadir: &Path, args: EvalArgs) -> AppResult<()> {
         }
         ConsoleProgram::Write(plan) => {
             let mut session = WriteSession::new(&registry);
-            plan.stage(&mut session)?;
-            let (preview, status) = if args.commit {
-                (session.commit()?, WriteStatus::Committed)
+            if args.commit {
+                plan.stage(&mut session)?;
+                let preview = session.commit()?;
+                write_write_preview(
+                    &preview,
+                    WriteStatus::Committed,
+                    args.format,
+                    args.preview_limit,
+                    writer,
+                )?;
             } else {
-                (
-                    session
-                        .staged()
-                        .expect("parsed write was just staged")
-                        .clone(),
+                let preview = plan.stage(&mut session)?;
+                write_write_preview(
+                    preview,
                     WriteStatus::Preview,
-                )
-            };
-            write_write_preview(&preview, status, args.format, args.preview_limit, writer)?;
+                    args.format,
+                    args.preview_limit,
+                    writer,
+                )?;
+            }
         }
     }
     Ok(())
@@ -320,14 +327,8 @@ fn execute_repl_command(
                 write_output(output, format, writer)?;
             }
             ConsoleProgram::Write(plan) => {
-                plan.stage(session)?;
-                write_write_preview(
-                    session.staged().expect("parsed write was just staged"),
-                    WriteStatus::Staged,
-                    format,
-                    preview_limit,
-                    writer,
-                )?;
+                let preview = plan.stage(session)?;
+                write_write_preview(preview, WriteStatus::Staged, format, preview_limit, writer)?;
             }
         },
     }
@@ -446,32 +447,20 @@ fn write_write_preview(
                 }
             }
         }
-        OutputFormat::Json => {
-            serde_json::to_writer_pretty(
-                &mut writer,
-                &serde_json::json!({
-                    "status": status.as_str(),
-                    "operation": preview.operation,
-                    "total_changes": total_changes,
-                    "shown_changes": shown_changes,
-                    "omitted_changes": omitted_changes,
-                    "changes": changes,
-                }),
-            )?;
-            writeln!(writer)?;
-        }
-        OutputFormat::JsonLines => {
-            serde_json::to_writer(
-                &mut writer,
-                &serde_json::json!({
-                    "status": status.as_str(),
-                    "operation": preview.operation,
-                    "total_changes": total_changes,
-                    "shown_changes": shown_changes,
-                    "omitted_changes": omitted_changes,
-                    "changes": changes,
-                }),
-            )?;
+        format @ (OutputFormat::Json | OutputFormat::JsonLines) => {
+            let output = serde_json::json!({
+                "status": status.as_str(),
+                "operation": preview.operation,
+                "total_changes": total_changes,
+                "shown_changes": shown_changes,
+                "omitted_changes": omitted_changes,
+                "changes": changes,
+            });
+            if format == OutputFormat::Json {
+                serde_json::to_writer_pretty(&mut writer, &output)?;
+            } else {
+                serde_json::to_writer(&mut writer, &output)?;
+            }
             writeln!(writer)?;
         }
     }

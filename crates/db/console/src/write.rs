@@ -122,8 +122,8 @@ impl<'a> WriteSession<'a> {
         value: &ConsoleScalar,
     ) -> ConsoleResult<&WritePreview> {
         self.ensure_empty()?;
-        self.staged = Some(self.registry.table(table)?.stage_set(key, field, value)?);
-        Ok(self.staged().expect("staged write was just inserted"))
+        let write = self.registry.table(table)?.stage_set(key, field, value)?;
+        Ok(self.store(write))
     }
 
     /// Stages a broader table modifier against one existing record.
@@ -135,12 +135,11 @@ impl<'a> WriteSession<'a> {
         arguments: &[ConsoleScalar],
     ) -> ConsoleResult<&WritePreview> {
         self.ensure_empty()?;
-        self.staged = Some(
-            self.registry
-                .table(table)?
-                .stage_modify(key, modifier, arguments)?,
-        );
-        Ok(self.staged().expect("staged write was just inserted"))
+        let write = self
+            .registry
+            .table(table)?
+            .stage_modify(key, modifier, arguments)?;
+        Ok(self.store(write))
     }
 
     /// Stages one modifier for every row produced by a bounded row selection.
@@ -158,12 +157,11 @@ impl<'a> WriteSession<'a> {
         if keys.is_empty() {
             return Err(ConsoleError::NoMatchingRecords { table });
         }
-        self.staged = Some(
-            self.registry
-                .table(&table)?
-                .stage_modify_many(&keys, modifier, arguments)?,
-        );
-        Ok(self.staged().expect("staged write was just inserted"))
+        let write = self
+            .registry
+            .table(&table)?
+            .stage_modify_many(&keys, modifier, arguments)?;
+        Ok(self.store(write))
     }
 
     /// Returns the current staged preview.
@@ -196,6 +194,10 @@ impl<'a> WriteSession<'a> {
         } else {
             Ok(())
         }
+    }
+
+    fn store(&mut self, write: Box<dyn StagedWrite>) -> &WritePreview {
+        self.staged.insert(write).preview()
     }
 }
 
