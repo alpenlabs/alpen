@@ -14,7 +14,6 @@ sequencer = [
   "dep:strata-ol-sequencer",
   "dep:strata-ol-state-provider",
 ]
-debug-asm = ["strata-consensus-logic/debug-asm"]
 debug-utils = [
   "strata-common/debug-utils",
   "strata-consensus-logic/debug-utils",
