@@ -19,6 +19,7 @@ use tracing_subscriber::fmt::init;
 use crate::{
     cli::{Cli, Command},
     cmd::{
+        asm::reset_asm,
         broadcaster::{get_broadcaster_summary, get_broadcaster_tx},
         checkpoint::{get_checkpoint, get_checkpoints_summary, get_epoch_summary},
         checkpoint_proof::{delete_checkpoint_proof, get_checkpoint_proof},
@@ -62,6 +63,7 @@ fn main() {
     // and force the operator to point `-d` at a path the chosen command
     // doesn't even need.
     let result = match cmd {
+        Command::ResetAsm(args) => reset_asm(&datadir, args),
         Command::GetOLState(args) => with_ol_db(&datadir, |db| get_ol_state(db, args)),
         Command::RevertOLState(args) => with_ol_db(&datadir, |db| revert_ol_state(db, args)),
         Command::GetOlBlock(args) => with_ol_db(&datadir, |db| get_ol_block(db, args)),

@@ -7,6 +7,7 @@ use std::{
 use argh::FromArgs;
 
 use crate::cmd::{
+    asm::ResetAsmArgs,
     broadcaster::{GetBroadcasterSummaryArgs, GetBroadcasterTxArgs},
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
@@ -53,6 +54,7 @@ pub(crate) struct Cli {
 #[derive(FromArgs, Debug)]
 #[argh(subcommand)]
 pub(crate) enum Command {
+    ResetAsm(ResetAsmArgs),
     GetL1Block(GetL1BlockArgs),
     GetL1Summary(GetL1SummaryArgs),
     GetWriterSummary(GetWriterSummaryArgs),
