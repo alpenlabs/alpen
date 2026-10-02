@@ -18,11 +18,8 @@ mod render;
 mod write;
 
 pub use expression::{BinaryOperator, ScalarExpression};
-pub use pipeline::{
-    PipelineExecutor, PipelineOutput, PipelinePlan, PipelineRowStream, PipelineTerminal,
-    ProjectedRow, Selection,
-};
-pub use read::{ConsoleRow, ReadExecutor, ReadOutput, ReadPlan, RowStream, ScanPlan};
+pub use pipeline::{PipelinePlan, PipelineTerminal, Selection};
+pub use read::{ConsoleExecutor, ConsoleOutput, ConsolePlan, ConsoleRow, RowStream, ScanPlan};
 pub use render::{RecordFormat, render_record, render_schema, write_json_lines};
 pub use write::{StagedWrite, WriteChange, WritePreview, WriteSession};
 

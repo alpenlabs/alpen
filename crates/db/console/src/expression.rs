@@ -425,9 +425,9 @@ mod tests {
             source: "Expression",
             key: ConsoleScalar::U64(2),
             fields: BTreeMap::from([
-                ("enabled", ConsoleScalar::Bool(true)),
-                ("value", ConsoleScalar::U64(10)),
-                ("optional", ConsoleScalar::Null),
+                ("enabled".to_owned(), ConsoleScalar::Bool(true)),
+                ("value".to_owned(), ConsoleScalar::U64(10)),
+                ("optional".to_owned(), ConsoleScalar::Null),
             ]),
         };
         let cases = [

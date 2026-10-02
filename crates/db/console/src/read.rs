@@ -6,6 +6,7 @@ use std::num::NonZeroUsize;
 
 use serde::Serialize;
 
+use crate::pipeline::{PipelinePlan, execute_pipeline};
 use crate::{
     ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleScalar, RecordHandle, ScanDirection,
     SourceSchema,
@@ -19,7 +20,7 @@ pub struct ConsoleRow {
     /// Table key or [`ConsoleScalar::Null`] for a keyless view.
     pub key: ConsoleScalar,
     /// Approved fields keyed by their stable console names.
-    pub fields: BTreeMap<&'static str, ConsoleScalar>,
+    pub fields: BTreeMap<String, ConsoleScalar>,
 }
 
 impl ConsoleRow {
@@ -27,7 +28,7 @@ impl ConsoleRow {
     pub fn from_handle(handle: RecordHandle) -> ConsoleResult<Self> {
         let mut fields = BTreeMap::new();
         for descriptor in handle.metadata().fields {
-            fields.insert(descriptor.name, handle.get(descriptor.name)?);
+            fields.insert(descriptor.name.to_owned(), handle.get(descriptor.name)?);
         }
         Ok(Self {
             source: handle.table(),
@@ -78,9 +79,9 @@ impl ScanPlan {
     }
 }
 
-/// A storage-independent database read assembled directly in Rust.
+/// A storage-independent console operation assembled directly in Rust.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ReadPlan {
+pub enum ConsolePlan {
     /// Describes one registered table or native view.
     Schema {
         /// Primary name or alias.
@@ -93,11 +94,11 @@ pub enum ReadPlan {
         /// A table key or the native view's ordered arguments.
         arguments: Vec<ConsoleScalar>,
     },
-    /// Lazily reads a bounded table range.
-    Scan(ScanPlan),
+    /// Executes a bounded functional table scan.
+    Pipeline(PipelinePlan),
 }
 
-impl ReadPlan {
+impl ConsolePlan {
     /// Creates a schema plan.
     pub fn schema(source: impl Into<String>) -> Self {
         Self::Schema {
@@ -115,64 +116,66 @@ impl ReadPlan {
 
     /// Creates a bounded forward scan plan.
     pub fn scan(table: impl Into<String>, limit: usize) -> ConsoleResult<Self> {
-        Self::scan_direction(table, ScanDirection::Forward, limit)
+        PipelinePlan::scan(table, limit).map(Self::Pipeline)
     }
 
     /// Creates a bounded reverse scan plan.
     pub fn scan_rev(table: impl Into<String>, limit: usize) -> ConsoleResult<Self> {
-        Self::scan_direction(table, ScanDirection::Reverse, limit)
+        PipelinePlan::scan_rev(table, limit).map(Self::Pipeline)
     }
+}
 
-    /// Creates a bounded scan plan with an explicit direction.
-    pub fn scan_direction(
-        table: impl Into<String>,
-        direction: ScanDirection,
-        limit: usize,
-    ) -> ConsoleResult<Self> {
-        ScanPlan::new(table, direction, limit).map(Self::Scan)
+impl From<PipelinePlan> for ConsolePlan {
+    fn from(plan: PipelinePlan) -> Self {
+        Self::Pipeline(plan)
     }
 }
 
 /// Lazy rows returned by a bounded scan.
 pub type RowStream = Box<dyn Iterator<Item = ConsoleResult<ConsoleRow>>>;
 
-/// Output of one typed read plan.
-pub enum ReadOutput {
+/// Output of one typed console plan.
+pub enum ConsoleOutput {
     /// Metadata for one registered source.
     Schema(SourceSchema),
     /// One point-read or native-view result.
-    Record(Option<ConsoleRow>),
+    Row(Option<ConsoleRow>),
     /// A lazy, bounded stream of table rows.
     Rows(RowStream),
+    /// A fixed scalar aggregate.
+    Scalar(ConsoleScalar),
 }
 
-impl fmt::Debug for ReadOutput {
+impl fmt::Debug for ConsoleOutput {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Schema(schema) => formatter.debug_tuple("Schema").field(schema).finish(),
-            Self::Record(record) => formatter.debug_tuple("Record").field(record).finish(),
+            Self::Row(row) => formatter.debug_tuple("Row").field(row).finish(),
             Self::Rows(_) => formatter.write_str("Rows(..)"),
+            Self::Scalar(value) => formatter.debug_tuple("Scalar").field(value).finish(),
         }
     }
 }
 
 /// Executes typed read plans against an explicit registry.
 #[derive(Debug)]
-pub struct ReadExecutor<'a> {
+pub struct ConsoleExecutor<'a> {
     registry: &'a ConsoleRegistry,
 }
 
-impl<'a> ReadExecutor<'a> {
+impl<'a> ConsoleExecutor<'a> {
     /// Creates an executor over a completed registry.
     pub const fn new(registry: &'a ConsoleRegistry) -> Self {
         Self { registry }
     }
 
     /// Executes one read without parsing textual syntax.
-    pub fn execute(&self, plan: ReadPlan) -> ConsoleResult<ReadOutput> {
-        match plan {
-            ReadPlan::Schema { source } => self.registry.schema(&source).map(ReadOutput::Schema),
-            ReadPlan::Get { source, arguments } => {
+    pub fn execute(&self, plan: impl Into<ConsolePlan>) -> ConsoleResult<ConsoleOutput> {
+        match plan.into() {
+            ConsolePlan::Schema { source } => {
+                self.registry.schema(&source).map(ConsoleOutput::Schema)
+            }
+            ConsolePlan::Get { source, arguments } => {
                 if let Some(table) = self.registry.table_if_registered(&source) {
                     if arguments.len() != 1 {
                         return Err(ConsoleError::invalid_input(
@@ -184,26 +187,18 @@ impl<'a> ReadExecutor<'a> {
                         .get(&arguments[0])?
                         .map(ConsoleRow::from_handle)
                         .transpose()
-                        .map(ReadOutput::Record);
+                        .map(ConsoleOutput::Row);
                 }
                 if let Some(view) = self.registry.view_if_registered(&source) {
                     return view
                         .get(&arguments)?
                         .map(ConsoleRow::from_handle)
                         .transpose()
-                        .map(ReadOutput::Record);
+                        .map(ConsoleOutput::Row);
                 }
                 Err(ConsoleError::UnknownSource(source))
             }
-            ReadPlan::Scan(scan) => {
-                let rows = self
-                    .registry
-                    .table(scan.table())?
-                    .scan(scan.direction())?
-                    .take(scan.limit().get())
-                    .map(|record| record.and_then(ConsoleRow::from_handle));
-                Ok(ReadOutput::Rows(Box::new(rows)))
-            }
+            ConsolePlan::Pipeline(plan) => execute_pipeline(self.registry, plan),
         }
     }
 }
@@ -304,8 +299,8 @@ mod tests {
             .register(Arc::new(CountingTable(pulled.clone())))
             .expect("test: register counting table");
 
-        let ReadOutput::Rows(rows) = ReadExecutor::new(&registry)
-            .execute(ReadPlan::scan("Counting", 2).expect("test: build scan"))
+        let ConsoleOutput::Rows(rows) = ConsoleExecutor::new(&registry)
+            .execute(ConsolePlan::scan("Counting", 2).expect("test: build scan"))
             .expect("test: execute bounded scan")
         else {
             panic!("test: scan output expected");

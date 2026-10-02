@@ -376,10 +376,9 @@ mod tests {
     use proptest::strategy::{Strategy, ValueTree};
     use proptest::test_runner::TestRunner;
     use strata_db_console::{
-        BinaryOperator, ConsoleError, ConsoleScalar, PipelineExecutor, PipelineOutput,
-        PipelinePlan, PipelineTerminal, ReadExecutor, ReadOutput, ReadPlan, RecordFormat,
-        ScalarExpression, ScanDirection, Selection, SourceKind, WriteSession, render_record,
-        write_json_lines,
+        BinaryOperator, ConsoleError, ConsoleExecutor, ConsoleOutput, ConsolePlan, ConsoleScalar,
+        PipelinePlan, PipelineTerminal, RecordFormat, ScalarExpression, ScanDirection, Selection,
+        SourceKind, WriteSession, render_record, write_json_lines,
     };
     use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
     use strata_db_types::prover_task::ProverTaskDatabase;
@@ -487,9 +486,9 @@ mod tests {
             .expect("test: decode reverse scan item");
         assert_eq!(last.key(), &ConsoleScalar::Bytes(vec![3]));
 
-        let executor = ReadExecutor::new(&registry);
-        let ReadOutput::Schema(task_schema) = executor
-            .execute(ReadPlan::schema("tasks"))
+        let executor = ConsoleExecutor::new(&registry);
+        let ConsoleOutput::Schema(task_schema) = executor
+            .execute(ConsolePlan::schema("tasks"))
             .expect("test: task schema")
         else {
             panic!("test: schema output expected");
@@ -497,8 +496,8 @@ mod tests {
         assert_eq!(task_schema.name, "ProverTask");
         assert_eq!(task_schema.kind, SourceKind::Table);
 
-        let ReadOutput::Record(block) = executor
-            .execute(ReadPlan::get("OlBlock", vec![block_key]))
+        let ConsoleOutput::Row(block) = executor
+            .execute(ConsolePlan::get("OlBlock", vec![block_key]))
             .expect("test: OL block view")
         else {
             panic!("test: record output expected");
@@ -515,8 +514,8 @@ mod tests {
         let block_json = render_record(&block, RecordFormat::Json).expect("test: render block");
         assert!(block_json.contains("\"status\": \"valid\""));
 
-        let ReadOutput::Rows(task_rows) = executor
-            .execute(ReadPlan::scan("tasks", 2).expect("test: bounded task scan"))
+        let ConsoleOutput::Rows(task_rows) = executor
+            .execute(ConsolePlan::scan("tasks", 2).expect("test: bounded task scan"))
             .expect("test: scan tasks through executor")
         else {
             panic!("test: rows output expected");
@@ -531,8 +530,8 @@ mod tests {
             2
         );
 
-        let ReadOutput::Schema(block_schema) = executor
-            .execute(ReadPlan::schema("OlBlock"))
+        let ConsoleOutput::Schema(block_schema) = executor
+            .execute(ConsolePlan::schema("OlBlock"))
             .expect("test: OL block schema")
         else {
             panic!("test: schema output expected");
@@ -667,7 +666,7 @@ mod tests {
         }
 
         let registry = build_console_registry(&backend).expect("test: build console registry");
-        let executor = PipelineExecutor::new(&registry);
+        let executor = ConsoleExecutor::new(&registry);
         let pending = ScalarExpression::binary(
             BinaryOperator::Equal,
             ScalarExpression::field("status"),
@@ -677,7 +676,7 @@ mod tests {
             .expect("test: build pipeline")
             .filter(pending);
 
-        let PipelineOutput::Rows(mut rows) = executor
+        let ConsoleOutput::Rows(mut rows) = executor
             .execute(
                 base.clone()
                     .select(vec![
@@ -741,7 +740,7 @@ mod tests {
             ),
         ];
         for (terminal, expected) in aggregates {
-            let PipelineOutput::Scalar(actual) = executor
+            let ConsoleOutput::Scalar(actual) = executor
                 .execute(base.clone().terminal(terminal))
                 .expect("test: execute aggregate")
             else {
@@ -750,7 +749,7 @@ mod tests {
             assert_eq!(actual, expected);
         }
 
-        let PipelineOutput::Row(last) = executor
+        let ConsoleOutput::Row(last) = executor
             .execute(base.terminal(PipelineTerminal::Last))
             .expect("test: execute last")
         else {

@@ -1,15 +1,13 @@
 //! Lazy functional pipelines over registered table scans.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
+use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
-use serde::Serialize;
-
 use crate::expression::compare_scalars;
+use crate::read::{ConsoleOutput, ConsoleRow, RowStream, ScanPlan};
 use crate::{
-    ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleRow, ConsoleScalar, RecordStream,
-    ScalarExpression, ScalarType, ScanDirection,
+    ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleScalar, RecordStream, ScalarExpression,
+    ScalarType, ScanDirection,
 };
 
 /// One named expression in a row projection.
@@ -29,17 +27,6 @@ impl Selection {
             expression,
         }
     }
-}
-
-/// A projected row with runtime-selected column names.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct ProjectedRow {
-    /// Primary table name.
-    pub source: &'static str,
-    /// Typed key rendered as a scalar.
-    pub key: ConsoleScalar,
-    /// Selected scalar columns.
-    pub fields: BTreeMap<String, ConsoleScalar>,
 }
 
 /// Fixed terminal operation for a pipeline.
@@ -69,9 +56,7 @@ pub enum PipelineTerminal {
 /// A bounded functional scan assembled without textual syntax.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PipelinePlan {
-    table: String,
-    direction: ScanDirection,
-    scan_limit: NonZeroUsize,
+    scan: ScanPlan,
     filter: Option<ScalarExpression>,
     selections: Vec<Selection>,
     take: Option<NonZeroUsize>,
@@ -94,13 +79,8 @@ impl PipelinePlan {
         direction: ScanDirection,
         scan_limit: usize,
     ) -> ConsoleResult<Self> {
-        let scan_limit = NonZeroUsize::new(scan_limit).ok_or_else(|| {
-            ConsoleError::invalid_input("pipeline scan limit", "must be greater than zero")
-        })?;
         Ok(Self {
-            table: table.into(),
-            direction,
-            scan_limit,
+            scan: ScanPlan::new(table, direction, scan_limit)?,
             filter: None,
             selections: Vec::new(),
             take: None,
@@ -136,7 +116,7 @@ impl PipelinePlan {
 
     /// Returns the requested table name or alias.
     pub fn table(&self) -> &str {
-        &self.table
+        self.scan.table()
     }
 
     pub(crate) fn returns_rows(&self) -> bool {
@@ -144,88 +124,55 @@ impl PipelinePlan {
     }
 }
 
-/// Lazy rows returned from a functional pipeline.
-pub type PipelineRowStream = Box<dyn Iterator<Item = ConsoleResult<ProjectedRow>>>;
+/// Validates and executes one bounded pipeline against an explicit registry.
+pub(crate) fn execute_pipeline(
+    registry: &ConsoleRegistry,
+    plan: PipelinePlan,
+) -> ConsoleResult<ConsoleOutput> {
+    let table = registry.table(plan.table())?;
+    validate_plan(&plan, table.key_type(), table.value_metadata())?;
 
-/// Result of one functional pipeline.
-pub enum PipelineOutput {
-    /// A lazy stream of projected rows.
-    Rows(PipelineRowStream),
-    /// The first or last matching row.
-    Row(Option<ProjectedRow>),
-    /// A fixed aggregate.
-    Scalar(ConsoleScalar),
-}
+    let records = table
+        .scan(plan.scan.direction())?
+        .take(plan.scan.limit().get());
+    let rows = FilteredRows {
+        records: Box::new(records),
+        filter: plan.filter,
+        remaining: plan.take.map(NonZeroUsize::get),
+    };
 
-impl fmt::Debug for PipelineOutput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Rows(_) => formatter.write_str("Rows(..)"),
-            Self::Row(row) => formatter.debug_tuple("Row").field(row).finish(),
-            Self::Scalar(value) => formatter.debug_tuple("Scalar").field(value).finish(),
+    match plan.terminal {
+        PipelineTerminal::Rows => Ok(ConsoleOutput::Rows(project_rows(rows, plan.selections))),
+        PipelineTerminal::First => {
+            let row = rows.into_iter().next().transpose()?;
+            Ok(ConsoleOutput::Row(
+                row.map(|row| project_row(row, &plan.selections))
+                    .transpose()?,
+            ))
         }
-    }
-}
-
-/// Executes validated functional plans against an explicit registry.
-#[derive(Debug)]
-pub struct PipelineExecutor<'a> {
-    registry: &'a ConsoleRegistry,
-}
-
-impl<'a> PipelineExecutor<'a> {
-    /// Creates an executor over a completed registry.
-    pub const fn new(registry: &'a ConsoleRegistry) -> Self {
-        Self { registry }
-    }
-
-    /// Validates and executes one bounded pipeline.
-    pub fn execute(&self, plan: PipelinePlan) -> ConsoleResult<PipelineOutput> {
-        let table = self.registry.table(plan.table())?;
-        validate_plan(&plan, table.key_type(), table.value_metadata())?;
-
-        let records = table.scan(plan.direction)?.take(plan.scan_limit.get());
-        let rows = FilteredRows {
-            records: Box::new(records),
-            filter: plan.filter,
-            remaining: plan.take.map(NonZeroUsize::get),
-        };
-
-        match plan.terminal {
-            PipelineTerminal::Rows => Ok(PipelineOutput::Rows(project_rows(rows, plan.selections))),
-            PipelineTerminal::First => {
-                let row = rows.into_iter().next().transpose()?;
-                Ok(PipelineOutput::Row(
-                    row.map(|row| project_row(row, &plan.selections))
-                        .transpose()?,
-                ))
+        PipelineTerminal::Last => {
+            let mut last = None;
+            for row in rows {
+                last = Some(row?);
             }
-            PipelineTerminal::Last => {
-                let mut last = None;
-                for row in rows {
-                    last = Some(row?);
-                }
-                Ok(PipelineOutput::Row(
-                    last.map(|row| project_row(row, &plan.selections))
-                        .transpose()?,
-                ))
-            }
-            PipelineTerminal::Count => count_rows(rows).map(PipelineOutput::Scalar),
-            PipelineTerminal::Sum(expression) => {
-                sum_rows(rows, &expression).map(PipelineOutput::Scalar)
-            }
-            PipelineTerminal::Min(expression) => {
-                extreme_rows(rows, &expression, true).map(PipelineOutput::Scalar)
-            }
-            PipelineTerminal::Max(expression) => {
-                extreme_rows(rows, &expression, false).map(PipelineOutput::Scalar)
-            }
-            PipelineTerminal::Any(expression) => {
-                boolean_rows(rows, &expression, true).map(PipelineOutput::Scalar)
-            }
-            PipelineTerminal::All(expression) => {
-                boolean_rows(rows, &expression, false).map(PipelineOutput::Scalar)
-            }
+            Ok(ConsoleOutput::Row(
+                last.map(|row| project_row(row, &plan.selections))
+                    .transpose()?,
+            ))
+        }
+        PipelineTerminal::Count => count_rows(rows).map(ConsoleOutput::Scalar),
+        PipelineTerminal::Sum(expression) => sum_rows(rows, &expression).map(ConsoleOutput::Scalar),
+        PipelineTerminal::Min(expression) => {
+            extreme_rows(rows, &expression, true).map(ConsoleOutput::Scalar)
+        }
+        PipelineTerminal::Max(expression) => {
+            extreme_rows(rows, &expression, false).map(ConsoleOutput::Scalar)
+        }
+        PipelineTerminal::Any(expression) => {
+            boolean_rows(rows, &expression, true).map(ConsoleOutput::Scalar)
+        }
+        PipelineTerminal::All(expression) => {
+            boolean_rows(rows, &expression, false).map(ConsoleOutput::Scalar)
         }
     }
 }
@@ -334,16 +281,13 @@ impl Iterator for FilteredRows {
     }
 }
 
-fn project_rows(rows: FilteredRows, selections: Vec<Selection>) -> PipelineRowStream {
+fn project_rows(rows: FilteredRows, selections: Vec<Selection>) -> RowStream {
     Box::new(rows.map(move |row| row.and_then(|row| project_row(row, &selections))))
 }
 
-fn project_row(row: ConsoleRow, selections: &[Selection]) -> ConsoleResult<ProjectedRow> {
+fn project_row(row: ConsoleRow, selections: &[Selection]) -> ConsoleResult<ConsoleRow> {
     let fields = if selections.is_empty() {
         row.fields
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), value.clone()))
-            .collect()
     } else {
         selections
             .iter()
@@ -355,7 +299,7 @@ fn project_row(row: ConsoleRow, selections: &[Selection]) -> ConsoleResult<Proje
             })
             .collect::<ConsoleResult<_>>()?
     };
-    Ok(ProjectedRow {
+    Ok(ConsoleRow {
         source: row.source,
         key: row.key,
         fields,

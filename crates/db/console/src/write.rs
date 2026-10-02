@@ -5,8 +5,8 @@ use std::fmt;
 use serde::Serialize;
 
 use crate::{
-    ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleRow, ConsoleScalar, PipelineExecutor,
-    PipelineOutput, PipelinePlan,
+    ConsoleError, ConsoleExecutor, ConsoleOutput, ConsoleRegistry, ConsoleResult, ConsoleRow,
+    ConsoleScalar, PipelinePlan,
 };
 
 /// One record change in a staged write.
@@ -96,7 +96,7 @@ impl<'a> WriteSession<'a> {
             ));
         }
         let table = plan.table().to_owned();
-        let PipelineOutput::Rows(rows) = PipelineExecutor::new(self.registry).execute(plan)? else {
+        let ConsoleOutput::Rows(rows) = ConsoleExecutor::new(self.registry).execute(plan)? else {
             unreachable!("row-returning pipeline produced a non-row output");
         };
         let keys = rows
