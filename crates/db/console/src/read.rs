@@ -224,11 +224,11 @@ mod tests {
         name: "value",
         scalar_type: ScalarType::U64,
         nullable: false,
+        settable: false,
     }];
     const TEST_METADATA: ValueMetadata = ValueMetadata {
         name: "TestValue",
         fields: TEST_FIELDS,
-        modifiers: &[],
     };
 
     struct TestValue(u64);
@@ -248,10 +248,10 @@ mod tests {
             }
         }
 
-        fn modify(&mut self, modifier: &str, _args: &[ConsoleScalar]) -> ConsoleResult<()> {
-            Err(ConsoleError::UnknownModifier {
+        fn set(&mut self, field: &str, _value: &ConsoleScalar) -> ConsoleResult<()> {
+            Err(ConsoleError::ReadOnlyField {
                 value: TEST_METADATA.name,
-                modifier: modifier.to_owned(),
+                field: field.to_owned(),
             })
         }
 

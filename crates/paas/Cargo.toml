@@ -8,7 +8,6 @@ workspace = true
 
 [features]
 default = []
-db-console = ["strata-prover-core/db-console"]
 remote = ["strata-prover-core/remote"]
 
 [dependencies]

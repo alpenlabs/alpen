@@ -7,12 +7,13 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::meta::ParseNestedMeta;
 use syn::spanned::Spanned;
+use syn::token::Paren;
 use syn::{
     Attribute, Data, DeriveInput, Field, Fields, GenericArgument, Ident, LitStr, Path,
     PathArguments, PathSegment, Type, parse_macro_input,
 };
 
-/// Generates console metadata and dispatch for an explicitly listed set of getters and modifiers.
+/// Generates console metadata and dispatch for explicitly listed getters and field setters.
 #[proc_macro_derive(ConsoleValue, attributes(console))]
 pub fn derive_console_value(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -85,6 +86,16 @@ impl ScalarKind {
             Self::Bytes => quote!(#value.as_bytes(#target)?),
         }
     }
+
+    fn read_owned(self, value: TokenStream2, target: &LitStr) -> TokenStream2 {
+        match self {
+            Self::Bool => quote!(#value.as_bool(#target)?),
+            Self::I64 => quote!(#value.as_i64(#target)?),
+            Self::U64 => quote!(#value.as_u64(#target)?),
+            Self::String => quote!(#value.as_str(#target)?.to_owned()),
+            Self::Bytes => quote!(#value.as_bytes(#target)?.to_vec()),
+        }
+    }
 }
 
 struct Getter {
@@ -97,6 +108,18 @@ struct Getter {
 enum GetterSource {
     Field(Ident),
     Function(Path),
+}
+
+struct Setter {
+    name: LitStr,
+    scalar: ScalarKind,
+    nullable: bool,
+    function: SetterFunction,
+}
+
+enum SetterFunction {
+    Convention(Ident),
+    Explicit(Path),
 }
 
 struct Argument {
@@ -114,7 +137,7 @@ struct Modifier {
 struct ValueConfig {
     name: Option<LitStr>,
     getters: Vec<Getter>,
-    modifiers: Vec<Modifier>,
+    setters: Vec<Setter>,
 }
 
 fn parse_console_attributes(
@@ -141,48 +164,101 @@ fn parse_value_config(input: &DeriveInput) -> syn::Result<ValueConfig> {
             config.getters.push(parse_getter(meta)?);
             return Ok(());
         }
-        if meta.path.is_ident("modifier") {
-            config.modifiers.push(parse_modifier(meta)?);
-            return Ok(());
-        }
         Err(meta.error("unsupported ConsoleValue attribute"))
     })?;
 
     if let Data::Struct(data) = &input.data {
         for field in &data.fields {
-            if let Some(getter) = parse_field_getter(field)? {
+            let (getter, setter) = parse_field_registration(field)?;
+            if let Some(getter) = getter {
                 config.getters.push(getter);
+            }
+            if let Some(setter) = setter {
+                config.setters.push(setter);
             }
         }
     }
 
     reject_duplicate_names(config.getters.iter().map(|getter| &getter.name), "getter")?;
-    reject_duplicate_names(
-        config.modifiers.iter().map(|modifier| &modifier.name),
-        "modifier",
-    )?;
+    reject_duplicate_names(config.setters.iter().map(|setter| &setter.name), "setter")?;
     Ok(config)
 }
 
-fn parse_field_getter(field: &Field) -> syn::Result<Option<Getter>> {
+fn parse_field_registration(field: &Field) -> syn::Result<(Option<Getter>, Option<Setter>)> {
     let mut getter = None;
+    let mut setter_function = None;
+    let mut has_setter = false;
     for attribute in field
         .attrs
         .iter()
         .filter(|attribute| attribute.path().is_ident("console"))
     {
         attribute.parse_nested_meta(|meta| {
-            if !meta.path.is_ident("get") {
-                return Err(meta.error("fields support only the 'get' console attribute"));
+            if meta.path.is_ident("get") {
+                if getter.is_some() {
+                    return Err(meta.error("field getter declared more than once"));
+                }
+                getter = Some(parse_field_getter_options(field, meta)?);
+            } else if meta.path.is_ident("set") {
+                if has_setter {
+                    return Err(meta.error("field setter declared more than once"));
+                }
+                has_setter = true;
+                if meta.input.peek(Paren) {
+                    meta.parse_nested_meta(|nested| {
+                        if nested.path.is_ident("via") {
+                            setter_function = Some(nested.value()?.parse()?);
+                            Ok(())
+                        } else {
+                            Err(nested.error("field setter supports only 'via'"))
+                        }
+                    })?;
+                }
+            } else {
+                return Err(meta.error("fields support only 'get' and 'set'"));
             }
-            if getter.is_some() {
-                return Err(meta.error("field getter declared more than once"));
-            }
-            getter = Some(parse_field_getter_options(field, meta)?);
             Ok(())
         })?;
     }
-    Ok(getter)
+
+    if !has_setter {
+        return Ok((getter, None));
+    }
+    let Some(getter) = getter else {
+        return Err(syn::Error::new(
+            field.span(),
+            "a console field setter requires a getter",
+        ));
+    };
+    if !matches!(&getter.source, GetterSource::Field(_)) {
+        return Err(syn::Error::new(
+            field.span(),
+            "a console field setter requires a direct field getter",
+        ));
+    }
+    let field_ident = field.ident.clone().ok_or_else(|| {
+        syn::Error::new(
+            field.span(),
+            "field setters require a struct with named fields",
+        )
+    })?;
+    let (scalar, nullable) = infer_scalar_type(&field.ty).ok_or_else(|| {
+        syn::Error::new(
+            field.ty.span(),
+            "cannot infer console setter scalar from field type",
+        )
+    })?;
+    let function = setter_function.map_or_else(
+        || SetterFunction::Convention(format_ident!("set_{field_ident}")),
+        SetterFunction::Explicit,
+    );
+    let setter = Setter {
+        name: getter.name.clone(),
+        scalar,
+        nullable,
+        function,
+    };
+    Ok((Some(getter), Some(setter)))
 }
 
 fn parse_field_getter_options(field: &Field, meta: ParseNestedMeta<'_>) -> syn::Result<Getter> {
@@ -198,7 +274,7 @@ fn parse_field_getter_options(field: &Field, meta: ParseNestedMeta<'_>) -> syn::
     let mut nullable = inferred.map(|(_, nullable)| nullable).unwrap_or(false);
     let mut function = None;
 
-    if !meta.input.is_empty() {
+    if meta.input.peek(Paren) {
         meta.parse_nested_meta(|nested| {
             if nested.path.is_ident("name") {
                 name = Some(nested.value()?.parse()?);
@@ -207,7 +283,7 @@ fn parse_field_getter_options(field: &Field, meta: ParseNestedMeta<'_>) -> syn::
                 scalar = Some(ScalarKind::parse(&value)?);
             } else if nested.path.is_ident("nullable") {
                 nullable = true;
-            } else if nested.path.is_ident("with") {
+            } else if nested.path.is_ident("via") {
                 function = Some(nested.value()?.parse()?);
             } else {
                 return Err(nested.error("unsupported field getter attribute"));
@@ -291,7 +367,7 @@ fn parse_getter(meta: ParseNestedMeta<'_>) -> syn::Result<Getter> {
             nullable = true;
         } else if nested.path.is_ident("field") {
             field = Some(nested.value()?.parse()?);
-        } else if nested.path.is_ident("with") {
+        } else if nested.path.is_ident("via") {
             function = Some(nested.value()?.parse()?);
         } else {
             return Err(nested.error("unsupported getter attribute"));
@@ -305,10 +381,10 @@ fn parse_getter(meta: ParseNestedMeta<'_>) -> syn::Result<Getter> {
         (Some(field), Some(_)) => {
             return Err(syn::Error::new(
                 field.span(),
-                "getter must use exactly one of 'field' or 'with'",
+                "getter must use exactly one of 'field' or 'via'",
             ));
         }
-        (None, None) => return Err(meta.error("getter requires either 'field' or 'with'")),
+        (None, None) => return Err(meta.error("getter requires either 'field' or 'via'")),
     };
 
     Ok(Getter {
@@ -327,7 +403,7 @@ fn parse_modifier(meta: ParseNestedMeta<'_>) -> syn::Result<Modifier> {
     meta.parse_nested_meta(|nested| {
         if nested.path.is_ident("name") {
             name = Some(nested.value()?.parse()?);
-        } else if nested.path.is_ident("with") {
+        } else if nested.path.is_ident("via") {
             function = Some(nested.value()?.parse()?);
         } else if nested.path.is_ident("argument") {
             arguments.push(parse_argument(nested)?);
@@ -343,7 +419,7 @@ fn parse_modifier(meta: ParseNestedMeta<'_>) -> syn::Result<Modifier> {
     )?;
     Ok(Modifier {
         name: name.ok_or_else(|| meta.error("modifier requires 'name'"))?,
-        function: function.ok_or_else(|| meta.error("modifier requires 'with'"))?,
+        function: function.ok_or_else(|| meta.error("modifier requires 'via'"))?,
         arguments,
     })
 }
@@ -403,31 +479,16 @@ fn expand_console_value(input: &DeriveInput) -> syn::Result<TokenStream2> {
         let name = &getter.name;
         let scalar = getter.scalar.metadata();
         let nullable = getter.nullable;
+        let settable = config
+            .setters
+            .iter()
+            .any(|setter| setter.name.value() == getter.name.value());
         quote! {
             ::strata_db_console::FieldDescriptor {
                 name: #name,
                 scalar_type: #scalar,
                 nullable: #nullable,
-            }
-        }
-    });
-
-    let modifier_descriptors = config.modifiers.iter().map(|modifier| {
-        let name = &modifier.name;
-        let arguments = modifier.arguments.iter().map(|argument| {
-            let name = &argument.name;
-            let scalar = argument.scalar.metadata();
-            quote! {
-                ::strata_db_console::ArgumentDescriptor {
-                    name: #name,
-                    scalar_type: #scalar,
-                }
-            }
-        });
-        quote! {
-            ::strata_db_console::ModifierDescriptor {
-                name: #name,
-                arguments: &[#(#arguments),*],
+                settable: #settable,
             }
         }
     });
@@ -456,49 +517,47 @@ fn expand_console_value(input: &DeriveInput) -> syn::Result<TokenStream2> {
         quote!(#name => Ok(#value))
     });
 
-    let modifier_arms = config.modifiers.iter().map(|modifier| {
-        let name = &modifier.name;
-        let function = &modifier.function;
-        let argument_count = modifier.arguments.len();
-        let argument_values = modifier
-            .arguments
-            .iter()
-            .enumerate()
-            .map(|(index, argument)| {
-                let argument_ident = format_ident!("__console_argument_{index}");
-                let argument_name = argument.name.value();
-                let target = LitStr::new(
-                    &format!("modifier '{}' argument '{argument_name}'", name.value()),
-                    argument.name.span(),
-                );
-                let read = argument.scalar.read_argument(&argument_ident, &target);
-                quote! {
-                    let #argument_ident = &args[#index];
-                    let #argument_ident = #read;
+    let setter_arms = config.setters.iter().map(|setter| {
+        let name = &setter.name;
+        let target = LitStr::new(&format!("field setter '{}'", name.value()), name.span());
+        let read_value = setter.scalar.read_owned(quote!(value), &target);
+        let parsed_value = if setter.nullable {
+            quote! {
+                match value {
+                    ::strata_db_console::ConsoleScalar::Null => None,
+                    _ => Some(#read_value),
                 }
-            })
-            .collect::<Vec<_>>();
-        let argument_idents = (0..argument_count)
-            .map(|index| format_ident!("__console_argument_{index}"))
-            .collect::<Vec<_>>();
-
+            }
+        } else {
+            read_value
+        };
+        let call = match &setter.function {
+            SetterFunction::Convention(function) => quote!(self.#function(__console_value)),
+            SetterFunction::Explicit(function) => quote!(#function(self, __console_value)),
+        };
         quote! {
             #name => {
-                if args.len() != #argument_count {
-                    return Err(::strata_db_console::ConsoleError::invalid_input(
-                        "modifier arguments",
-                        format!(
-                            "modifier '{}' expected {} arguments, got {}",
-                            #name,
-                            #argument_count,
-                            args.len(),
-                        ),
-                    ));
-                }
-                #(#argument_values)*
-                #function(self, #(#argument_idents),*)
+                let __console_value = #parsed_value;
+                let () = #call;
+                Ok(())
             }
         }
+    });
+    let readonly_arms = config.getters.iter().filter_map(|getter| {
+        if config
+            .setters
+            .iter()
+            .any(|setter| setter.name.value() == getter.name.value())
+        {
+            return None;
+        }
+        let name = &getter.name;
+        Some(quote! {
+            #name => Err(::strata_db_console::ConsoleError::ReadOnlyField {
+                value: Self::__STRATA_DB_CONSOLE_METADATA.name,
+                field: field.to_owned(),
+            })
+        })
     });
 
     Ok(quote! {
@@ -507,7 +566,6 @@ fn expand_console_value(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 ::strata_db_console::ValueMetadata {
                     name: #value_name,
                     fields: &[#(#field_descriptors),*],
-                    modifiers: &[#(#modifier_descriptors),*],
                 };
         }
 
@@ -529,16 +587,17 @@ fn expand_console_value(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 }
             }
 
-            fn modify(
+            fn set(
                 &mut self,
-                modifier: &str,
-                args: &[::strata_db_console::ConsoleScalar],
+                field: &str,
+                value: &::strata_db_console::ConsoleScalar,
             ) -> ::strata_db_console::ConsoleResult<()> {
-                match modifier {
-                    #(#modifier_arms,)*
-                    _ => Err(::strata_db_console::ConsoleError::UnknownModifier {
+                match field {
+                    #(#setter_arms,)*
+                    #(#readonly_arms,)*
+                    _ => Err(::strata_db_console::ConsoleError::UnknownField {
                         value: Self::__STRATA_DB_CONSOLE_METADATA.name,
-                        modifier: modifier.to_owned(),
+                        field: field.to_owned(),
                     }),
                 }
             }
@@ -571,6 +630,7 @@ struct TableConfig {
     parse_key: Option<Path>,
     render_key: Option<Path>,
     map_value: Option<Path>,
+    modifiers: Vec<Modifier>,
 }
 
 fn parse_table_config(input: &DeriveInput) -> syn::Result<TableConfig> {
@@ -595,12 +655,18 @@ fn parse_table_config(input: &DeriveInput) -> syn::Result<TableConfig> {
             config.render_key = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("map_value") {
             config.map_value = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("modifier") {
+            config.modifiers.push(parse_modifier(meta)?);
         } else {
             return Err(meta.error("unsupported ConsoleTable attribute"));
         }
         Ok(())
     })?;
     reject_duplicate_names(config.aliases.iter(), "table alias")?;
+    reject_duplicate_names(
+        config.modifiers.iter().map(|modifier| &modifier.name),
+        "modifier",
+    )?;
     Ok(config)
 }
 
@@ -662,6 +728,72 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let map_value = config
         .map_value
         .ok_or_else(|| syn::Error::new(input.span(), "ConsoleTable requires 'map_value'"))?;
+    let modifier_descriptors = config.modifiers.iter().map(|modifier| {
+        let name = &modifier.name;
+        let arguments = modifier.arguments.iter().map(|argument| {
+            let name = &argument.name;
+            let scalar = argument.scalar.metadata();
+            quote! {
+                ::strata_db_console::ArgumentDescriptor {
+                    name: #name,
+                    scalar_type: #scalar,
+                }
+            }
+        });
+        quote! {
+            ::strata_db_console::ModifierDescriptor {
+                name: #name,
+                arguments: &[#(#arguments),*],
+            }
+        }
+    });
+    let modifier_arms = config.modifiers.iter().map(|modifier| {
+        let modifier_name = &modifier.name;
+        let function = &modifier.function;
+        let argument_count = modifier.arguments.len();
+        let argument_values = modifier
+            .arguments
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                let argument_ident = format_ident!("__console_argument_{index}");
+                let argument_name = argument.name.value();
+                let target = LitStr::new(
+                    &format!(
+                        "modifier '{}' argument '{argument_name}'",
+                        modifier_name.value()
+                    ),
+                    argument.name.span(),
+                );
+                let read = argument.scalar.read_argument(&argument_ident, &target);
+                quote! {
+                    let #argument_ident = &arguments[#index];
+                    let #argument_ident = #read;
+                }
+            })
+            .collect::<Vec<_>>();
+        let argument_idents = (0..argument_count)
+            .map(|index| format_ident!("__console_argument_{index}"))
+            .collect::<Vec<_>>();
+
+        quote! {
+            #modifier_name => {
+                if arguments.len() != #argument_count {
+                    return Err(::strata_db_console::ConsoleError::invalid_input(
+                        "modifier arguments",
+                        format!(
+                            "modifier '{}' expected {} arguments, got {}",
+                            #modifier_name,
+                            #argument_count,
+                            arguments.len(),
+                        ),
+                    ));
+                }
+                #(#argument_values)*
+                #function(value, #(#argument_idents),*)
+            }
+        }
+    });
 
     let make_adapter = quote! {
         #adapter::<#schema, #value>::new(
@@ -693,6 +825,10 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 <#value as ::strata_db_console::RegisteredConsoleValue>::value_metadata()
             }
 
+            fn modifiers(&self) -> &'static [::strata_db_console::ModifierDescriptor] {
+                &[#(#modifier_descriptors),*]
+            }
+
             fn get(
                 &self,
                 key: &::strata_db_console::ConsoleScalar,
@@ -707,6 +843,37 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
             ) -> ::strata_db_console::ConsoleResult<::strata_db_console::RecordStream> {
                 let adapter = #make_adapter;
                 ::strata_db_console::ConsoleTable::scan(&adapter, direction)
+            }
+
+            fn modify(
+                &self,
+                record: &mut ::strata_db_console::RecordHandle,
+                modifier: &str,
+                arguments: &[::strata_db_console::ConsoleScalar],
+            ) -> ::strata_db_console::ConsoleResult<()> {
+                if record.table() != #name {
+                    return Err(::strata_db_console::ConsoleError::invalid_input(
+                        "modifier record",
+                        format!(
+                            "expected a '{}' record, got '{}'",
+                            #name,
+                            record.table(),
+                        ),
+                    ));
+                }
+                let value = record.downcast_mut::<#value>().ok_or_else(|| {
+                    ::strata_db_console::ConsoleError::read(
+                        #name,
+                        "record value has an unexpected concrete type",
+                    )
+                })?;
+                match modifier {
+                    #(#modifier_arms,)*
+                    _ => Err(::strata_db_console::ConsoleError::UnknownModifier {
+                        console_source: #name,
+                        modifier: modifier.to_owned(),
+                    }),
+                }
             }
         }
     })

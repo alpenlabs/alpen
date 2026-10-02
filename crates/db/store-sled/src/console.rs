@@ -167,8 +167,8 @@ mod tests {
     use proptest::strategy::{Strategy, ValueTree};
     use proptest::test_runner::TestRunner;
     use strata_db_console::{
-        ConsoleScalar, ReadExecutor, ReadOutput, ReadPlan, RecordFormat, ScanDirection, SourceKind,
-        render_record, write_json_lines,
+        ConsoleError, ConsoleScalar, ReadExecutor, ReadOutput, ReadPlan, RecordFormat,
+        ScanDirection, SourceKind, render_record, write_json_lines,
     };
     use strata_db_types::l1::L1Database;
     use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
@@ -263,12 +263,40 @@ mod tests {
         );
         assert_eq!(task.metadata().name, "TaskRecordData");
         assert_eq!(task.metadata().fields.len(), 4);
-        assert_eq!(task.metadata().modifiers.len(), 2);
-        task.modify(
-            "abandon",
-            &[ConsoleScalar::String("operator cancelled".to_owned())],
-        )
-        .expect("test: abandon task handle");
+        assert!(
+            task.metadata()
+                .fields
+                .iter()
+                .find(|field| field.name == "retry_after_secs")
+                .expect("test: retry field metadata")
+                .settable
+        );
+        assert!(matches!(
+            task.set("status", &ConsoleScalar::String("completed".to_owned())),
+            Err(ConsoleError::ReadOnlyField { .. })
+        ));
+        assert_eq!(task_table.modifiers().len(), 2);
+        task.set("retry_after_secs", &ConsoleScalar::U64(42))
+            .expect("test: set task retry time through domain setter");
+        assert_eq!(
+            task.get("retry_after_secs")
+                .expect("test: updated retry time getter"),
+            ConsoleScalar::U64(42)
+        );
+        task.set("retry_after_secs", &ConsoleScalar::Null)
+            .expect("test: clear task retry time through domain setter");
+        assert_eq!(
+            task.get("retry_after_secs")
+                .expect("test: cleared retry time getter"),
+            ConsoleScalar::Null
+        );
+        task_table
+            .modify(
+                &mut task,
+                "abandon",
+                &[ConsoleScalar::String("operator cancelled".to_owned())],
+            )
+            .expect("test: abandon task handle");
         assert_eq!(
             task.get("status").expect("test: modified status getter"),
             ConsoleScalar::String("permanent_failure".to_owned())

@@ -5,18 +5,14 @@ use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use typed_sled::error::Error as TSledError;
 
-#[cfg(feature = "db-console")]
 use std::sync::Arc;
-#[cfg(feature = "db-console")]
 use strata_db_console::ConsoleTable;
-#[cfg(feature = "db-console")]
 use typed_sled::SledTree;
 
 use super::schemas::{
     OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockSchema, OLBlockStatusSchema,
     OLCanonicalBlockSchema, OLHistoryBaseSchema, OLTerminalHeaderSchema,
 };
-#[cfg(feature = "db-console")]
 use crate::console::{SledConsoleTable, identity, parse_ol_block_id, render_ol_block_id};
 use crate::define_sled_database;
 use crate::utils::{conv_sled_err, first};
@@ -37,34 +33,32 @@ define_sled_database!(
 );
 
 /// Local console adapter that keeps console metadata out of the consensus type.
-#[cfg(feature = "db-console")]
 #[derive(strata_db_console::ConsoleValue)]
 #[console(
     name = "OLBlockV1",
     getter(
         name = "slot",
         scalar = "u64",
-        with = OLBlockConsoleValue::console_slot
+        via = OLBlockConsoleValue::console_slot
     ),
     getter(
         name = "epoch",
         scalar = "u64",
-        with = OLBlockConsoleValue::console_epoch
+        via = OLBlockConsoleValue::console_epoch
     ),
     getter(
         name = "timestamp",
         scalar = "u64",
-        with = OLBlockConsoleValue::console_timestamp
+        via = OLBlockConsoleValue::console_timestamp
     ),
     getter(
         name = "parent_block_id",
         scalar = "bytes",
-        with = OLBlockConsoleValue::console_parent_block_id
+        via = OLBlockConsoleValue::console_parent_block_id
     )
 )]
 struct OLBlockConsoleValue(OLBlockV1);
 
-#[cfg(feature = "db-console")]
 impl OLBlockConsoleValue {
     fn console_slot(&self) -> u64 {
         self.0.header().slot()
@@ -83,7 +77,6 @@ impl OLBlockConsoleValue {
     }
 }
 
-#[cfg(feature = "db-console")]
 #[derive(strata_db_console::ConsoleTable)]
 #[console(
     name = "OLBlockStatus",
@@ -97,7 +90,6 @@ impl OLBlockConsoleValue {
 )]
 struct OLBlockStatusConsoleTable(SledTree<OLBlockStatusSchema>);
 
-#[cfg(feature = "db-console")]
 #[derive(strata_db_console::ConsoleTable)]
 #[console(
     name = "OLBlock",
@@ -112,7 +104,6 @@ struct OLBlockStatusConsoleTable(SledTree<OLBlockStatusSchema>);
 )]
 struct OLBlockConsoleTable(SledTree<OLBlockSchema>);
 
-#[cfg(feature = "db-console")]
 impl OLBlockDBSled {
     pub(crate) fn console_tables(&self) -> Vec<Arc<dyn ConsoleTable>> {
         vec![

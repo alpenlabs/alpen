@@ -36,11 +36,21 @@ pub fn render_schema(schema: &SourceSchema, format: RecordFormat) -> ConsoleResu
             }
             for field in schema.value.fields {
                 let nullable = if field.nullable { "?" } else { "" };
+                let settable = if field.settable { " settable" } else { "" };
                 lines.push(format!(
-                    "source.field.{}: {}{nullable}",
+                    "source.field.{}: {}{nullable}{settable}",
                     field.name,
                     field.scalar_type.as_str()
                 ));
+            }
+            for modifier in schema.modifiers {
+                let arguments = modifier
+                    .arguments
+                    .iter()
+                    .map(|argument| format!("{}: {}", argument.name, argument.scalar_type.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!("source.modifier.{}: ({arguments})", modifier.name));
             }
             Ok(lines.join("\n"))
         }

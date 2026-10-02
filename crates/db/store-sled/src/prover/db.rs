@@ -3,17 +3,13 @@ use strata_db_types::checkpoint_proof::{CheckpointProofDatabase, ProofReceiptEnt
 use strata_db_types::errors::DbError;
 use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_identifiers::EpochCommitment;
-use strata_paas::TaskRecordData;
+use strata_paas::{TaskRecordData, TaskStatus};
 
-#[cfg(feature = "db-console")]
 use std::sync::Arc;
-#[cfg(feature = "db-console")]
-use strata_db_console::ConsoleTable;
-#[cfg(feature = "db-console")]
+use strata_db_console::{ConsoleError, ConsoleResult, ConsoleTable};
 use typed_sled::SledTree;
 
 use super::schemas::{CheckpointProofSchema, ProverTaskTree};
-#[cfg(feature = "db-console")]
 use crate::console::{SledConsoleTable, identity, parse_byte_key, render_byte_key};
 use crate::define_sled_database;
 use crate::utils::conv_sled_err;
@@ -25,7 +21,6 @@ define_sled_database!(
     }
 );
 
-#[cfg(feature = "db-console")]
 #[derive(strata_db_console::ConsoleTable)]
 #[console(
     name = "ProverTask",
@@ -36,17 +31,41 @@ define_sled_database!(
     adapter = SledConsoleTable,
     parse_key = parse_byte_key,
     render_key = render_byte_key,
-    map_value = identity
+    map_value = identity,
+    modifier(name = "reset", via = reset_task),
+    modifier(
+        name = "abandon",
+        via = abandon_task,
+        argument(name = "reason", scalar = "string")
+    )
 )]
 struct ProverTaskConsoleTable(SledTree<ProverTaskTree>);
 
-#[cfg(feature = "db-console")]
 impl ProofDBSled {
     pub(crate) fn console_tables(&self) -> Vec<Arc<dyn ConsoleTable>> {
         vec![Arc::new(ProverTaskConsoleTable(
             self.prover_task_tree.clone(),
         ))]
     }
+}
+
+fn reset_task(value: &mut TaskRecordData) -> ConsoleResult<()> {
+    value.set_status(TaskStatus::Pending);
+    value.set_retry_after_secs(None);
+    Ok(())
+}
+
+fn abandon_task(value: &mut TaskRecordData, reason: &str) -> ConsoleResult<()> {
+    if value.status().is_terminal() {
+        return Err(ConsoleError::invalid_input(
+            "modifier 'abandon'",
+            "task is already terminal",
+        ));
+    }
+    value.set_status(TaskStatus::PermanentFailure {
+        error: reason.to_owned(),
+    });
+    Ok(())
 }
 
 impl CheckpointProofDatabase for ProofDBSled {

@@ -44,11 +44,20 @@ pub enum ConsoleError {
         field: String,
     },
 
-    /// A modifier is not exposed by a value registration.
-    #[error("unknown modifier '{modifier}' on console value '{value}'")]
-    UnknownModifier {
+    /// A field is exposed for reading but not setting.
+    #[error("field '{field}' on console value '{value}' is read-only")]
+    ReadOnlyField {
         /// Registered value name.
         value: &'static str,
+        /// Requested field name.
+        field: String,
+    },
+
+    /// A modifier is not exposed by a table registration.
+    #[error("unknown modifier '{modifier}' on console source '{console_source}'")]
+    UnknownModifier {
+        /// Registered table name.
+        console_source: &'static str,
         /// Requested modifier name.
         modifier: String,
     },
@@ -256,6 +265,8 @@ pub struct FieldDescriptor {
     pub scalar_type: ScalarType,
     /// Whether the getter may return [`ConsoleScalar::Null`].
     pub nullable: bool,
+    /// Whether the field has an approved domain setter.
+    pub settable: bool,
 }
 
 /// Metadata for a modifier argument.
@@ -283,8 +294,6 @@ pub struct ValueMetadata {
     pub name: &'static str,
     /// Approved getters.
     pub fields: &'static [FieldDescriptor],
-    /// Approved modifiers.
-    pub modifiers: &'static [ModifierDescriptor],
 }
 
 /// Type-erased operations approved for a concrete Rust value.
@@ -295,8 +304,8 @@ pub trait ConsoleValue: Any + Send + Sync {
     /// Invokes an approved getter.
     fn get(&self, field: &str) -> ConsoleResult<ConsoleScalar>;
 
-    /// Invokes an approved modifier on the real Rust value.
-    fn modify(&mut self, modifier: &str, args: &[ConsoleScalar]) -> ConsoleResult<()>;
+    /// Invokes an approved domain setter on the real Rust value.
+    fn set(&mut self, field: &str, value: &ConsoleScalar) -> ConsoleResult<()>;
 
     /// Returns the concrete value as [`Any`] for typed storage adapters.
     fn as_any(&self) -> &dyn Any;
@@ -352,9 +361,9 @@ impl RecordHandle {
         self.value.get(field)
     }
 
-    /// Invokes an approved modifier on the held value.
-    pub fn modify(&mut self, modifier: &str, args: &[ConsoleScalar]) -> ConsoleResult<()> {
-        self.value.modify(modifier, args)
+    /// Invokes an approved domain setter on the held value.
+    pub fn set(&mut self, field: &str, value: &ConsoleScalar) -> ConsoleResult<()> {
+        self.value.set(field, value)
     }
 
     /// Borrows the held value as its concrete type for a storage adapter.
@@ -408,11 +417,29 @@ pub trait ConsoleTable: Send + Sync {
     /// Metadata for values returned by this table.
     fn value_metadata(&self) -> &'static ValueMetadata;
 
+    /// Broader domain operations approved for this table.
+    fn modifiers(&self) -> &'static [ModifierDescriptor] {
+        &[]
+    }
+
     /// Reads one record using a scalar key.
     fn get(&self, key: &ConsoleScalar) -> ConsoleResult<Option<RecordHandle>>;
 
     /// Lazily scans the table in encoded key order.
     fn scan(&self, direction: ScanDirection) -> ConsoleResult<RecordStream>;
+
+    /// Invokes a broader domain operation approved for this table.
+    fn modify(
+        &self,
+        _record: &mut RecordHandle,
+        modifier: &str,
+        _arguments: &[ConsoleScalar],
+    ) -> ConsoleResult<()> {
+        Err(ConsoleError::UnknownModifier {
+            console_source: self.name(),
+            modifier: modifier.to_owned(),
+        })
+    }
 }
 
 /// A trusted Rust read that may combine multiple database tables.
@@ -470,6 +497,8 @@ pub struct SourceSchema {
     pub arguments: &'static [ArgumentDescriptor],
     /// Metadata for the returned value.
     pub value: &'static ValueMetadata,
+    /// Broader domain operations, empty for views and read-only tables.
+    pub modifiers: &'static [ModifierDescriptor],
 }
 
 /// Explicit registry of tables supported by one console instance.
@@ -551,6 +580,7 @@ impl ConsoleRegistry {
                 key_type: Some(table.key_type()),
                 arguments: &[],
                 value: table.value_metadata(),
+                modifiers: table.modifiers(),
             });
         }
         if let Some(view) = self.views.get(name) {
@@ -561,6 +591,7 @@ impl ConsoleRegistry {
                 key_type: None,
                 arguments: view.arguments(),
                 value: view.value_metadata(),
+                modifiers: &[],
             });
         }
         Err(ConsoleError::UnknownSource(name.to_owned()))

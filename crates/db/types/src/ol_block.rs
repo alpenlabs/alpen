@@ -13,17 +13,24 @@ use crate::DbError;
 use crate::DbResult;
 
 /// Gets the status of a block.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
-#[cfg_attr(feature = "db-console", derive(strata_db_console::ConsoleValue))]
-#[cfg_attr(
-    feature = "db-console",
-    console(
-        name = "BlockStatus",
-        getter(
-            name = "status",
-            scalar = "string",
-            with = BlockStatus::console_status
-        )
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Deserialize,
+    Serialize,
+    strata_db_console::ConsoleValue,
+)]
+#[console(
+    name = "BlockStatus",
+    getter(
+        name = "status",
+        scalar = "string",
+        via = BlockStatus::console_status
     )
 )]
 #[serde(rename_all = "lowercase")]
@@ -39,7 +46,6 @@ pub enum BlockStatus {
     Invalid,
 }
 
-#[cfg(feature = "db-console")]
 impl BlockStatus {
     fn console_status(&self) -> String {
         match self {
