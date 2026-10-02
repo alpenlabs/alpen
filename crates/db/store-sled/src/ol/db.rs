@@ -87,6 +87,7 @@ impl OLBlockConsoleValue {
 #[derive(strata_db_console::ConsoleTable)]
 #[console(
     name = "OLBlockStatus",
+    key = "bytes",
     schema = OLBlockStatusSchema,
     value = BlockStatus,
     adapter = SledConsoleTable,
@@ -101,6 +102,7 @@ struct OLBlockStatusConsoleTable(SledTree<OLBlockStatusSchema>);
 #[console(
     name = "OLBlock",
     alias = "blocks",
+    key = "bytes",
     schema = OLBlockSchema,
     value = OLBlockConsoleValue,
     adapter = SledConsoleTable,

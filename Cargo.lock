@@ -9134,6 +9134,9 @@ dependencies = [
 name = "strata-db-console"
 version = "0.1.0"
 dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
  "strata-db-console-macros",
  "thiserror 2.0.20",
 ]

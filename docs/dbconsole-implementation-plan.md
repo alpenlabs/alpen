@@ -21,7 +21,9 @@ Each phase should compile and be useful on its own. Do not start by porting all 
 
 Create a small storage-independent crate, tentatively `strata-db-console`, for `ConsoleScalar`, `ConsoleValue`, opaque handles, descriptors, and the registry. It must not depend on Sled, `strata-db-types`, or domain crates. This keeps it low enough in the dependency graph for database values to implement or derive its traits.
 
-Put Sled table registrations next to the concrete database implementations in `strata-db-store-sled`, behind a `db-console` feature. Those modules can access private trees and production codecs without making schema types public or adding console-only scans to the broad database traits. A registration owns or clones the concrete database handle and exposes typed `get`, forward scan, and reverse scan operations through the storage-independent interface.
+Put Sled table registrations next to the concrete database implementations in `strata-db-store-sled`. Those modules can access private trees and production codecs without making schema types public or adding console-only scans to the broad database traits. A registration owns or clones the concrete database handle and exposes typed `get`, forward scan, and reverse scan operations through the storage-independent interface.
+
+Compile console metadata and registrations normally rather than placing feature gates on derives, fields, helpers, and imports. The generated code is passive until a caller explicitly builds the registry. Only derived values expose fields, and only registered tables are reachable.
 
 Prove the boundary with these mappings:
 
@@ -35,11 +37,13 @@ Start with handwritten `ConsoleValue` and table registrations. The spike is done
 
 Add a separate `strata-db-console-macros` proc-macro crate and make the runtime crate re-export its derives. Keep the generated API small:
 
-- `ConsoleValue` generates getter metadata, scalar projection dispatch, and modifier lookup.
-- `ConsoleTable` generates key parsing, table metadata, handle construction, and calls into explicit storage hooks.
-- Projection and modifier functions remain normal Rust. The macro should never invent field assignment or storage semantics.
+- `ConsoleValue` generates getter metadata, scalar projection dispatch, and calls to explicitly declared field setters.
+- `ConsoleTable` generates key parsing, table metadata, handle construction, broader modifier dispatch, and calls into explicit storage hooks.
+- Projection, setter, and modifier functions remain normal Rust. The macro must never invent field assignment or storage semantics.
 
-Apply the value derive directly to repo-owned values where the dependency is reasonable. For types in production crates, make the dependency and derive feature-gated by `db-console`; the new console binary enables it. Keep local adapters for foreign types and consensus types that should not gain a tooling dependency.
+Apply the value derive directly and unconditionally to repo-owned values selected for the console. Keep local adapters for foreign types and consensus types that should not gain console annotations. Keep one explicit registry assembly function; compiling a derive does not register a value or activate the console.
+
+Use four field forms and define them in the macro documentation: direct `get`, projected `get(via = ...)`, conventional `set`, and custom `set(via = ...)`. A bare `set` calls `set_<field>` and fails to compile if the method is absent or has the wrong type. A field without `set` is read-only. Use `via` only to mean “call this Rust function.”
 
 Use the handwritten mappings as the acceptance test: replace their boilerplate with derives without changing their observed metadata or getter results. Do not add linker registration or automatic crate discovery. Keep one explicit registry assembly function so the supported surface is easy to audit.
 
@@ -61,15 +65,17 @@ The views matter more than broad table coverage: the command audit showed that c
 
 ## 5. Safe point writes
 
-Add writes only after the read handles and table ownership model have settled. The first writable value should be `TaskRecordData`, with `reset` and `abandon` implemented through its existing methods. Start with point writes only:
+Add writes only after the read handles and table ownership model have settled. The first writable value should be `TaskRecordData`. Expose `retry_after_secs` as a field setter that calls `TaskRecordData::set_retry_after_secs`; keep fields without setters read-only. Register `reset` and `abandon` as broader table modifiers, and implement them through existing domain methods. Start with point writes only:
 
 ```text
-get ProverTask <key> | modify reset | stage
+get ProverTask <key> | set retry_after_secs null | stage
 staged
 commit
 ```
 
-The session stores type-erased staged writes containing the typed key and value, table registration, description, and pre-edit fingerprint. `commit` re-reads and checks the fingerprint before calling the registered production write path. Because the console opens Sled exclusively, this is mainly protection against stale session state. If stronger compare-and-swap semantics become necessary, add a narrow storage operation rather than exposing raw tree writes.
+`get ProverTask <key> | modify reset | stage` follows the same path for a broader operation.
+
+Setters and modifiers share the same staging path. The session stores type-erased staged writes containing the typed key and value, table registration, description, and pre-edit fingerprint. `commit` re-reads and checks the fingerprint before calling the registered production write path. Because the console opens Sled exclusively, this is mainly protection against stale session state. If stronger compare-and-swap semantics become necessary, add a narrow storage operation rather than exposing raw tree writes.
 
 A generic commit contains writes for one table registration. Cross-table writes remain recipes. Once storage apply starts, cancellation waits for it to return. Do not implement generic delete, insert, or structural replacement in this phase.
 
@@ -106,7 +112,7 @@ The goal is a small number of tests at the abstraction boundaries, not a test ma
 - one derive/metadata test and one rejected macro declaration;
 - one registry test covering the simple and complex mappings;
 - one lazy read test proving early termination;
-- one point-write test covering preview, abort, and commit;
+- one point-write test covering a domain setter, a broader modifier, preview, abort, and commit;
 - a table-driven scalar evaluator test; and
 - one bulk-staging failure test proving all-or-nothing behavior.
 

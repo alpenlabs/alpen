@@ -30,6 +30,7 @@ define_sled_database!(
 #[console(
     name = "ProverTask",
     alias = "tasks",
+    key = "bytes",
     schema = ProverTaskTree,
     value = TaskRecordData,
     adapter = SledConsoleTable,

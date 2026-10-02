@@ -4,13 +4,15 @@ use std::marker::PhantomData;
 
 use strata_db_console::{
     ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleScalar, ConsoleTable, ConsoleValue,
-    RecordHandle, RecordStream, RegisteredConsoleValue, ScanDirection, ValueMetadata,
+    RecordHandle, RecordStream, RegisteredConsoleValue, ScalarType, ScanDirection, ValueMetadata,
 };
 use strata_identifiers::{Buf32, OLBlockId};
 use typed_sled::error::Result as SledResult;
 use typed_sled::{Schema, SledTree, ValueCodec};
 
 use crate::SledBackend;
+
+mod views;
 
 type DecodedValue<S> = <<S as Schema>::Value as ValueCodec<S>>::Decoded;
 
@@ -21,6 +23,7 @@ where
 {
     name: &'static str,
     aliases: &'static [&'static str],
+    key_type: ScalarType,
     tree: SledTree<S>,
     parse_key: fn(&ConsoleScalar) -> ConsoleResult<S::Key>,
     render_key: fn(S::Key) -> ConsoleScalar,
@@ -36,6 +39,7 @@ where
     pub(crate) fn new(
         name: &'static str,
         aliases: &'static [&'static str],
+        key_type: ScalarType,
         tree: SledTree<S>,
         parse_key: fn(&ConsoleScalar) -> ConsoleResult<S::Key>,
         render_key: fn(S::Key) -> ConsoleScalar,
@@ -44,6 +48,7 @@ where
         Self {
             name,
             aliases,
+            key_type,
             tree,
             parse_key,
             render_key,
@@ -73,6 +78,10 @@ where
 
     fn aliases(&self) -> &'static [&'static str] {
         self.aliases
+    }
+
+    fn key_type(&self) -> ScalarType {
+        self.key_type
     }
 
     fn value_metadata(&self) -> &'static ValueMetadata {
@@ -145,6 +154,9 @@ pub fn build_console_registry(backend: &SledBackend) -> ConsoleResult<ConsoleReg
     for table in backend.prover_db.console_tables() {
         registry.register(table)?;
     }
+    for view in views::console_views(backend) {
+        registry.register_view(view)?;
+    }
     Ok(registry)
 }
 
@@ -154,11 +166,19 @@ mod tests {
 
     use proptest::strategy::{Strategy, ValueTree};
     use proptest::test_runner::TestRunner;
-    use strata_db_console::{ConsoleScalar, ScanDirection};
+    use strata_db_console::{
+        ConsoleScalar, ReadExecutor, ReadOutput, ReadPlan, RecordFormat, ScanDirection, SourceKind,
+        render_record, write_json_lines,
+    };
+    use strata_db_types::l1::L1Database;
     use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
+    use strata_db_types::ol_state::OLStateDatabase;
     use strata_db_types::prover_task::ProverTaskDatabase;
+    use strata_identifiers::OLBlockCommitment;
     use strata_ol_chain_types_v1::test_utils::ol_block_strategy;
+    use strata_ol_state_container::test_utils::create_test_container_with_staged;
     use strata_paas::{TaskRecordData, TaskStatus};
+    use strata_primitives::l1::L1BlockId;
 
     use super::build_console_registry;
     use crate::test_utils::get_test_sled_db;
@@ -184,6 +204,21 @@ mod tests {
             .ol_block_db
             .set_block_status(block_id, BlockStatus::Valid)
             .expect("test: update OL block status");
+        backend
+            .ol_block_db
+            .replace_canonical_suffix_from(block_slot, vec![block_id])
+            .expect("test: set canonical OL tip");
+        backend
+            .ol_state_db
+            .put_toplevel_ol_state(
+                OLBlockCommitment::new(block_slot, block_id),
+                create_test_container_with_staged(1),
+            )
+            .expect("test: insert canonical OL state");
+        backend
+            .l1_db
+            .set_canonical_chain_entry(100, L1BlockId::default())
+            .expect("test: set canonical L1 tip");
 
         for key in [vec![1], vec![2], vec![3]] {
             backend
@@ -255,5 +290,74 @@ mod tests {
             .expect("test: reverse scan item")
             .expect("test: decode reverse scan item");
         assert_eq!(last.key(), &ConsoleScalar::Bytes(vec![3]));
+
+        let executor = ReadExecutor::new(&registry);
+        let ReadOutput::Schema(task_schema) = executor
+            .execute(ReadPlan::schema("tasks"))
+            .expect("test: task schema")
+        else {
+            panic!("test: schema output expected");
+        };
+        assert_eq!(task_schema.name, "ProverTask");
+        assert_eq!(task_schema.kind, SourceKind::Table);
+
+        let ReadOutput::Record(block) = executor
+            .execute(ReadPlan::get("OlBlock", vec![block_key]))
+            .expect("test: OL block view")
+        else {
+            panic!("test: record output expected");
+        };
+        let block = block.expect("test: OL block view exists");
+        assert_eq!(
+            block.fields.get("status"),
+            Some(&ConsoleScalar::String("valid".to_owned()))
+        );
+        assert_eq!(
+            block.fields.get("slot"),
+            Some(&ConsoleScalar::U64(block_slot))
+        );
+        let block_json = render_record(&block, RecordFormat::Json).expect("test: render block");
+        assert!(block_json.contains("\"status\": \"valid\""));
+
+        let ReadOutput::Rows(task_rows) = executor
+            .execute(ReadPlan::scan("tasks", 2).expect("test: bounded task scan"))
+            .expect("test: scan tasks through executor")
+        else {
+            panic!("test: rows output expected");
+        };
+        let mut json_lines = Vec::new();
+        write_json_lines(task_rows, &mut json_lines).expect("test: render task JSON Lines");
+        assert_eq!(
+            String::from_utf8(json_lines)
+                .expect("test: UTF-8 JSON Lines")
+                .lines()
+                .count(),
+            2
+        );
+
+        let ReadOutput::Schema(sync_schema) = executor
+            .execute(ReadPlan::schema("SyncInfo"))
+            .expect("test: sync-info schema")
+        else {
+            panic!("test: schema output expected");
+        };
+        assert_eq!(sync_schema.kind, SourceKind::View);
+        assert_eq!(sync_schema.arguments.len(), 1);
+
+        let ReadOutput::Record(sync_info) = executor
+            .execute(ReadPlan::get("SyncInfo", vec![ConsoleScalar::U64(6)]))
+            .expect("test: sync-info view")
+        else {
+            panic!("test: record output expected");
+        };
+        let sync_info = sync_info.expect("test: sync-info value");
+        assert_eq!(
+            sync_info.fields.get("l1_tip_height"),
+            Some(&ConsoleScalar::U64(100))
+        );
+        assert_eq!(
+            sync_info.fields.get("ol_tip_block_id"),
+            Some(&ConsoleScalar::Bytes(block_id.as_ref().to_vec()))
+        );
     }
 }

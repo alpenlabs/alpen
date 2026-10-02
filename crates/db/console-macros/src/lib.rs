@@ -564,6 +564,7 @@ fn expand_console_value(input: &DeriveInput) -> syn::Result<TokenStream2> {
 struct TableConfig {
     name: Option<LitStr>,
     aliases: Vec<LitStr>,
+    key: Option<ScalarKind>,
     schema: Option<Type>,
     value: Option<Type>,
     adapter: Option<Path>,
@@ -579,6 +580,9 @@ fn parse_table_config(input: &DeriveInput) -> syn::Result<TableConfig> {
             config.name = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("alias") {
             config.aliases.push(meta.value()?.parse()?);
+        } else if meta.path.is_ident("key") {
+            let value: LitStr = meta.value()?.parse()?;
+            config.key = Some(ScalarKind::parse(&value)?);
         } else if meta.path.is_ident("schema") {
             config.schema = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("value") {
@@ -636,6 +640,10 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .name
         .ok_or_else(|| syn::Error::new(input.span(), "ConsoleTable requires 'name'"))?;
     let aliases = config.aliases;
+    let key_type = config
+        .key
+        .ok_or_else(|| syn::Error::new(input.span(), "ConsoleTable requires 'key'"))?
+        .metadata();
     let schema = config
         .schema
         .ok_or_else(|| syn::Error::new(input.span(), "ConsoleTable requires 'schema'"))?;
@@ -659,6 +667,7 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
         #adapter::<#schema, #value>::new(
             #name,
             &[#(#aliases),*],
+            #key_type,
             self.0.clone(),
             #parse_key,
             #render_key,
@@ -674,6 +683,10 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
             fn aliases(&self) -> &'static [&'static str] {
                 &[#(#aliases),*]
+            }
+
+            fn key_type(&self) -> ::strata_db_console::ScalarType {
+                #key_type
             }
 
             fn value_metadata(&self) -> &'static ::strata_db_console::ValueMetadata {

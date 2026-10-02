@@ -22,20 +22,20 @@ Generic operations plus native views cover 23 of 30 commands, or 76.7%. Function
 
 ## 3. The model
 
-Database values remain concrete Rust values. An **opaque record handle** refers to a decoded Rust record held by the console. Pipelines can invoke approved getters or modifiers on the handle, but cannot enumerate, reconstruct, or replace the complete object.
+Database values remain concrete Rust values. An **opaque record handle** refers to a decoded Rust record held by the console. Pipelines can invoke approved getters, field setters, or table modifiers on the handle, but cannot enumerate, reconstruct, or replace the complete object.
 
 ```text
 stored bytes -> production decoder -> concrete Rust value
                                       | opaque handle
                                       v
-                         approved getters and modifiers
+                    approved getters, setters, and modifiers
                                       |
                          streamed scalar rows / staged writes
 ```
 
 Internally, a handle contains a table identifier, typed key, and owned type-erased value such as `Box<dyn Any + Send>`. The table registration performs checked downcasts, so a handle from one table cannot be written as another table's value.
 
-There are four registrations: `ConsoleValue` exposes approved fields and modifiers, `ConsoleTable` connects a value to storage, `ConsoleView` implements trusted reads across tables, and `ConsoleRecipe` owns complex repairs.
+There are four registrations: `ConsoleValue` exposes approved fields and safe field setters, `ConsoleTable` connects a value to storage and owns broader modifiers, `ConsoleView` implements trusted reads across tables, and `ConsoleRecipe` owns complex repairs.
 
 The query syntax has field references, literals, parentheses, and fixed arithmetic, comparison, and boolean operators. It has no user-defined control flow, functions, types, modules, or host calls.
 
@@ -72,12 +72,16 @@ Compatibility wrappers keep existing subcommand output stable during migration.
 
 ## 5. Safe writes
 
-The console is read-only by default. Write mode requires the node to be stopped and an exclusive Sled open. A modifier parses scalar arguments and calls domain methods on the real type; there is no arbitrary field assignment or JSON replacement. For example, `TaskRecordData::set_status` also updates `updated_at_secs`, while direct assignment would break that invariant.
+The console is read-only by default. Write mode requires the node to be stopped and an exclusive Sled open. There is no arbitrary field assignment or JSON replacement. A field setter calls an existing domain setter, and a broader modifier calls domain methods on the real type. For example, `TaskRecordData::set_status` also updates `updated_at_secs`, while direct assignment would break that invariant.
+
+A field without a registered setter remains read-only. `#[console(get, set)]` never generates `self.field = value`; it generates a call to `self.set_field(value)`. A nonstandard setter can be named explicitly. Fields that do not have a scalar representation, such as `TaskStatus`, are changed through named modifiers instead.
 
 Point and bulk changes use the same pipeline:
 
 ```text
 get ProverTask deadbeef | modify reset | stage
+
+get ProverTask deadbeef | set retry_after_secs null | stage
 
 scan ProverTask
 | filter status == "Pending" || status == "Proving"
@@ -93,29 +97,33 @@ The current high-level database traits do not expose one arbitrary transaction s
 
 ## 6. Registration and use
 
-For repo-owned values, derive on the value itself. The macro can see private fields and generate getter dispatch without reconstructing the value. Foreign values, or crates avoiding the metadata dependency, use a local adapter.
+For repo-owned values, derive on the value itself. The macro can see private fields and generate getter and setter dispatch without reconstructing the value. Foreign and consensus values that should not carry console annotations use a local adapter.
 
-The table still needs a thin registration because a value does not know which schema stores it, how its key is written, or which production API should persist it. The implemented read-side shape is:
+Console metadata is always compiled. The derive generates passive metadata and dispatch code: it opens no database, performs no I/O, and registers nothing globally. The console becomes active only when a caller explicitly builds a registry. This keeps normal Rust declarations free of repeated feature gates while retaining an auditable registration boundary.
+
+The table still needs a thin registration because a value does not know which schema stores it, how its key is written, which broader operations are allowed, or which production API should persist it. The target declaration is:
 
 ```rust
-#[cfg_attr(feature = "db-console", derive(strata_db_console::ConsoleValue))]
-#[cfg_attr(
-    feature = "db-console",
-    console(
-        modifier(name = "reset", with = TaskRecordData::console_reset)
-    )
-)]
+#[derive(strata_db_console::ConsoleValue)]
 pub struct TaskRecordData {
-    #[cfg_attr(
-        feature = "db-console",
-        console(get(scalar = "string", with = TaskRecordData::console_status))
-    )]
+    #[console(get(
+        scalar = "string",
+        via = TaskRecordData::console_status
+    ))]
     status: TaskStatus,
 
-    #[cfg_attr(feature = "db-console", console(get))]
+    #[console(get)]
+    updated_at_secs: u64,
+
+    #[console(get, set)]
     retry_after_secs: Option<u64>,
 
-    // Other stored fields are not exposed unless they are registered above.
+    #[console(get(
+        name = "metadata_len",
+        scalar = "u64",
+        via = TaskRecordData::console_metadata_len
+    ))]
+    metadata: Option<Vec<u8>>,
 }
 
 impl TaskRecordData {
@@ -124,23 +132,51 @@ impl TaskRecordData {
         status_name(&self.status).to_owned()
     }
 
-    fn console_reset(&mut self) -> strata_db_console::ConsoleResult<()> {
-        self.set_status(TaskStatus::Pending);
-        self.set_retry_after_secs(None);
-        Ok(())
+    fn console_metadata_len(&self) -> Option<u64> {
+        self.metadata.as_ref().map(|metadata| metadata.len() as u64)
     }
+}
+
+fn reset_task(value: &mut TaskRecordData) -> strata_db_console::ConsoleResult<()> {
+    value.set_status(TaskStatus::Pending);
+    value.set_retry_after_secs(None);
+    Ok(())
+}
+
+fn abandon_task(
+    value: &mut TaskRecordData,
+    reason: &str,
+) -> strata_db_console::ConsoleResult<()> {
+    if value.status().is_terminal() {
+        return Err(strata_db_console::ConsoleError::invalid_input(
+            "modifier 'abandon'",
+            "task is already terminal",
+        ));
+    }
+    value.set_status(TaskStatus::PermanentFailure {
+        error: reason.to_owned(),
+    });
+    Ok(())
 }
 
 #[derive(strata_db_console::ConsoleTable)]
 #[console(
     name = "ProverTask",
     alias = "tasks",
+    key = "bytes",
     schema = ProverTaskTree,
     value = TaskRecordData,
     adapter = SledConsoleTable,
     parse_key = parse_byte_key,
     render_key = render_byte_key,
-    map_value = identity
+    map_value = identity,
+    write_with = write_task,
+    modifier(name = "reset", via = reset_task),
+    modifier(
+        name = "abandon",
+        via = abandon_task,
+        argument(name = "reason", scalar = "string")
+    )
 )]
 struct ProverTaskConsoleTable(SledTree<ProverTaskTree>);
 
@@ -148,7 +184,47 @@ let mut registry = ConsoleRegistry::new();
 registry.register(Arc::new(ProverTaskConsoleTable(tree.clone())))?;
 ```
 
-For `#[console(get)]`, the field name becomes the getter name, `Option<T>` becomes nullable, and the scalar type is inferred for `bool`, `i64`, `u64`, `String`, and `Vec<u8>`. A projection only names what differs. `ConsoleValue` generates metadata, scalar conversion, getter dispatch, modifier argument checks, and modifier dispatch. `ConsoleTable` generates the table trait implementation but delegates reads and scans to the named adapter; key parsing, key rendering, decoded-value mapping, and storage semantics stay explicit. The macros cannot infer domain semantics or cross-table invariants, and they do not perform field assignment or persistence. Versioned registrations select the production decoder and fail closed on unsupported versions.
+The four field forms are:
+
+| Declaration | Meaning |
+|---|---|
+| `#[console(get)]` | Read the field directly. The console name and scalar type come from the field. |
+| `#[console(get(via = path, ...))]` | Call a Rust method to project the field or value into a console scalar. `status` uses this because `TaskStatus` is not a scalar. |
+| `#[console(get, set)]` | Read the field directly and write it only by calling the conventional `set_<field>` domain method. |
+| `#[console(get, set(via = path))]` | Read the field directly and call the named domain setter instead of `set_<field>`. |
+
+`via` always means “call this Rust function.” It does not bypass the type or access a field reflectively. For `get`, the function receives `&self` and returns the exposed scalar or optional scalar. For `set`, it receives `&mut self` and the parsed field value. `Option<T>` becomes nullable, and the scalar type is inferred for `bool`, `i64`, `u64`, `String`, and `Vec<u8>`.
+
+`ConsoleValue` generates field metadata, scalar conversion, getter dispatch, and calls to declared domain setters. `ConsoleTable` generates the table trait implementation and owns broader modifiers and persistence. It delegates decoding, reads, scans, and writes to explicit storage hooks. The macros cannot infer domain semantics or cross-table invariants, and they never assign a field directly. Versioned registrations select the production decoder and fail closed on unsupported versions.
+
+The read executor uses the same typed plans for direct tables and native views:
+
+```rust
+let registry = build_console_registry(&backend)?;
+let executor = ReadExecutor::new(&registry);
+
+let schema = executor.execute(ReadPlan::schema("ProverTask"))?;
+let task = executor.execute(ReadPlan::get(
+    "ProverTask",
+    vec![ConsoleScalar::Bytes(task_key)],
+))?;
+
+let ReadOutput::Rows(tasks) = executor.execute(ReadPlan::scan_rev("tasks", 20)?)? else {
+    unreachable!();
+};
+write_json_lines(tasks, std::io::stdout())?;
+
+let block = executor.execute(ReadPlan::get(
+    "OlBlock",
+    vec![ConsoleScalar::Bytes(block_id)],
+))?;
+let sync = executor.execute(ReadPlan::get(
+    "SyncInfo",
+    vec![ConsoleScalar::U64(l1_reorg_safe_depth.into())],
+))?;
+```
+
+The scan limit is part of `ScanPlan`, so a caller cannot accidentally construct an unbounded programmatic scan. `OlBlock` combines the stored block and status, while `SyncInfo` owns the reviewed cross-table read and accepts the reorg-safe depth explicitly.
 
 The resulting interaction uses only registered capabilities:
 
@@ -158,6 +234,7 @@ $ strata-dbconsole --datadir data
 db> schema ProverTask
 key: hex bytes
 getters: status, retry_after_secs, metadata_len, updated_at_secs
+setters: retry_after_secs
 modifiers: reset, abandon(reason)
 
 db> get ProverTask deadbeef
@@ -173,11 +250,11 @@ Pending: 12
 Proving: 2
 Completed: 103
 
-db> get ProverTask deadbeef | modify reset | stage
+db> get ProverTask deadbeef | set retry_after_secs null | stage
 staged 1 change
 
 db> staged
-ProverTask deadbeef: status Proving -> Pending; retry_after_secs 1700000000 -> null
+ProverTask deadbeef: retry_after_secs 1700000000 -> null
 
 db> commit
 committed 1 change
@@ -217,7 +294,7 @@ Start with a separate `strata-dbconsole` binary beside `strata-dbtool`. A useful
 - value- and table-level proc macros;
 - `get`, `scan`, `scan_rev`, scalar expressions, `filter`, `select`, `take`, `first`, `last`, and fixed aggregators;
 - porcelain, JSON, and JSON Lines output in interactive and `eval` modes;
-- one writable table with `modify`, bounded or explicit-all staging, `staged`, `commit`, and `abort`;
+- one writable table with `set`, `modify`, bounded or explicit-all staging, `staged`, `commit`, and `abort`;
 - two representative native views, preferably `OlBlock` and `SyncInfo`;
 - adapters that invoke existing high-risk repair commands as native recipes.
 
@@ -225,6 +302,6 @@ Migrate simple `get-*` and summary operations by registering their values and ta
 
 Do not reuse the `strata-dbtool` binary name initially. Coexistence makes output and behavior changes explicit and gives automation a deprecation window. Once the console covers the exercised workflows and compatibility wrappers are stable, `strata-dbtool` can become an alias or be retired.
 
-Three implementation questions should be settled before the public APIs are fixed: whether console runtime traits live in `strata-db-store-sled` or a narrow companion crate, which legacy porcelain and JSON fields require byte-for-byte stability, and whether generic deletion belongs in the MVP or follows after typed modification.
+Two implementation questions remain before the public APIs are fixed: which legacy porcelain and JSON fields require byte-for-byte stability, and whether generic deletion belongs in the MVP or follows after typed modification.
 
 **Recommendation:** build the opaque-handle console with derived value metadata, thin table registrations, a fixed scalar expression language, native read views, and native recovery recipes. This design directly generalizes the common record workflows, accommodates all 30 current operations without pretending that cross-table recovery is generic, and provides a clear point at which an embedded language would become the more honest choice.
