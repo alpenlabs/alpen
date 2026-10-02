@@ -5,15 +5,32 @@ use std::str::Chars;
 
 use crate::{
     BinaryOperator, ConsoleError, ConsolePlan, ConsoleResult, ConsoleScalar, PipelinePlan,
-    PipelineTerminal, ScalarExpression, Selection,
+    PipelineTerminal, RowSetPlan, ScalarExpression, Selection, WritePlan,
 };
 
-/// Parses one textual read program into the same typed plan used by Rust callers.
+/// A parsed read or mutation program.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConsoleProgram {
+    /// A schema, point read, view, scan, or aggregate.
+    Read(ConsolePlan),
+    /// A point or bounded same-table mutation that is staged when executed.
+    Write(WritePlan),
+}
+
+/// Parses one textual program into the same typed plans used by Rust callers.
 ///
 /// `scan_limit` bounds storage reads before filters and `take` are applied. Text programs cannot
 /// override or remove this outer bound.
-pub fn parse_console_plan(program: &str, scan_limit: usize) -> ConsoleResult<ConsolePlan> {
+pub fn parse_console_program(program: &str, scan_limit: usize) -> ConsoleResult<ConsoleProgram> {
     Parser::new(program)?.parse(scan_limit)
+}
+
+/// Parses a read-only program, rejecting setter and modifier pipelines.
+pub fn parse_console_plan(program: &str, scan_limit: usize) -> ConsoleResult<ConsolePlan> {
+    match parse_console_program(program, scan_limit)? {
+        ConsoleProgram::Read(plan) => Ok(plan),
+        ConsoleProgram::Write(_) => Err(parse_error("write program is not allowed here")),
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,18 +72,18 @@ impl Parser {
         })
     }
 
-    fn parse(mut self, scan_limit: usize) -> ConsoleResult<ConsolePlan> {
+    fn parse(mut self, scan_limit: usize) -> ConsoleResult<ConsoleProgram> {
         let command = self.take_word("command")?;
         match command.as_str() {
             "schema" => {
                 let source = self.take_word("schema source")?;
                 self.expect_end()?;
-                Ok(ConsolePlan::schema(source))
+                Ok(ConsoleProgram::Read(ConsolePlan::schema(source)))
             }
             "get" => {
                 let source = self.take_word("get source")?;
                 let mut arguments = Vec::new();
-                while self.peek() != &Token::End {
+                while !matches!(self.peek(), Token::Pipe | Token::End) {
                     arguments.push(self.parse_argument()?);
                 }
                 if arguments.is_empty() {
@@ -74,7 +91,11 @@ impl Parser {
                         "get requires at least one key or view argument",
                     ));
                 }
-                Ok(ConsolePlan::get(source, arguments))
+                if self.peek() == &Token::End {
+                    Ok(ConsoleProgram::Read(ConsolePlan::get(source, arguments)))
+                } else {
+                    self.parse_point_write(source, arguments)
+                }
             }
             "scan" => self.parse_pipeline(false, scan_limit),
             "scan_rev" => self.parse_pipeline(true, scan_limit),
@@ -82,14 +103,19 @@ impl Parser {
         }
     }
 
-    fn parse_pipeline(&mut self, reverse: bool, scan_limit: usize) -> ConsoleResult<ConsolePlan> {
+    fn parse_pipeline(
+        &mut self,
+        reverse: bool,
+        scan_limit: usize,
+    ) -> ConsoleResult<ConsoleProgram> {
         let table = self.take_word("scan table")?;
-        let mut plan = if reverse {
-            PipelinePlan::scan_rev(table, scan_limit)?
+        let mut rows = if reverse {
+            RowSetPlan::scan_rev(table, scan_limit)?
         } else {
-            PipelinePlan::scan(table, scan_limit)?
+            RowSetPlan::scan(table, scan_limit)?
         };
         let mut seen = [false; 3];
+        let mut selections = None;
 
         while self.peek() != &Token::End {
             self.expect(Token::Pipe, "expected '|' before pipeline operation")?;
@@ -97,42 +123,66 @@ impl Parser {
             match operation.as_str() {
                 "filter" => {
                     mark_once(&mut seen[0], "filter")?;
+                    if seen[1] || seen[2] {
+                        return Err(parse_error("filter must precede select and take"));
+                    }
                     let expression = self.parse_expression(0)?;
                     self.expect_stage_end()?;
-                    plan = plan.filter(expression);
+                    rows = rows.filter(expression);
                 }
                 "select" => {
                     mark_once(&mut seen[1], "select")?;
-                    plan = plan.select(self.parse_selections()?);
+                    if seen[2] {
+                        return Err(parse_error("select must precede take"));
+                    }
+                    selections = Some(self.parse_selections()?);
                 }
                 "take" => {
                     mark_once(&mut seen[2], "take")?;
                     let limit = self.take_usize("take limit")?;
                     self.expect_stage_end()?;
-                    plan = plan.take(limit)?;
+                    rows = rows.take(limit)?;
                 }
                 "first" | "last" | "count" => {
                     self.expect_stage_end()?;
-                    plan = plan.terminal(match operation.as_str() {
+                    let terminal = match operation.as_str() {
                         "first" => PipelineTerminal::First,
                         "last" => PipelineTerminal::Last,
                         "count" => PipelineTerminal::Count,
                         _ => unreachable!("matched fixed terminal name"),
-                    });
+                    };
                     self.expect_end()?;
+                    return Ok(ConsoleProgram::Read(finish_pipeline(
+                        rows, selections, terminal,
+                    )));
                 }
                 "sum" | "min" | "max" | "any" | "all" => {
                     let expression = self.parse_expression(0)?;
                     self.expect_stage_end()?;
-                    plan = plan.terminal(match operation.as_str() {
+                    let terminal = match operation.as_str() {
                         "sum" => PipelineTerminal::Sum(expression),
                         "min" => PipelineTerminal::Min(expression),
                         "max" => PipelineTerminal::Max(expression),
                         "any" => PipelineTerminal::Any(expression),
                         "all" => PipelineTerminal::All(expression),
                         _ => unreachable!("matched fixed aggregate name"),
-                    });
+                    };
                     self.expect_end()?;
+                    return Ok(ConsoleProgram::Read(finish_pipeline(
+                        rows, selections, terminal,
+                    )));
+                }
+                "modify" => {
+                    if selections.is_some() {
+                        return Err(parse_error("modify cannot follow select"));
+                    }
+                    let modifier = self.take_word("modifier name")?;
+                    let arguments = self.take_remaining_arguments()?;
+                    return Ok(ConsoleProgram::Write(WritePlan::ModifyRows {
+                        rows,
+                        modifier,
+                        arguments,
+                    }));
                 }
                 _ => {
                     return Err(parse_error(format!(
@@ -141,7 +191,53 @@ impl Parser {
                 }
             }
         }
-        Ok(plan.into())
+        Ok(ConsoleProgram::Read(finish_pipeline(
+            rows,
+            selections,
+            PipelineTerminal::Rows,
+        )))
+    }
+
+    fn parse_point_write(
+        &mut self,
+        table: String,
+        mut arguments: Vec<ConsoleScalar>,
+    ) -> ConsoleResult<ConsoleProgram> {
+        if arguments.len() != 1 {
+            return Err(parse_error("point writes require exactly one table key"));
+        }
+        let key = arguments.pop().expect("one point key was checked");
+        self.expect(Token::Pipe, "expected '|' before write operation")?;
+        let operation = self.take_word("write operation")?;
+        let plan = match operation.as_str() {
+            "set" => WritePlan::Set {
+                table,
+                key,
+                field: self.take_word("field name")?,
+                value: self.parse_argument()?,
+            },
+            "modify" => WritePlan::Modify {
+                table,
+                key,
+                modifier: self.take_word("modifier name")?,
+                arguments: self.take_remaining_arguments()?,
+            },
+            _ => {
+                return Err(parse_error(format!(
+                    "unknown write operation '{operation}'"
+                )));
+            }
+        };
+        self.expect_end()?;
+        Ok(ConsoleProgram::Write(plan))
+    }
+
+    fn take_remaining_arguments(&mut self) -> ConsoleResult<Vec<ConsoleScalar>> {
+        let mut arguments = Vec::new();
+        while self.peek() != &Token::End {
+            arguments.push(self.parse_argument()?);
+        }
+        Ok(arguments)
     }
 
     fn parse_selections(&mut self) -> ConsoleResult<Vec<Selection>> {
@@ -333,6 +429,18 @@ impl Parser {
             self.cursor += 1;
         }
     }
+}
+
+fn finish_pipeline(
+    rows: RowSetPlan,
+    selections: Option<Vec<Selection>>,
+    terminal: PipelineTerminal,
+) -> ConsolePlan {
+    let mut plan = PipelinePlan::from(rows);
+    if let Some(selections) = selections {
+        plan = plan.select(selections);
+    }
+    plan.terminal(terminal).into()
 }
 
 fn mark_once(seen: &mut bool, operation: &'static str) -> ConsoleResult<()> {
@@ -552,6 +660,53 @@ mod tests {
             )
             .expect("test: parse pipeline"),
             ConsolePlan::from(expected)
+        );
+    }
+
+    #[test]
+    fn parses_mutations_as_implicit_staged_writes() {
+        assert_eq!(
+            parse_console_program("get tasks 0x12 | set retry_after_secs null", 100)
+                .expect("test: parse point setter"),
+            ConsoleProgram::Write(WritePlan::Set {
+                table: "tasks".to_owned(),
+                key: ConsoleScalar::Bytes(vec![0x12]),
+                field: "retry_after_secs".to_owned(),
+                value: ConsoleScalar::Null,
+            })
+        );
+
+        let rows = RowSetPlan::scan("tasks", 100)
+            .expect("test: build bounded row selection")
+            .filter(ScalarExpression::binary(
+                BinaryOperator::Equal,
+                ScalarExpression::field("status"),
+                ScalarExpression::literal(ConsoleScalar::String("pending".to_owned())),
+            ))
+            .take(20)
+            .expect("test: add take limit");
+        assert_eq!(
+            parse_console_program(
+                "scan tasks | filter status == \"pending\" | take 20 | \
+                 modify abandon \"operator cancelled\"",
+                100,
+            )
+            .expect("test: parse bulk modifier"),
+            ConsoleProgram::Write(WritePlan::ModifyRows {
+                rows,
+                modifier: "abandon".to_owned(),
+                arguments: vec![ConsoleScalar::String("operator cancelled".to_owned())],
+            })
+        );
+
+        assert!(
+            parse_console_plan("get tasks 0x12 | set retry_after_secs null", 100).is_err(),
+            "read-only parsing must reject writes"
+        );
+        assert!(
+            parse_console_program("get tasks 0x12 | set retry_after_secs null | stage", 100)
+                .is_err(),
+            "stage is implicit and not a pipeline operation"
         );
     }
 

@@ -18,11 +18,11 @@ mod render;
 mod write;
 
 pub use expression::{BinaryOperator, ScalarExpression};
-pub use parse::parse_console_plan;
+pub use parse::{ConsoleProgram, parse_console_plan, parse_console_program};
 pub use pipeline::{PipelinePlan, PipelineTerminal, RowSetPlan, Selection};
 pub use read::{ConsoleExecutor, ConsoleOutput, ConsolePlan, ConsoleRow, RowStream, ScanPlan};
 pub use render::{RecordFormat, render_record, render_schema, write_json_lines};
-pub use write::{StagedWrite, WriteChange, WritePreview, WriteSession};
+pub use write::{StagedWrite, WriteChange, WritePlan, WritePreview, WriteSession};
 
 /// Result type returned by console registrations and values.
 pub type ConsoleResult<T> = Result<T, ConsoleError>;

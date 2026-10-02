@@ -34,6 +34,70 @@ pub trait StagedWrite: Send + Sync {
     fn commit(&self) -> ConsoleResult<()>;
 }
 
+/// A parsed setter or modifier that can be staged against a completed registry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WritePlan {
+    /// Sets one approved field through its domain setter.
+    Set {
+        /// Registered table name or alias.
+        table: String,
+        /// Scalar table key.
+        key: ConsoleScalar,
+        /// Approved field name.
+        field: String,
+        /// Replacement scalar passed to the domain setter.
+        value: ConsoleScalar,
+    },
+    /// Applies one approved modifier to a point record.
+    Modify {
+        /// Registered table name or alias.
+        table: String,
+        /// Scalar table key.
+        key: ConsoleScalar,
+        /// Approved modifier name.
+        modifier: String,
+        /// Ordered modifier arguments.
+        arguments: Vec<ConsoleScalar>,
+    },
+    /// Applies one approved modifier to a bounded row selection.
+    ModifyRows {
+        /// Bounded scan, filter, and optional output limit.
+        rows: RowSetPlan,
+        /// Approved modifier name.
+        modifier: String,
+        /// Ordered modifier arguments.
+        arguments: Vec<ConsoleScalar>,
+    },
+}
+
+impl WritePlan {
+    /// Stages this plan without applying it to storage.
+    pub fn stage<'session>(
+        self,
+        session: &'session mut WriteSession<'_>,
+    ) -> ConsoleResult<&'session WritePreview> {
+        match self {
+            Self::Set {
+                table,
+                key,
+                field,
+                value,
+            } => session.stage_set(&table, &key, &field, &value),
+            Self::Modify {
+                table,
+                key,
+                modifier,
+                arguments,
+            } => session.stage_modify(&table, &key, &modifier, &arguments),
+            Self::ModifyRows {
+                rows,
+                modifier,
+                arguments,
+            } => session.stage_modify_scan(rows, &modifier, &arguments),
+        }
+    }
+}
+
 /// Holds at most one staged point or bounded-batch write against an explicit registry.
 pub struct WriteSession<'a> {
     registry: &'a ConsoleRegistry,
