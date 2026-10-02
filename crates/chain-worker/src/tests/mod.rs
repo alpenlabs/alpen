@@ -3,3 +3,4 @@
 mod apply_checkpoint;
 mod exec_block;
 mod fixture;
+mod v0_replay;

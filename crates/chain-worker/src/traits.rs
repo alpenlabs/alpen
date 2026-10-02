@@ -3,7 +3,7 @@
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Epoch, L1BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
@@ -20,6 +20,12 @@ use crate::{OLBlockExecutionOutput, WorkerResult};
 pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Returns the runtime parameters used for OL STF execution.
     fn runtime_params(&self) -> OLRuntimeParams;
+
+    /// Returns the L1 block OL genesis anchors to.
+    ///
+    /// Genesis takes it as the state's last L1 block without processing a
+    /// manifest for it.
+    fn genesis_l1_block(&self) -> L1BlockCommitment;
 
     // =========================================================================
     // Block access
@@ -114,6 +120,10 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     ///
     /// Used to replay manifest processing during DA-based epoch reconstruction.
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>>;
+
+    /// Fetches the stored ASM manifest at L1 height `height`, or `None` if none
+    /// is stored.
+    fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>>;
 
     /// Applies epoch-granular state index writes for a reconstructed epoch,
     /// derived from the epoch's execution `output`.

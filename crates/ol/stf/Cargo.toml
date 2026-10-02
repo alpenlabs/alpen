@@ -5,8 +5,12 @@ edition = "2024"
 
 [dependencies]
 strata-acct-types.workspace = true
+strata-asm-common.workspace = true
+strata-asm-logs.workspace = true
 strata-codec.workspace = true
+strata-identifiers.workspace = true
 strata-ol-chain-types-v1.workspace = true
+strata-ol-da-common.workspace = true
 strata-ol-da-types-v1.workspace = true
 strata-ol-params.workspace = true
 strata-ol-state-types.workspace = true
@@ -14,9 +18,12 @@ strata-ol-stf-v1.workspace = true
 strata-ol-tx-types-v1.workspace = true
 
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
+strata-da-framework.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-predicate.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types-v1.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }

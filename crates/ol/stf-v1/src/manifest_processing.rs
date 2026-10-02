@@ -248,7 +248,13 @@ fn handle_asm_manifest<S: IStateAccessorMut>(
     Ok(())
 }
 
-fn process_asm_log<S: IStateAccessorMut>(
+/// Applies the effects of one buffered ASM log, as the epoch-terminal drain
+/// does for each log in order.
+///
+/// `real_height` is the L1 height of the manifest that carried the log. Logs
+/// that are not SPS-52 messages, fail to decode, or have a type these rules
+/// do not act on are skipped.
+pub fn process_asm_log<S: IStateAccessorMut>(
     state: &mut S,
     log: &AsmLogEntry,
     real_height: L1Height,
