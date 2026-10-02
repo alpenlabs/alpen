@@ -277,12 +277,13 @@ def main(argv: list[str]) -> int:
         list_tests(modules, test_dir)
         return 0
 
-    # Create factories
+    # Factories consume ports for the whole run, including stopped environments.
+    # Reserve disjoint ranges with room for three RPC ports per Strata node.
     factories: dict[ServiceType, flexitest.Factory] = {
         ServiceType.AlpenClient: AlpenClientFactory(range(30303, 30503)),
         ServiceType.Bitcoin: BitcoinFactory(range(18443, 18643)),
-        ServiceType.Strata: StrataFactory(range(19443, 19543)),
-        ServiceType.StrataSigner: SignerFactory(range(19543, 19553)),
+        ServiceType.Strata: StrataFactory(range(19443, 20443)),
+        ServiceType.StrataSigner: SignerFactory(range(20443, 20543)),
     }
 
     # Define global environments

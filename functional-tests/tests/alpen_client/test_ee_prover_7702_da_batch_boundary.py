@@ -128,6 +128,10 @@ class TestEeProver7702DaBatchBoundary(BaseTest):
                 pre_generate_blocks=110,
                 batch_sealing_block_count=1,
                 chunk_sealing_block_count=1,
+                # One batch/second outpaces two pending account proofs per
+                # five-second prover tick. Leave room for both proof kinds so
+                # hash-ordered newer batches cannot starve the clearing batch.
+                max_concurrent_proof_submissions=16,
             )
         )
 
