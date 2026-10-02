@@ -420,7 +420,7 @@ mod tests {
         let block_key = ConsoleScalar::Bytes(block_id.as_ref().to_vec());
 
         let task_table = registry.table("ProverTask").expect("test: task table");
-        let mut task = task_table
+        let task = task_table
             .get(&ConsoleScalar::Bytes(vec![1]))
             .expect("test: read prover task")
             .expect("test: prover task exists");
@@ -438,36 +438,7 @@ mod tests {
                 .expect("test: retry field metadata")
                 .settable
         );
-        assert!(matches!(
-            task.set("status", &ConsoleScalar::String("completed".to_owned())),
-            Err(ConsoleError::ReadOnlyField { .. })
-        ));
         assert_eq!(task_table.modifiers().len(), 2);
-        task.set("retry_after_secs", &ConsoleScalar::U64(42))
-            .expect("test: set task retry time through domain setter");
-        assert_eq!(
-            task.get("retry_after_secs")
-                .expect("test: updated retry time getter"),
-            ConsoleScalar::U64(42)
-        );
-        task.set("retry_after_secs", &ConsoleScalar::Null)
-            .expect("test: clear task retry time through domain setter");
-        assert_eq!(
-            task.get("retry_after_secs")
-                .expect("test: cleared retry time getter"),
-            ConsoleScalar::Null
-        );
-        task_table
-            .modify(
-                &mut task,
-                "abandon",
-                &[ConsoleScalar::String("operator cancelled".to_owned())],
-            )
-            .expect("test: abandon task handle");
-        assert_eq!(
-            task.get("status").expect("test: modified status getter"),
-            ConsoleScalar::String("permanent_failure".to_owned())
-        );
 
         let forward = task_table
             .scan(ScanDirection::Forward)

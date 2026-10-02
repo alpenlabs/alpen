@@ -1,6 +1,5 @@
 //! Storage-independent building blocks for the Alpen database console.
 
-use std::any::Any;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -95,15 +94,6 @@ pub enum ConsoleError {
     #[error("failed to render console output: {0}")]
     Render(String),
 
-    /// Registered read data was internally incomplete or inconsistent.
-    #[error("console source '{read_source}' read failed: {message}")]
-    Read {
-        /// Primary source name.
-        read_source: &'static str,
-        /// Description of the missing or inconsistent data.
-        message: String,
-    },
-
     /// A write was requested for a table without a registered write path.
     #[error("console table '{0}' is read-only")]
     ReadOnlyTable(&'static str),
@@ -151,14 +141,6 @@ impl ConsoleError {
     pub fn invalid_input(target: &'static str, message: impl Into<String>) -> Self {
         Self::InvalidInput {
             target,
-            message: message.into(),
-        }
-    }
-
-    /// Creates an internally inconsistent read error.
-    pub fn read(source: &'static str, message: impl Into<String>) -> Self {
-        Self::Read {
-            read_source: source,
             message: message.into(),
         }
     }
@@ -336,7 +318,7 @@ pub struct ValueMetadata {
 }
 
 /// Type-erased operations approved for a concrete Rust value.
-pub trait ConsoleValue: Any + Send + Sync {
+pub trait ConsoleValue: Send + Sync {
     /// Returns the value's static console metadata.
     fn metadata(&self) -> &'static ValueMetadata;
 
@@ -345,12 +327,6 @@ pub trait ConsoleValue: Any + Send + Sync {
 
     /// Invokes an approved domain setter on the real Rust value.
     fn set(&mut self, field: &str, value: &ConsoleScalar) -> ConsoleResult<()>;
-
-    /// Returns the concrete value as [`Any`] for typed storage adapters.
-    fn as_any(&self) -> &dyn Any;
-
-    /// Returns the mutable concrete value as [`Any`] for typed storage adapters.
-    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 /// Companion trait that exposes metadata without constructing a value.
@@ -398,21 +374,6 @@ impl RecordHandle {
     /// Invokes an approved getter on the held value.
     pub fn get(&self, field: &str) -> ConsoleResult<ConsoleScalar> {
         self.value.get(field)
-    }
-
-    /// Invokes an approved domain setter on the held value.
-    pub fn set(&mut self, field: &str, value: &ConsoleScalar) -> ConsoleResult<()> {
-        self.value.set(field, value)
-    }
-
-    /// Borrows the held value as its concrete type for a storage adapter.
-    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
-        self.value.as_any().downcast_ref()
-    }
-
-    /// Mutably borrows the held value as its concrete type for a storage adapter.
-    pub fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        self.value.as_any_mut().downcast_mut()
     }
 }
 
@@ -466,19 +427,6 @@ pub trait ConsoleTable: Send + Sync {
 
     /// Lazily scans the table in encoded key order.
     fn scan(&self, direction: ScanDirection) -> ConsoleResult<RecordStream>;
-
-    /// Invokes a broader domain operation approved for this table.
-    fn modify(
-        &self,
-        _record: &mut RecordHandle,
-        modifier: &str,
-        _arguments: &[ConsoleScalar],
-    ) -> ConsoleResult<()> {
-        Err(ConsoleError::UnknownModifier {
-            console_source: self.name(),
-            modifier: modifier.to_owned(),
-        })
-    }
 
     /// Prepares a point field update without persisting it.
     fn stage_set(

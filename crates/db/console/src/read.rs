@@ -205,7 +205,6 @@ impl<'a> ConsoleExecutor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::any::Any;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -248,14 +247,6 @@ mod tests {
                 value: TEST_METADATA.name,
                 field: field.to_owned(),
             })
-        }
-
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-
-        fn as_any_mut(&mut self) -> &mut dyn Any {
-            self
         }
     }
 

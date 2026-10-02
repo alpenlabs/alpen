@@ -602,13 +602,6 @@ fn expand_console_value(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 }
             }
 
-            fn as_any(&self) -> &dyn ::std::any::Any {
-                self
-            }
-
-            fn as_any_mut(&mut self) -> &mut dyn ::std::any::Any {
-                self
-            }
         }
 
         impl ::strata_db_console::RegisteredConsoleValue for #type_ident {
@@ -912,31 +905,6 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
             ) -> ::strata_db_console::ConsoleResult<::strata_db_console::RecordStream> {
                 let adapter = #make_adapter;
                 ::strata_db_console::ConsoleTable::scan(&adapter, direction)
-            }
-
-            fn modify(
-                &self,
-                record: &mut ::strata_db_console::RecordHandle,
-                modifier: &str,
-                arguments: &[::strata_db_console::ConsoleScalar],
-            ) -> ::strata_db_console::ConsoleResult<()> {
-                if record.table() != #name {
-                    return Err(::strata_db_console::ConsoleError::invalid_input(
-                        "modifier record",
-                        format!(
-                            "expected a '{}' record, got '{}'",
-                            #name,
-                            record.table(),
-                        ),
-                    ));
-                }
-                let value = record.downcast_mut::<#value>().ok_or_else(|| {
-                    ::strata_db_console::ConsoleError::read(
-                        #name,
-                        "record value has an unexpected concrete type",
-                    )
-                })?;
-                Self::__console_modify_value(value, modifier, arguments)
             }
 
             #write_methods
