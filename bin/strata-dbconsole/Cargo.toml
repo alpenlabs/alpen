@@ -1,0 +1,17 @@
+[package]
+name = "strata-dbconsole"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "strata-dbconsole"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+argh.workspace = true
+serde_json.workspace = true
+strata-db-console.workspace = true
+strata-db-store-sled.workspace = true

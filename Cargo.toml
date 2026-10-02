@@ -66,6 +66,7 @@ members = [
 
   # binaries listed separately
   "bin/datatool",
+  "bin/strata-dbconsole",
   "bin/strata-dbtool",
   "bin/strata",
   "bin/strata-signer",
@@ -81,6 +82,7 @@ members = [
 default-members = [
   "bin/datatool",
   "bin/strata",
+  "bin/strata-dbconsole",
   "bin/strata-dbtool",
   "bin/strata-signer",
   "bin/strata-test-cli",

@@ -9247,6 +9247,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-dbconsole"
+version = "0.1.0"
+dependencies = [
+ "argh",
+ "serde_json",
+ "strata-db-console",
+ "strata-db-store-sled",
+]
+
+[[package]]
 name = "strata-dbtool"
 version = "0.3.0-alpha.1"
 dependencies = [

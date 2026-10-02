@@ -11,12 +11,14 @@ use serde::ser::Serializer;
 pub use strata_db_console_macros::{ConsoleTable, ConsoleValue};
 
 mod expression;
+mod parse;
 mod pipeline;
 mod read;
 mod render;
 mod write;
 
 pub use expression::{BinaryOperator, ScalarExpression};
+pub use parse::parse_console_plan;
 pub use pipeline::{PipelinePlan, PipelineTerminal, RowSetPlan, Selection};
 pub use read::{ConsoleExecutor, ConsoleOutput, ConsolePlan, ConsoleRow, RowStream, ScanPlan};
 pub use render::{RecordFormat, render_record, render_schema, write_json_lines};
@@ -240,6 +242,19 @@ impl ConsoleScalar {
             Self::U64(_) => "u64",
             Self::String(_) => "string",
             Self::Bytes(_) => "bytes",
+        }
+    }
+}
+
+impl fmt::Display for ConsoleScalar {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Null => formatter.write_str("null"),
+            Self::Bool(value) => value.fmt(formatter),
+            Self::I64(value) => value.fmt(formatter),
+            Self::U64(value) => value.fmt(formatter),
+            Self::String(value) => formatter.write_str(value),
+            Self::Bytes(value) => formatter.write_str(&hex::encode(value)),
         }
     }
 }

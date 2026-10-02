@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use crate::{ConsoleError, ConsoleResult, ConsoleRow, ConsoleScalar, SourceSchema};
+use crate::{ConsoleError, ConsoleResult, ConsoleRow, SourceSchema};
 
 /// Format used for a schema or single record.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -65,12 +65,12 @@ pub fn render_record(row: &ConsoleRow, format: RecordFormat) -> ConsoleResult<St
         RecordFormat::Porcelain => {
             let mut lines = vec![
                 format!("record.source: {}", row.source),
-                format!("record.key: {}", porcelain_scalar(&row.key)),
+                format!("record.key: {}", row.key),
             ];
             lines.extend(
                 row.fields
                     .iter()
-                    .map(|(name, value)| format!("record.{name}: {}", porcelain_scalar(value))),
+                    .map(|(name, value)| format!("record.{name}: {value}")),
             );
             Ok(lines.join("\n"))
         }
@@ -90,15 +90,4 @@ pub fn write_json_lines(
             .map_err(|error| ConsoleError::Render(error.to_string()))?;
     }
     Ok(())
-}
-
-fn porcelain_scalar(value: &ConsoleScalar) -> String {
-    match value {
-        ConsoleScalar::Null => "null".to_owned(),
-        ConsoleScalar::Bool(value) => value.to_string(),
-        ConsoleScalar::I64(value) => value.to_string(),
-        ConsoleScalar::U64(value) => value.to_string(),
-        ConsoleScalar::String(value) => value.clone(),
-        ConsoleScalar::Bytes(value) => hex::encode(value),
-    }
 }
