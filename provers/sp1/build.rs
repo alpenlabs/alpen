@@ -39,6 +39,11 @@ use ssz::Encode;
 use strata_ol_params::{OLParams, OLRuntimeParams};
 use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
+#[path = "guest-checkpoint/src/spec.rs"]
+mod spec;
+
+use spec::PROVED_SPEC;
+
 const GENERATED_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/generated");
 
 /// Guest crate directory. The directory name doubles as the artifact base name, so this yields
@@ -48,6 +53,7 @@ const CHECKPOINT: &str = "guest-checkpoint";
 const RUNTIME_PARAMS_PATH_VAR: &str = "CHECKPOINT_RUNTIME_PARAMS_PATH";
 
 fn main() {
+    println!("cargo:rerun-if-changed=guest-checkpoint/src/spec.rs");
     println!("cargo:rerun-if-env-changed=BUILD_ELF");
     println!("cargo:rerun-if-env-changed=BUILD_VKEY");
     println!("cargo:rerun-if-env-changed={RUNTIME_PARAMS_PATH_VAR}");
@@ -162,6 +168,7 @@ fn emit_vkey_artifacts(guest: &str, runtime_params_hash: [u8; 32]) {
 fn artifact_manifest(program_id: &[u8; 32], runtime_params_hash: &[u8; 32]) -> String {
     let manifest = serde_json::json!({
         "schema": 1,
+        "spec": u32::from(PROVED_SPEC),
         "program_id": hex::encode(program_id),
         "runtime_params_hash": hex::encode(runtime_params_hash),
     });

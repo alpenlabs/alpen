@@ -51,7 +51,8 @@ pub enum TaskStatus {
     /// `retry_after`, and does NOT consume the retry/resubmit budget — but the
     /// [`AttemptCounts`] (including `recheck`) travel through so the
     /// `Blocked → Proving → Blocked` loop, and any interleaved transient
-    /// failures, stay bounded.
+    /// failures, stay bounded. Configuration waits from task admission also
+    /// use this status, preserving the counters without consuming a recheck.
     Blocked {
         reason: String,
         counts: AttemptCounts,

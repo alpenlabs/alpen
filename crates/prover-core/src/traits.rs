@@ -3,6 +3,7 @@
 //!
 //! Consumer-facing traits defined here:
 //! - [`ProofSpec`] — describes a proof type (task, program, input fetch).
+//! - [`TaskAdmission`] — checks operational readiness before input assembly (opt-in).
 //! - [`TaskKey`] — blanket-impl'd bounds every task identifier satisfies.
 //! - [`TaskStore`] — persists task lifecycle records (opt-in).
 //! - [`ReceiptStore`] — persists proof receipts by task bytes (opt-in).
@@ -171,6 +172,37 @@ pub trait ProofSpec: Send + Sync + 'static {
         &self,
         task: &Self::Task,
     ) -> ProverResult<InputResolution<<Self::Program as ZkVmProgram>::Input>>;
+}
+
+// ============================================================================
+// Task admission
+// ============================================================================
+
+/// Decides whether operational configuration permits a task to start proving.
+#[derive(Debug)]
+pub enum AdmissionDecision {
+    /// Operational checks passed; proceed to input assembly and proving.
+    Admit,
+    /// Operator configuration is required before this task can run.
+    ///
+    /// Parks as [`TaskStatus::Blocked`] without consuming an attempt budget or
+    /// changing saved remote metadata. Rechecks on the ordinary blocked cadence
+    /// unless `recheck_after` supplies a task-specific delay.
+    AwaitingConfiguration {
+        reason: String,
+        recheck_after: Option<Duration>,
+    },
+}
+
+/// Checks operational readiness separately from witness input assembly.
+///
+/// Runs before input resolution for fresh tasks, startup recovery and retries.
+/// Existing stored receipts may finish their post-prove hook without admission,
+/// because that path performs no new proving. Return an error for failures that
+/// should follow the normal retry classification.
+#[async_trait]
+pub trait TaskAdmission<H: ProofSpec>: Send + Sync + 'static {
+    async fn check(&self, task: &H::Task) -> ProverResult<AdmissionDecision>;
 }
 
 // ============================================================================

@@ -25,8 +25,8 @@ use crate::{
     strategy::NativeStrategy,
     task::{now_secs, AttemptCounts, TaskRecord, TaskResult, TaskStatus},
     traits::{
-        InputResolution, ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore,
-        TaskStore,
+        AdmissionDecision, InputResolution, ProofSpec, ProveContext, ProveStrategy, ReceiptHook,
+        ReceiptStore, TaskAdmission, TaskStore,
     },
 };
 
@@ -47,6 +47,7 @@ const DEFAULT_BLOCKED_RECHECK_SECS: u64 = 10;
 /// the `ProveStrategy` — consumers never see it.
 pub struct Prover<H: ProofSpec> {
     spec: Arc<H>,
+    task_admission: Option<Arc<dyn TaskAdmission<H>>>,
     strategy: Arc<dyn ProveStrategy<H>>,
     config: ProverConfig,
     task_store: Arc<dyn TaskStore>,
@@ -64,6 +65,7 @@ impl<H: ProofSpec> fmt::Debug for Prover<H> {
             .field("has_retry", &self.config.retry.is_some())
             .field("has_receipt_store", &self.receipt_store.is_some())
             .field("has_receipt_hook", &self.receipt_hook.is_some())
+            .field("has_task_admission", &self.task_admission.is_some())
             .finish()
     }
 }
@@ -348,17 +350,45 @@ impl<H: ProofSpec> Prover<H> {
                 }
             }
 
-            // Snapshot the attempt counters from the persisted record BEFORE
-            // flipping status to `Proving`, which overwrites the prior status.
-            // Carrying all three (retry/resubmit/recheck) forward is what keeps
-            // the budgets bounded across the Blocked ↔ Proving ↔ TransientFailure
-            // transitions; `schedule_retry`/`park_blocked` can't re-read them
-            // after the overwrite, and `recover` needs them to survive a crash.
-            let counts = self.read_attempt_counts(&key);
+            // Snapshot the prior record before `Proving` overwrites its status.
+            // Preserve the attempt budgets and the previous configuration-wait
+            // reason so repeated rechecks do not emit the same operator alert.
+            let previous_record = self.task_store.get(&key).ok().flatten();
+            let counts = previous_record
+                .as_ref()
+                .map_or(AttemptCounts::default(), |record| record.status().counts());
 
+            // Claim this attempt before awaiting admission so the retry scanner
+            // does not start another attempt while an operational check waits.
             let _ = self
                 .task_store
                 .update_status(&key, TaskStatus::Proving { counts });
+
+            if let Some(admission) = &self.task_admission {
+                match admission.check(&task).await {
+                    Ok(AdmissionDecision::Admit) => {}
+                    Ok(AdmissionDecision::AwaitingConfiguration {
+                        reason,
+                        recheck_after,
+                    }) => {
+                        if !matches!(
+                            previous_record.as_ref().map(TaskRecord::status),
+                            Some(TaskStatus::Blocked { reason: previous_reason, .. })
+                                if previous_reason == &reason
+                        ) {
+                            error!(%reason, "proof task awaits operator configuration");
+                        }
+                        self.persist_blocked(&key, reason, recheck_after, counts);
+                        return;
+                    }
+                    Err(error) => {
+                        error!(%error, "task admission failed");
+                        let status = self.handle_error(&key, &error, counts);
+                        self.notify(&key, &task, &status);
+                        return;
+                    }
+                }
+            }
 
             // 1. Resolve input: ready, blocked on a dependency, or rejected.
             let input = match self.spec.resolve_input(&task).await {
@@ -495,6 +525,17 @@ impl<H: ProofSpec> Prover<H> {
             }
         }
 
+        self.persist_blocked(key, reason, recheck_after, counts);
+    }
+
+    /// Parks a task without changing its counters or saved remote metadata.
+    fn persist_blocked(
+        &self,
+        key: &[u8],
+        reason: String,
+        recheck_after: Option<Duration>,
+        counts: AttemptCounts,
+    ) {
         let secs = recheck_after.map(|d| d.as_secs()).unwrap_or_else(|| {
             self.config
                 .retry
@@ -672,6 +713,7 @@ fn terminal_result<T: Clone>(task: &T, status: &TaskStatus) -> Option<TaskResult
 /// Builds a [`Prover`].
 pub struct ProverBuilder<H: ProofSpec> {
     spec: H,
+    task_admission: Option<Arc<dyn TaskAdmission<H>>>,
     task_store: Option<Arc<dyn TaskStore>>,
     receipt_store: Option<Arc<dyn ReceiptStore>>,
     receipt_hook: Option<Arc<dyn ReceiptHook<H>>>,
@@ -682,11 +724,22 @@ impl<H: ProofSpec> ProverBuilder<H> {
     pub fn new(spec: H) -> Self {
         Self {
             spec,
+            task_admission: None,
             task_store: None,
             receipt_store: None,
             receipt_hook: None,
             retry: None,
         }
+    }
+
+    /// Checks operational readiness before assembling inputs or starting proofs.
+    ///
+    /// Applies to new tasks, recovered tasks and retries. Omitting this hook
+    /// admits every task; witness availability remains the responsibility of
+    /// [`ProofSpec::resolve_input`].
+    pub fn task_admission(mut self, admission: impl TaskAdmission<H>) -> Self {
+        self.task_admission = Some(Arc::new(admission));
+        self
     }
 
     pub fn task_store(mut self, store: impl TaskStore + 'static) -> Self {
@@ -757,6 +810,7 @@ impl<H: ProofSpec> ProverBuilder<H> {
     fn build(self, strategy: Arc<dyn ProveStrategy<H>>) -> Prover<H> {
         Prover {
             spec: Arc::new(self.spec),
+            task_admission: self.task_admission,
             strategy,
             config: ProverConfig { retry: self.retry },
             task_store: self
@@ -775,3 +829,7 @@ impl<H: ProofSpec> fmt::Debug for ProverBuilder<H> {
         f.debug_struct("ProverBuilder").finish()
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
