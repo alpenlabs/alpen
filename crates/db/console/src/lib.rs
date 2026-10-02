@@ -289,7 +289,7 @@ pub struct FieldDescriptor {
 /// Metadata for a modifier argument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct ArgumentDescriptor {
-    /// Argument name used by help and future named-argument support.
+    /// Argument name shown in source metadata and help.
     pub name: &'static str,
     /// Required scalar type.
     pub scalar_type: ScalarType,

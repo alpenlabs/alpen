@@ -1,16 +1,17 @@
+use std::convert::identity;
+use std::sync::Arc;
+
+use strata_db_console::{ConsoleError, ConsoleResult, ConsoleTable};
 use strata_db_types::DbResult;
 use strata_db_types::checkpoint_proof::{CheckpointProofDatabase, ProofReceiptEntry};
 use strata_db_types::errors::DbError;
 use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_identifiers::EpochCommitment;
 use strata_paas::{TaskRecordData, TaskStatus};
-
-use std::sync::Arc;
-use strata_db_console::{ConsoleError, ConsoleResult, ConsoleTable};
 use typed_sled::SledTree;
 
 use super::schemas::{CheckpointProofSchema, ProverTaskTree};
-use crate::console::{SledConsoleTable, identity, parse_byte_key, render_byte_key};
+use crate::console::{SledConsoleTable, parse_byte_key, render_byte_key};
 use crate::define_sled_database;
 use crate::utils::conv_sled_err;
 

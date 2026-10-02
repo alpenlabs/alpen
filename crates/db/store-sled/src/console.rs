@@ -334,10 +334,6 @@ where
     }
 }
 
-pub(crate) fn identity<T>(value: T) -> T {
-    value
-}
-
 pub(crate) fn parse_byte_key(key: &ConsoleScalar) -> ConsoleResult<Vec<u8>> {
     key.as_bytes("table key").map(<[u8]>::to_vec)
 }
@@ -357,7 +353,7 @@ pub(crate) fn parse_ol_block_id(key: &ConsoleScalar) -> ConsoleResult<OLBlockId>
     Ok(OLBlockId::from(Buf32::from(bytes)))
 }
 
-/// Builds the explicit set of Sled sources supported by the console spike.
+/// Builds the explicit set of Sled sources supported by the console.
 pub fn build_console_registry(backend: &SledBackend) -> ConsoleResult<ConsoleRegistry> {
     let mut registry = ConsoleRegistry::new();
     registry.register(backend.prover_db.console_table())?;
