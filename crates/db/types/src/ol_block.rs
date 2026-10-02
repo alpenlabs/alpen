@@ -14,6 +14,18 @@ use crate::DbResult;
 
 /// Gets the status of a block.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[cfg_attr(feature = "db-console", derive(strata_db_console::ConsoleValue))]
+#[cfg_attr(
+    feature = "db-console",
+    console(
+        name = "BlockStatus",
+        getter(
+            name = "status",
+            scalar = "string",
+            with = BlockStatus::console_status
+        )
+    )
+)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockStatus {
     /// Block's validity hasn't been checked yet.
@@ -25,6 +37,18 @@ pub enum BlockStatus {
     /// Block is invalid, for no particular reason.  We'd have to look somewhere
     /// else for that.
     Invalid,
+}
+
+#[cfg(feature = "db-console")]
+impl BlockStatus {
+    fn console_status(&self) -> String {
+        match self {
+            Self::Unchecked => "unchecked",
+            Self::Valid => "valid",
+            Self::Invalid => "invalid",
+        }
+        .to_owned()
+    }
 }
 
 /// Describes whether a full OL block body is locally readable at a known commitment.

@@ -171,11 +171,40 @@ pub(crate) fn now_secs() -> u64 {
 /// type, no conversion. Sub-second precision isn't needed anywhere in the
 /// prover.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "db-console", derive(strata_db_console::ConsoleValue))]
+#[cfg_attr(
+    feature = "db-console",
+    console(
+        modifier(name = "reset", with = TaskRecordData::console_reset),
+        modifier(
+            name = "abandon",
+            with = TaskRecordData::console_abandon,
+            argument(name = "reason", scalar = "string")
+        )
+    )
+)]
 pub struct TaskRecordData {
+    #[cfg_attr(
+        feature = "db-console",
+        console(get(
+            scalar = "string",
+            with = TaskRecordData::console_status
+        ))
+    )]
     status: TaskStatus,
+    #[cfg_attr(feature = "db-console", console(get))]
     updated_at_secs: u64,
+    #[cfg_attr(feature = "db-console", console(get))]
     retry_after_secs: Option<u64>,
     /// Opaque bytes for strategy-specific state (e.g. remote ProofId for crash recovery).
+    #[cfg_attr(
+        feature = "db-console",
+        console(get(
+            name = "metadata_len",
+            scalar = "u64",
+            with = TaskRecordData::console_metadata_len
+        ))
+    )]
     #[serde(with = "serde_bytes")]
     metadata: Option<Vec<u8>>,
 }
@@ -219,6 +248,45 @@ impl TaskRecordData {
     pub fn set_metadata(&mut self, data: Option<Vec<u8>>) {
         self.metadata = data;
         self.updated_at_secs = now_secs();
+    }
+
+    #[cfg(feature = "db-console")]
+    fn console_status(&self) -> String {
+        match &self.status {
+            TaskStatus::Pending => "pending",
+            TaskStatus::Proving { .. } => "proving",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Blocked { .. } => "blocked",
+            TaskStatus::TransientFailure { .. } => "transient_failure",
+            TaskStatus::PermanentFailure { .. } => "permanent_failure",
+        }
+        .to_owned()
+    }
+
+    #[cfg(feature = "db-console")]
+    fn console_metadata_len(&self) -> Option<u64> {
+        self.metadata.as_ref().map(|metadata| metadata.len() as u64)
+    }
+
+    #[cfg(feature = "db-console")]
+    fn console_reset(&mut self) -> strata_db_console::ConsoleResult<()> {
+        self.set_status(TaskStatus::Pending);
+        self.set_retry_after_secs(None);
+        Ok(())
+    }
+
+    #[cfg(feature = "db-console")]
+    fn console_abandon(&mut self, reason: &str) -> strata_db_console::ConsoleResult<()> {
+        if self.status().is_terminal() {
+            return Err(strata_db_console::ConsoleError::invalid_input(
+                "modifier 'abandon'",
+                "task is already terminal",
+            ));
+        }
+        self.set_status(TaskStatus::PermanentFailure {
+            error: reason.to_owned(),
+        });
+        Ok(())
     }
 }
 

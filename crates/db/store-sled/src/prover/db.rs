@@ -5,7 +5,16 @@ use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_identifiers::EpochCommitment;
 use strata_paas::TaskRecordData;
 
+#[cfg(feature = "db-console")]
+use std::sync::Arc;
+#[cfg(feature = "db-console")]
+use strata_db_console::ConsoleTable;
+#[cfg(feature = "db-console")]
+use typed_sled::SledTree;
+
 use super::schemas::{CheckpointProofSchema, ProverTaskTree};
+#[cfg(feature = "db-console")]
+use crate::console::{SledConsoleTable, identity, parse_byte_key, render_byte_key};
 use crate::define_sled_database;
 use crate::utils::conv_sled_err;
 
@@ -15,6 +24,29 @@ define_sled_database!(
         prover_task_tree: ProverTaskTree,
     }
 );
+
+#[cfg(feature = "db-console")]
+#[derive(strata_db_console::ConsoleTable)]
+#[console(
+    name = "ProverTask",
+    alias = "tasks",
+    schema = ProverTaskTree,
+    value = TaskRecordData,
+    adapter = SledConsoleTable,
+    parse_key = parse_byte_key,
+    render_key = render_byte_key,
+    map_value = identity
+)]
+struct ProverTaskConsoleTable(SledTree<ProverTaskTree>);
+
+#[cfg(feature = "db-console")]
+impl ProofDBSled {
+    pub(crate) fn console_tables(&self) -> Vec<Arc<dyn ConsoleTable>> {
+        vec![Arc::new(ProverTaskConsoleTable(
+            self.prover_task_tree.clone(),
+        ))]
+    }
+}
 
 impl CheckpointProofDatabase for ProofDBSled {
     fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptEntry) -> DbResult<()> {

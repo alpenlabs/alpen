@@ -5,6 +5,8 @@ pub mod broadcaster;
 pub mod chunked_envelope;
 pub mod client_state;
 mod config;
+#[cfg(feature = "db-console")]
+mod console;
 mod init;
 mod instrumentation;
 pub mod l1;
@@ -59,6 +61,9 @@ use writer::db::L1WriterDBSled;
 
 pub use crate::init::{init_core_dbs, open_sled_database};
 pub use crate::prover::ProofDBSled;
+
+#[cfg(feature = "db-console")]
+pub use crate::console::build_console_registry;
 
 pub const SLED_NAME: &str = "strata-client";
 

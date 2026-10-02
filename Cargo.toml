@@ -14,6 +14,8 @@ members = [
   "crates/csm-worker",
   "crates/csm-types",
   "crates/da-framework",
+  "crates/db/console",
+  "crates/db/console-macros",
   "crates/db/types",
   "crates/db/store-sled",
   "crates/db/tests",
@@ -110,6 +112,8 @@ strata-consensus-logic = { path = "crates/consensus-logic" }
 strata-csm-types = { path = "crates/csm-types" }
 strata-csm-worker = { path = "crates/csm-worker" }
 strata-da-framework = { path = "crates/da-framework" }
+strata-db-console = { path = "crates/db/console" }
+strata-db-console-macros = { path = "crates/db/console-macros" }
 strata-db-store-sled = { path = "crates/db/store-sled" }
 strata-db-tests = { path = "crates/db/tests" }
 strata-db-types = { path = "crates/db/types" }
@@ -211,6 +215,11 @@ strata-test-utils-checkpoint = { git = "https://github.com/alpenlabs/asm", tag =
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
+
+# Proc-macro support
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
 
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [

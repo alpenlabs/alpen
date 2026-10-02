@@ -9131,6 +9131,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-db-console"
+version = "0.1.0"
+dependencies = [
+ "strata-db-console-macros",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "strata-db-console-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "strata-db-macros"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0-rc.3#4b7fd841447910cd9b29b057c02d847b91d23872"
@@ -9157,6 +9174,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-codec",
  "strata-csm-types",
+ "strata-db-console",
  "strata-db-tests",
  "strata-db-types",
  "strata-identifiers",
@@ -9210,6 +9228,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-codec",
  "strata-csm-types",
+ "strata-db-console",
  "strata-db-macros",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -10059,6 +10078,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "serde",
  "serde_bytes",
+ "strata-db-console",
  "thiserror 2.0.20",
  "tokio",
  "tracing",

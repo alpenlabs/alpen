@@ -12,6 +12,7 @@ strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-csm-types.workspace = true
+strata-db-console = { workspace = true, optional = true }
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-merkle-node-store.workspace = true
@@ -37,6 +38,7 @@ tracing = { workspace = true, optional = true }
 
 [features]
 default = []
+db-console = ["dep:strata-db-console"]
 mocks = []
 # Generates `*Proxy` async database wrappers via `gen_proxy`. Pulls in tokio
 # (for the spawn_blocking dispatch) and tracing (for the instrumented shims).

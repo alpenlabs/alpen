@@ -11,6 +11,7 @@ strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-csm-types.workspace = true
+strata-db-console = { workspace = true, optional = true }
 strata-db-types.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-v1.workspace = true
@@ -33,6 +34,7 @@ proptest.workspace = true
 strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-db-tests.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-state-container = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types-v1 = { workspace = true, features = ["test-utils"] }
 sled = "0.34.7"
@@ -43,4 +45,9 @@ workspace = true
 
 [features]
 default = ["test_utils"]
+db-console = [
+  "dep:strata-db-console",
+  "strata-db-types/db-console",
+  "strata-paas/db-console",
+]
 test_utils = []

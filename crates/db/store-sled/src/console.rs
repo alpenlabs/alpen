@@ -1,0 +1,259 @@
+//! Console registrations for the concrete Sled backend.
+
+use std::marker::PhantomData;
+
+use strata_db_console::{
+    ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleScalar, ConsoleTable, ConsoleValue,
+    RecordHandle, RecordStream, RegisteredConsoleValue, ScanDirection, ValueMetadata,
+};
+use strata_identifiers::{Buf32, OLBlockId};
+use typed_sled::error::Result as SledResult;
+use typed_sled::{Schema, SledTree, ValueCodec};
+
+use crate::SledBackend;
+
+type DecodedValue<S> = <<S as Schema>::Value as ValueCodec<S>>::Decoded;
+
+/// Generic console adapter around a typed Sled tree.
+pub(crate) struct SledConsoleTable<S, V>
+where
+    S: Schema,
+{
+    name: &'static str,
+    aliases: &'static [&'static str],
+    tree: SledTree<S>,
+    parse_key: fn(&ConsoleScalar) -> ConsoleResult<S::Key>,
+    render_key: fn(S::Key) -> ConsoleScalar,
+    map_value: fn(DecodedValue<S>) -> V,
+    _value: PhantomData<V>,
+}
+
+impl<S, V> SledConsoleTable<S, V>
+where
+    S: Schema,
+{
+    /// Creates a table adapter using the schema's production codecs.
+    pub(crate) fn new(
+        name: &'static str,
+        aliases: &'static [&'static str],
+        tree: SledTree<S>,
+        parse_key: fn(&ConsoleScalar) -> ConsoleResult<S::Key>,
+        render_key: fn(S::Key) -> ConsoleScalar,
+        map_value: fn(DecodedValue<S>) -> V,
+    ) -> Self {
+        Self {
+            name,
+            aliases,
+            tree,
+            parse_key,
+            render_key,
+            map_value,
+            _value: PhantomData,
+        }
+    }
+
+    fn make_handle(&self, key: S::Key, value: DecodedValue<S>) -> RecordHandle
+    where
+        V: ConsoleValue + 'static,
+    {
+        RecordHandle::new(self.name, (self.render_key)(key), (self.map_value)(value))
+    }
+}
+
+impl<S, V> ConsoleTable for SledConsoleTable<S, V>
+where
+    S: Schema + Send + Sync + 'static,
+    S::Key: 'static,
+    DecodedValue<S>: 'static,
+    V: RegisteredConsoleValue + 'static,
+{
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn aliases(&self) -> &'static [&'static str] {
+        self.aliases
+    }
+
+    fn value_metadata(&self) -> &'static ValueMetadata {
+        V::value_metadata()
+    }
+
+    fn get(&self, key: &ConsoleScalar) -> ConsoleResult<Option<RecordHandle>> {
+        let key = (self.parse_key)(key)?;
+        let value = self
+            .tree
+            .get(&key)
+            .map_err(|error| ConsoleError::storage(self.name, error))?;
+        Ok(value.map(|value| self.make_handle(key, value)))
+    }
+
+    fn scan(&self, direction: ScanDirection) -> ConsoleResult<RecordStream> {
+        let table_name = self.name;
+        let render_key = self.render_key;
+        let map_value = self.map_value;
+        let map_item = move |item: SledResult<(S::Key, DecodedValue<S>)>| {
+            item.map(|(key, value)| {
+                RecordHandle::new(table_name, render_key(key), map_value(value))
+            })
+            .map_err(|error| ConsoleError::storage(table_name, error))
+        };
+
+        let iterator = self.tree.iter();
+        match direction {
+            ScanDirection::Forward => Ok(Box::new(iterator.map(map_item))),
+            // `SledTreeIter::next_back` delegates to `sled::Iter::next_back`, so this remains a
+            // lazy native reverse traversal rather than buffering and reversing the full table.
+            ScanDirection::Reverse => Ok(Box::new(iterator.rev().map(map_item))),
+        }
+    }
+}
+
+pub(crate) fn identity<T>(value: T) -> T {
+    value
+}
+
+pub(crate) fn parse_byte_key(key: &ConsoleScalar) -> ConsoleResult<Vec<u8>> {
+    key.as_bytes("table key").map(<[u8]>::to_vec)
+}
+
+pub(crate) fn render_byte_key(key: Vec<u8>) -> ConsoleScalar {
+    ConsoleScalar::Bytes(key)
+}
+
+pub(crate) fn parse_ol_block_id(key: &ConsoleScalar) -> ConsoleResult<OLBlockId> {
+    let bytes = key.as_bytes("OL block id")?;
+    let bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+        ConsoleError::invalid_input(
+            "OL block id",
+            format!("expected 32 bytes, got {}", bytes.len()),
+        )
+    })?;
+    Ok(OLBlockId::from(Buf32::from(bytes)))
+}
+
+pub(crate) fn render_ol_block_id(key: OLBlockId) -> ConsoleScalar {
+    ConsoleScalar::Bytes(key.as_ref().to_vec())
+}
+
+/// Builds the explicit set of Sled tables supported by the console spike.
+pub fn build_console_registry(backend: &SledBackend) -> ConsoleResult<ConsoleRegistry> {
+    let mut registry = ConsoleRegistry::new();
+    for table in backend.ol_block_db.console_tables() {
+        registry.register(table)?;
+    }
+    for table in backend.prover_db.console_tables() {
+        registry.register(table)?;
+    }
+    Ok(registry)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::TestRunner;
+    use strata_db_console::{ConsoleScalar, ScanDirection};
+    use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
+    use strata_db_types::prover_task::ProverTaskDatabase;
+    use strata_ol_chain_types_v1::test_utils::ol_block_strategy;
+    use strata_paas::{TaskRecordData, TaskStatus};
+
+    use super::build_console_registry;
+    use crate::test_utils::get_test_sled_db;
+    use crate::{SledBackend, SledDbConfig};
+
+    #[test]
+    fn registry_maps_simple_complex_and_adapter_values() {
+        let backend = SledBackend::new(Arc::new(get_test_sled_db()), SledDbConfig::test())
+            .expect("test: create Sled backend");
+
+        let mut runner = TestRunner::deterministic();
+        let block = ol_block_strategy()
+            .new_tree(&mut runner)
+            .expect("test: create OL block value tree")
+            .current();
+        let block_id = block.header().compute_blkid();
+        let block_slot = block.header().slot();
+        backend
+            .ol_block_db
+            .put_block_data(block)
+            .expect("test: insert OL block");
+        backend
+            .ol_block_db
+            .set_block_status(block_id, BlockStatus::Valid)
+            .expect("test: update OL block status");
+
+        for key in [vec![1], vec![2], vec![3]] {
+            backend
+                .prover_db
+                .put_task(key, TaskRecordData::new(TaskStatus::Pending))
+                .expect("test: insert prover task");
+        }
+
+        let registry = build_console_registry(&backend).expect("test: build console registry");
+        let block_key = ConsoleScalar::Bytes(block_id.as_ref().to_vec());
+
+        let status = registry
+            .table("OLBlockStatus")
+            .expect("test: status table")
+            .get(&block_key)
+            .expect("test: read block status")
+            .expect("test: block status exists");
+        assert_eq!(
+            status.get("status").expect("test: status getter"),
+            ConsoleScalar::String("valid".to_owned())
+        );
+
+        let block = registry
+            .table("OLBlock")
+            .expect("test: block table")
+            .get(&block_key)
+            .expect("test: read OL block")
+            .expect("test: OL block exists");
+        assert_eq!(
+            block.get("slot").expect("test: slot getter"),
+            ConsoleScalar::U64(block_slot)
+        );
+
+        let task_table = registry.table("ProverTask").expect("test: task table");
+        let mut task = task_table
+            .get(&ConsoleScalar::Bytes(vec![1]))
+            .expect("test: read prover task")
+            .expect("test: prover task exists");
+        assert_eq!(
+            task.get("status").expect("test: task status getter"),
+            ConsoleScalar::String("pending".to_owned())
+        );
+        assert_eq!(task.metadata().name, "TaskRecordData");
+        assert_eq!(task.metadata().fields.len(), 4);
+        assert_eq!(task.metadata().modifiers.len(), 2);
+        task.modify(
+            "abandon",
+            &[ConsoleScalar::String("operator cancelled".to_owned())],
+        )
+        .expect("test: abandon task handle");
+        assert_eq!(
+            task.get("status").expect("test: modified status getter"),
+            ConsoleScalar::String("permanent_failure".to_owned())
+        );
+
+        let forward = task_table
+            .scan(ScanDirection::Forward)
+            .expect("test: scan tasks")
+            .take(2)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("test: decode first two tasks");
+        assert_eq!(forward.len(), 2);
+        assert_eq!(forward[0].key(), &ConsoleScalar::Bytes(vec![1]));
+
+        let last = task_table
+            .scan(ScanDirection::Reverse)
+            .expect("test: reverse scan tasks")
+            .next()
+            .expect("test: reverse scan item")
+            .expect("test: decode reverse scan item");
+        assert_eq!(last.key(), &ConsoleScalar::Bytes(vec![3]));
+    }
+}

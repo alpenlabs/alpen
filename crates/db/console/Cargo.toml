@@ -1,0 +1,11 @@
+[package]
+name = "strata-db-console"
+version = "0.1.0"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-db-console-macros.workspace = true
+thiserror.workspace = true

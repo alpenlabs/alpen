@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+db-console = ["dep:strata-db-console"]
 remote = ["zkaleido/remote-prover"]
 
 [lints]
@@ -14,6 +15,7 @@ async-trait.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_bytes.workspace = true
+strata-db-console = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread"] }
 tracing.workspace = true
