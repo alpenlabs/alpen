@@ -35,6 +35,41 @@ strata-dbtool [OPTIONS] <COMMAND>
 
 ## Commands
 
+### `reset-asm`
+
+Removes only `AsmStateSchema`, `AsmLogSchema`, and `AsmAuxDataSchema` so ASM can
+replay L1 history. It reads raw table keys, so legacy state/aux records do not
+need to decode with the current binary. L1 tables, CSM state, manifest MMR,
+OL state, checkpoint artifacts, and broadcast/writer queues are retained.
+
+Stop the node and back up its complete data directory before executing a reset.
+Pass the Strata node's data directory, not the nested sled directory. The command
+requires an existing `<datadir>/sled/strata-client` database and its exclusive lock.
+
+```bash
+# Preview the tables and row counts without deleting records.
+strata-dbtool -d /path/to/node-data reset-asm
+
+# Execute and flush the reset.
+strata-dbtool -d /path/to/node-data reset-asm --force
+```
+
+Use `-o json` for structured output. Reported counts describe the tables before
+the operation. Missing tables are reported as absent and are not created.
+Repeating a completed reset is a no-op. Deleting three tables is not atomic:
+if interrupted or if the command fails, keep the node stopped and rerun
+`reset-asm --force` successfully before restarting it.
+
+The command does not convert parameters, edit configuration, or start replay.
+For the release ASM upgrade, supply the converted ASM parameters and execution
+catalog, remove `[prover]`, and set `[client].is_sequencer = false` during replay.
+Removing `[prover]` prevents startup checkpoint cleanup against incomplete ASM
+state; disabling sequencing also stops the node's writer and broadcaster.
+With the release startup path, a new L1 block triggers replay. Check the canonical
+L1 target, ASM verified checkpoint tip, and rebuilt manifest MMR before restoring
+normal operation. Although retained by this command, manifests and MMR leaves
+can be rewritten by replay.
+
 ### `get-syncinfo`
 Shows the latest synchronization information including L1/OL tips, epochs, and block status.
 
