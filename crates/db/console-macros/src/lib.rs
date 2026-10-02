@@ -160,10 +160,6 @@ fn parse_value_config(input: &DeriveInput) -> syn::Result<ValueConfig> {
             config.name = Some(meta.value()?.parse()?);
             return Ok(());
         }
-        if meta.path.is_ident("getter") {
-            config.getters.push(parse_getter(meta)?);
-            return Ok(());
-        }
         Err(meta.error("unsupported ConsoleValue attribute"))
     })?;
 
@@ -348,51 +344,6 @@ fn is_vec_u8(segment: &PathSegment) -> bool {
         Some(GenericArgument::Type(Type::Path(type_path)))
             if type_path.path.is_ident("u8")
     )
-}
-
-fn parse_getter(meta: ParseNestedMeta<'_>) -> syn::Result<Getter> {
-    let mut name = None;
-    let mut scalar = None;
-    let mut nullable = false;
-    let mut field = None;
-    let mut function = None;
-
-    meta.parse_nested_meta(|nested| {
-        if nested.path.is_ident("name") {
-            name = Some(nested.value()?.parse()?);
-        } else if nested.path.is_ident("scalar") {
-            let value: LitStr = nested.value()?.parse()?;
-            scalar = Some(ScalarKind::parse(&value)?);
-        } else if nested.path.is_ident("nullable") {
-            nullable = true;
-        } else if nested.path.is_ident("field") {
-            field = Some(nested.value()?.parse()?);
-        } else if nested.path.is_ident("via") {
-            function = Some(nested.value()?.parse()?);
-        } else {
-            return Err(nested.error("unsupported getter attribute"));
-        }
-        Ok(())
-    })?;
-
-    let source = match (field, function) {
-        (Some(field), None) => GetterSource::Field(field),
-        (None, Some(function)) => GetterSource::Function(function),
-        (Some(field), Some(_)) => {
-            return Err(syn::Error::new(
-                field.span(),
-                "getter must use exactly one of 'field' or 'via'",
-            ));
-        }
-        (None, None) => return Err(meta.error("getter requires either 'field' or 'via'")),
-    };
-
-    Ok(Getter {
-        name: name.ok_or_else(|| meta.error("getter requires 'name'"))?,
-        scalar: scalar.ok_or_else(|| meta.error("getter requires 'scalar'"))?,
-        nullable,
-        source,
-    })
 }
 
 fn parse_modifier(meta: ParseNestedMeta<'_>) -> syn::Result<Modifier> {
@@ -917,16 +868,20 @@ mod tests {
     use super::expand_console_value;
 
     #[test]
-    fn rejects_duplicate_getter_names() {
+    fn rejects_duplicate_field_getters() {
         let input = syn::parse_quote! {
-            #[console(
-                getter(name = "value", scalar = "u64", field = first),
-                getter(name = "value", scalar = "u64", field = second)
-            )]
-            struct Duplicate { first: u64, second: u64 }
+            struct Duplicate {
+                #[console(get)]
+                #[console(get)]
+                value: u64,
+            }
         };
 
-        let error = expand_console_value(&input).expect_err("duplicate getter must fail");
-        assert!(error.to_string().contains("duplicate getter name 'value'"));
+        let error = expand_console_value(&input).expect_err("duplicate field getter must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("field getter declared more than once")
+        );
     }
 }
