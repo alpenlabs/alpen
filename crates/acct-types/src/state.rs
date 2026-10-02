@@ -70,7 +70,7 @@ impl AccountIntrinsicState {
 
     /// Creates a new empty account with no balance.
     pub fn new_empty(serial: AccountSerial) -> Self {
-        Self::new(AccountTypeId::Empty, serial, 0.into())
+        Self::new(AccountTypeId::Empty, serial, BitcoinAmount::default())
     }
 
     pub fn raw_ty(&self) -> RawAccountTypeId {
@@ -109,6 +109,7 @@ pub trait AccountTypeState {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Amount;
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
@@ -120,13 +121,15 @@ mod tests {
 
         ssz_proptest!(
             AccountIntrinsicState,
-            (any::<u16>(), any::<u32>(), any::<u64>()).prop_map(|(raw_ty, serial, sats)| {
-                AccountIntrinsicState {
-                    raw_ty,
-                    serial: AccountSerial::new(serial),
-                    balance: BitcoinAmount::from_sat(sats),
+            (any::<u16>(), any::<u32>(), 0..=Amount::MAX_MONEY.to_sat()).prop_map(
+                |(raw_ty, serial, sats)| {
+                    AccountIntrinsicState {
+                        raw_ty,
+                        serial: AccountSerial::new(serial),
+                        balance: BitcoinAmount::try_from(sats).unwrap(),
+                    }
                 }
-            })
+            )
         );
 
         #[test]
@@ -148,7 +151,7 @@ mod tests {
             (
                 any::<u16>(),
                 any::<u32>(),
-                any::<u64>(),
+                0..=Amount::MAX_MONEY.to_sat(),
                 prop::collection::vec(any::<u8>(), 0..100)
             )
                 .prop_map(|(raw_ty, serial, sats, encoded)| {
@@ -156,7 +159,7 @@ mod tests {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
                             serial: AccountSerial::new(serial),
-                            balance: BitcoinAmount::from_sat(sats),
+                            balance: BitcoinAmount::try_from(sats).unwrap(),
                         },
                         encoded_state: encoded
                             .try_into()
@@ -185,18 +188,22 @@ mod tests {
 
         ssz_proptest!(
             AcctStateSummary,
-            (any::<u16>(), any::<u32>(), any::<u64>(), any::<[u8; 32]>()).prop_map(
-                |(raw_ty, serial, sats, root)| {
+            (
+                any::<u16>(),
+                any::<u32>(),
+                0..=Amount::MAX_MONEY.to_sat(),
+                any::<[u8; 32]>()
+            )
+                .prop_map(|(raw_ty, serial, sats, root)| {
                     AcctStateSummary {
                         intrinsics: AccountIntrinsicState {
                             raw_ty,
                             serial: AccountSerial::new(serial),
-                            balance: BitcoinAmount::from_sat(sats),
+                            balance: BitcoinAmount::try_from(sats).unwrap(),
                         },
                         typed_state_root: root.into(),
                     }
-                }
-            )
+                })
         );
 
         #[test]

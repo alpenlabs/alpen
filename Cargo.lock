@@ -14730,6 +14730,7 @@ dependencies = [
 name = "strata-acct-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "digest 0.10.7",
  "proptest",
  "sha2",
