@@ -12,6 +12,8 @@ from typing import NamedTuple
 import flexitest
 
 from common.config import (
+    AsmExecutionConfig,
+    AsmExecutionTargetConfig,
     BitcoindConfig,
     BtcioConfig,
     ClientConfig,
@@ -73,7 +75,6 @@ class StrataFactory(flexitest.Factory):
         config_overrides: dict[str, object] | None = None,
         ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
-        use_unchecked_cred_rule: bool = False,
         admin_confirmation_depth: int | None = None,
         env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
@@ -91,7 +92,6 @@ class StrataFactory(flexitest.Factory):
             config_overrides: Additional config overrides (-o flag)
             ol_params: Custom OL parameters (genesis accounts, etc.)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
-            use_unchecked_cred_rule: If True, generates params with CredRule::Unchecked.
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
             env: Additional process environment variables.
             ol_block_time_ms: Optional sequencer OL block time override.
@@ -143,6 +143,11 @@ class StrataFactory(flexitest.Factory):
             else BtcioConfig()
         )
         config = StrataConfig(
+            # Native ASM spec selection is independent of checkpoint proving.
+            asm_execution=AsmExecutionConfig(
+                genesis_predicate="AlwaysAccept",
+                targets=[AsmExecutionTargetConfig(predicate="AlwaysAccept", spec_id=0)],
+            ),
             bitcoind=bconfig,
             client=client_config,
             logging=logging_config,
@@ -176,7 +181,7 @@ class StrataFactory(flexitest.Factory):
             shutil.copyfile(shared_params.asm_params, asm_params_path)
         else:
             # Generate the sequencer key + operator pubkeys consumed when building ASM params.
-            seq_artifacts = generate_sequencer_artifacts(datadir, use_unchecked_cred_rule)
+            seq_artifacts = generate_sequencer_artifacts(datadir)
             ee_params_path = generate_ee_params(datadir)
 
             # Generate or write OL params.

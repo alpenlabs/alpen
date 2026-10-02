@@ -490,6 +490,36 @@ mod test {
     use crate::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
 
     #[test]
+    fn checked_in_node_configs_include_asm_execution() {
+        for (name, contents) in [
+            ("example", include_str!("../../../example_config.toml")),
+            (
+                "compose sequencer",
+                include_str!("../../../docker/configs/config.seq.toml"),
+            ),
+            (
+                "checkpoint sync",
+                include_str!("../../../docker/configs/config.checkpoint-sync.toml"),
+            ),
+            (
+                "SP1 E2E",
+                include_str!("../../../.github/sp1-e2e/config.seq.toml"),
+            ),
+        ] {
+            let config: Config = toml::from_str(contents)
+                .unwrap_or_else(|error| panic!("{name} node config must deserialize: {error}"));
+            assert!(
+                config
+                    .asm_execution
+                    .targets
+                    .iter()
+                    .any(|target| { target.predicate == config.asm_execution.genesis_predicate }),
+                "{name} must declare its genesis ASM execution target"
+            );
+        }
+    }
+
+    #[test]
     fn test_config_load() {
         let config_string_sequencer = r#"
             [asm_execution]

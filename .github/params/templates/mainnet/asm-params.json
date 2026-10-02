@@ -5,34 +5,34 @@
     {
       "Admin": {
         "strata_administrator": {
-          "keys": [
-            "03cf615d3959e8ba65aa2640e50713b3544594555675bedfe4857aab4075349f1b",
-            "03d49a3799512dd843bef93596c465912d6939eed318787aff13946f16e84ed099",
-            "035d1f884f40376d6d0be05c5d3de00c99f69e163e5babef41da8771539ddf217e"
+          "signers": [
+            "bc1qdqhumtxxx4jlan2nxy95xcmvhqssxpjmxlt5zt",
+            "bc1qd6kc62qc72yq94866l76v75xnk4xcfaq4h03vf",
+            "bc1qlzk34pl0maazw6jpjzwuv3z98l5zpu00gn3wlt"
           ],
           "threshold": 2
         },
         "strata_sequencer_manager": {
-          "keys": [
-            "021846b74f93c867d6e3e8c5b08eb1d4ed4454d7cdbb08ceacaf7c3785da8e7b76",
-            "03ce0a77b19644121503a1d441f13ca22e1243da236b9b8a8abb76f7f8fdc19162",
-            "023b2f24c446d20e5e8807e57b0ebfd3c111038a8164e1a7fa8f6ac2bad7d6eda7"
+          "signers": [
+            "bc1q9wqlkel4yp530nagge32mwfenzmex22dj8s33d",
+            "bc1qwyqmq3j2hzuwp0a9lfwckanjtm4xr83jkess70",
+            "bc1qqa74ngr37p7jftzn3fqr9vf2z8t7pqhxd25gn6"
           ],
           "threshold": 2
         },
         "alpen_administrator": {
-          "keys": [
-            "029a7b9f9ca6ffef5653aa1624fd4de6f3c342c19fe21f1e628e8a4ac4fca43259",
-            "0356dcd43c24ddcdbb7176b760c3e56714a2222ab27c7a3fea865fa2b933ba5caf",
-            "03d325627de18a5236af053fea9a1a406c2a8eac9488c04c16d21442dd6cf67487"
+          "signers": [
+            "bc1qf20wthfd7ga05zm7vmweehegwtgynj2p2kvtuf",
+            "bc1qxl3sdfytxlm06kud2g0y2g5337cu96dvjcztss",
+            "bc1qvqj4kkc2ujrj04fzmqmllvpsp62d0259tspnpa"
           ],
           "threshold": 2
         },
         "strata_security_council": {
-          "keys": [
-            "02fa62584355a97db8908a5414a7f6fce38054f1e79ea7fa3fe1ee96b85e1dc84f",
-            "036d0a1ec9393cfd364307f778affd0b61878d2799e249d41c91b752da0ea48521",
-            "025bf53f306dbc1f980d6768a31a49eb124942c2bf674592551488b7feadb8eb76"
+          "signers": [
+            "bc1q9rn7rlkqk7r05tdq6s0fca64qtwjw6jdp20322",
+            "bc1qex5x5ls735luvgq7uh7ejlma060m47l7wm3fk3",
+            "bc1q5rtcdayant9tghhc5rez7tyd4jvyxjwduuj54g"
           ],
           "threshold": 2
         },
@@ -47,14 +47,14 @@
           "asm_stf_vk_update": 12,
           "ee_stf_vk_update": 12,
           "defcon3": 12,
-          "safe_harbour_address_update": 12
+          "safe_harbor_address_update": 12
         },
         "max_seqno_gap": 10
       }
     },
     {
       "Checkpoint": {
-        "sequencer_predicate": "Bip340Schnorr:74acdd685f79c3e831590b0ab18711728f5b3c5c3ab9512b9b046363cf15d47e",
+        "sequencer_key": "74acdd685f79c3e831590b0ab18711728f5b3c5c3ab9512b9b046363cf15d47e",
         "checkpoint_predicate": "__CHECKPOINT_PREDICATE__",
         "genesis_l1_height": "__GENESIS_L1_HEIGHT__",
         "genesis_ol_blkid": "__GENESIS_OL_BLKID__"
@@ -71,7 +71,7 @@
         "assignment_duration": 530,
         "operator_fee": 300000,
         "recovery_delay": 36,
-        "safe_harbour_address": "042be9736b9dc4233c84ab954d49ca2f7967173d8c58090141ea3097dc107a8ec7"
+        "safe_harbor_address": "042be9736b9dc4233c84ab954d49ca2f7967173d8c58090141ea3097dc107a8ec7"
       }
     }
   ]

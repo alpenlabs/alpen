@@ -7,6 +7,7 @@ predicate = "AlwaysAccept"
 spec_id = 0
 
 [client]
+rpc_host = "127.0.0.1"
 rpc_port = 8432
 admin_rpc_host = "127.0.0.1"
 admin_rpc_port = 8434
@@ -45,3 +46,8 @@ fee_policy = "mempool"
 # fixed_fee_rate = 0.5
 mempool_base_url = "https://mempool.space"
 reveal_amount = 100
+
+bundle_interval_ms = 500
+
+[btcio.broadcaster]
+poll_interval_ms = 5_000

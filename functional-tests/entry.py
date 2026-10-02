@@ -22,13 +22,13 @@ from flexitest.runtime import load_module_at, scan_dir_for_modules
 
 # Import environments
 from common.config import EpochSealingConfig, ServiceType
-from common.config.params import GenesisAccountData
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
 from envconfigs.el_ol import EeOLEnv
 from envconfigs.el_ol_checkpoint_sync import EeOLCheckpointSyncEnv
+from envconfigs.ol_isolated import OlIsolatedEnvConfig
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
@@ -301,23 +301,7 @@ def main(argv: list[str]) -> int:
             pre_generate_blocks=110,
             epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
         ),
-        # OL isolated: strata + bitcoin, no EE, with a genesis snark account.
-        # Predicate is the alpen-acct program's deterministic test Schnorr pubkey
-        # (derived from SK = [0x02; 32] inside strata_proofimpl_alpen_acct). No
-        # proofs are submitted against this account in this env, so the specific
-        # pubkey value doesn't matter — only that it's a well-formed predicate.
-        "ol_isolated": StrataEnvConfig(
-            pre_generate_blocks=110,
-            genesis_accounts={
-                "00" * 31 + "42": GenesisAccountData(
-                    predicate="Bip340Schnorr:4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
-                    inner_state="00" * 32,
-                    balance=0,
-                )
-            },
-            epoch_sealing=EpochSealingConfig(slots_per_epoch=5),
-            fund_test_cli_wallet=True,
-        ),
+        "ol_isolated": OlIsolatedEnvConfig(),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
         # EEST needs the externally observable OL/EE path, not a

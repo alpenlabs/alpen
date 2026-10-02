@@ -13,10 +13,11 @@ use zkaleido_sp1_guest_env::Sp1ZkVmEnv;
 fn chunk_predicate_key() -> PredicateKey {
     use strata_predicate::PredicateTypeId;
 
-    PredicateKey::new(
+    PredicateKey::try_new(
         PredicateTypeId::Sp1Groth16,
         vks::GUEST_ALPEN_CHUNK_VK_CONDITION.to_vec(),
     )
+    .expect("embedded chunk verifying key fits the predicate condition limit")
 }
 
 /// In mock builds, verification is a no-op so `always_accept` suffices.

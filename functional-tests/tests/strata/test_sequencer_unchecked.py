@@ -1,4 +1,4 @@
-"""Test sequencer block production and checkpoint finalization with CredRule::Unchecked."""
+"""Test block production and checkpoint finalization in the legacy unchecked environment."""
 
 import logging
 
@@ -15,10 +15,7 @@ logger = logging.getLogger(__name__)
 
 @flexitest.register
 class TestSequencerUnchecked(StrataNodeTest):
-    """Verify block production and checkpoint finalization without an external signer.
-
-    Uses ``CredRule::Unchecked`` — no strata-signer process is needed.
-    """
+    """Verify the legacy environment works with required checkpoint authentication."""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(StrataUncheckedEnvConfig(pre_generate_blocks=110))
@@ -49,7 +46,7 @@ class TestSequencerUnchecked(StrataNodeTest):
             )
 
         logger.info(
-            "sequencer produced %s new blocks with CredRule::Unchecked (height %s -> %s)",
+            "sequencer produced %s new blocks with authenticated checkpoints (height %s -> %s)",
             produced_blocks,
             initial_height,
             final_height,

@@ -4,17 +4,18 @@ Real-bridge deposit/withdrawal helpers for functional tests.
 Wraps `strata-test-cli compute-drt-output` (DRT output spec) and
 `strata-test-cli create-deposit-tx` (DT signing) and constructs the actual
 on-chain transactions via bitcoind RPC. Use this when testing the real
-bridge subprotocol path; for the lighter debug-subprotocol path, use
-`common.test_cli.create_mock_deposit` instead.
+bridge subprotocol path.
 """
 
 import json
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from eth_keys import keys
 
+from common.services.strata import StrataService
 from common.test_cli import _run_command
 
 logger = logging.getLogger(__name__)
@@ -229,3 +230,25 @@ def submit_real_bridge_deposit(
 
     dt_txid = create_and_broadcast_dt(btc_rpc, drt_hex, operator_xprivs_hex, dt_index)
     return drt_txid, dt_txid, drt
+
+
+def read_operator_xprivs(strata_service: StrataService) -> list[str]:
+    """Read operator BIP32 xprivs (one per line) from the strata datadir.
+
+    The strata factory writes this file at boot to seed the bridge
+    subprotocol's genesis operator set; reading the same file keeps DT
+    signing keys aligned with on-chain state.
+    """
+    datadir = Path(strata_service.props["datadir"])
+    path = datadir / "bridge-operator_keys"
+    if not path.exists():
+        raise RuntimeError(f"operator key file not found: {path}")
+    lines = [line.strip() for line in path.read_text().splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError(f"operator key file is empty: {path}")
+    for i, line in enumerate(lines):
+        if not (line.startswith("tprv") or line.startswith("xprv")):
+            raise RuntimeError(
+                f"line {i + 1} of {path} doesn't look like a BIP32 base58 xpriv: {line[:8]!r}..."
+            )
+    return lines

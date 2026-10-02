@@ -3,6 +3,14 @@
 # This node reconstructs OL state from L1-buried checkpoints. It runs no block
 # assembly, writer/broadcaster, checkpoint proving, or submit RPC.
 
+# Initial native ASM spec, independent of the checkpoint proof backend.
+# Chains with different ASM genesis authority must replace both predicates.
+[asm_execution]
+genesis_predicate = "AlwaysAccept"
+[[asm_execution.targets]]
+predicate = "AlwaysAccept"
+spec_id = 0
+
 [client]
 rpc_host = "0.0.0.0"
 rpc_port = 8432

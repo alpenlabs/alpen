@@ -123,8 +123,16 @@ def extract_safe_harbour(template_dir: Path) -> str:
     ap = load_json(template_dir / "asm-params.json")
     for sp in ap["subprotocols"]:
         if "Bridge" in sp:
-            return sp["Bridge"]["safe_harbour_address"]
-    raise ValueError("safe_harbour_address not found in asm-params template")
+            return sp["Bridge"]["safe_harbor_address"]
+    raise ValueError("safe_harbor_address not found in asm-params template")
+
+
+def extract_sequencer_key(template_dir: Path) -> str:
+    ap = load_json(template_dir / "asm-params.json")
+    for sp in ap["subprotocols"]:
+        if "Checkpoint" in sp:
+            return sp["Checkpoint"]["sequencer_key"]
+    raise ValueError("sequencer_key not found in asm-params template")
 
 
 def extract_ee_account_id(template_dir: Path) -> str:
@@ -142,12 +150,18 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     merge_p = sub.add_parser("merge", help="Merge dynamic values from raw into templates")
-    merge_p.add_argument("--raw-dir", required=True, help="Directory with datatool-generated raw params")
-    merge_p.add_argument("--template-dir", required=True, help="Directory with pre-committed templates")
+    merge_p.add_argument(
+        "--raw-dir", required=True, help="Directory with datatool-generated raw params"
+    )
+    merge_p.add_argument(
+        "--template-dir", required=True, help="Directory with pre-committed templates"
+    )
     merge_p.add_argument("--output-dir", required=True, help="Directory to write merged params")
 
     keys_p = sub.add_parser("extract-keys", help="Extract keys from templates")
-    keys_p.add_argument("--template-dir", required=True, help="Directory with pre-committed templates")
+    keys_p.add_argument(
+        "--template-dir", required=True, help="Directory with pre-committed templates"
+    )
     keys_p.add_argument("--output-dir", required=True, help="Directory to write key files")
 
     args = parser.parse_args()
@@ -164,6 +178,9 @@ def main():
         safe_harbour = extract_safe_harbour(template_dir)
         (output_dir / "safe-harbour.txt").write_text(safe_harbour + "\n")
         print(f"  safe_harbour_address: {safe_harbour}")
+
+        sequencer_key = extract_sequencer_key(template_dir)
+        (output_dir / "sequencer-key.txt").write_text(sequencer_key + "\n")
 
         ee_account_id = extract_ee_account_id(template_dir)
         (output_dir / "ee-account-id.txt").write_text(ee_account_id + "\n")
