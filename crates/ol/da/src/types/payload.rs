@@ -137,7 +137,9 @@ impl<S: IStateAccessorMut> DaWrite for OLStateDiff<S> {
         target.set_cur_slot(cur_slot);
 
         if let Some(d) = self.diff.global.limbo_funds_sats.diff() {
-            let amt = BitcoinAmount::from_sat(d.magnitude());
+            let amt = BitcoinAmount::try_from(d.magnitude()).map_err(|_| {
+                DaError::InvalidStateDiff("limbo delta exceeds maximum Bitcoin supply")
+            })?;
             if d.is_positive() {
                 let coin = Coin::new_unchecked(amt);
                 target
@@ -268,11 +270,15 @@ fn apply_balance_delta<T: IAccountStateMut>(
     incr: &SignedVarInt,
 ) -> Result<(), DaError> {
     if incr.is_positive() {
-        let delta = BitcoinAmount::from_sat(incr.magnitude());
+        let delta = BitcoinAmount::try_from(incr.magnitude()).map_err(|_| {
+            DaError::InvalidStateDiff("balance delta exceeds maximum Bitcoin supply")
+        })?;
         let coin = Coin::new_unchecked(delta);
         acct.add_balance(coin);
     } else {
-        let delta = BitcoinAmount::from_sat(incr.magnitude());
+        let delta = BitcoinAmount::try_from(incr.magnitude()).map_err(|_| {
+            DaError::InvalidStateDiff("balance delta exceeds maximum Bitcoin supply")
+        })?;
         let coin = acct
             .take_balance(delta)
             .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
@@ -347,7 +353,10 @@ mod tests {
         state
             .create_new_account(
                 id,
-                NewAccountData::new(BitcoinAmount::from_sat(sats), NewAccountTypeState::Empty),
+                NewAccountData::new(
+                    BitcoinAmount::try_from(sats).unwrap(),
+                    NewAccountTypeState::Empty,
+                ),
             )
             .expect("create empty account")
     }
@@ -386,7 +395,7 @@ mod tests {
         /// Empty new-account init with the given balance.
         pub(super) fn empty_init(balance_sats: u64) -> AccountInit {
             AccountInit::new(
-                BitcoinAmount::from_sat(balance_sats),
+                BitcoinAmount::try_from(balance_sats).unwrap(),
                 AccountTypeInit::Empty,
             )
         }
@@ -394,7 +403,7 @@ mod tests {
         /// Snark new-account init with the given balance, state root, and VK bytes.
         pub(super) fn snark_init(balance_sats: u64, root: Hash, vk: Vec<u8>) -> AccountInit {
             AccountInit::new(
-                BitcoinAmount::from_sat(balance_sats),
+                BitcoinAmount::try_from(balance_sats).unwrap(),
                 AccountTypeInit::Snark(SnarkAccountInit::new(root, vk)),
             )
         }
@@ -440,8 +449,9 @@ mod tests {
             len: usize,
             byte: u8,
         ) -> DaMessageEntry {
-            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![byte; len])
-                .expect("message payload bytes must fit SSZ max length");
+            let payload =
+                MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![byte; len])
+                    .expect("message payload bytes must fit SSZ max length");
             DaMessageEntry::new(source, incl_epoch, payload)
         }
 
@@ -479,7 +489,10 @@ mod tests {
         let snark_acct = build::snark_init(
             500,
             Hash::from([0x11u8; 32]),
-            PredicateKey::always_accept().as_buf_ref().to_bytes(),
+            PredicateKey::always_accept()
+                .try_as_buf_ref()
+                .unwrap()
+                .to_bytes(),
         );
         let new_accounts = vec![
             NewAccountEntry::new(test_account_id(0xA1), build::empty_init(1_000)),
@@ -638,7 +651,7 @@ mod tests {
 
         assert_eq!(
             account_balance(&state, account_id),
-            BitcoinAmount::from_sat(2_000)
+            BitcoinAmount::try_from(2_000).unwrap()
         );
     }
 
@@ -663,7 +676,7 @@ mod tests {
 
         assert_eq!(
             account_balance(&state, account_id),
-            BitcoinAmount::from_sat(1_250)
+            BitcoinAmount::try_from(1_250).unwrap()
         );
     }
 
@@ -692,14 +705,14 @@ mod tests {
         ));
         assert_eq!(
             account_balance(&state, account_id),
-            BitcoinAmount::from_sat(500)
+            BitcoinAmount::try_from(500).unwrap()
         );
     }
 
     #[test]
     fn test_ol_state_diff_apply_updates_limbo_funds() {
         let mut state = make_genesis_state();
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+        assert_eq!(state.limbo_funds(), BitcoinAmount::try_from(0).unwrap());
 
         let diff = StateDiff::new(
             build::global_diff(0, Some(SignedVarInt::positive(1_500))),
@@ -707,7 +720,7 @@ mod tests {
         );
         apply_ol_state_diff(&mut state, diff).expect("apply limbo add diff");
 
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_500));
+        assert_eq!(state.limbo_funds(), BitcoinAmount::try_from(1_500).unwrap());
 
         let diff = StateDiff::new(
             build::global_diff(0, Some(SignedVarInt::negative(400))),
@@ -715,13 +728,13 @@ mod tests {
         );
         apply_ol_state_diff(&mut state, diff).expect("apply limbo take diff");
 
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_100));
+        assert_eq!(state.limbo_funds(), BitcoinAmount::try_from(1_100).unwrap());
     }
 
     #[test]
     fn test_ol_state_diff_apply_rejects_insufficient_limbo_funds() {
         let mut state = make_genesis_state();
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+        assert_eq!(state.limbo_funds(), BitcoinAmount::try_from(0).unwrap());
 
         let diff = StateDiff::new(
             build::global_diff(0, Some(SignedVarInt::negative(1))),
@@ -735,7 +748,7 @@ mod tests {
                 "insufficient limbo funds for diff"
             ))
         ));
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+        assert_eq!(state.limbo_funds(), BitcoinAmount::try_from(0).unwrap());
     }
 
     #[test]
@@ -743,7 +756,7 @@ mod tests {
         let mut state = make_genesis_state();
         let account_id = test_account_id(4);
         let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(500),
+            BitcoinAmount::try_from(500).unwrap(),
             NewAccountTypeState::Snark {
                 update_vk: PredicateKey::always_accept(),
                 initial_state_root: Hash::from([0x11u8; 32]),
@@ -798,14 +811,17 @@ mod tests {
         let empty_serial = state
             .create_new_account(
                 empty_id,
-                NewAccountData::new(BitcoinAmount::from_sat(1_000), NewAccountTypeState::Empty),
+                NewAccountData::new(
+                    BitcoinAmount::try_from(1_000).unwrap(),
+                    NewAccountTypeState::Empty,
+                ),
             )
             .expect("create empty account");
         let snark_serial = state
             .create_new_account(
                 snark_id,
                 NewAccountData::new(
-                    BitcoinAmount::from_sat(500),
+                    BitcoinAmount::try_from(500).unwrap(),
                     NewAccountTypeState::Snark {
                         update_vk: PredicateKey::always_accept(),
                         initial_state_root: Hash::from([0x11u8; 32]),
@@ -860,17 +876,20 @@ mod tests {
         let mut expected = pre_accounts.state.clone();
         expected.set_cur_slot(expected.cur_slot() + 4);
         expected
-            .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(800)))
+            .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::try_from(800).unwrap()))
             .expect("add limbo");
         expected
             .create_new_account(
                 new_id,
-                NewAccountData::new(BitcoinAmount::from_sat(2_000), NewAccountTypeState::Empty),
+                NewAccountData::new(
+                    BitcoinAmount::try_from(2_000).unwrap(),
+                    NewAccountTypeState::Empty,
+                ),
             )
             .expect("create new account");
         expected
             .update_account(pre_accounts.empty.id, |acct| {
-                acct.add_balance(Coin::new_unchecked(BitcoinAmount::from_sat(250)));
+                acct.add_balance(Coin::new_unchecked(BitcoinAmount::try_from(250).unwrap()));
                 Ok::<(), DaError>(())
             })
             .expect("update empty")
@@ -972,13 +991,13 @@ mod tests {
             .expect("apply rich diff");
 
         assert_eq!(state.cur_slot(), pre_slot + 5);
-        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(900));
+        assert_eq!(state.limbo_funds(), BitcoinAmount::try_from(900).unwrap());
 
         let empty = state
             .get_account_state(pre_accounts.empty.id)
             .unwrap()
             .expect("empty account");
-        assert_eq!(empty.balance(), BitcoinAmount::from_sat(1_250));
+        assert_eq!(empty.balance(), BitcoinAmount::try_from(1_250).unwrap());
 
         let snark = state
             .get_account_state(pre_accounts.snark.id)
@@ -1002,11 +1021,11 @@ mod tests {
         );
         assert_eq!(
             account_balance(&state, new_id_a),
-            BitcoinAmount::from_sat(1_000)
+            BitcoinAmount::try_from(1_000).unwrap()
         );
         assert_eq!(
             account_balance(&state, new_id_b),
-            BitcoinAmount::from_sat(500)
+            BitcoinAmount::try_from(500).unwrap()
         );
     }
 
@@ -1164,7 +1183,7 @@ mod tests {
     #[test]
     fn test_da_message_entry_round_trips_at_max_payload() {
         let payload = MsgPayload::from_bytes(
-            BitcoinAmount::from_sat(0),
+            BitcoinAmount::try_from(0).unwrap(),
             vec![0x5Au8; MAX_MSG_PAYLOAD_BYTES],
         )
         .expect("payload at boundary fits SSZ max");

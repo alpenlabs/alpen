@@ -305,7 +305,7 @@ impl From<MessageEntry> for RpcMessageEntry {
 }
 
 impl TryFrom<RpcMessageEntry> for MessageEntry {
-    type Error = MsgPayloadError;
+    type Error = RpcMsgPayloadError;
 
     fn try_from(rpc: RpcMessageEntry) -> Result<Self, Self::Error> {
         Ok(MessageEntry::new(
@@ -335,11 +335,24 @@ impl From<MsgPayload> for RpcMsgPayload {
     }
 }
 
+/// Error converting an RPC message payload into a validated message.
+#[derive(Debug, thiserror::Error)]
+pub enum RpcMsgPayloadError {
+    /// The value exceeds the maximum Bitcoin supply.
+    #[error("message value exceeds maximum Bitcoin supply: {0} sat")]
+    InvalidAmount(u64),
+    /// The message data exceeds the protocol limit.
+    #[error(transparent)]
+    Payload(#[from] MsgPayloadError),
+}
+
 impl TryFrom<RpcMsgPayload> for MsgPayload {
-    type Error = MsgPayloadError;
+    type Error = RpcMsgPayloadError;
 
     fn try_from(rpc: RpcMsgPayload) -> Result<Self, Self::Error> {
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(rpc.value), rpc.data.into())
+        let value = BitcoinAmount::try_from(rpc.value)
+            .map_err(|_| RpcMsgPayloadError::InvalidAmount(rpc.value))?;
+        Ok(MsgPayload::from_bytes(value, rpc.data.into())?)
     }
 }
 
@@ -377,5 +390,22 @@ impl RpcProofState {
 impl From<RpcProofState> for ProofState {
     fn from(rpc: RpcProofState) -> Self {
         ProofState::new(rpc.inner_state.0.into(), rpc.next_inbox_msg_idx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_message_rejects_out_of_range_value() {
+        let rpc = RpcMsgPayload {
+            value: u64::MAX,
+            data: Vec::<u8>::new().into(),
+        };
+        assert!(matches!(
+            MsgPayload::try_from(rpc),
+            Err(RpcMsgPayloadError::InvalidAmount(u64::MAX))
+        ));
     }
 }

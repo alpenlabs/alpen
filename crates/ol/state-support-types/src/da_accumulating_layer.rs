@@ -17,6 +17,7 @@ use strata_da_framework::{
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
 use strata_ol_da::*;
+use strata_predicate::PredicateError;
 use thiserror::Error;
 
 use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
@@ -24,6 +25,10 @@ use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
 /// Errors while building or encoding epoch DA payloads.
 #[derive(Debug, Error)]
 pub enum DaAccumulationError {
+    /// Stored account update predicate has an unknown type.
+    #[error("invalid account update predicate: {0}")]
+    InvalidPredicate(#[from] PredicateError),
+
     /// Error while building DA writes for the epoch.
     #[error("da accumulator builder error: {0}")]
     Builder(#[from] strata_da_framework::BuilderError),
@@ -459,7 +464,7 @@ impl EpochDaAccumulator {
                 .get_account_state(entry.account_id)
                 .map_err(|_| DaAccumulationError::MissingAccountState(entry.account_id))?
                 .ok_or(DaAccumulationError::MissingAccountState(entry.account_id))?;
-            let init = account_init_from_state(state_ref);
+            let init = account_init_from_state(state_ref)?;
             if let AccountTypeInit::Snark(init) = &init.type_state {
                 let vk_len = init.update_vk.as_slice().len();
                 if vk_len > MAX_VK_BYTES {
@@ -483,8 +488,8 @@ impl EpochDaAccumulator {
             // CtrU64BySignedVarInt::compare is total over (u64, u64) — every pair
             // produces a valid signed delta, so this never returns None.
             let balance = {
-                let a: u64 = *delta.base_balance;
-                let b: u64 = *delta.final_balance;
+                let a = delta.base_balance.to_sat();
+                let b = delta.final_balance.to_sat();
                 let delta = CtrU64BySignedVarInt::compare(a, b)
                     .expect("CtrU64BySignedVarInt covers all u64 pairs");
                 DaCounter::new_changed(delta)
@@ -855,16 +860,18 @@ fn encode_payload(state_diff: StateDiff) -> Result<Vec<u8>, DaAccumulationError>
 }
 
 /// Converts account state into DA init data for encoding.
-fn account_init_from_state<T: IAccountState>(state: &T) -> AccountInit {
+fn account_init_from_state<T: IAccountState>(
+    state: &T,
+) -> Result<AccountInit, DaAccumulationError> {
     let balance = state.balance();
     match state.type_state() {
-        AccountTypeStateRef::Empty => AccountInit::new(balance, AccountTypeInit::Empty),
+        AccountTypeStateRef::Empty => Ok(AccountInit::new(balance, AccountTypeInit::Empty)),
         AccountTypeStateRef::Snark(snark_state) => {
             let init = SnarkAccountInit::new(
                 snark_state.inner_state_root(),
-                snark_state.update_vk().as_buf_ref().to_bytes(),
+                snark_state.update_vk().try_as_buf_ref()?.to_bytes(),
             );
-            AccountInit::new(balance, AccountTypeInit::Snark(init))
+            Ok(AccountInit::new(balance, AccountTypeInit::Snark(init)))
         }
     }
 }
