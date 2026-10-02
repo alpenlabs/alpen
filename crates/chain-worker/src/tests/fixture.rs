@@ -115,7 +115,7 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
                 0,
                 snark_serial,
                 SubjectId::from([42u8; 32]),
-                BitcoinAmount::from_sat(150_000_000),
+                BitcoinAmount::try_from(150_000_000).unwrap(),
             );
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
             vec![(TERMINAL_L1_HEIGHT, manifest)]
@@ -140,7 +140,7 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
                 0,
                 snark_serial,
                 SubjectId::from([42u8; 32]),
-                BitcoinAmount::from_sat(150_000_000),
+                BitcoinAmount::try_from(150_000_000).unwrap(),
             );
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
             vec![(TERMINAL_L1_HEIGHT, manifest)]

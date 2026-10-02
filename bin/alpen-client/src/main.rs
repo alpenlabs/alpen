@@ -115,7 +115,7 @@ use strata_config::btcio::{
 };
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
-use strata_logging::{init_logging_from_config, LoggingInitConfig};
+use strata_logging::{init_logging_from_config, LoggingInitConfigRef};
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
 use tokio::{
@@ -1321,7 +1321,7 @@ where
             extra_filter_directives.push(verbosity_filter);
         }
 
-        init_logging_from_config(LoggingInitConfig {
+        init_logging_from_config(LoggingInitConfigRef {
             service_base_name: "alpen-client",
             service_label: command.ext.service_label.as_deref(),
             otlp_url: command.ext.otlp_url.as_deref(),

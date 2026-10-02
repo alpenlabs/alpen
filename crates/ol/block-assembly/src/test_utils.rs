@@ -149,8 +149,9 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
         .unwrap()
         .current();
     let payload_bytes = sampled_message.payload().data().to_vec();
-    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), payload_bytes)
-        .expect("message payload bytes must fit within SSZ max length");
+    let payload =
+        MsgPayload::from_bytes(BitcoinAmount::try_from(value_sats).unwrap(), payload_bytes)
+            .expect("message payload bytes must fit within SSZ max length");
     MessageEntry::new(source, epoch, payload)
 }
 
@@ -446,7 +447,7 @@ pub(crate) fn withdrawal_output_message(
     let encoded_body = encode_to_vec(&withdrawal_data).expect("encode withdrawal body");
     let withdrawal_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body).expect("msg format");
     let payload = MsgPayload::from_bytes(
-        BitcoinAmount::from_sat(amount_sats),
+        BitcoinAmount::try_from(amount_sats).unwrap(),
         withdrawal_msg.to_vec(),
     )
     .expect("withdrawal message payload bytes must fit within SSZ max length");
@@ -569,9 +570,11 @@ impl MempoolSnarkTxBuilder {
             self.outputs
                 .into_iter()
                 .map(|(dest, value_sats)| {
-                    let payload =
-                        MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), vec![])
-                            .expect("message payload bytes must fit within SSZ max length");
+                    let payload = MsgPayload::from_bytes(
+                        BitcoinAmount::try_from(value_sats).unwrap(),
+                        vec![],
+                    )
+                    .expect("message payload bytes must fit within SSZ max length");
                     OutputMessage::new(dest, payload)
                 })
                 .collect()
@@ -605,7 +608,7 @@ pub(crate) fn add_snark_account_to_state(
     initial_balance: u64,
 ) {
     let new_acct = NewAccountData::new(
-        BitcoinAmount::from_sat(initial_balance),
+        BitcoinAmount::try_from(initial_balance).unwrap(),
         NewAccountTypeState::Snark {
             update_vk: PredicateKey::always_accept(),
             initial_state_root: test_hash(state_root_seed),
@@ -713,8 +716,9 @@ pub(crate) fn generate_message_entries(
                 })
                 .collect();
 
-            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), data)
-                .expect("message payload bytes must fit within SSZ max length");
+            let payload =
+                MsgPayload::from_bytes(BitcoinAmount::try_from(value_sats).unwrap(), data)
+                    .expect("message payload bytes must fit within SSZ max length");
             MessageEntry::new(source_account, incl_epoch, payload)
         })
         .collect()
@@ -801,6 +805,7 @@ pub(crate) fn put_test_asm_state(storage: &NodeStorage, l1_commitment: L1BlockCo
         history_accumulator,
     };
     let anchor_state = AnchorState {
+        spec_id: 0,
         magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
         chain_view,
         sections: Default::default(),

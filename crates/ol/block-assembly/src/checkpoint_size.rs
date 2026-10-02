@@ -10,10 +10,11 @@
 //! past its hard limit (drop the tx) or past the 90% soft limit (commit the tx
 //! and seal the epoch).
 
-use strata_asm_proto_checkpoint_types::{
-    MAX_OL_LOGS_PER_CHECKPOINT, MAX_TOTAL_LOG_PAYLOAD_BYTES, OL_DA_DIFF_MAX_SIZE,
-};
+use strata_asm_proto_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
 use strata_ol_chain_types::OLLog;
+
+// Retain the release sequencer policy; ASM no longer imposes this aggregate limit.
+const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
 
 /// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
 pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
