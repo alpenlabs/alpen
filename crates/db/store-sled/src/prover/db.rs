@@ -43,10 +43,8 @@ define_sled_database!(
 struct ProverTaskConsoleTable(SledTree<ProverTaskTree>);
 
 impl ProofDBSled {
-    pub(crate) fn console_tables(&self) -> Vec<Arc<dyn ConsoleTable>> {
-        vec![Arc::new(ProverTaskConsoleTable(
-            self.prover_task_tree.clone(),
-        ))]
+    pub(crate) fn console_table(&self) -> Arc<dyn ConsoleTable> {
+        Arc::new(ProverTaskConsoleTable(self.prover_task_tree.clone()))
     }
 }
 

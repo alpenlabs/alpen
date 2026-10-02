@@ -53,7 +53,7 @@ pub enum PipelineTerminal {
     All(ScalarExpression),
 }
 
-/// A bounded functional scan assembled without textual syntax.
+/// A bounded row selection assembled without textual syntax.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RowSetPlan {
     scan: ScanPlan,
@@ -104,7 +104,7 @@ impl RowSetPlan {
     }
 }
 
-/// A bounded functional scan assembled without textual syntax.
+/// A bounded functional pipeline assembled without textual syntax.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PipelinePlan {
     rows: RowSetPlan,

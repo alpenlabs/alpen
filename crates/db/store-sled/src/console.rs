@@ -357,15 +357,11 @@ pub(crate) fn parse_ol_block_id(key: &ConsoleScalar) -> ConsoleResult<OLBlockId>
     Ok(OLBlockId::from(Buf32::from(bytes)))
 }
 
-/// Builds the explicit set of Sled tables supported by the console spike.
+/// Builds the explicit set of Sled sources supported by the console spike.
 pub fn build_console_registry(backend: &SledBackend) -> ConsoleResult<ConsoleRegistry> {
     let mut registry = ConsoleRegistry::new();
-    for table in backend.prover_db.console_tables() {
-        registry.register(table)?;
-    }
-    for view in views::console_views(backend) {
-        registry.register_view(view)?;
-    }
+    registry.register(backend.prover_db.console_table())?;
+    registry.register_view(views::console_view(backend))?;
     Ok(registry)
 }
 

@@ -90,10 +90,10 @@ impl ConsoleView for OlBlockView {
     }
 }
 
-pub(super) fn console_views(backend: &SledBackend) -> Vec<Arc<dyn ConsoleView>> {
-    vec![Arc::new(OlBlockView {
+pub(super) fn console_view(backend: &SledBackend) -> Arc<dyn ConsoleView> {
+    Arc::new(OlBlockView {
         database: backend.ol_block_db.clone(),
-    })]
+    })
 }
 
 fn expect_argument_count(

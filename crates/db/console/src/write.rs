@@ -79,7 +79,7 @@ impl<'a> WriteSession<'a> {
         Ok(self.staged().expect("staged write was just inserted"))
     }
 
-    /// Stages one modifier for every row produced by a bounded functional scan.
+    /// Stages one modifier for every row produced by a bounded row selection.
     pub fn stage_modify_scan(
         &mut self,
         plan: RowSetPlan,
