@@ -82,7 +82,7 @@ impl NewAccountData {
     }
 
     pub fn new_empty(type_state: NewAccountTypeState) -> Self {
-        Self::new(BitcoinAmount::zero(), type_state)
+        Self::new(BitcoinAmount::default(), type_state)
     }
 
     /// Creates a new snark account with the given balance, verification key, and initial state
