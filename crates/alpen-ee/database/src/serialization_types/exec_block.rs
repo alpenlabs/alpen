@@ -1,4 +1,5 @@
 use alpen_ee_common::ExecBlockRecord;
+use bitcoin::Amount;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::{Decode, Encode};
 use strata_acct_types::{BitcoinAmount, Hash, MessageEntry, MsgPayload};
@@ -95,7 +96,7 @@ impl From<DBMessageEntry> for MessageEntry {
             value.source.into(),
             value.incl_epoch,
             MsgPayload::from_bytes(
-                BitcoinAmount::from_sat(value.payload_value_sats),
+                BitcoinAmount::from(Amount::from_sat(value.payload_value_sats)),
                 value.payload_data,
             )
             .expect("database message payload bytes must fit within SSZ max length"),

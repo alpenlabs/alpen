@@ -1,3 +1,4 @@
+use bitcoin::Amount;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_acct_types::{BitcoinAmount, Hash, SubjectId};
 use strata_ee_acct_types::{EeAccountState, PendingFinclEntry, PendingInputEntry};
@@ -64,7 +65,7 @@ struct DBBitcoinAmount(u64);
 
 impl From<DBBitcoinAmount> for BitcoinAmount {
     fn from(value: DBBitcoinAmount) -> Self {
-        Self::from_sat(value.0)
+        Self::from(Amount::from_sat(value.0))
     }
 }
 

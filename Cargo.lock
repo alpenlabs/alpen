@@ -1149,6 +1149,7 @@ dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
  "alpen-reth-evm",
+ "bitcoin",
  "bitcoin-bosd",
  "eyre",
  "strata-acct-types",
@@ -15721,6 +15722,7 @@ dependencies = [
 name = "strata-ee-acct-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "proptest",
  "ssz",
  "ssz_codegen",
@@ -15743,6 +15745,7 @@ dependencies = [
 name = "strata-ee-chain-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "proptest",
  "ssz",
  "ssz_codegen",
@@ -15783,6 +15786,7 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "bincode",
+ "bitcoin",
  "itertools 0.14.0",
  "reth-chainspec",
  "reth-consensus-common",
@@ -16530,6 +16534,7 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "bincode",
+ "bitcoin",
  "borsh",
  "reth-chainspec",
  "reth-evm",

@@ -37,7 +37,7 @@ fn test_single_deposit_no_chunks() {
     let ee = SimpleExecutionEnvironment;
 
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
@@ -55,8 +55,8 @@ fn test_multiple_deposits_no_chunks() {
 
     let dest1 = SubjectId::from([1u8; 32]);
     let dest2 = SubjectId::from([2u8; 32]);
-    let value1 = BitcoinAmount::from(500u64);
-    let value2 = BitcoinAmount::from(750u64);
+    let value1 = BitcoinAmount::try_from(500u64).unwrap();
+    let value2 = BitcoinAmount::try_from(750u64).unwrap();
     let source = AccountId::from([3u8; 32]);
 
     let message1 = create_deposit_message(dest1, value1, source, 1);
@@ -93,7 +93,7 @@ fn test_single_deposit_with_chunk() {
 
     // Create deposit message
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
@@ -146,7 +146,7 @@ fn test_chunk_output_does_not_change_inner_tracked_balance() {
     let ee = SimpleExecutionEnvironment;
 
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
@@ -164,7 +164,8 @@ fn test_chunk_output_does_not_change_inner_tracked_balance() {
     let mut outputs = ExecOutputs::new_empty();
     outputs.add_message(OutputMessage::new(
         AccountId::from([3u8; 32]),
-        MsgPayload::from_bytes(BitcoinAmount::from(400u64), vec![1, 2, 3]).expect("create payload"),
+        MsgPayload::from_bytes(BitcoinAmount::try_from(400u64).unwrap(), vec![1, 2, 3])
+            .expect("create payload"),
     ));
 
     let tip = Hash::new([0xDD; 32]);
@@ -194,8 +195,8 @@ fn test_multiple_deposits_multiple_chunks() {
 
     let dest1 = SubjectId::from([1u8; 32]);
     let dest2 = SubjectId::from([2u8; 32]);
-    let value1 = BitcoinAmount::from(500u64);
-    let value2 = BitcoinAmount::from(750u64);
+    let value1 = BitcoinAmount::try_from(500u64).unwrap();
+    let value2 = BitcoinAmount::try_from(750u64).unwrap();
     let source = AccountId::from([3u8; 32]);
 
     let msg1 = create_deposit_message(dest1, value1, source, 1);

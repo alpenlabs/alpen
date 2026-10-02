@@ -161,6 +161,7 @@ impl PendingFinclEntry {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Amount;
     use proptest::prelude::*;
     use strata_acct_types::{BitcoinAmount, SubjectId};
     use strata_ee_chain_types::SubjectDepositData;
@@ -169,9 +170,11 @@ mod tests {
     use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, PendingInputEntry};
 
     fn subject_deposit_data_strategy() -> impl Strategy<Value = SubjectDepositData> {
-        (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest_bytes, value)| SubjectDepositData {
-            dest: SubjectId::from(dest_bytes),
-            value: BitcoinAmount::from_sat(value),
+        (any::<[u8; 32]>(), 0..=Amount::MAX_MONEY.to_sat()).prop_map(|(dest_bytes, value)| {
+            SubjectDepositData {
+                dest: SubjectId::from(dest_bytes),
+                value: BitcoinAmount::try_from(value).unwrap(),
+            }
         })
     }
 

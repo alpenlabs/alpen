@@ -28,7 +28,7 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ArchivedEePrivateInput, ChunkInput, EePrivateInput};
 use strata_ee_chain_types::{ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs};
 use strata_evm_ee::EvmPartialState;
-use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefs, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams,
 };
