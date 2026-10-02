@@ -16045,6 +16045,7 @@ dependencies = [
 name = "strata-ol-chain-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "int-enum",
  "proptest",
  "rand 0.8.5",
@@ -16730,6 +16731,7 @@ dependencies = [
 name = "strata-snark-acct-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "proptest",
  "ssz",
  "ssz_codegen",

@@ -17,6 +17,7 @@ strata-predicate.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 
+bitcoin = { optional = true, workspace = true }
 int-enum.workspace = true
 proptest = { optional = true, workspace = true }
 rand = { optional = true, workspace = true }
@@ -24,6 +25,7 @@ secp256k1 = { optional = true, workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
+bitcoin.workspace = true
 proptest.workspace = true
 rand.workspace = true
 secp256k1.workspace = true
@@ -35,6 +37,7 @@ ssz_codegen.workspace = true
 
 [features]
 test-utils = [
+  "dep:bitcoin",
   "dep:proptest",
   "dep:rand",
   "dep:secp256k1",

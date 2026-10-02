@@ -1,5 +1,6 @@
 //! Account output types that get applied to the ledger.
 
+use bitcoin::Amount;
 use ssz_types::VariableList;
 use strata_acct_types::{
     AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
@@ -114,14 +115,14 @@ impl UpdateOutputs {
     /// Computes the total value across all transfers and messages.
     /// Returns None if overflow occurs.
     pub fn compute_total_value(&self) -> Option<BitcoinAmount> {
-        let mut total = BitcoinAmount::zero();
+        let mut total = Amount::ZERO;
         for transfer in self.transfers() {
-            total = total.checked_add(transfer.value())?;
+            total = total.checked_add(transfer.value().into())?;
         }
         for msg in self.messages() {
-            total = total.checked_add(msg.payload().value())?;
+            total = total.checked_add(msg.payload().value().into())?;
         }
-        Some(total)
+        Some(total.into())
     }
 }
 
@@ -156,5 +157,40 @@ impl OutputMessage {
     /// Gets the message payload.
     pub fn payload(&self) -> &MsgPayload {
         &self.payload
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_totals_match_effects_and_preserve_overflow_behavior() {
+        let empty = UpdateOutputs::new_empty();
+        assert_eq!(empty.compute_total_value(), Some(BitcoinAmount::default()));
+
+        let dest = AccountId::new([1; 32]);
+        for (transfer, message, expected) in [
+            (1_000, 2_000, Some(3_000)),
+            (
+                Amount::MAX_MONEY.to_sat(),
+                1,
+                Some(Amount::MAX_MONEY.to_sat() + 1),
+            ),
+            (u64::MAX, 1, None),
+        ] {
+            let outputs = UpdateOutputs::new(
+                vec![OutputTransfer::new(dest, Amount::from_sat(transfer).into())],
+                vec![OutputMessage::new(
+                    dest,
+                    MsgPayload::new_dataless(Amount::from_sat(message).into()),
+                )],
+            );
+            assert_eq!(outputs.compute_total_value().map(|v| v.to_sat()), expected);
+            assert_eq!(
+                outputs.compute_total_value(),
+                outputs.to_tx_effects().get_total_value_sent(),
+            );
+        }
     }
 }
