@@ -16348,6 +16348,7 @@ dependencies = [
 name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "bitcoin-bosd",
  "ssz_primitives",
  "ssz_types",

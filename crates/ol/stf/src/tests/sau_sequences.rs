@@ -22,7 +22,7 @@ fn test_dependent_snark_updates_advance_across_blocks() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(INITIAL_BALANCE))
+            acct.with_balance(BitcoinAmount::try_from(INITIAL_BALANCE).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -38,8 +38,11 @@ fn test_dependent_snark_updates_advance_across_blocks() {
             .with_slot(slot)
             .with_epoch(1)
             .with_sau(snark_acct_id, |sau| {
-                sau.transfer(recipient_id, BitcoinAmount::from_sat(TRANSFER_AMOUNT))
-                    .with_state_root(new_inner_state_root)
+                sau.transfer(
+                    recipient_id,
+                    BitcoinAmount::try_from(TRANSFER_AMOUNT).unwrap(),
+                )
+                .with_state_root(new_inner_state_root)
             })
             .execute()
             .completed_block()
@@ -62,7 +65,7 @@ fn test_dependent_snark_updates_advance_across_blocks() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(INITIAL_BALANCE - (UPDATE_COUNT * TRANSFER_AMOUNT))
+        BitcoinAmount::try_from(INITIAL_BALANCE - (UPDATE_COUNT * TRANSFER_AMOUNT)).unwrap()
     );
     let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(*account_state.seqno().inner(), UPDATE_COUNT);
@@ -70,6 +73,6 @@ fn test_dependent_snark_updates_advance_across_blocks() {
 
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(UPDATE_COUNT * TRANSFER_AMOUNT)
+        BitcoinAmount::try_from(UPDATE_COUNT * TRANSFER_AMOUNT).unwrap()
     );
 }

@@ -12,7 +12,7 @@ fn test_snark_update_success_with_transfer() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -22,7 +22,7 @@ fn test_snark_update_success_with_transfer() {
     let outcome = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(30_000_000))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(30_000_000).unwrap())
                 .with_state_root(make_state_root(2))
                 .with_proof(make_proof(1))
         })
@@ -38,7 +38,7 @@ fn test_snark_update_success_with_transfer() {
     // Verify balances
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(70_000_000),
+        BitcoinAmount::try_from(70_000_000).unwrap(),
         "Sender account balance should be 100M - 30M"
     );
     // Check the seq no of the sender
@@ -50,7 +50,7 @@ fn test_snark_update_success_with_transfer() {
 
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(30_000_000),
+        BitcoinAmount::try_from(30_000_000).unwrap(),
         "Recipient should receive 30M"
     );
 }
@@ -64,7 +64,7 @@ fn test_snark_update_multiple_transfers() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -74,9 +74,9 @@ fn test_snark_update_multiple_transfers() {
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient1_id, BitcoinAmount::from_sat(30_000_000))
-                .transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
-                .transfer(recipient3_id, BitcoinAmount::from_sat(10_000_000))
+            sau.transfer(recipient1_id, BitcoinAmount::try_from(30_000_000).unwrap())
+                .transfer(recipient2_id, BitcoinAmount::try_from(20_000_000).unwrap())
+                .transfer(recipient3_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute();
@@ -84,7 +84,7 @@ fn test_snark_update_multiple_transfers() {
     // Verify all balances
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(40_000_000),
+        BitcoinAmount::try_from(40_000_000).unwrap(),
         "Sender should have 100M - 60M = 40M"
     );
     assert_eq!(
@@ -95,19 +95,19 @@ fn test_snark_update_multiple_transfers() {
 
     assert_eq!(
         fixture.account_balance(recipient1_id),
-        BitcoinAmount::from_sat(30_000_000),
+        BitcoinAmount::try_from(30_000_000).unwrap(),
         "Recipient1 should receive 30M"
     );
 
     assert_eq!(
         fixture.account_balance(recipient2_id),
-        BitcoinAmount::from_sat(20_000_000),
+        BitcoinAmount::try_from(20_000_000).unwrap(),
         "Recipient2 should receive 20M"
     );
 
     assert_eq!(
         fixture.account_balance(recipient3_id),
-        BitcoinAmount::from_sat(10_000_000),
+        BitcoinAmount::try_from(10_000_000).unwrap(),
         "Recipient3 should receive 10M"
     );
 }
@@ -121,10 +121,10 @@ fn test_snark_update_same_block_distinct_senders() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(sender1_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_snark_account(sender2_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(70_000_000))
+            acct.with_balance(BitcoinAmount::try_from(70_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -133,18 +133,18 @@ fn test_snark_update_same_block_distinct_senders() {
     fixture
         .child_block()
         .with_sau(sender1_acct_id, |sau| {
-            sau.transfer(recipient1_id, BitcoinAmount::from_sat(10_000_000))
+            sau.transfer(recipient1_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .with_sau(sender2_acct_id, |sau| {
-            sau.transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
+            sau.transfer(recipient2_id, BitcoinAmount::try_from(20_000_000).unwrap())
                 .with_state_root(make_state_root(3))
         })
         .execute();
 
     assert_eq!(
         fixture.account_balance(sender1_acct_id),
-        BitcoinAmount::from_sat(90_000_000),
+        BitcoinAmount::try_from(90_000_000).unwrap(),
         "Sender1 balance should reflect its same-block transfer"
     );
     assert_eq!(
@@ -158,7 +158,7 @@ fn test_snark_update_same_block_distinct_senders() {
 
     assert_eq!(
         fixture.account_balance(sender2_acct_id),
-        BitcoinAmount::from_sat(50_000_000),
+        BitcoinAmount::try_from(50_000_000).unwrap(),
         "Sender2 balance should reflect its same-block transfer"
     );
     assert_eq!(
@@ -172,13 +172,13 @@ fn test_snark_update_same_block_distinct_senders() {
 
     assert_eq!(
         fixture.account_balance(recipient1_id),
-        BitcoinAmount::from_sat(10_000_000),
+        BitcoinAmount::try_from(10_000_000).unwrap(),
         "Recipient1 should receive sender1 transfer"
     );
 
     assert_eq!(
         fixture.account_balance(recipient2_id),
-        BitcoinAmount::from_sat(20_000_000),
+        BitcoinAmount::try_from(20_000_000).unwrap(),
         "Recipient2 should receive sender2 transfer"
     );
 }
@@ -191,7 +191,7 @@ fn test_snark_update_same_block_sequential_seqnos() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(sender_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -200,18 +200,18 @@ fn test_snark_update_same_block_sequential_seqnos() {
     fixture
         .child_block()
         .with_sau(sender_acct_id, |sau| {
-            sau.transfer(recipient1_id, BitcoinAmount::from_sat(10_000_000))
+            sau.transfer(recipient1_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .with_sau(sender_acct_id, |sau| {
-            sau.transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
+            sau.transfer(recipient2_id, BitcoinAmount::try_from(20_000_000).unwrap())
                 .with_state_root(make_state_root(3))
         })
         .execute();
 
     assert_eq!(
         fixture.account_balance(sender_acct_id),
-        BitcoinAmount::from_sat(70_000_000),
+        BitcoinAmount::try_from(70_000_000).unwrap(),
         "Sender balance should include both same-block transfers"
     );
     assert_eq!(
@@ -222,13 +222,13 @@ fn test_snark_update_same_block_sequential_seqnos() {
 
     assert_eq!(
         fixture.account_balance(recipient1_id),
-        BitcoinAmount::from_sat(10_000_000),
+        BitcoinAmount::try_from(10_000_000).unwrap(),
         "Recipient1 should receive the first transfer"
     );
 
     assert_eq!(
         fixture.account_balance(recipient2_id),
-        BitcoinAmount::from_sat(20_000_000),
+        BitcoinAmount::try_from(20_000_000).unwrap(),
         "Recipient2 should receive the second transfer"
     );
 }
@@ -241,7 +241,7 @@ fn test_snark_update_same_block_duplicate_seqno_fails() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(sender_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -250,11 +250,11 @@ fn test_snark_update_same_block_duplicate_seqno_fails() {
     let err = fixture
         .child_block()
         .with_sau(sender_acct_id, |sau| {
-            sau.transfer(recipient1_id, BitcoinAmount::from_sat(10_000_000))
+            sau.transfer(recipient1_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .with_sau(sender_acct_id, |sau| {
-            sau.transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
+            sau.transfer(recipient2_id, BitcoinAmount::try_from(20_000_000).unwrap())
                 .force_seqno(0)
                 .with_state_root(make_state_root(3))
         })
@@ -275,7 +275,7 @@ fn test_snark_update_same_block_duplicate_seqno_fails() {
 
     assert_eq!(
         fixture.account_balance(sender_acct_id),
-        BitcoinAmount::from_sat(90_000_000),
+        BitcoinAmount::try_from(90_000_000).unwrap(),
         "First same-block transfer should remain applied"
     );
     assert_eq!(
@@ -286,13 +286,13 @@ fn test_snark_update_same_block_duplicate_seqno_fails() {
 
     assert_eq!(
         fixture.account_balance(recipient1_id),
-        BitcoinAmount::from_sat(10_000_000),
+        BitcoinAmount::try_from(10_000_000).unwrap(),
         "Recipient1 should receive the first transfer"
     );
 
     assert_eq!(
         fixture.account_balance(recipient2_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient2 should not receive the duplicate-seqno transfer"
     );
 }
@@ -305,7 +305,7 @@ fn test_snark_update_partial_balance_multiple_outputs() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -314,8 +314,8 @@ fn test_snark_update_partial_balance_multiple_outputs() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient1_id, BitcoinAmount::from_sat(60_000_000))
-                .transfer(recipient2_id, BitcoinAmount::from_sat(50_000_000))
+            sau.transfer(recipient1_id, BitcoinAmount::try_from(60_000_000).unwrap())
+                .transfer(recipient2_id, BitcoinAmount::try_from(50_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -328,19 +328,19 @@ fn test_snark_update_partial_balance_multiple_outputs() {
     // Verify no partial execution - all balances should be unchanged
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000),
+        BitcoinAmount::try_from(100_000_000).unwrap(),
         "Sender balance should be unchanged"
     );
 
     assert_eq!(
         fixture.account_balance(recipient1_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient1 should have no balance"
     );
 
     assert_eq!(
         fixture.account_balance(recipient2_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient2 should have no balance"
     );
 }
@@ -352,7 +352,7 @@ fn test_snark_update_zero_value_transfer() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -360,14 +360,14 @@ fn test_snark_update_zero_value_transfer() {
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(0))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(0).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute();
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000),
+        BitcoinAmount::try_from(100_000_000).unwrap(),
         "Sender balance should be unchanged"
     );
     assert_eq!(
@@ -377,7 +377,7 @@ fn test_snark_update_zero_value_transfer() {
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient balance should remain 0"
     );
 }
@@ -389,7 +389,7 @@ fn test_snark_update_from_zero_balance_account() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -397,7 +397,7 @@ fn test_snark_update_from_zero_balance_account() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(1))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(1).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -416,7 +416,7 @@ fn test_snark_update_from_zero_balance_account() {
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(0))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(0).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute();
@@ -428,21 +428,25 @@ fn test_snark_update_from_zero_balance_account() {
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Balance should remain zero"
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient should have zero balance"
     );
 
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(0))
-                .transfer(snark_acct_id, BitcoinAmount::from_sat(0))
-                .output_message(BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount::from_sat(0), vec![])
+            sau.transfer(recipient_id, BitcoinAmount::try_from(0).unwrap())
+                .transfer(snark_acct_id, BitcoinAmount::try_from(0).unwrap())
+                .output_message(
+                    BRIDGE_GATEWAY_ACCT_ID,
+                    BitcoinAmount::try_from(0).unwrap(),
+                    vec![],
+                )
                 .with_state_root(make_state_root(3))
         })
         .execute();
@@ -460,21 +464,21 @@ fn test_snark_update_self_transfer() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .execute_genesis();
 
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(snark_acct_id, BitcoinAmount::from_sat(30_000_000))
+            sau.transfer(snark_acct_id, BitcoinAmount::try_from(30_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute();
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000),
+        BitcoinAmount::try_from(100_000_000).unwrap(),
         "Balance should be unchanged after self-transfer"
     );
     assert_eq!(
@@ -492,7 +496,7 @@ fn test_snark_update_exact_balance_transfer() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .with_genesis_empty_account(second_recipient_id)
@@ -501,14 +505,14 @@ fn test_snark_update_exact_balance_transfer() {
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(100_000_000))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(100_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute();
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Sender should have 0 balance"
     );
     assert_eq!(
@@ -518,14 +522,14 @@ fn test_snark_update_exact_balance_transfer() {
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(100_000_000),
+        BitcoinAmount::try_from(100_000_000).unwrap(),
         "Recipient should receive entire balance"
     );
 
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(second_recipient_id, BitcoinAmount::from_sat(1))
+            sau.transfer(second_recipient_id, BitcoinAmount::try_from(1).unwrap())
                 .with_state_root(make_state_root(3))
         })
         .execute_err();
@@ -536,7 +540,7 @@ fn test_snark_update_exact_balance_transfer() {
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Sender balance should remain zero after failed transfer from drained balance"
     );
     assert_eq!(
@@ -546,7 +550,7 @@ fn test_snark_update_exact_balance_transfer() {
     );
     assert_eq!(
         fixture.account_balance(second_recipient_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Second recipient should not receive failed transfer from drained balance"
     );
 }

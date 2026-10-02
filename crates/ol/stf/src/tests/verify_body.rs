@@ -309,7 +309,7 @@ fn test_verify_block_allows_max_withdrawal_logs() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(initial_balance))
+            acct.with_balance(BitcoinAmount::try_from(initial_balance).unwrap())
         })
         .execute_genesis();
     let genesis = fixture.last_completed_block().clone();
@@ -335,7 +335,7 @@ fn test_verify_block_allows_max_withdrawal_logs() {
     let (ol_account_state, account_state) = verify_state.expect_snark_account_state(snark_acct_id);
     assert_eq!(
         ol_account_state.balance(),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Verified state should spend every withdrawal output"
     );
     assert_eq!(
@@ -353,7 +353,7 @@ fn test_assemble_rejects_withdrawal_logs_over_limit() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(initial_balance))
+            acct.with_balance(BitcoinAmount::try_from(initial_balance).unwrap())
         })
         .execute_genesis();
     let block = fixture.child_block();
@@ -509,7 +509,7 @@ fn with_withdrawal_log_saus<'a>(
             for _ in 0..msg_count {
                 sau = sau.output_message(
                     BRIDGE_GATEWAY_ACCT_ID,
-                    BitcoinAmount::from_sat(WITHDRAWAL_LOG_AMOUNT),
+                    BitcoinAmount::try_from(WITHDRAWAL_LOG_AMOUNT).unwrap(),
                     make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x15)),
                 );
             }
