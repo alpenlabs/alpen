@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use bitcoin::hashes::Hash;
-use strata_asm_common::{AsmLogEntry, Subprotocol, VerifiedAuxData};
+use strata_asm_common::{AsmLogEntry, SectionStateExt, Subprotocol, VerifiedAuxData};
 use strata_asm_logs::{CheckpointTipUpdate, constants::AsmLogTypeId};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
@@ -442,6 +442,7 @@ mod tests {
             network: Network::Bitcoin,
         };
         let anchor_state = AnchorState {
+            spec_id: 0,
             magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
             chain_view: ChainViewState {
                 pow_state: HeaderVerificationState::init(anchor),

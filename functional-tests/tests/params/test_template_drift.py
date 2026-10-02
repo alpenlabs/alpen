@@ -122,12 +122,15 @@ def generate_raw_params(tmpdir):
 
     assert ol_path.exists(), f"ol-params not generated at {ol_path}"
 
-    # gen-asm-params requires at least one operator key
+    # gen-asm-params requires operator and checkpoint-signing keys.
     dummy_op_pk = "02" + "ab" * 32
+    dummy_seq_pk = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
     dummy_safe_harbour = "04" + "ab" * 32
     run_datatool(
         [
             "gen-asm-params",
+            "--seq-pk",
+            dummy_seq_pk,
             "--l1-anchor-file",
             str(L1_ANCHOR),
             "--ol-params",

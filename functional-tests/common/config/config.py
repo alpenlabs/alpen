@@ -142,7 +142,20 @@ class EpochSealingConfig:
 
 
 @dataclass
+class AsmExecutionTargetConfig:
+    predicate: str
+    spec_id: int
+
+
+@dataclass
+class AsmExecutionConfig:
+    genesis_predicate: str
+    targets: list[AsmExecutionTargetConfig]
+
+
+@dataclass
 class StrataConfig:
+    asm_execution: AsmExecutionConfig
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
     btcio: BtcioConfig = field(default_factory=BtcioConfig)

@@ -86,20 +86,22 @@ impl CheckpointTestHarness {
     }
 
     pub fn sequencer_predicate(&self) -> PredicateKey {
-        PredicateKey::new(
+        PredicateKey::try_new(
             PredicateTypeId::Bip340Schnorr,
             self.sequencer_pubkey.clone(),
         )
+        .expect("32-byte Schnorr key fits predicate condition limit")
     }
 
     pub fn checkpoint_predicate(&self) -> PredicateKey {
-        PredicateKey::new(
+        PredicateKey::try_new(
             PredicateTypeId::Bip340Schnorr,
             self.checkpoint_predicate
                 .verifying_key()
                 .to_bytes()
                 .to_vec(),
         )
+        .expect("32-byte Schnorr key fits predicate condition limit")
     }
 
     /// Returns the sequencer's x-only public key bytes (used as envelope pubkey).

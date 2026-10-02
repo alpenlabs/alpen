@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitcoin = { workspace = true, optional = true }
 bitcoin-bosd.workspace = true
 ssz_primitives = { workspace = true, optional = true }
 ssz_types = { workspace = true, optional = true }
@@ -30,6 +31,7 @@ strata-snark-acct-types.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+bitcoin.workspace = true
 ssz_primitives.workspace = true
 ssz_types.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
@@ -43,6 +45,7 @@ workspace = true
 
 [features]
 test-utils = [
+  "dep:bitcoin",
   "dep:ssz_primitives",
   "dep:ssz_types",
   "dep:strata-ol-params",

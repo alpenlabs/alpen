@@ -119,6 +119,7 @@ impl OutputTransfer {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Amount;
     use proptest::prelude::*;
     use strata_identifiers::Hash;
     use strata_test_utils_ssz::ssz_proptest;
@@ -155,10 +156,10 @@ mod tests {
 
         ssz_proptest!(
             SubjectDepositData,
-            (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+            (any::<[u8; 32]>(), 0..=Amount::MAX_MONEY.to_sat()).prop_map(|(dest, sats)| {
                 SubjectDepositData {
                     dest: SubjectId::new(dest),
-                    value: BitcoinAmount::from_sat(sats),
+                    value: BitcoinAmount::try_from(sats).unwrap(),
                 }
             })
         );
@@ -166,7 +167,7 @@ mod tests {
         #[test]
         fn test_new() {
             let dest = SubjectId::new([0xcc; 32]);
-            let value = BitcoinAmount::from_sat(1000);
+            let value = BitcoinAmount::try_from(1000).unwrap();
             let deposit = SubjectDepositData::new(dest, value);
 
             assert_eq!(deposit.dest(), dest);
@@ -180,10 +181,10 @@ mod tests {
         ssz_proptest!(
             ExecInputs,
             prop::collection::vec(
-                (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+                (any::<[u8; 32]>(), 0..=Amount::MAX_MONEY.to_sat()).prop_map(|(dest, sats)| {
                     SubjectDepositData {
                         dest: SubjectId::new(dest),
-                        value: BitcoinAmount::from_sat(sats),
+                        value: BitcoinAmount::try_from(sats).unwrap(),
                     }
                 }),
                 0..10
@@ -204,8 +205,10 @@ mod tests {
         #[test]
         fn test_add_subject_deposit() {
             let mut inputs = ExecInputs::new_empty();
-            let deposit =
-                SubjectDepositData::new(SubjectId::new([0xdd; 32]), BitcoinAmount::from_sat(500));
+            let deposit = SubjectDepositData::new(
+                SubjectId::new([0xdd; 32]),
+                BitcoinAmount::try_from(500).unwrap(),
+            );
 
             inputs.add_subject_deposit(deposit);
             assert_eq!(inputs.total_inputs(), 1);
@@ -217,10 +220,10 @@ mod tests {
 
         ssz_proptest!(
             OutputTransfer,
-            (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+            (any::<[u8; 32]>(), 0..=Amount::MAX_MONEY.to_sat()).prop_map(|(dest, sats)| {
                 OutputTransfer {
                     dest: AccountId::new(dest),
-                    value: BitcoinAmount::from_sat(sats),
+                    value: BitcoinAmount::try_from(sats).unwrap(),
                 }
             })
         );
@@ -228,7 +231,7 @@ mod tests {
         #[test]
         fn test_new() {
             let dest = AccountId::new([0xee; 32]);
-            let value = BitcoinAmount::from_sat(2000);
+            let value = BitcoinAmount::try_from(2000).unwrap();
             let transfer = OutputTransfer::new(dest, value);
 
             assert_eq!(transfer.dest(), dest);
@@ -243,10 +246,10 @@ mod tests {
             ExecOutputs,
             (
                 prop::collection::vec(
-                    (any::<[u8; 32]>(), any::<u64>()).prop_map(|(dest, sats)| {
+                    (any::<[u8; 32]>(), 0..=Amount::MAX_MONEY.to_sat()).prop_map(|(dest, sats)| {
                         OutputTransfer {
                             dest: AccountId::new(dest),
-                            value: BitcoinAmount::from_sat(sats),
+                            value: BitcoinAmount::try_from(sats).unwrap(),
                         }
                     }),
                     0..10
@@ -254,14 +257,14 @@ mod tests {
                 prop::collection::vec(
                     (
                         any::<[u8; 32]>(),
-                        any::<u64>(),
+                        0..=Amount::MAX_MONEY.to_sat(),
                         prop::collection::vec(any::<u8>(), 0..50)
                     )
                         .prop_map(|(dest, sats, data)| {
                             OutputMessage::new(
                                 AccountId::new(dest),
                                 strata_acct_types::MsgPayload::from_bytes(
-                                    BitcoinAmount::from_sat(sats),
+                                    BitcoinAmount::try_from(sats).unwrap(),
                                     data,
                                 )
                                 .expect("message payload bytes must fit within SSZ max length"),

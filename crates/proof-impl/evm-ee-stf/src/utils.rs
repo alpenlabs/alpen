@@ -1,4 +1,5 @@
 use alpen_reth_evm::address_to_subject;
+use bitcoin::Amount;
 use strata_ol_bridge_types::WithdrawalIntent;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload, l1::BitcoinAmount};
 use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateInput, UpdateOutput};
@@ -13,7 +14,7 @@ pub fn generate_exec_update(el_proof_pp: &EvmBlockStfOutput) -> ExecSegment {
         .map(|intent| {
             // TODO(STR-3684): proper error handling
             WithdrawalIntent::new(
-                BitcoinAmount::from_sat(intent.amt),
+                BitcoinAmount::from(Amount::from_sat(intent.amt)),
                 intent.destination.clone(),
                 intent.selected_operator,
             )

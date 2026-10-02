@@ -576,6 +576,12 @@ mod tests {
     fn fullnode_config() -> Config {
         toml::from_str(
             r#"
+            [asm_execution]
+            genesis_predicate = "AlwaysAccept"
+            [[asm_execution.targets]]
+            predicate = "AlwaysAccept"
+            spec_id = 0
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"
@@ -778,7 +784,8 @@ mod tests {
         };
 
         let configured = NativeCheckpointPredicateKey.predicate_key().unwrap();
-        let expected = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]);
+        let expected =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]).unwrap();
 
         let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
 

@@ -1,5 +1,6 @@
 //! Global state variables that are always accessible.
 
+use bitcoin::Amount;
 use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_identifiers::Slot;
 use strata_ledger_types::Coin;
@@ -41,12 +42,12 @@ impl GlobalState {
 
     /// Gets the amount of funds in limbo.
     pub fn limbo_funds(&self) -> BitcoinAmount {
-        BitcoinAmount::from_sat(self.limbo_funds_sats)
+        Amount::from_sat(self.limbo_funds_sats).into()
     }
 
     /// Attempts to add limbo funds.
     pub fn add_limbo_funds(&mut self, amt: BitcoinAmount) -> bool {
-        let Some(new_lf) = self.limbo_funds().checked_add(amt) else {
+        let Some(new_lf) = self.limbo_funds().checked_add(amt.into()) else {
             return false;
         };
         self.limbo_funds_sats = new_lf.to_sat();
@@ -70,12 +71,12 @@ impl GlobalState {
     pub fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> Option<Coin> {
         let lf = self.limbo_funds();
 
-        let new_lf = lf.checked_sub(amt)?;
+        let new_lf = lf.checked_sub(amt.into())?;
 
         // This sanity check should be optimized out.
         assert_eq!(
-            new_lf.checked_add(amt),
-            Some(lf),
+            new_lf.checked_add(amt.into()),
+            Some(lf.into()),
             "ol/state: inconsistent limbo funds change"
         );
 

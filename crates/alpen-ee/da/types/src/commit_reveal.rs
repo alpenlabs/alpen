@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use bitcoin::{opcodes::all::OP_RETURN, script::Instruction, Transaction, Txid};
-use strata_l1_envelope_fmt::{errors::EnvelopeParseError, parser::parse_envelope_payload};
+use strata_l1_envelope_fmt::{parse_envelope_payload, EnvelopeParseError};
 use thiserror::Error;
 
 /// Errors raised while parsing DA commit/reveal transactions.
@@ -163,8 +163,7 @@ fn extract_reveal_chunk(
         .witness
         .taproot_leaf_script()
         .ok_or(DaParseError::RevealMissingLeafScript)?;
-    let script = leaf.script.into();
-    let chunk = parse_envelope_payload(&script)?;
+    let chunk = parse_envelope_payload(leaf.script)?;
 
     Ok((vout, chunk))
 }

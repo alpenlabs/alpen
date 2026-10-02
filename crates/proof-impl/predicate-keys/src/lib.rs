@@ -132,7 +132,8 @@ impl PredicateKeyProvider for Sp1Groth16PredicateKey {
         .map_err(|e| PredicateKeyError::Sp1Verifier(e.to_string()))?;
         let condition = sp1_verifier.to_uncompressed_bytes();
 
-        Ok(PredicateKey::new(PredicateTypeId::Sp1Groth16, condition))
+        PredicateKey::try_new(PredicateTypeId::Sp1Groth16, condition)
+            .map_err(|e| PredicateKeyError::Sp1Verifier(e.to_string()))
     }
 }
 
@@ -166,14 +167,16 @@ mod tests {
 
     #[test]
     fn accepts_equal_predicate_keys() {
-        let predicate = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![1, 2, 3]);
+        let predicate =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![1, 2, 3]).unwrap();
 
         validate_expected_predicate_key(&predicate, &predicate).unwrap();
     }
 
     #[test]
     fn validates_predicate_key_provider_output() {
-        let predicate = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![1, 2, 3]);
+        let predicate =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![1, 2, 3]).unwrap();
         let provider = StaticPredicateKeyProvider(predicate.clone());
 
         validate_predicate_key(&predicate, &provider).unwrap();
@@ -181,8 +184,9 @@ mod tests {
 
     #[test]
     fn mismatch_reports_type_length_and_conditions() {
-        let configured = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0xaa; 32]);
-        let expected = PredicateKey::new(PredicateTypeId::Sp1Groth16, vec![0xbb; 16]);
+        let configured =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0xaa; 32]).unwrap();
+        let expected = PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0xbb; 16]).unwrap();
 
         let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
 
@@ -211,8 +215,10 @@ mod tests {
 
     #[test]
     fn mismatch_reports_same_type_and_length_with_different_conditions() {
-        let configured = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0xaa; 32]);
-        let expected = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0xbb; 32]);
+        let configured =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0xaa; 32]).unwrap();
+        let expected =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0xbb; 32]).unwrap();
 
         let err = validate_expected_predicate_key(&configured, &expected)
             .unwrap_err()

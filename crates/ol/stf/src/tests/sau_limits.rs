@@ -1,5 +1,6 @@
 //! Tests for SAU value and integer boundary behavior.
 
+use bitcoin::Amount;
 use strata_acct_types::{BitcoinAmount, MAX_MESSAGES, MAX_TRANSFERS};
 use strata_ledger_types::ISnarkAccountState;
 use strata_ol_chain_types::SAU_MAX_EXTRA_DATA_BYTES;
@@ -13,7 +14,7 @@ fn test_snark_update_max_bitcoin_supply() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::MAX_MONEY)
+            acct.with_balance(BitcoinAmount::from(Amount::MAX_MONEY))
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -21,8 +22,8 @@ fn test_snark_update_max_bitcoin_supply() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::MAX_MONEY)
-                .transfer(recipient_id, BitcoinAmount::from_sat(1))
+            sau.transfer(recipient_id, BitcoinAmount::from(Amount::MAX_MONEY))
+                .transfer(recipient_id, BitcoinAmount::try_from(1).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -34,7 +35,7 @@ fn test_snark_update_max_bitcoin_supply() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::MAX_MONEY,
+        BitcoinAmount::from(Amount::MAX_MONEY),
         "Balance should be unchanged after failed update"
     );
     assert_eq!(
@@ -44,7 +45,7 @@ fn test_snark_update_max_bitcoin_supply() {
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient should not receive failed update"
     );
 }
@@ -54,11 +55,12 @@ fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 
-    let more_than_max_bitcoin = BitcoinAmount::from_sat(BitcoinAmount::MAX_MONEY.to_sat() + 1);
+    let more_than_max_bitcoin =
+        BitcoinAmount::from(Amount::from_sat(Amount::MAX_MONEY.to_sat() + 1));
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
             // Intentionally above MAX_MONEY to pin current BitcoinAmount behavior.
-            acct.with_balance(BitcoinAmount::MAX)
+            acct.with_balance(BitcoinAmount::from(Amount::MAX))
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -71,12 +73,12 @@ fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
         })
         .execute();
 
-    let expected_sender_balance = BitcoinAmount::MAX
-        .checked_sub(more_than_max_bitcoin)
+    let expected_sender_balance = BitcoinAmount::from(Amount::MAX)
+        .checked_sub(more_than_max_bitcoin.into())
         .expect("MAX - (MAX_MONEY + 1) should not underflow");
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        expected_sender_balance,
+        expected_sender_balance.into(),
         "Sender balance should be reduced by transfer amount"
     );
     assert_eq!(
@@ -100,7 +102,7 @@ fn test_snark_update_overflow_u64_boundary() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(initial_balance))
+            acct.with_balance(BitcoinAmount::from(Amount::from_sat(initial_balance)))
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -109,9 +111,12 @@ fn test_snark_update_overflow_u64_boundary() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient1_id, BitcoinAmount::from_sat(u64::MAX - 100))
-                .transfer(recipient2_id, BitcoinAmount::from_sat(101))
-                .with_state_root(make_state_root(2))
+            sau.transfer(
+                recipient1_id,
+                BitcoinAmount::from(Amount::from_sat(u64::MAX - 100)),
+            )
+            .transfer(recipient2_id, BitcoinAmount::try_from(101).unwrap())
+            .with_state_root(make_state_root(2))
         })
         .execute_err();
 
@@ -121,17 +126,17 @@ fn test_snark_update_overflow_u64_boundary() {
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(initial_balance),
+        BitcoinAmount::from(Amount::from_sat(initial_balance)),
         "Balance should be unchanged after failed update"
     );
     assert_eq!(
         fixture.account_balance(recipient1_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient1 should have no balance after failed update"
     );
     assert_eq!(
         fixture.account_balance(recipient2_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient2 should have no balance after failed update"
     );
 }
@@ -145,7 +150,7 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
             // Intentionally above MAX_MONEY to exercise SAU effect-math overflow.
-            acct.with_balance(BitcoinAmount::MAX)
+            acct.with_balance(BitcoinAmount::from(Amount::MAX))
         })
         .with_genesis_empty_account(recipient1_id)
         .with_genesis_empty_account(recipient2_id)
@@ -154,8 +159,8 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient1_id, BitcoinAmount::MAX)
-                .transfer(recipient2_id, BitcoinAmount::from_sat(1))
+            sau.transfer(recipient1_id, BitcoinAmount::from(Amount::MAX))
+                .transfer(recipient2_id, BitcoinAmount::try_from(1).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -166,7 +171,7 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::MAX,
+        BitcoinAmount::from(Amount::MAX),
         "Balance should be unchanged after failed update"
     );
     assert_eq!(
@@ -176,12 +181,12 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
     );
     assert_eq!(
         fixture.account_balance(recipient1_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient1 should have no balance after failed update"
     );
     assert_eq!(
         fixture.account_balance(recipient2_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Recipient2 should have no balance after failed update"
     );
 }
@@ -193,7 +198,7 @@ fn test_snark_update_allows_max_transfer_count() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(MAX_TRANSFERS))
+            acct.with_balance(BitcoinAmount::try_from(MAX_TRANSFERS).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -203,7 +208,7 @@ fn test_snark_update_allows_max_transfer_count() {
         .with_sau(snark_acct_id, |sau| {
             let mut sau = sau;
             for _ in 0..MAX_TRANSFERS {
-                sau = sau.transfer(recipient_id, BitcoinAmount::from_sat(1));
+                sau = sau.transfer(recipient_id, BitcoinAmount::try_from(1).unwrap());
             }
             sau.with_state_root(make_state_root(2))
         })
@@ -211,7 +216,7 @@ fn test_snark_update_allows_max_transfer_count() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Sender should spend the max-count transfer total"
     );
     assert_eq!(
@@ -221,7 +226,7 @@ fn test_snark_update_allows_max_transfer_count() {
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(MAX_TRANSFERS),
+        BitcoinAmount::try_from(MAX_TRANSFERS).unwrap(),
         "Recipient should receive every max-count transfer"
     );
 }
@@ -234,7 +239,7 @@ fn test_snark_update_builder_rejects_transfer_count_over_limit() {
 
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .execute_genesis();
 
@@ -252,10 +257,10 @@ fn test_snark_update_allows_max_message_count() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(sender_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .with_genesis_snark_account(recipient_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .execute_genesis();
 
@@ -264,7 +269,11 @@ fn test_snark_update_allows_max_message_count() {
         .with_sau(sender_acct_id, |sau| {
             let mut sau = sau;
             for _ in 0..MAX_MESSAGES {
-                sau = sau.output_message(recipient_id, BitcoinAmount::from_sat(0), vec![1, 2, 3]);
+                sau = sau.output_message(
+                    recipient_id,
+                    BitcoinAmount::try_from(0).unwrap(),
+                    vec![1, 2, 3],
+                );
             }
             sau.with_state_root(make_state_root(2))
         })
@@ -293,7 +302,7 @@ fn test_snark_update_builder_rejects_message_count_over_limit() {
 
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .execute_genesis();
 
@@ -310,7 +319,7 @@ fn test_snark_update_allows_max_extra_data() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .execute_genesis();
 
@@ -342,7 +351,7 @@ fn test_snark_update_builder_rejects_extra_data_over_limit() {
 
     let fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .execute_genesis();
 
@@ -360,7 +369,7 @@ fn test_snark_update_allows_max_balance_transfer() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::MAX_MONEY)
+            acct.with_balance(BitcoinAmount::from(Amount::MAX_MONEY))
         })
         .with_genesis_empty_account(recipient_id)
         .with_genesis_empty_account(second_recipient_id)
@@ -369,14 +378,14 @@ fn test_snark_update_allows_max_balance_transfer() {
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::MAX_MONEY)
+            sau.transfer(recipient_id, BitcoinAmount::from(Amount::MAX_MONEY))
                 .with_state_root(make_state_root(2))
         })
         .execute();
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Sender should have 0 balance after transferring MAX_MONEY"
     );
     assert_eq!(
@@ -386,14 +395,14 @@ fn test_snark_update_allows_max_balance_transfer() {
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::MAX_MONEY,
+        BitcoinAmount::from(Amount::MAX_MONEY),
         "Recipient should receive MAX_MONEY"
     );
 
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(second_recipient_id, BitcoinAmount::from_sat(1))
+            sau.transfer(second_recipient_id, BitcoinAmount::try_from(1).unwrap())
                 .with_state_root(make_state_root(3))
         })
         .execute_err();
@@ -404,7 +413,7 @@ fn test_snark_update_allows_max_balance_transfer() {
     );
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Sender balance should remain zero after failed transfer from drained balance"
     );
     assert_eq!(
@@ -414,7 +423,7 @@ fn test_snark_update_allows_max_balance_transfer() {
     );
     assert_eq!(
         fixture.account_balance(second_recipient_id),
-        BitcoinAmount::from_sat(0),
+        BitcoinAmount::try_from(0).unwrap(),
         "Second recipient should not receive failed transfer from drained balance"
     );
 }

@@ -84,7 +84,7 @@ fn verify_gam_tx(gam: &GamTxPayload, fx: &TxEffects) -> ExecResult<()> {
     // 2. Extract the message we want to send.
     let mut msgs_iter = fx.messages_iter();
     let msg = match (msgs_iter.next(), msgs_iter.next()) {
-        (Some(m), None) if m.payload().value().is_zero() => m,
+        (Some(m), None) if m.payload().value().to_sat() == 0 => m,
         _ => {
             return Err(ExecError::TxStructureCheckFailed(
                 "multiple messages or nonzero value",
@@ -234,7 +234,7 @@ fn debit_source<S: IStateAccessorMut>(
     source: AccountId,
     total_sent: BitcoinAmount,
 ) -> ExecResult<Coin> {
-    if total_sent.is_zero() {
+    if total_sent.to_sat() == 0 {
         return Ok(Coin::zero());
     }
 
@@ -286,7 +286,7 @@ pub fn verify_effects_safe<S: IStateAccessorMut>(
     state: &S,
     acct: &S::AccountState,
 ) -> ExecResult<()> {
-    let mut total_sent = BitcoinAmount::zero();
+    let mut total_sent = BitcoinAmount::default();
 
     // We're actually making the same checks in both places, so we can chain the
     // iterators like this.
@@ -301,8 +301,9 @@ pub fn verify_effects_safe<S: IStateAccessorMut>(
         }
 
         total_sent = total_sent
-            .checked_add(amt)
-            .ok_or(ExecError::AmountOverflow)?;
+            .checked_add(amt.into())
+            .ok_or(ExecError::AmountOverflow)?
+            .into();
     }
 
     if total_sent > acct.balance() {

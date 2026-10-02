@@ -179,7 +179,7 @@ fn test_exec_single_block_epoch_persists_before_summary() {
         0,
         snark_serial,
         SubjectId::from([42u8; 32]),
-        BitcoinAmount::from_sat(150_000_000),
+        BitcoinAmount::try_from(150_000_000).unwrap(),
     );
     run_terminal(&mut state, &mut blocks, &genesis_header, manifest);
     let terminal_block = blocks.pop().expect("terminal block built");

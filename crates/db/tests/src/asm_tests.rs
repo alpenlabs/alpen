@@ -34,6 +34,7 @@ fn make_anchor_state() -> AnchorState {
     };
 
     AnchorState {
+        spec_id: 0,
         magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
         chain_view: ChainViewState {
             pow_state: strata_asm_common::HeaderVerificationState::init(anchor),

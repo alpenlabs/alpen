@@ -71,7 +71,8 @@ impl EeChunkProgram {
     /// functional-test params so the resulting witness verifies under `Bip340Schnorr`.
     pub fn test_predicate_key() -> PredicateKey {
         let pk = test_signing_key().verifying_key().to_bytes().to_vec();
-        PredicateKey::new(PredicateTypeId::Bip340Schnorr, pk)
+        PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, pk)
+            .expect("32-byte Schnorr key fits predicate condition limit")
     }
 
     /// Executes the chunk proof program using the native host for testing.

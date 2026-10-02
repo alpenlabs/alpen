@@ -1,6 +1,14 @@
 # SP1 E2E CI — OL sequencer config
 # Bitcoin creds overridden by entrypoint from env vars.
 
+# Initial native ASM spec, independent of the checkpoint proof backend.
+# Chains with different ASM genesis authority must replace both predicates.
+[asm_execution]
+genesis_predicate = "AlwaysAccept"
+[[asm_execution.targets]]
+predicate = "AlwaysAccept"
+spec_id = 0
+
 [client]
 rpc_host = "0.0.0.0"
 rpc_port = 8432

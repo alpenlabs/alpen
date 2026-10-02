@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bitcoin.workspace = true
 strata-acct-types.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-da-framework.workspace = true

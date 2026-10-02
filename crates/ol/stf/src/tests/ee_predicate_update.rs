@@ -11,7 +11,7 @@ use crate::test_utils::*;
 /// Builds a non-trivial predicate key with a unique condition payload, used to
 /// distinguish "before" and "after" states in tests.
 fn make_marker_predicate(marker: &[u8]) -> PredicateKey {
-    PredicateKey::new(PredicateTypeId::AlwaysAccept, marker.to_vec())
+    PredicateKey::try_new(PredicateTypeId::AlwaysAccept, marker.to_vec()).unwrap()
 }
 
 #[test]

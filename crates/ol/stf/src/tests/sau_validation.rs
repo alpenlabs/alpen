@@ -14,7 +14,7 @@ fn test_snark_update_invalid_sequence_number() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -25,7 +25,7 @@ fn test_snark_update_invalid_sequence_number() {
         .child_block()
         .with_sau(snark_acct_id, |sau| {
             sau.force_seqno(5)
-                .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+                .transfer(recipient_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -49,7 +49,7 @@ fn test_snark_update_replay_across_blocks_fails() {
     let transfer_amount = 10_000_000;
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -57,8 +57,11 @@ fn test_snark_update_replay_across_blocks_fails() {
     let block1 = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(transfer_amount))
-                .with_state_root(make_state_root(2))
+            sau.transfer(
+                recipient_id,
+                BitcoinAmount::try_from(transfer_amount).unwrap(),
+            )
+            .with_state_root(make_state_root(2))
         })
         .execute();
     let tx = block1
@@ -71,7 +74,7 @@ fn test_snark_update_replay_across_blocks_fails() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(90_000_000),
+        BitcoinAmount::try_from(90_000_000).unwrap(),
         "sender balance should reflect first execution"
     );
     assert_eq!(
@@ -82,7 +85,7 @@ fn test_snark_update_replay_across_blocks_fails() {
 
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(transfer_amount),
+        BitcoinAmount::try_from(transfer_amount).unwrap(),
         "recipient should receive the first execution"
     );
 
@@ -102,7 +105,7 @@ fn test_snark_update_replay_across_blocks_fails() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(90_000_000),
+        BitcoinAmount::try_from(90_000_000).unwrap(),
         "sender balance should not change after replay failure"
     );
     assert_eq!(
@@ -113,7 +116,7 @@ fn test_snark_update_replay_across_blocks_fails() {
 
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(transfer_amount),
+        BitcoinAmount::try_from(transfer_amount).unwrap(),
         "recipient balance should not change after replay failure"
     );
 }
@@ -125,7 +128,7 @@ fn test_snark_update_insufficient_balance() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(50_000_000))
+            acct.with_balance(BitcoinAmount::try_from(50_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -135,7 +138,7 @@ fn test_snark_update_insufficient_balance() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(100_000_000))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(100_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -155,7 +158,7 @@ fn test_snark_update_nonexistent_recipient() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .execute_genesis();
 
@@ -164,7 +167,7 @@ fn test_snark_update_nonexistent_recipient() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(nonexistent_id, BitcoinAmount::from_sat(10_000_000))
+            sau.transfer(nonexistent_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -221,7 +224,7 @@ fn test_snark_update_rejects_max_sequence_number() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -236,7 +239,7 @@ fn test_snark_update_rejects_max_sequence_number() {
         .child_block()
         .with_sau(snark_acct_id, |sau| {
             sau.force_seqno(u64::MAX)
-                .transfer(recipient_id, BitcoinAmount::from_sat(1))
+                .transfer(recipient_id, BitcoinAmount::try_from(1).unwrap())
                 .with_state_root(make_state_root(2))
         })
         .execute_err()

@@ -7,23 +7,20 @@ use std::{
     str::FromStr,
 };
 
-use bitcoin::{secp256k1::PublicKey, Network, XOnlyPublicKey};
+use bitcoin::{secp256k1::PublicKey, Address, CompressedPublicKey, Network, XOnlyPublicKey};
 use serde::Serialize;
+use strata_asm_admin_types::{ConfirmationDepths, UncheckedThresholdConfig};
 use strata_asm_params::{
-    AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
-    ConfirmationDepths, SubprotocolInstance,
+    AdministrationInitConfig, AsmParams, BridgeInitConfig, CheckpointInitConfig,
+    SubprotocolInstance,
 };
-use strata_asm_proto_bridge_v1_types::SafeHarbourAddress;
+use strata_asm_proto_bridge_v1_types::SafeHarborAddress;
 use strata_btc_types::BitcoinAmount;
-use strata_crypto::{
-    aggregate_schnorr_keys, keys::compressed::CompressedPublicKey,
-    threshold_signature::ThresholdConfig, EvenPublicKey,
-};
+use strata_crypto::{aggregate_schnorr_keys, EvenPublicKey};
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::{BridgeParams, OLParams};
-use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::bitcoin_bosd::{Descriptor, DescriptorType};
 
 use crate::{
@@ -95,14 +92,14 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         pubkeys.push(PublicKey::from_str(key.trim())?);
     }
 
-    // Build admin subprotocol params using the operator keys for all three admin roles.
-    let admin_keys: Vec<CompressedPublicKey> = pubkeys
+    // Each admin role uses the same operator keys, represented as network-specific P2WPKH
+    // addresses.
+    let admin_signers = pubkeys
         .iter()
-        .copied()
-        .map(CompressedPublicKey::from)
+        .map(|key| Address::p2wpkh(&CompressedPublicKey(*key), anchor.network).into_unchecked())
         .collect();
-
-    let threshold = ThresholdConfig::try_new(admin_keys, NonZero::new(1).expect("1 is non-zero"))?;
+    let threshold =
+        UncheckedThresholdConfig::try_new(admin_signers, NonZero::new(1).expect("1 is non-zero"))?;
 
     let depth = cmd.confirmation_depth.unwrap_or(DEFAULT_CONFIRMATION_DEPTH);
     let confirmation_depths = ConfirmationDepths {
@@ -116,7 +113,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         asm_stf_vk_update: depth,
         ee_stf_vk_update: depth,
         defcon3: depth,
-        safe_harbour_address_update: depth,
+        safe_harbor_address_update: depth,
     };
 
     let admin = AdministrationInitConfig::new(
@@ -146,12 +143,12 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let genesis_ol_blkid = *genesis_artifacts.commitment.blkid();
 
     // Build checkpoint config.
-    let sequencer_predicate = resolve_sequencer_predicate(cmd.seq_pk.as_deref())?;
+    let sequencer_key = resolve_sequencer_key(cmd.seq_pk.as_deref())?;
     let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
     let genesis_l1_height = anchor.block.height();
 
     let checkpoint = CheckpointInitConfig {
-        sequencer_predicate,
+        sequencer_key,
         checkpoint_predicate,
         genesis_l1_height,
         genesis_ol_blkid,
@@ -164,15 +161,15 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let safe_harbour_address = resolve_safe_harbour_address(&cmd.safe_harbour_address)?;
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
 
-    let bridge = BridgeV1InitConfig {
+    let bridge = BridgeInitConfig {
         operators,
-        denomination: BitcoinAmount::from_sat(deposit_sats),
+        denomination: BitcoinAmount::try_from(deposit_sats)?,
         assignment_duration: cmd
             .assignment_duration
             .unwrap_or(DEFAULT_ASSIGNMENT_DURATION),
-        operator_fee: BitcoinAmount::from_sat(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE)),
+        operator_fee: BitcoinAmount::try_from(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE))?,
         recovery_delay: cmd.recovery_delay.unwrap_or(DEFAULT_RECOVERY_DELAY),
-        safe_harbour_address,
+        safe_harbor_address: safe_harbour_address,
     };
 
     // Assemble ASM params.
@@ -362,19 +359,13 @@ fn write_cli_network_profile(path: &Path, profile: &CliNetworkProfile) -> anyhow
     Ok(())
 }
 
-fn resolve_sequencer_predicate(seq_pk: Option<&str>) -> anyhow::Result<PredicateKey> {
-    let Some(pk_hex) = seq_pk.map(str::trim) else {
-        return Ok(PredicateKey::always_accept());
-    };
-
-    let xonly = XOnlyPublicKey::from_str(pk_hex)?;
-    Ok(PredicateKey::new(
-        PredicateTypeId::Bip340Schnorr,
-        xonly.serialize().to_vec(),
-    ))
+fn resolve_sequencer_key(seq_pk: Option<&str>) -> anyhow::Result<Buf32> {
+    let pk_hex = seq_pk.ok_or_else(|| anyhow::anyhow!("--seq-pk is required by ASM"))?;
+    let xonly = XOnlyPublicKey::from_str(pk_hex.trim())?;
+    Ok(xonly.serialize().into())
 }
 
-fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourAddress> {
+fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarborAddress> {
     let descriptor = descriptor.trim();
     anyhow::ensure!(
         !descriptor.is_empty(),
@@ -390,7 +381,7 @@ fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourA
         descriptor.type_tag()
     );
 
-    SafeHarbourAddress::try_from(descriptor)
+    SafeHarborAddress::try_from(descriptor)
         .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))
 }
 
@@ -543,21 +534,15 @@ mod tests {
     }
 
     #[test]
-    fn sequencer_predicate_defaults_to_always_accept() {
-        let predicate = resolve_sequencer_predicate(None).expect("default should resolve");
-
-        assert_eq!(predicate.id(), PredicateTypeId::AlwaysAccept.as_u8());
+    fn sequencer_key_is_required() {
+        assert!(resolve_sequencer_key(None).is_err());
     }
 
     #[test]
-    fn sequencer_predicate_uses_bip340_schnorr_pubkey() {
-        let predicate =
-            resolve_sequencer_predicate(Some(TEST_SEQ_PK)).expect("x-only hex should parse");
-        let xonly = XOnlyPublicKey::from_str(TEST_SEQ_PK).expect("x-only hex should parse");
-        let expected_pubkey = xonly.serialize();
-
-        assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
-        assert_eq!(predicate.condition(), expected_pubkey.as_slice());
+    fn sequencer_key_uses_xonly_pubkey() {
+        let key = resolve_sequencer_key(Some(TEST_SEQ_PK)).unwrap();
+        let xonly = XOnlyPublicKey::from_str(TEST_SEQ_PK).unwrap();
+        assert_eq!(key.as_ref(), xonly.serialize().as_slice());
     }
 
     #[test]

@@ -424,13 +424,13 @@ mod tests {
             let msg1 = MessageEntry::new(
                 AccountId::new([1u8; 32]),
                 0,
-                MsgPayload::from_bytes(BitcoinAmount::from_sat(100), vec![])
+                MsgPayload::from_bytes(BitcoinAmount::try_from(100).unwrap(), vec![])
                     .expect("message payload bytes must fit within SSZ max length"),
             );
             let msg2 = MessageEntry::new(
                 AccountId::new([2u8; 32]),
                 0,
-                MsgPayload::from_bytes(BitcoinAmount::from_sat(200), vec![])
+                MsgPayload::from_bytes(BitcoinAmount::try_from(200).unwrap(), vec![])
                     .expect("message payload bytes must fit within SSZ max length"),
             );
             let messages = vec![msg1.clone(), msg2.clone()];

@@ -13,13 +13,13 @@ fn test_snark_update_multiple_output_messages() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_snark_account(recipient1_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .with_genesis_snark_account(recipient2_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .execute_genesis();
     let limbo_before = fixture.state().limbo_funds();
@@ -29,18 +29,18 @@ fn test_snark_update_multiple_output_messages() {
         .with_sau(snark_acct_id, |sau| {
             sau.output_message(
                 recipient1_id,
-                BitcoinAmount::from_sat(10_000_000),
+                BitcoinAmount::try_from(10_000_000).unwrap(),
                 vec![1, 2, 3],
             )
             .output_message(
                 recipient2_id,
-                BitcoinAmount::from_sat(5_000_000),
+                BitcoinAmount::try_from(5_000_000).unwrap(),
                 vec![4, 5, 6],
             )
             // Bridge-gateway non-withdrawal messages are dropped after debiting the sender.
             .output_message(
                 BRIDGE_GATEWAY_ACCT_ID,
-                BitcoinAmount::from_sat(0),
+                BitcoinAmount::try_from(0).unwrap(),
                 vec![7, 8, 9],
             )
             .with_state_root(make_state_root(2))
@@ -49,7 +49,7 @@ fn test_snark_update_multiple_output_messages() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(85_000_000),
+        BitcoinAmount::try_from(85_000_000).unwrap(),
         "Balance should be reduced by total message value"
     );
     assert_eq!(
@@ -77,11 +77,11 @@ fn test_snark_update_transfers_and_messages_combined() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .with_genesis_snark_account(message_recipient_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(0))
+            acct.with_balance(BitcoinAmount::try_from(0).unwrap())
         })
         .execute_genesis();
     let limbo_before = fixture.state().limbo_funds();
@@ -89,16 +89,16 @@ fn test_snark_update_transfers_and_messages_combined() {
     fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(25_000_000))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(25_000_000).unwrap())
                 .output_message(
                     message_recipient_id,
-                    BitcoinAmount::from_sat(10_000_000),
+                    BitcoinAmount::try_from(10_000_000).unwrap(),
                     vec![42, 43, 44],
                 )
                 // Bridge-gateway non-withdrawal messages are dropped after debiting the sender.
                 .output_message(
                     BRIDGE_GATEWAY_ACCT_ID,
-                    BitcoinAmount::from_sat(5_000_000),
+                    BitcoinAmount::try_from(5_000_000).unwrap(),
                     vec![45, 46, 47],
                 )
                 .with_state_root(make_state_root(2))
@@ -107,7 +107,7 @@ fn test_snark_update_transfers_and_messages_combined() {
 
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(60_000_000),
+        BitcoinAmount::try_from(60_000_000).unwrap(),
         "Sender should have 100M - 25M - 15M = 60M"
     );
     assert_eq!(
@@ -118,7 +118,7 @@ fn test_snark_update_transfers_and_messages_combined() {
 
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(25_000_000),
+        BitcoinAmount::try_from(25_000_000).unwrap(),
         "Recipient should receive 25M"
     );
 
@@ -140,7 +140,7 @@ fn assert_snark_received_message(
     let account_state = fixture.expect_snark_account(recipient_id);
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(expected_balance_sat),
+        BitcoinAmount::try_from(expected_balance_sat).unwrap(),
         "message recipient balance should increase"
     );
     assert_eq!(
