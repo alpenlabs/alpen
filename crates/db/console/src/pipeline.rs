@@ -55,21 +55,19 @@ pub enum PipelineTerminal {
 
 /// A bounded functional scan assembled without textual syntax.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PipelinePlan {
+pub struct RowSetPlan {
     scan: ScanPlan,
     filter: Option<ScalarExpression>,
-    selections: Vec<Selection>,
     take: Option<NonZeroUsize>,
-    terminal: PipelineTerminal,
 }
 
-impl PipelinePlan {
-    /// Creates a bounded forward pipeline.
+impl RowSetPlan {
+    /// Creates a bounded forward row selection.
     pub fn scan(table: impl Into<String>, scan_limit: usize) -> ConsoleResult<Self> {
         Self::scan_direction(table, ScanDirection::Forward, scan_limit)
     }
 
-    /// Creates a bounded reverse pipeline.
+    /// Creates a bounded reverse row selection.
     pub fn scan_rev(table: impl Into<String>, scan_limit: usize) -> ConsoleResult<Self> {
         Self::scan_direction(table, ScanDirection::Reverse, scan_limit)
     }
@@ -82,21 +80,13 @@ impl PipelinePlan {
         Ok(Self {
             scan: ScanPlan::new(table, direction, scan_limit)?,
             filter: None,
-            selections: Vec::new(),
             take: None,
-            terminal: PipelineTerminal::Rows,
         })
     }
 
     /// Filters rows with a boolean expression.
     pub fn filter(mut self, expression: ScalarExpression) -> Self {
         self.filter = Some(expression);
-        self
-    }
-
-    /// Projects rows into the named scalar expressions.
-    pub fn select(mut self, selections: Vec<Selection>) -> Self {
-        self.selections = selections;
         self
     }
 
@@ -108,6 +98,49 @@ impl PipelinePlan {
         Ok(self)
     }
 
+    /// Returns the requested table name or alias.
+    pub fn table(&self) -> &str {
+        self.scan.table()
+    }
+}
+
+/// A bounded functional scan assembled without textual syntax.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PipelinePlan {
+    rows: RowSetPlan,
+    selections: Vec<Selection>,
+    terminal: PipelineTerminal,
+}
+
+impl PipelinePlan {
+    /// Creates a bounded forward pipeline.
+    pub fn scan(table: impl Into<String>, scan_limit: usize) -> ConsoleResult<Self> {
+        RowSetPlan::scan(table, scan_limit).map(Self::from)
+    }
+
+    /// Creates a bounded reverse pipeline.
+    pub fn scan_rev(table: impl Into<String>, scan_limit: usize) -> ConsoleResult<Self> {
+        RowSetPlan::scan_rev(table, scan_limit).map(Self::from)
+    }
+
+    /// Filters rows with a boolean expression.
+    pub fn filter(mut self, expression: ScalarExpression) -> Self {
+        self.rows = self.rows.filter(expression);
+        self
+    }
+
+    /// Projects rows into the named scalar expressions.
+    pub fn select(mut self, selections: Vec<Selection>) -> Self {
+        self.selections = selections;
+        self
+    }
+
+    /// Limits matching output rows after filtering.
+    pub fn take(mut self, limit: usize) -> ConsoleResult<Self> {
+        self.rows = self.rows.take(limit)?;
+        Ok(self)
+    }
+
     /// Selects a fixed terminal operation.
     pub fn terminal(mut self, terminal: PipelineTerminal) -> Self {
         self.terminal = terminal;
@@ -116,11 +149,17 @@ impl PipelinePlan {
 
     /// Returns the requested table name or alias.
     pub fn table(&self) -> &str {
-        self.scan.table()
+        self.rows.table()
     }
+}
 
-    pub(crate) fn returns_rows(&self) -> bool {
-        matches!(self.terminal, PipelineTerminal::Rows)
+impl From<RowSetPlan> for PipelinePlan {
+    fn from(rows: RowSetPlan) -> Self {
+        Self {
+            rows,
+            selections: Vec::new(),
+            terminal: PipelineTerminal::Rows,
+        }
     }
 }
 
@@ -132,14 +171,7 @@ pub(crate) fn execute_pipeline(
     let table = registry.table(plan.table())?;
     validate_plan(&plan, table.key_type(), table.value_metadata())?;
 
-    let records = table
-        .scan(plan.scan.direction())?
-        .take(plan.scan.limit().get());
-    let rows = FilteredRows {
-        records: Box::new(records),
-        filter: plan.filter,
-        remaining: plan.take.map(NonZeroUsize::get),
-    };
+    let rows = filtered_rows(table.as_ref(), plan.rows)?;
 
     match plan.terminal {
         PipelineTerminal::Rows => Ok(ConsoleOutput::Rows(project_rows(rows, plan.selections))),
@@ -182,11 +214,7 @@ fn validate_plan(
     key_type: ScalarType,
     metadata: &crate::ValueMetadata,
 ) -> ConsoleResult<()> {
-    if let Some(filter) = &plan.filter {
-        filter
-            .validate(key_type, metadata)?
-            .require(ScalarType::Bool, "pipeline filter")?;
-    }
+    validate_row_set(&plan.rows, key_type, metadata)?;
 
     let mut names = BTreeSet::new();
     for selection in &plan.selections {
@@ -238,6 +266,39 @@ fn validate_plan(
         | PipelineTerminal::Count => {}
     }
     Ok(())
+}
+
+fn validate_row_set(
+    plan: &RowSetPlan,
+    key_type: ScalarType,
+    metadata: &crate::ValueMetadata,
+) -> ConsoleResult<()> {
+    if let Some(filter) = &plan.filter {
+        filter
+            .validate(key_type, metadata)?
+            .require(ScalarType::Bool, "pipeline filter")?;
+    }
+    Ok(())
+}
+
+pub(crate) fn matching_rows(
+    registry: &ConsoleRegistry,
+    plan: RowSetPlan,
+) -> ConsoleResult<RowStream> {
+    let table = registry.table(plan.table())?;
+    validate_row_set(&plan, table.key_type(), table.value_metadata())?;
+    Ok(Box::new(filtered_rows(table.as_ref(), plan)?))
+}
+
+fn filtered_rows(table: &dyn crate::ConsoleTable, plan: RowSetPlan) -> ConsoleResult<FilteredRows> {
+    let records = table
+        .scan(plan.scan.direction())?
+        .take(plan.scan.limit().get());
+    Ok(FilteredRows {
+        records: Box::new(records),
+        filter: plan.filter,
+        remaining: plan.take.map(NonZeroUsize::get),
+    })
 }
 
 struct FilteredRows {

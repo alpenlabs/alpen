@@ -377,8 +377,8 @@ mod tests {
     use proptest::test_runner::TestRunner;
     use strata_db_console::{
         BinaryOperator, ConsoleError, ConsoleExecutor, ConsoleOutput, ConsolePlan, ConsoleScalar,
-        PipelinePlan, PipelineTerminal, RecordFormat, ScalarExpression, ScanDirection, Selection,
-        SourceKind, WriteSession, render_record, write_json_lines,
+        PipelinePlan, PipelineTerminal, RecordFormat, RowSetPlan, ScalarExpression, ScanDirection,
+        Selection, SourceKind, WriteSession, render_record, write_json_lines,
     };
     use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
     use strata_db_types::prover_task::ProverTaskDatabase;
@@ -748,7 +748,7 @@ mod tests {
         let registry = build_console_registry(&backend).expect("test: build console registry");
         let mut session = WriteSession::new(&registry);
         let arguments = [ConsoleScalar::String("operator cancelled".to_owned())];
-        let all_tasks = PipelinePlan::scan("tasks", 2).expect("test: build bounded scan");
+        let all_tasks = RowSetPlan::scan("tasks", 2).expect("test: build bounded scan");
 
         assert!(
             session
@@ -802,7 +802,7 @@ mod tests {
         ));
         session.abort().expect("test: abort stale bulk write");
 
-        let first_task = PipelinePlan::scan("tasks", 2)
+        let first_task = RowSetPlan::scan("tasks", 2)
             .expect("test: build filtered scan")
             .filter(ScalarExpression::binary(
                 BinaryOperator::Equal,

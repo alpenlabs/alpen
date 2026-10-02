@@ -4,10 +4,8 @@ use std::fmt;
 
 use serde::Serialize;
 
-use crate::{
-    ConsoleError, ConsoleExecutor, ConsoleOutput, ConsoleRegistry, ConsoleResult, ConsoleRow,
-    ConsoleScalar, PipelinePlan,
-};
+use crate::pipeline::matching_rows;
+use crate::{ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleRow, ConsoleScalar, RowSetPlan};
 
 /// One record change in a staged write.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -84,22 +82,13 @@ impl<'a> WriteSession<'a> {
     /// Stages one modifier for every row produced by a bounded functional scan.
     pub fn stage_modify_scan(
         &mut self,
-        plan: PipelinePlan,
+        plan: RowSetPlan,
         modifier: &str,
         arguments: &[ConsoleScalar],
     ) -> ConsoleResult<&WritePreview> {
         self.ensure_empty()?;
-        if !plan.returns_rows() {
-            return Err(ConsoleError::invalid_input(
-                "bulk modification pipeline",
-                "the pipeline must return rows",
-            ));
-        }
         let table = plan.table().to_owned();
-        let ConsoleOutput::Rows(rows) = ConsoleExecutor::new(self.registry).execute(plan)? else {
-            unreachable!("row-returning pipeline produced a non-row output");
-        };
-        let keys = rows
+        let keys = matching_rows(self.registry, plan)?
             .map(|row| row.map(|row| row.key))
             .collect::<ConsoleResult<Vec<_>>>()?;
         if keys.is_empty() {
