@@ -11,7 +11,7 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, L1Height, OLBlockCommitment, OLTxId, Slot};
 use strata_ol_chain_types_v1::*;
 use strata_ol_log_budget::LogUsage;
-use strata_ol_mempool::MempoolTxInvalidReason;
+use strata_ol_mempool::{MempoolCandidates, MempoolTxInvalidReason};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::{AccProofCheck, ISnarkAccountState, IStateAccessor, *};
@@ -55,6 +55,58 @@ struct ProcessTransactionsOutput {
     accumulated_da: AccumulatedDaData,
     /// Non-cadence limits requesting an epoch seal, if any.
     sealing_limit_verdict: EpochSealingLimitVerdict,
+}
+
+/// Supplies transactions for one block assembly attempt.
+pub(crate) trait TransactionSource: Send {
+    /// Returns the inclusion limit before iteration starts.
+    fn max_accepted(&self) -> usize;
+
+    /// Returns the next transaction to attempt.
+    fn next(
+        &mut self,
+        blocked_sequences: &HashMap<AccountId, u64>,
+    ) -> Option<(OLTxId, Arc<OLTransactionV1>)>;
+}
+
+/// Selects transactions from a fixed mempool snapshot up to the inclusion limit.
+struct BlockTransactions {
+    candidates: MempoolCandidates,
+    max_accepted: usize,
+}
+
+impl BlockTransactions {
+    /// Fetches a fixed snapshot with shared transaction bodies.
+    async fn fetch(
+        mempool: &impl MempoolProvider,
+        max_accepted: usize,
+    ) -> BlockAssemblyResult<Self> {
+        Ok(Self {
+            candidates: mempool.get_candidates().await?,
+            max_accepted,
+        })
+    }
+}
+
+impl TransactionSource for BlockTransactions {
+    fn max_accepted(&self) -> usize {
+        self.max_accepted
+    }
+
+    fn next(
+        &mut self,
+        blocked_sequences: &HashMap<AccountId, u64>,
+    ) -> Option<(OLTxId, Arc<OLTransactionV1>)> {
+        while let Some(candidate) = self.candidates.next() {
+            if !has_blocked_predecessor(candidate.account_seqno(), blocked_sequences) {
+                return Some((candidate.txid(), candidate.into_transaction()));
+            }
+            if let Some((account, _)) = candidate.account_seqno() {
+                self.candidates.skip_account(account);
+            }
+        }
+        None
+    }
 }
 
 /// Inputs consumed while finalizing a block template.
@@ -221,8 +273,8 @@ where
     let (block_slot, block_epoch) =
         calculate_block_slot_and_epoch(&parent_commitment, parent_state.as_ref());
 
-    // 3. Get transactions from mempool
-    let mempool_txs = MempoolProvider::get_transactions(ctx, max_txs_per_block).await?;
+    // 3. Fetch mempool candidates
+    let mempool_txs = BlockTransactions::fetch(ctx, max_txs_per_block).await?;
 
     // 4. Construct block using the sealing policy decision and manifest fetch gate.
     let output = construct_block(
@@ -282,7 +334,6 @@ pub(crate) fn calculate_block_slot_and_epoch<S: IStateAccessor>(
     fields(
         slot = block_slot,
         epoch = block_epoch,
-        mempool_tx_count = mempool_txs.len(),
     ),
 )]
 pub(crate) async fn construct_block<C, E>(
@@ -292,7 +343,7 @@ pub(crate) async fn construct_block<C, E>(
     parent_state: Arc<C::State>,
     block_slot: Slot,
     block_epoch: Epoch,
-    mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
+    mempool_txs: impl TransactionSource,
     resource_state_before_block: EpochResourceState,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
 where
@@ -626,10 +677,7 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
 /// Consumes `accumulated_da` and returns it with the updated accumulator.
 /// Logs from this block are NOT appended here — they go into `output_buffer`
 /// and must be collected by the caller after manifest processing.
-#[tracing::instrument(
-    skip_all,
-    fields(component = "ol_block_assembly", tx_count = mempool_txs.len())
-)]
+#[tracing::instrument(skip_all, fields(component = "ol_block_assembly"))]
 #[expect(clippy::too_many_arguments, reason = "all arguments are required")]
 fn process_transactions<P, E, S>(
     spec: OLSpecId,
@@ -639,7 +687,7 @@ fn process_transactions<P, E, S>(
     output_buffer: &ExecOutputBuffer,
     parent_state: &S,
     accumulated_batch: WriteBatch,
-    mempool_txs: Vec<(OLTxId, OLTransactionV1)>,
+    mut mempool_txs: impl TransactionSource,
     accumulated_da: AccumulatedDaData,
     epoch_cumulative_manifest_count: u32,
     runtime_params: &OLRuntimeParams,
@@ -674,7 +722,11 @@ where
         accumulator,
     );
 
-    for (txid, mempool_tx) in mempool_txs {
+    let max_accepted = mempool_txs.max_accepted().min(MAX_TXS_PER_BLOCK as usize);
+    while successful_txs.len() < max_accepted {
+        let Some((txid, mempool_tx)) = mempool_txs.next(&blocked_sequences) else {
+            break;
+        };
         let account_seqno = extract_account_seqno(&mempool_tx);
         // A later update needs its predecessor's state, even if its own logs fit.
         if has_blocked_predecessor(account_seqno, &blocked_sequences) {
@@ -697,7 +749,12 @@ where
 
         // Step 1: Validate and generate accumulator proofs, convert to OL transaction.
         // This only reads from state, so no rollback needed on failure.
-        let tx = match add_accumulator_proofs(spec, proof_gen, &staging_state, mempool_tx) {
+        let tx = match add_accumulator_proofs(
+            spec,
+            proof_gen,
+            &staging_state,
+            Arc::unwrap_or_clone(mempool_tx),
+        ) {
             Ok(tx) => tx,
             Err(e) => {
                 let reason = block_assembly_error_to_mempool_reason(&e);
@@ -2794,16 +2851,13 @@ mod tests {
             .build();
         let txid = tx.compute_txid();
 
-        let mempool = env.mempool();
-        mempool.add_transaction(txid, tx.clone());
-        mempool.add_transaction(txid, tx);
-
         let result = env
-            .generate_block_template()
+            .construct_block([(txid, tx.clone()), (txid, tx)])
             .await
             .expect("block generation should succeed");
 
-        let (template, failed_txs, _da) = result.into_parts();
+        let template = result.template;
+        let failed_txs = result.failed_txs;
         let txs = template.body().tx_segment().expect("tx segment").txs();
         assert_eq!(txs.len(), 1, "duplicate replay should not be included");
         assert_eq!(
@@ -2841,16 +2895,13 @@ mod tests {
             .build();
         let tx2_id = tx2.compute_txid();
 
-        let mempool = env.mempool();
-        mempool.add_transaction(tx1_id, tx1);
-        mempool.add_transaction(tx2_id, tx2);
-
         let result = env
-            .generate_block_template()
+            .construct_block([(tx1_id, tx1), (tx2_id, tx2)])
             .await
             .expect("block generation should succeed");
 
-        let (template, failed_txs, _da) = result.into_parts();
+        let template = result.template;
+        let failed_txs = result.failed_txs;
         let txs = template.body().tx_segment().expect("tx segment").txs();
         assert_eq!(txs.len(), 1, "only first seq_no=0 tx should be included");
         assert_eq!(txs[0].compute_txid(), tx1_id);
@@ -2879,16 +2930,13 @@ mod tests {
             .build();
         let tx_seq0_id = tx_seq0.compute_txid();
 
-        let mempool = env.mempool();
-        mempool.add_transaction(tx_seq1_id, tx_seq1);
-        mempool.add_transaction(tx_seq0_id, tx_seq0);
-
         let result = env
-            .generate_block_template()
+            .construct_block([(tx_seq1_id, tx_seq1), (tx_seq0_id, tx_seq0)])
             .await
             .expect("block generation should succeed");
 
-        let (template, failed_txs, _da) = result.into_parts();
+        let template = result.template;
+        let failed_txs = result.failed_txs;
         let txs = template.body().tx_segment().expect("tx segment").txs();
         assert_eq!(txs.len(), 1, "only seq_no=0 tx should be included");
         assert_eq!(txs[0].compute_txid(), tx_seq0_id);
@@ -2917,16 +2965,13 @@ mod tests {
             .build();
         let tx_seq2_id = tx_seq2.compute_txid();
 
-        let mempool = env.mempool();
-        mempool.add_transaction(tx_seq0_id, tx_seq0);
-        mempool.add_transaction(tx_seq2_id, tx_seq2);
-
         let result = env
-            .generate_block_template()
+            .construct_block([(tx_seq0_id, tx_seq0), (tx_seq2_id, tx_seq2)])
             .await
             .expect("block generation should succeed");
 
-        let (template, failed_txs, _da) = result.into_parts();
+        let template = result.template;
+        let failed_txs = result.failed_txs;
         let txs = template.body().tx_segment().expect("tx segment").txs();
         assert_eq!(txs.len(), 1, "gap tx should not be included");
         assert_eq!(txs[0].compute_txid(), tx_seq0_id);
@@ -3081,9 +3126,9 @@ mod tests {
 
         // Inner generation no longer reports invalid txs to mempool; both txs remain until
         // service-level reporting and block-application handling.
-        let remaining = mempool.get_transactions(10).await.unwrap();
+        let remaining = mempool.get_candidates().await.unwrap();
         assert_eq!(
-            remaining.len(),
+            remaining.count(),
             2,
             "inner generation should not mutate mempool membership"
         );
@@ -3484,7 +3529,7 @@ mod tests {
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
-            vec![(txid, tx)],
+            vec![(txid, tx)].into_iter(),
             AccumulatedDaData::new_empty(),
             0,
             &OLRuntimeParams::test_default(),
@@ -3544,7 +3589,7 @@ mod tests {
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
-            vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
+            vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)].into_iter(),
             AccumulatedDaData::new_empty(),
             0,
             &OLRuntimeParams::test_default(),
@@ -3592,7 +3637,7 @@ mod tests {
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
-            vec![(txid, tx)],
+            vec![(txid, tx)].into_iter(),
             AccumulatedDaData::new_empty(),
             0,
             &OLRuntimeParams::test_default(),
@@ -3649,7 +3694,8 @@ mod tests {
                     (deferred.compute_txid(), deferred),
                     (successor.compute_txid(), successor),
                     (message_id, message),
-                ],
+                ]
+                .into_iter(),
                 seeded_da(checkpoint_log_count),
                 0,
                 &OLRuntimeParams::test_default(),
@@ -3713,7 +3759,7 @@ mod tests {
             &output_buffer,
             parent_state.as_ref(),
             accumulated_batch,
-            mempool_txs,
+            mempool_txs.into_iter(),
             seeded_da,
             0,
             &OLRuntimeParams::test_default(),
