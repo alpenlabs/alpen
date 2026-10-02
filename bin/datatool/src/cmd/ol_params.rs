@@ -43,7 +43,7 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
     let mut ol_params = OLParams::new_empty(anchor.block, *ee_params.bridge_params());
 
     let acct_predicate = resolve_acct_predicate(cmd.alpen_predicate)?;
-    let balance = BitcoinAmount::from_sat(cmd.alpen_balance.unwrap_or(0));
+    let balance = BitcoinAmount::try_from(cmd.alpen_balance.unwrap_or(0))?;
     let inner_state = resolve_inner_state(
         cmd.alpen_inner_state.as_deref(),
         cmd.alpen_chain_config.as_deref(),

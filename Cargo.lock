@@ -15527,6 +15527,7 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "serde_json",
+ "strata-asm-admin-types",
  "strata-asm-bridge-types",
  "strata-asm-params",
  "strata-btc-types",
