@@ -32,10 +32,6 @@ pub enum ConsoleError {
     #[error("unknown console table '{0}'")]
     UnknownTable(String),
 
-    /// A view or alias is not registered.
-    #[error("unknown console view '{0}'")]
-    UnknownView(String),
-
     /// A table or view is not registered.
     #[error("unknown console source '{0}'")]
     UnknownSource(String),
@@ -518,11 +514,41 @@ pub struct SourceSchema {
     pub modifiers: &'static [ModifierDescriptor],
 }
 
-/// Explicit registry of tables supported by one console instance.
+/// Explicit registry of sources supported by one console instance.
 #[derive(Default)]
 pub struct ConsoleRegistry {
-    tables: BTreeMap<&'static str, Arc<dyn ConsoleTable>>,
-    views: BTreeMap<&'static str, Arc<dyn ConsoleView>>,
+    sources: BTreeMap<&'static str, RegisteredSource>,
+}
+
+#[derive(Clone)]
+enum RegisteredSource {
+    Table(Arc<dyn ConsoleTable>),
+    View(Arc<dyn ConsoleView>),
+}
+
+impl RegisteredSource {
+    fn schema(&self) -> SourceSchema {
+        match self {
+            Self::Table(table) => SourceSchema {
+                name: table.name(),
+                aliases: table.aliases(),
+                kind: SourceKind::Table,
+                key_type: Some(table.key_type()),
+                arguments: &[],
+                value: table.value_metadata(),
+                modifiers: table.modifiers(),
+            },
+            Self::View(view) => SourceSchema {
+                name: view.name(),
+                aliases: view.aliases(),
+                kind: SourceKind::View,
+                key_type: None,
+                arguments: view.arguments(),
+                value: view.value_metadata(),
+                modifiers: &[],
+            },
+        }
+    }
 }
 
 impl ConsoleRegistry {
@@ -533,98 +559,75 @@ impl ConsoleRegistry {
 
     /// Registers a table and its aliases.
     pub fn register(&mut self, table: Arc<dyn ConsoleTable>) -> ConsoleResult<()> {
-        let mut names = Vec::with_capacity(table.aliases().len() + 1);
-        names.push(table.name());
-        names.extend_from_slice(table.aliases());
-
-        for (index, name) in names.iter().enumerate() {
-            if names[..index].contains(name)
-                || self.tables.contains_key(name)
-                || self.views.contains_key(name)
-            {
-                return Err(ConsoleError::DuplicateSource((*name).to_owned()));
-            }
-        }
-
-        for name in names {
-            self.tables.insert(name, table.clone());
-        }
-        Ok(())
+        let name = table.name();
+        let aliases = table.aliases();
+        self.register_source(name, aliases, RegisteredSource::Table(table))
     }
 
     /// Registers a native view and its aliases.
     pub fn register_view(&mut self, view: Arc<dyn ConsoleView>) -> ConsoleResult<()> {
-        let mut names = Vec::with_capacity(view.aliases().len() + 1);
-        names.push(view.name());
-        names.extend_from_slice(view.aliases());
+        let name = view.name();
+        let aliases = view.aliases();
+        self.register_source(name, aliases, RegisteredSource::View(view))
+    }
+
+    fn register_source(
+        &mut self,
+        name: &'static str,
+        aliases: &'static [&'static str],
+        source: RegisteredSource,
+    ) -> ConsoleResult<()> {
+        let mut names = Vec::with_capacity(aliases.len() + 1);
+        names.push(name);
+        names.extend_from_slice(aliases);
 
         for (index, name) in names.iter().enumerate() {
-            if names[..index].contains(name)
-                || self.tables.contains_key(name)
-                || self.views.contains_key(name)
-            {
+            if names[..index].contains(name) || self.sources.contains_key(name) {
                 return Err(ConsoleError::DuplicateSource((*name).to_owned()));
             }
         }
 
         for name in names {
-            self.views.insert(name, view.clone());
+            self.sources.insert(name, source.clone());
         }
         Ok(())
     }
 
     /// Returns a table by its primary name or alias.
     pub fn table(&self, name: &str) -> ConsoleResult<&Arc<dyn ConsoleTable>> {
-        self.tables
-            .get(name)
-            .ok_or_else(|| ConsoleError::UnknownTable(name.to_owned()))
-    }
-
-    /// Returns a native view by its primary name or alias.
-    pub fn view(&self, name: &str) -> ConsoleResult<&Arc<dyn ConsoleView>> {
-        self.views
-            .get(name)
-            .ok_or_else(|| ConsoleError::UnknownView(name.to_owned()))
+        match self.sources.get(name) {
+            Some(RegisteredSource::Table(table)) => Ok(table),
+            Some(RegisteredSource::View(_)) | None => {
+                Err(ConsoleError::UnknownTable(name.to_owned()))
+            }
+        }
     }
 
     /// Returns the schema for a table or native view.
     pub fn schema(&self, name: &str) -> ConsoleResult<SourceSchema> {
-        if let Some(table) = self.tables.get(name) {
-            return Ok(SourceSchema {
-                name: table.name(),
-                aliases: table.aliases(),
-                kind: SourceKind::Table,
-                key_type: Some(table.key_type()),
-                arguments: &[],
-                value: table.value_metadata(),
-                modifiers: table.modifiers(),
-            });
-        }
-        if let Some(view) = self.views.get(name) {
-            return Ok(SourceSchema {
-                name: view.name(),
-                aliases: view.aliases(),
-                kind: SourceKind::View,
-                key_type: None,
-                arguments: view.arguments(),
-                value: view.value_metadata(),
-                modifiers: &[],
-            });
-        }
-        Err(ConsoleError::UnknownSource(name.to_owned()))
+        self.sources
+            .get(name)
+            .map(RegisteredSource::schema)
+            .ok_or_else(|| ConsoleError::UnknownSource(name.to_owned()))
     }
 
     /// Iterates over registered names, including aliases.
     pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
-        self.tables.keys().chain(self.views.keys()).copied()
+        self.sources.keys().copied()
     }
 
     pub(crate) fn table_if_registered(&self, name: &str) -> Option<&Arc<dyn ConsoleTable>> {
-        self.tables.get(name)
+        match self.sources.get(name) {
+            Some(RegisteredSource::Table(table)) => Some(table),
+            Some(RegisteredSource::View(_)) | None => None,
+        }
     }
 
     pub(crate) fn view_if_registered(&self, name: &str) -> Option<&Arc<dyn ConsoleView>> {
-        self.views.get(name)
+        match self.sources.get(name) {
+            Some(RegisteredSource::View(view)) => Some(view),
+            Some(RegisteredSource::Table(_)) | None => None,
+        }
     }
 }
 
@@ -632,8 +635,7 @@ impl fmt::Debug for ConsoleRegistry {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ConsoleRegistry")
-            .field("tables", &self.tables.keys())
-            .field("views", &self.views.keys())
+            .field("sources", &self.sources.keys())
             .finish()
     }
 }
