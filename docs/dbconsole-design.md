@@ -33,7 +33,7 @@ stored bytes -> production decoder -> concrete Rust value
                          streamed scalar rows / staged writes
 ```
 
-Internally, a handle contains a table identifier, typed key, and owned type-erased value such as `Box<dyn Any + Send>`. The table registration performs checked downcasts, so a handle from one table cannot be written as another table's value.
+Internally, a handle contains a table identifier, typed key, and owned `Box<dyn ConsoleValue>`. The table registration performs checked downcasts, so a handle from one table cannot be written as another table's value.
 
 There are four registrations: `ConsoleValue` exposes approved fields and safe field setters, `ConsoleTable` connects a value to storage and owns broader modifiers, `ConsoleView` implements trusted reads across tables, and `ConsoleRecipe` owns complex repairs.
 
@@ -43,12 +43,12 @@ A scan is the loop. `scan` walks forward, `scan_rev` walks backward, and each fo
 
 ```text
 scan ProverTask
-| filter status == "Pending" && metadata_len > 0
+| filter status == "pending" && metadata_len != null && metadata_len > 0
 | select key, status, metadata_len + 4 as framed_len
 | take 20
 ```
 
-The language provides fixed aggregators such as `count`, `sum`, `min`, `max`, `any`, `all`, and possibly `group_count`. User-supplied `reduce`, `zip`, and arbitrary `map` stay out.
+The language provides fixed aggregators such as `count`, `sum`, `min`, `max`, `any`, and `all`. User-supplied `reduce`, `zip`, arbitrary `map`, and grouping stay out until a concrete operator workflow justifies them.
 
 Scalar evaluation is strict: arithmetic is checked, division by zero fails, and incompatible types do not coerce. `null` supports equality only. Getter metadata lets the console check an expression before starting the scan.
 
@@ -64,7 +64,7 @@ Values and aggregates use the existing porcelain and JSON conventions. Streams a
 
 ```bash
 strata-dbconsole --datadir data eval \
-  'scan ProverTask | filter status == "Pending" | select key, status | take 20' \
+  'scan ProverTask | filter status == "pending" | select key, status | take 20' \
   --format jsonl
 ```
 
@@ -84,16 +84,16 @@ get ProverTask deadbeef | modify reset | stage
 get ProverTask deadbeef | set retry_after_secs null | stage
 
 scan ProverTask
-| filter status == "Pending" || status == "Proving"
+| filter status == "pending" || status == "proving"
 | modify abandon "operator cancelled"
 | stage all
 ```
 
-Staging a stream requires a bound such as `take 20` or an explicit `all`. Cancellation or one modifier failure discards the new batch.
+The programmatic API always requires a scan bound and may add a smaller `take 20` after filtering. A future text frontend may offer an explicit `all`, but it must remain a conspicuous opt-in. Cancellation or one modifier failure discards the new batch.
 
-The first write implementation deliberately holds one `Box<dyn StagedWrite>` at a time. It retains the typed key, original value, replacement, and a stable before/after preview. `abort` drops it. `commit` uses Sled's typed compare-and-swap with the original encoded value as the fingerprint, so it cannot overwrite a record that changed after staging. A failed stale-value commit remains staged for inspection or abort.
+The session deliberately holds one `Box<dyn StagedWrite>` at a time. That write may contain one record or a bounded same-table batch, with stable before/after previews for every change. `abort` drops it. A point commit uses Sled's typed compare-and-swap; a batch commit checks every original value and applies every replacement in one Sled transaction. Neither path can overwrite a record that changed after staging, and a failed stale-value commit remains staged for inspection or abort.
 
-Bulk staging can later build on the same boundary, but it should not weaken these semantics. Once a multi-row apply begins, cancellation must wait rather than interrupting a commit mid-write.
+Once a multi-row apply begins, cancellation waits rather than interrupting the transaction mid-write.
 
 The current high-level database traits do not expose one arbitrary transaction spanning any set of Sled trees. A generic commit should therefore contain writes for only one table registration, which may supply its own atomic multi-row apply function. Cross-table or ordered mutations remain recipes until a production transaction coordinator exists. This avoids promising atomicity that the storage APIs do not provide.
 
@@ -130,8 +130,15 @@ pub struct TaskRecordData {
 
 impl TaskRecordData {
     fn console_status(&self) -> String {
-        // Explicit domain projection.
-        status_name(&self.status).to_owned()
+        match &self.status {
+            TaskStatus::Pending => "pending",
+            TaskStatus::Proving { .. } => "proving",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Blocked { .. } => "blocked",
+            TaskStatus::TransientFailure { .. } => "transient_failure",
+            TaskStatus::PermanentFailure { .. } => "permanent_failure",
+        }
+        .to_owned()
     }
 
     fn console_metadata_len(&self) -> Option<u64> {
@@ -186,7 +193,7 @@ let mut registry = ConsoleRegistry::new();
 registry.register(Arc::new(ProverTaskConsoleTable(tree.clone())))?;
 ```
 
-`map_value` converts a decoded storage value into the registered console value. The optional `unmap_value` converts the edited value back to the schema's stored value and opts the table into point writes. Omitting it leaves the table read-only, even if the value type exposes setters.
+`map_value` converts a decoded storage value into the registered console value. The optional `unmap_value` converts the edited value back to the schema's stored value and opts the table into point and bounded same-table writes. Omitting it leaves the table read-only, even if the value type exposes setters.
 
 The four field forms are:
 
@@ -230,6 +237,73 @@ let sync = executor.execute(ReadPlan::get(
 
 The scan limit is part of `ScanPlan`, so a caller cannot accidentally construct an unbounded programmatic scan. `OlBlock` combines the stored block and status, while `SyncInfo` owns the reviewed cross-table read and accepts the reorg-safe depth explicitly.
 
+Functional plans use a fixed expression tree rather than callbacks. The outer scan bound limits storage work; `take` limits matching output rows after filtering:
+
+```rust
+let pending = ScalarExpression::binary(
+    BinaryOperator::Equal,
+    ScalarExpression::field("status"),
+    ScalarExpression::literal(ConsoleScalar::String("pending".into())),
+);
+
+let plan = PipelinePlan::scan_rev("tasks", 1_000)?
+    .filter(pending.clone())
+    .select(vec![
+        Selection::new("key", ScalarExpression::Key),
+        Selection::new("retry_after_secs", ScalarExpression::field("retry_after_secs")),
+    ])
+    .take(20)?;
+
+let rows = PipelineExecutor::new(&registry).execute(plan)?;
+let count = PipelineExecutor::new(&registry).execute(
+    PipelinePlan::scan("tasks", 10_000)?
+        .filter(pending.clone())
+        .terminal(PipelineTerminal::Count),
+)?;
+
+let retry_sum = PipelineExecutor::new(&registry).execute(
+    PipelinePlan::scan("tasks", 10_000)?
+        .filter(ScalarExpression::binary(
+            BinaryOperator::And,
+            pending.clone(),
+            ScalarExpression::binary(
+                BinaryOperator::NotEqual,
+                ScalarExpression::field("retry_after_secs"),
+                ScalarExpression::literal(ConsoleScalar::Null),
+            ),
+        ))
+        .terminal(PipelineTerminal::Sum(
+            ScalarExpression::field("retry_after_secs"),
+        )),
+)?;
+```
+
+Writes use the same registry and expressions. A point setter stages one change. A filtered scan stages one atomic same-table batch; if any modifier fails while staging, or any stored value is stale at commit, no replacement is applied:
+
+```rust
+let mut writes = WriteSession::new(&registry);
+let task_key = ConsoleScalar::Bytes(task_key);
+
+let preview = writes.stage_set(
+    "tasks",
+    &task_key,
+    "retry_after_secs",
+    &ConsoleScalar::Null,
+)?;
+assert_eq!(preview.changes.len(), 1);
+writes.commit()?;
+
+let preview = writes.stage_modify_scan(
+    PipelinePlan::scan("tasks", 1_000)?
+        .filter(pending)
+        .take(20)?,
+    "abandon",
+    &[ConsoleScalar::String("operator cancelled".into())],
+)?;
+assert!(preview.changes.len() <= 20);
+writes.abort();
+```
+
 The resulting interaction uses only registered capabilities:
 
 ```text
@@ -242,17 +316,15 @@ setters: retry_after_secs
 modifiers: reset, abandon(reason)
 
 db> get ProverTask deadbeef
-status: Proving; retry_after_secs: 1700000000; metadata_len: 32
+status: proving; retry_after_secs: 1700000000; metadata_len: 32
 
 db> scan_rev ProverTask
-  | filter status == "Pending" && metadata_len > 0
+  | filter status == "pending" && metadata_len != null && metadata_len > 0
   | select key, status, metadata_len
   | take 20
 
-db> scan ProverTask | group_count status
-Pending: 12
-Proving: 2
-Completed: 103
+db> scan ProverTask | filter status == "pending" | count
+12
 
 db> get ProverTask deadbeef | set retry_after_secs null | stage
 staged 1 change
@@ -266,22 +338,35 @@ committed 1 change
 
 ## 7. Views, recipes, and Rhai
 
-A native view prevents cross-table reads from leaking complexity into the expression language. It is a registered Rust source with typed arguments and a derived output value:
+A native view prevents cross-table reads from leaking complexity into the expression language. Its output can use the value derive, while the view itself explicitly owns argument checking and the cross-table read:
 
 ```rust
 #[derive(ConsoleValue)]
-struct SyncInfo {
+struct SyncInfoValue {
     #[console(get)]
-    ol_tip_height: u64,
+    ol_tip_slot: u64,
     #[console(get)]
-    current_epoch: u32,
+    current_epoch: u64,
     #[console(get)]
-    finalized_epoch: EpochCommitment,
+    finalized_epoch: u64,
 }
 
-#[console_view(name = "SyncInfo")]
-fn sync_info(db: &SledBackend, l1_reorg_safe_depth: u32) -> Result<SyncInfo> {
-    // Reuse the authoritative cross-table computation.
+struct SyncInfoView {
+    // Narrow handles for the L1, OL block, OL state, and checkpoint stores.
+}
+
+impl ConsoleView for SyncInfoView {
+    fn name(&self) -> &'static str { "SyncInfo" }
+    fn arguments(&self) -> &'static [ArgumentDescriptor] { SYNC_INFO_ARGUMENTS }
+    fn value_metadata(&self) -> &'static ValueMetadata {
+        SyncInfoValue::value_metadata()
+    }
+
+    fn get(&self, arguments: &[ConsoleScalar]) -> ConsoleResult<Option<RecordHandle>> {
+        // Parse l1_reorg_safe_depth, reuse authoritative cross-table reads,
+        // and return a SyncInfoValue handle.
+        todo!()
+    }
 }
 ```
 

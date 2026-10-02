@@ -1,23 +1,33 @@
-//! Staging and committing one typed point write.
+//! Staging and committing one typed point or bounded-batch write.
 
 use std::fmt;
 
 use serde::Serialize;
 
-use crate::{ConsoleRegistry, ConsoleResult, ConsoleRow, ConsoleScalar};
+use crate::{
+    ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleRow, ConsoleScalar, PipelineExecutor,
+    PipelineOutput, PipelinePlan,
+};
 
-/// Human- and machine-readable view of one staged point write.
+/// One record change in a staged write.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct WritePreview {
-    /// Short description of the setter or modifier being applied.
-    pub operation: String,
+pub struct WriteChange {
     /// Record before the operation.
     pub before: ConsoleRow,
     /// Record after the operation.
     pub after: ConsoleRow,
 }
 
-/// Type-erased point write prepared by a concrete table registration.
+/// Human- and machine-readable view of one staged write.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct WritePreview {
+    /// Short description of the setter or modifier being applied.
+    pub operation: String,
+    /// Ordered record changes prepared by the operation.
+    pub changes: Vec<WriteChange>,
+}
+
+/// Type-erased write prepared by a concrete table registration.
 pub trait StagedWrite: Send + Sync {
     /// Returns the stable preview generated when the write was staged.
     fn preview(&self) -> &WritePreview;
@@ -26,14 +36,14 @@ pub trait StagedWrite: Send + Sync {
     fn commit(&self) -> ConsoleResult<()>;
 }
 
-/// Holds at most one staged point write against an explicit registry.
+/// Holds at most one staged point or bounded-batch write against an explicit registry.
 pub struct WriteSession<'a> {
     registry: &'a ConsoleRegistry,
     staged: Option<Box<dyn StagedWrite>>,
 }
 
 impl<'a> WriteSession<'a> {
-    /// Creates an empty point-write session.
+    /// Creates an empty write session.
     pub const fn new(registry: &'a ConsoleRegistry) -> Self {
         Self {
             registry,
@@ -71,6 +81,38 @@ impl<'a> WriteSession<'a> {
         Ok(self.staged().expect("staged write was just inserted"))
     }
 
+    /// Stages one modifier for every row produced by a bounded functional scan.
+    pub fn stage_modify_scan(
+        &mut self,
+        plan: PipelinePlan,
+        modifier: &str,
+        arguments: &[ConsoleScalar],
+    ) -> ConsoleResult<&WritePreview> {
+        self.ensure_empty()?;
+        if !plan.returns_rows() {
+            return Err(ConsoleError::invalid_input(
+                "bulk modification pipeline",
+                "the pipeline must return rows",
+            ));
+        }
+        let table = plan.table().to_owned();
+        let PipelineOutput::Rows(rows) = PipelineExecutor::new(self.registry).execute(plan)? else {
+            unreachable!("row-returning pipeline produced a non-row output");
+        };
+        let keys = rows
+            .map(|row| row.map(|row| row.key))
+            .collect::<ConsoleResult<Vec<_>>>()?;
+        if keys.is_empty() {
+            return Err(ConsoleError::NoMatchingRecords { table });
+        }
+        self.staged = Some(
+            self.registry
+                .table(&table)?
+                .stage_modify_many(&keys, modifier, arguments)?,
+        );
+        Ok(self.staged().expect("staged write was just inserted"))
+    }
+
     /// Returns the current staged preview.
     pub fn staged(&self) -> Option<&WritePreview> {
         self.staged.as_ref().map(|write| write.preview())
@@ -81,7 +123,7 @@ impl<'a> WriteSession<'a> {
         self.staged.take().map(|write| write.preview().clone())
     }
 
-    /// Commits the staged write and clears it after a successful compare-and-swap.
+    /// Commits the staged write and clears it after a successful atomic storage operation.
     pub fn commit(&mut self) -> ConsoleResult<WritePreview> {
         let write = self
             .staged

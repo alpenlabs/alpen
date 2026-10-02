@@ -75,7 +75,7 @@ commit
 
 `get ProverTask <key> | modify reset | stage` follows the same path for a broader operation.
 
-Setters and modifiers share the same staging path. The session stores type-erased staged writes containing the typed key and value, table registration, description, and pre-edit fingerprint. `commit` re-reads and checks the fingerprint before calling the registered production write path. Because the console opens Sled exclusively, this is mainly protection against stale session state. If stronger compare-and-swap semantics become necessary, add a narrow storage operation rather than exposing raw tree writes.
+Setters and modifiers share the same staging path. The session stores a type-erased staged write containing the typed key, original and replacement values, description, and stable preview. Point commits use typed Sled compare-and-swap with the original encoded value, so stale session state cannot overwrite a newer record.
 
 A generic commit contains writes for one table registration. Cross-table writes remain recipes. Once storage apply starts, cancellation waits for it to return. Do not implement generic delete, insert, or structural replacement in this phase.
 
@@ -86,12 +86,11 @@ With reads and point writes working, add an expression AST and evaluator without
 1. comparisons and boolean operators;
 2. `filter`, `select`, and `take`;
 3. checked arithmetic;
-4. `count`, `first`, `last`, `min`, `max`, `sum`, `any`, and `all`;
-5. `group_count` only if it cleanly replaces the current summary commands.
+4. `count`, `first`, `last`, `min`, `max`, `sum`, `any`, and `all`.
 
-Keep scalar conversions strict and validate the expression against getter metadata before starting a scan. Do not add general `map`, user reducers, variables, callbacks, or `zip`.
+Keep scalar conversions strict and validate the expression against getter metadata before starting a scan. Do not add general `map`, user reducers, variables, callbacks, `zip`, or grouping without a concrete operator workflow that cannot be expressed with the fixed primitives.
 
-After filtering is stable, allow bounded bulk modification. `scan | filter | modify | stage` must first build a temporary batch; cancellation or one failed modifier discards it. Require `take N` or explicit `stage all`. This is also the point to replace the prover-task summary and bulk-abandon loops with pipelines and compare their output with the current commands.
+After filtering is stable, allow bounded bulk modification. `scan | filter | modify | stage` must first build a temporary batch; cancellation or one failed modifier discards it. The initial API always requires a scan bound and may apply a smaller `take N` after filtering. The commit rechecks every original value and applies the same-table replacements in one Sled transaction. This is also the point to replace the prover-task summary and bulk-abandon loops with pipelines and compare their output with the current commands.
 
 ## 7. Frontend and migration
 

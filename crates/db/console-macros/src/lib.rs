@@ -843,6 +843,20 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     Self::__console_modify_value(record, modifier, arguments)
                 })
             }
+
+            fn stage_modify_many(
+                &self,
+                keys: &[::strata_db_console::ConsoleScalar],
+                modifier: &str,
+                arguments: &[::strata_db_console::ConsoleScalar],
+            ) -> ::strata_db_console::ConsoleResult<
+                ::std::boxed::Box<dyn ::strata_db_console::StagedWrite>,
+            > {
+                let adapter = #make_adapter;
+                adapter.stage_bulk_write(keys, format!("modify {modifier}"), |record| {
+                    Self::__console_modify_value(record, modifier, arguments)
+                })
+            }
         }
     });
 

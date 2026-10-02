@@ -11,13 +11,20 @@ use serde::ser::Serializer;
 
 pub use strata_db_console_macros::{ConsoleTable, ConsoleValue};
 
+mod expression;
+mod pipeline;
 mod read;
 mod render;
 mod write;
 
+pub use expression::{BinaryOperator, ScalarExpression};
+pub use pipeline::{
+    PipelineExecutor, PipelineOutput, PipelinePlan, PipelineRowStream, PipelineTerminal,
+    ProjectedRow, Selection,
+};
 pub use read::{ConsoleRow, ReadExecutor, ReadOutput, ReadPlan, RowStream, ScanPlan};
 pub use render::{RecordFormat, render_record, render_schema, write_json_lines};
-pub use write::{StagedWrite, WritePreview, WriteSession};
+pub use write::{StagedWrite, WriteChange, WritePreview, WriteSession};
 
 /// Result type returned by console registrations and values.
 pub type ConsoleResult<T> = Result<T, ConsoleError>;
@@ -104,26 +111,33 @@ pub enum ConsoleError {
     #[error("console table '{0}' is read-only")]
     ReadOnlyTable(&'static str),
 
-    /// A point write targeted a record that does not exist.
+    /// A point or bounded-batch write targeted a record that does not exist.
     #[error("console table '{table}' has no record for the requested key")]
     MissingRecord {
         /// Registered table name.
         table: &'static str,
     },
 
-    /// A session already contains a staged point write.
-    #[error("a point write is already staged; commit or abort it first")]
+    /// A session already contains a staged write.
+    #[error("a write is already staged; commit or abort it first")]
     WriteAlreadyStaged,
 
     /// Commit was requested without a staged write.
-    #[error("no point write is staged")]
+    #[error("no write is staged")]
     NoStagedWrite,
 
-    /// The stored record changed after the point write was staged.
+    /// A stored record changed after its replacement was staged.
     #[error("staged record in console table '{table}' changed before commit")]
     StaleWrite {
         /// Registered table name.
         table: &'static str,
+    },
+
+    /// A bounded bulk modification selected no records.
+    #[error("bulk modification of console table '{table}' selected no records")]
+    NoMatchingRecords {
+        /// Requested table name or alias.
+        table: String,
     },
 }
 
@@ -483,6 +497,16 @@ pub trait ConsoleTable: Send + Sync {
     fn stage_modify(
         &self,
         _key: &ConsoleScalar,
+        _modifier: &str,
+        _arguments: &[ConsoleScalar],
+    ) -> ConsoleResult<Box<dyn StagedWrite>> {
+        Err(ConsoleError::ReadOnlyTable(self.name()))
+    }
+
+    /// Prepares one broader operation across a bounded set of point keys.
+    fn stage_modify_many(
+        &self,
+        _keys: &[ConsoleScalar],
         _modifier: &str,
         _arguments: &[ConsoleScalar],
     ) -> ConsoleResult<Box<dyn StagedWrite>> {
