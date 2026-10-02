@@ -4,14 +4,18 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::common::L1PayloadIntentIndex;
 use strata_identifiers::{Epoch, EpochCommitment};
 
-use crate::{define_table_with_default_codec, define_table_with_integer_key};
+use crate::asm::codec::{decode_framed, encode_framed, impl_asm_value_codec};
+use crate::{
+    define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
+    impl_borsh_key_codec,
+};
 
-define_table_with_default_codec!(
+define_table_without_codec!(
     /// Table mapping epoch commitment to OL checkpoint payload.
     (OLCheckpointPayloadSchema) EpochCommitment => CheckpointPayload
 );
 
-define_table_with_default_codec!(
+define_table_without_codec!(
     /// Table mapping epoch commitment to the OL checkpoint payload extracted
     /// from L1, kept separate from the sequencer's locally-built payload table.
     (OLCheckpointL1ObservedPayloadSchema) EpochCommitment => CheckpointPayload
@@ -43,4 +47,20 @@ define_table_with_integer_key!(
     /// Observed candidate set: reorged observations remain until explicit
     /// pruning, so canonicity is resolved at read time.
     (OLCheckpointEpochIndexSchema) Epoch => Vec<EpochCommitment>
+);
+
+impl_borsh_key_codec!(OLCheckpointPayloadSchema, EpochCommitment);
+impl_asm_value_codec!(
+    OLCheckpointPayloadSchema,
+    CheckpointPayload,
+    encode_framed,
+    decode_framed
+);
+
+impl_borsh_key_codec!(OLCheckpointL1ObservedPayloadSchema, EpochCommitment);
+impl_asm_value_codec!(
+    OLCheckpointL1ObservedPayloadSchema,
+    CheckpointPayload,
+    encode_framed,
+    decode_framed
 );
