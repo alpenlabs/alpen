@@ -219,7 +219,7 @@ typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 # Proc-macro support
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "2", features = ["full"] }
+syn = "2"
 
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [
