@@ -16027,6 +16027,7 @@ name = "strata-ol-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
+ "bitcoin",
  "borsh",
  "proptest",
  "serde",
