@@ -77,10 +77,11 @@ first needed after startup follows this policy, including after L1 catch-up.
 
 Each resident spec has its own fixed-host prover service. The spec-scoped task
 store filters both unfinished-task recovery and due retries; a service never
-claims another spec's work. Existing 44-byte checkpoint task keys remain the V1
-namespace, preserving saved request IDs and retry state without a database migration.
-Other specs use an explicit spec-tagged key. Offline backfill derives that spec from
-the exact epoch-start state, using the same selection rule as the running node.
+claims another spec's work. Like EE, `VersionedTaskStore` prepends the spec to
+the unchanged task key and strips it before returning records to the prover.
+The prefix is four bytes because OL spec identifiers are u32. Old unprefixed
+tasks are ignored; they are not migrated or resumed. Offline dbtool backfill
+writes V1-prefixed keys; backfill for other specs and decoded task details are deferred.
 
 Remote jobs retain the existing opaque request-ID metadata. Restart recovery
 resumes that same request through the same spec's service, following the EE's

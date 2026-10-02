@@ -6,29 +6,40 @@
 //! Gated behind the `prover` feature flag and activated when a `[prover]`
 //! section is present in the config.
 
-pub(crate) mod artifacts;
+mod admission;
 mod errors;
 mod receipt_hook;
 mod spec;
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use strata_config::{ProverBackend, ProverConfig};
 use strata_identifiers::{Epoch, EpochCommitment};
-use strata_ol_state_types::OLSpecId;
-use strata_paas::{ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult};
-use strata_proofimpl_checkpoint::program::CheckpointProgram;
-use strata_storage::CheckpointProofDbManager;
-use strata_tasks::TaskExecutor;
-use tokio::{sync::watch, time};
-use tracing::{debug, info, warn};
+use strata_ol_checkpoint::ProofNotify;
 #[cfg(feature = "sp1")]
-use zkaleido_sp1_host::{SP1Host, SP1HostConfig};
+use strata_ol_checkpoint_artifacts::sp1::load_checkpoint_registry;
+use strata_ol_checkpoint_artifacts::{
+    CheckpointArtifactRegistry, LoadedCheckpointPredicates, native_checkpoint_registry,
+    startup::check_startup_artifacts_blocking,
+};
+use strata_ol_params::OLRuntimeParams;
+use strata_ol_state_types::OLSpecId;
+use strata_paas::{
+    Prover, ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult,
+};
+use strata_storage::{CheckpointProofDbManager, NodeStorage, VersionedTaskStore};
+use strata_tasks::TaskExecutor;
+use tokio::{sync::watch, task::spawn_blocking, time};
+use tracing::{debug, error, info, warn};
+#[cfg(feature = "sp1")]
+use zkaleido_sp1_host::SP1HostConfig;
 
 use self::{
+    admission::CheckpointAdmission,
+    errors::ProverError,
     receipt_hook::CheckpointReceiptHook,
-    spec::{CheckpointSpec, CheckpointTask},
+    spec::{CheckpointSpec, CheckpointTask, checkpoint_task_spec},
 };
 use crate::run_context::RunContext;
 
@@ -61,8 +72,8 @@ pub(crate) fn checkpoint_sp1_host_config(prover_config: &ProverConfig) -> SP1Hos
 
 /// Starts the integrated prover service.
 ///
-/// Launches a paas prover service for checkpoint proofs and spawns a
-/// background runner that submits proof tasks as new epochs complete.
+/// Launches a fixed-host paas service for every resident spec and spawns a
+/// background runner that routes checkpoints by their committed epoch-start spec.
 ///
 /// The caller must ensure that `config.prover` is `Some` before calling.
 /// `proof_notify` is shared with the checkpoint worker — the receipt hook
@@ -71,7 +82,7 @@ pub(crate) fn checkpoint_sp1_host_config(prover_config: &ProverConfig) -> SP1Hos
 pub(crate) fn start_prover_service(
     runctx: &RunContext,
     executor: &Arc<TaskExecutor>,
-    proof_notify: Arc<strata_ol_checkpoint::ProofNotify>,
+    proof_notify: Arc<ProofNotify>,
 ) -> Result<()> {
     let prover_config: ProverConfig = runctx
         .config()
@@ -84,73 +95,74 @@ pub(crate) fn start_prover_service(
     let storage = runctx.storage().clone();
     let proof_db = storage.checkpoint_proof().clone();
 
-    // Build the spec + hook. The backend choice is fixed here at build
-    // time rather than being part of task identity — the new paas erases
-    // the host type inside the prove strategy.
     let runtime_params = runctx.ol_params().runtime_params();
-    let spec = CheckpointSpec::new(storage.clone(), runtime_params);
-    let hook = CheckpointReceiptHook::new(proof_db.clone(), proof_notify);
 
-    // Task store: the node's `ProverTaskDbManager` implements
-    // `strata_paas::TaskStore` directly, so the manager *is* the persistent
-    // task store — no extra adapter layer.
-    let task_store = runctx.storage().prover_tasks().clone();
-
-    // Pick native vs. remote strategy at build time.
-    let prover = match prover_config.backend {
-        ProverBackend::Native => ProverBuilder::new(spec)
-            .task_store(task_store)
-            .receipt_hook(hook)
-            .retry(RetryConfig::default())
-            // TODO(STR-4082): select the checkpoint program for each epoch's spec.
-            .native(CheckpointProgram::native_host(OLSpecId::V1, runtime_params)),
+    // Each resident spec owns a fixed host and sees only its own task records.
+    let (provers, predicates) = match prover_config.backend {
+        ProverBackend::Native => {
+            anyhow::ensure!(
+                prover_config.artifacts.is_empty(),
+                "[prover.artifacts] bundles require the SP1 backend"
+            );
+            build_checkpoint_provers(
+                native_checkpoint_registry(runtime_params),
+                &storage,
+                runtime_params,
+                &proof_notify,
+                |builder, host| builder.native(host),
+            )
+        }
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
-            use strata_zkvm_hosts::sp1::checkpoint_host;
-            // prover-core's `.remote(host)` takes the host by value and
-            // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
-            // is Clone (only holds a SP1ProvingKey), so cloning from the
-            // shared static is fine. Host init is async (SP1 sets up the
-            // proving key + prover client over the network/local SDK), so
-            // we drive it on the runtime handle. The deadline is now part
-            // of `SP1HostConfig`, applied at init time rather than after.
-            let deadline_secs = checkpoint_sp1_proof_deadline_secs(&prover_config);
-            let sp1_config = checkpoint_sp1_host_config(&prover_config);
-            info!(deadline_secs, "sp1 prover deadline configured");
-            let host_static = runctx
+            let registry = runctx
                 .task_manager
                 .handle()
-                .block_on(checkpoint_host(sp1_config));
-            let host: SP1Host = (**host_static).clone();
-            ProverBuilder::new(spec)
-                .task_store(task_store)
-                .receipt_hook(hook)
-                .retry(RetryConfig::default())
-                .remote(host)
+                .block_on(load_checkpoint_registry(
+                    &prover_config.artifacts,
+                    runtime_params,
+                    checkpoint_sp1_host_config(&prover_config),
+                ))?;
+            build_checkpoint_provers(
+                registry,
+                &storage,
+                runtime_params,
+                &proof_notify,
+                |builder, host| builder.remote(host),
+            )
         }
         #[cfg(not(feature = "sp1"))]
         ProverBackend::Sp1 => {
-            // validate_backend_config rejects this at startup.
-            unreachable!(
-                "SP1 backend requested but sp1 feature is not enabled; \
-                 validate_backend_config should have caught this at startup"
-            )
+            unreachable!("SP1 feature checked by validate_backend_config")
         }
     };
 
-    // Launch the service. `tick_interval` drives both startup recovery
-    // (re-spawning unfinished tasks) and the retry scanner.
-    let handle: ProverHandle<CheckpointSpec> = runctx
-        .task_manager
-        .handle()
-        .block_on(
-            ProverServiceBuilder::new(prover)
-                .tick_interval(PROVER_RETRY_INTERVAL)
-                .launch(executor.as_ref()),
-        )
-        .context("failed to launch prover service")?;
+    // Require artifacts for the locally canonical checkpoint state before any service
+    // starts recovering tasks. L1/ASM catch-up continues independently in the background.
+    let block = check_startup_artifacts_blocking(
+        &storage,
+        &predicates,
+        runctx.ol_params().genesis_l1_block(),
+    )
+    .context("checkpoint artifact check failed at startup")?;
+    info!(%block, "checkpoint artifacts checked at startup");
 
-    info!(backend = ?prover_config.backend, "prover service started");
+    // Each scanner receives a spec-scoped store, including startup recovery.
+    let mut handles = BTreeMap::new();
+    for (spec, prover) in provers {
+        let handle = runctx
+            .task_manager
+            .handle()
+            .block_on(
+                ProverServiceBuilder::new(prover)
+                    .tick_interval(PROVER_RETRY_INTERVAL)
+                    .launch(executor.as_ref()),
+            )
+            .with_context(|| format!("failed to launch checkpoint prover for {spec:?}"))?;
+        handles.insert(spec, handle);
+    }
+    let provers = CheckpointProvers { handles };
+
+    info!(backend = ?prover_config.backend, specs = provers.handles.len(), "checkpoint prover services started");
 
     // Resume from the last epoch that already has a checkpoint payload,
     // so we don't re-check every epoch from 1 on restart.
@@ -174,7 +186,7 @@ pub(crate) fn start_prover_service(
     let epoch_rx = chain_worker_handle.subscribe_epoch_summaries();
     spawn_checkpoint_runner(
         executor,
-        handle,
+        provers,
         epoch_rx,
         proof_db,
         runctx.storage().clone(),
@@ -215,10 +227,10 @@ fn validate_backend_config(backend: ProverBackend) -> Result<()> {
 // TODO(STR-3064): split this into smaller helpers.
 fn spawn_checkpoint_runner(
     executor: &TaskExecutor,
-    prover_handle: ProverHandle<CheckpointSpec>,
+    provers: CheckpointProvers,
     mut epoch_rx: watch::Receiver<Option<EpochCommitment>>,
     proof_db: Arc<CheckpointProofDbManager>,
-    storage: Arc<strata_storage::NodeStorage>,
+    storage: Arc<NodeStorage>,
     last_payload_epoch: Option<Epoch>,
     history_base_epoch: Option<Epoch>,
 ) {
@@ -241,6 +253,8 @@ fn spawn_checkpoint_runner(
                     .flatten()
             })
             .unwrap_or(0);
+        // Keep configuration alerts actionable without repeating them on every tick.
+        let mut waiting: Option<(EpochCommitment, String)> = None;
         let mut retry_tick = time::interval(PROVER_RETRY_INTERVAL);
         retry_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
@@ -298,9 +312,50 @@ fn spawn_checkpoint_runner(
                     continue;
                 }
 
-                info!(%epoch, "submitting checkpoint proof task");
-
                 let task = CheckpointTask(commitment);
+                let input_storage = Arc::clone(&storage);
+                let required_spec = match spawn_blocking(move || {
+                    checkpoint_task_spec(&input_storage, task)
+                }).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        warn!(%epoch, %error, "checkpoint routing task failed, will retry");
+                        break;
+                    }
+                };
+                let routing = required_spec.map_err(CheckpointRoutingError::State).and_then(|spec| {
+                    provers.for_spec(spec).ok_or(CheckpointRoutingError::MissingArtifact { spec })
+                });
+                let prover_handle = match routing {
+                    Ok(handle) => handle,
+                    Err(failure) => {
+                        let reason = failure.to_string();
+                        if !waiting.as_ref().is_some_and(|(previous_task, previous_reason)| {
+                            *previous_task == commitment && previous_reason == &reason
+                        }) {
+                            if matches!(&failure,
+                                CheckpointRoutingError::MissingArtifact { .. }
+                                | CheckpointRoutingError::State(ProverError::UnsupportedSpec(_))
+                            ) {
+                                error!(%epoch, %failure, "checkpoint proof awaits operator configuration");
+                            } else if matches!(&failure,
+                                CheckpointRoutingError::State(
+                                    ProverError::EpochCommitmentNotFound(_)
+                                    | ProverError::EpochSummaryNotFound(_)
+                                    | ProverError::EpochStartStateNotFound { .. }
+                                )
+                            ) {
+                                debug!(%epoch, %failure, "checkpoint routing awaits state, will retry");
+                            } else {
+                                warn!(%epoch, %failure, "checkpoint routing failed, will retry");
+                            }
+                            waiting = Some((commitment, reason));
+                        }
+                        break;
+                    }
+                };
+                waiting = None;
+                info!(%epoch, "submitting checkpoint proof task");
                 match prover_handle.execute(task).await {
                     Ok(TaskResult::Completed { task: _ }) => {
                         // Re-check canonical commitment before advancing the
@@ -358,6 +413,66 @@ fn spawn_checkpoint_runner(
     debug!("spawned checkpoint proof runner");
 }
 
+/// Distinguishes unavailable epoch state from unavailable proving artifacts.
+#[derive(Debug, thiserror::Error)]
+enum CheckpointRoutingError {
+    #[error(transparent)]
+    State(ProverError),
+    #[error("no checkpoint artifact is configured for OL spec {spec:?}")]
+    MissingArtifact { spec: OLSpecId },
+}
+
+/// Holds fixed-host services keyed by the spec derived from each checkpoint's start state.
+struct CheckpointProvers {
+    handles: BTreeMap<OLSpecId, ProverHandle<CheckpointSpec>>,
+}
+
+impl CheckpointProvers {
+    fn for_spec(&self, spec: OLSpecId) -> Option<&ProverHandle<CheckpointSpec>> {
+        self.handles.get(&spec)
+    }
+}
+
+/// Builds each service over a store scoped to its fixed program's spec.
+fn build_checkpoint_provers<H>(
+    registry: CheckpointArtifactRegistry<H>,
+    storage: &Arc<NodeStorage>,
+    runtime_params: OLRuntimeParams,
+    proof_notify: &Arc<ProofNotify>,
+    build: impl Fn(ProverBuilder<CheckpointSpec>, H) -> Prover<CheckpointSpec>,
+) -> (
+    BTreeMap<OLSpecId, Prover<CheckpointSpec>>,
+    LoadedCheckpointPredicates,
+) {
+    let predicates = registry.to_predicates();
+    let provers = registry
+        .into_hosts()
+        .map(|(spec, host)| {
+            let builder = ProverBuilder::new(CheckpointSpec::new(
+                Arc::clone(storage),
+                runtime_params,
+                spec,
+            ))
+            .task_admission(CheckpointAdmission::new(
+                Arc::clone(storage),
+                predicates.clone(),
+                spec,
+            ))
+            .task_store(VersionedTaskStore::new(
+                storage.prover_tasks().clone(),
+                spec,
+            ))
+            .receipt_hook(CheckpointReceiptHook::new(
+                storage.checkpoint_proof().clone(),
+                Arc::clone(proof_notify),
+            ))
+            .retry(RetryConfig::default());
+            (spec, build(builder, host))
+        })
+        .collect();
+    (provers, predicates)
+}
+
 fn derive_next_epoch_to_prove(
     last_payload_epoch: Option<Epoch>,
     history_base_epoch: Option<Epoch>,
@@ -393,3 +508,7 @@ mod tests {
         assert_eq!(derive_next_epoch_to_prove(None, Some(5)), 6);
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod integration_tests;
