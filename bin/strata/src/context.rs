@@ -784,7 +784,8 @@ mod tests {
         };
 
         let configured = NativeCheckpointPredicateKey.predicate_key().unwrap();
-        let expected = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]);
+        let expected =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]).unwrap();
 
         let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
 
