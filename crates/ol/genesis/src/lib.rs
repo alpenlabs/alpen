@@ -16,6 +16,9 @@ use strata_ol_stf::{
 use thiserror::Error;
 use tracing::{info, instrument};
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 /// In-memory artifacts created during OL genesis construction.
 #[derive(Debug)]
 pub struct GenesisArtifacts {
@@ -36,8 +39,7 @@ pub struct GenesisArtifacts {
 /// Errors returned while building OL genesis artifacts.
 #[derive(Debug, Error)]
 pub enum GenesisError {
-    /// The OL STF execution failed, including when this binary does not
-    /// implement the genesis spec's rules.
+    /// The OL STF execution failed.
     #[error("OL STF execution failed: {0}")]
     StfExecution(#[from] ExecError),
 
@@ -57,13 +59,9 @@ pub type Result<T> = StdResult<T, GenesisError>;
 
 /// Constructs the genesis OL state and block artifacts from the given parameters.
 ///
-/// The genesis block runs under the params' genesis spec.
-///
-/// # Errors
-///
-/// Returns [`GenesisError::StfExecution`] with
-/// [`ExecError::UnimplementedSpec`] if this binary does not implement the
-/// genesis spec's rules, as for params of a network launched on 0.3.0.
+/// The genesis block runs under the params' genesis spec. For a network
+/// launched on 0.3.0 that is V0, whose genesis state commits to its bare
+/// chainstate root.
 #[instrument(skip_all, fields(component = "ol_genesis"))]
 pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
@@ -133,6 +131,9 @@ mod tests {
     use strata_ol_stf::OLSpecId;
 
     use super::*;
+    use crate::test_utils::{
+        MN0_SHAPED_V0_GENESIS_BLKID, MN0_SHAPED_V0_GENESIS_STATE_ROOT, mn0_shaped_params,
+    };
 
     /// Executed genesis state root for [`OLParams::test_default`].
     ///
@@ -155,16 +156,76 @@ mod tests {
     fn test_genesis_runs_under_params_spec() {
         let v1_params = OLParams::test_default();
         assert_eq!(v1_params.genesis_spec(), OLSpecId::V1);
-        build_genesis_artifacts(&v1_params).expect("V1 genesis builds");
+        let v1_artifacts = build_genesis_artifacts(&v1_params).expect("V1 genesis builds");
+        assert_eq!(
+            v1_artifacts.ol_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V1)
+        );
 
         let v0_params = OLParams::builder(OLRuntimeParams::test_default())
             .genesis_spec(OLSpecId::V0)
             .build();
-        let err = build_genesis_artifacts(&v0_params).expect_err("V0 rules are not implemented");
-        assert!(matches!(
-            err,
-            GenesisError::StfExecution(ExecError::UnimplementedSpec(OLSpecId::V0))
-        ));
+        let v0_artifacts = build_genesis_artifacts(&v0_params).expect("V0 genesis builds");
+        assert_eq!(
+            v0_artifacts.ol_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V0)
+        );
+        assert_ne!(v0_artifacts.commitment, v1_artifacts.commitment);
+    }
+
+    #[test]
+    fn test_v0_genesis_commits_to_bare_chainstate_root() {
+        let params = mn0_shaped_params(OLSpecId::V0);
+        let artifacts = build_genesis_artifacts(&params).expect("V0 genesis builds");
+        let header_root = *artifacts.ol_block.header().state_root();
+
+        assert_eq!(
+            artifacts.ol_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V0)
+        );
+        assert_eq!(
+            header_root,
+            artifacts.ol_state.chainstate().compute_chainstate_root()
+        );
+        assert_eq!(artifacts.ol_state.compute_state_root(), header_root);
+        assert_eq!(artifacts.epoch_summary.final_state(), &header_root);
+    }
+
+    /// V0 genesis reproduces the genesis that 0.3.0 builds from the same
+    /// params, which is what lets a node join a network launched on 0.3.0.
+    #[test]
+    fn test_v0_genesis_reproduces_recorded_genesis() {
+        let artifacts =
+            build_genesis_artifacts(&mn0_shaped_params(OLSpecId::V0)).expect("V0 genesis builds");
+
+        assert_eq!(
+            hex(artifacts.ol_block.header().state_root().as_ref()),
+            MN0_SHAPED_V0_GENESIS_STATE_ROOT
+        );
+        assert_eq!(
+            hex(artifacts.commitment.blkid().as_ref()),
+            MN0_SHAPED_V0_GENESIS_BLKID
+        );
+    }
+
+    /// The same params relabelled as a V1 network commit to the V1 root form,
+    /// so they give a different genesis block.
+    #[test]
+    fn test_v1_relabelled_params_give_a_different_genesis() {
+        let v0 =
+            build_genesis_artifacts(&mn0_shaped_params(OLSpecId::V0)).expect("V0 genesis builds");
+        let v1 =
+            build_genesis_artifacts(&mn0_shaped_params(OLSpecId::V1)).expect("V1 genesis builds");
+
+        assert_eq!(
+            v0.ol_state.chainstate().compute_chainstate_root(),
+            v1.ol_state.chainstate().compute_chainstate_root()
+        );
+        assert_ne!(
+            v0.ol_block.header().state_root(),
+            v1.ol_block.header().state_root()
+        );
+        assert_ne!(v0.commitment, v1.commitment);
     }
 
     #[test]

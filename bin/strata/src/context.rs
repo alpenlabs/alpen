@@ -471,8 +471,89 @@ impl SharedNetworkParams {
 #[cfg(test)]
 mod shared_network_params_tests {
     use strata_identifiers::Buf32;
+    use strata_ol_genesis::test_utils::{MN0_SHAPED_V0_GENESIS_BLKID, mn0_shaped_params};
+    use strata_ol_state_types::OLSpecId;
 
     use super::*;
+
+    /// ASM params of a network launched on 0.3.0 with
+    /// [`MN0_SHAPED_V0_PARAMS`](strata_ol_genesis::test_utils::MN0_SHAPED_V0_PARAMS):
+    /// MN0's L1 anchor and bridge denomination, and the genesis block ID
+    /// `releases/0.3.0` computed for those params.
+    fn mn0_shaped_asm_params() -> AsmParams {
+        let json = format!(
+            r#"{{
+                "magic": "STRA",
+                "anchor": {{
+                    "block": {{
+                        "height": 961729,
+                        "blkid": "0000000000000000000055fbd96192d25981163ea0f18accc6d1e22cafe84b6f"
+                    }},
+                    "next_target": 386020669,
+                    "epoch_start_timestamp": 1786217755,
+                    "network": "bitcoin"
+                }},
+                "subprotocols": [
+                    {{
+                        "Checkpoint": {{
+                            "sequencer_key": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0",
+                            "checkpoint_predicate": "AlwaysAccept",
+                            "genesis_l1_height": 961729,
+                            "genesis_ol_blkid": "{MN0_SHAPED_V0_GENESIS_BLKID}"
+                        }}
+                    }},
+                    {{
+                        "Bridge": {{
+                            "operators": [
+                                "02becdf7aab195ab0a42ba2f2eca5b7fa5a246267d802c627010e1672f08657f70"
+                            ],
+                            "denomination": 200000000,
+                            "assignment_duration": 0,
+                            "operator_fee": 0,
+                            "recovery_delay": 0,
+                            "safe_harbour_address": "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                        }}
+                    }}
+                ]
+            }}"#
+        );
+        serde_json::from_str(&json).expect("MN0-shaped ASM params parse")
+    }
+
+    /// The startup check accepts V0 params against ASM params that carry the
+    /// genesis block ID 0.3.0 computed for them.
+    #[test]
+    fn shared_network_params_accept_v0_genesis() {
+        validate_shared_network_params(&mn0_shaped_asm_params(), &mn0_shaped_params(OLSpecId::V0))
+            .expect("V0 params rebuild the genesis 0.3.0 built");
+    }
+
+    /// The same OL params relabelled as a V1 network build another genesis, so
+    /// the startup check rejects them.
+    #[test]
+    fn shared_network_params_reject_v0_params_relabelled_as_v1() {
+        let asm_params = mn0_shaped_asm_params();
+        let v1_params = mn0_shaped_params(OLSpecId::V1);
+        let asm_network_params = SharedNetworkParams::from_asm(&asm_params).expect("ASM side");
+        let ol_network_params = SharedNetworkParams::from_ol(&v1_params).expect("OL side");
+        assert_ne!(
+            ol_network_params.genesis_ol_blkid,
+            asm_network_params.genesis_ol_blkid
+        );
+        assert_eq!(
+            SharedNetworkParams {
+                genesis_ol_blkid: asm_network_params.genesis_ol_blkid,
+                ..ol_network_params
+            },
+            asm_network_params,
+            "only the genesis block ID differs"
+        );
+
+        assert!(matches!(
+            validate_shared_network_params(&asm_params, &v1_params),
+            Err(InitError::InconsistentNetworkParams(_))
+        ));
+    }
 
     #[test]
     fn shared_network_params_match() {
