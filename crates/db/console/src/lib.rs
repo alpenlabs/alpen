@@ -13,9 +13,11 @@ pub use strata_db_console_macros::{ConsoleTable, ConsoleValue};
 
 mod read;
 mod render;
+mod write;
 
 pub use read::{ConsoleRow, ReadExecutor, ReadOutput, ReadPlan, RowStream, ScanPlan};
 pub use render::{RecordFormat, render_record, render_schema, write_json_lines};
+pub use write::{StagedWrite, WritePreview, WriteSession};
 
 /// Result type returned by console registrations and values.
 pub type ConsoleResult<T> = Result<T, ConsoleError>;
@@ -96,6 +98,32 @@ pub enum ConsoleError {
         read_source: &'static str,
         /// Description of the missing or inconsistent data.
         message: String,
+    },
+
+    /// A write was requested for a table without a registered write path.
+    #[error("console table '{0}' is read-only")]
+    ReadOnlyTable(&'static str),
+
+    /// A point write targeted a record that does not exist.
+    #[error("console table '{table}' has no record for the requested key")]
+    MissingRecord {
+        /// Registered table name.
+        table: &'static str,
+    },
+
+    /// A session already contains a staged point write.
+    #[error("a point write is already staged; commit or abort it first")]
+    WriteAlreadyStaged,
+
+    /// Commit was requested without a staged write.
+    #[error("no point write is staged")]
+    NoStagedWrite,
+
+    /// The stored record changed after the point write was staged.
+    #[error("staged record in console table '{table}' changed before commit")]
+    StaleWrite {
+        /// Registered table name.
+        table: &'static str,
     },
 }
 
@@ -439,6 +467,26 @@ pub trait ConsoleTable: Send + Sync {
             console_source: self.name(),
             modifier: modifier.to_owned(),
         })
+    }
+
+    /// Prepares a point field update without persisting it.
+    fn stage_set(
+        &self,
+        _key: &ConsoleScalar,
+        _field: &str,
+        _value: &ConsoleScalar,
+    ) -> ConsoleResult<Box<dyn StagedWrite>> {
+        Err(ConsoleError::ReadOnlyTable(self.name()))
+    }
+
+    /// Prepares a broader point modification without persisting it.
+    fn stage_modify(
+        &self,
+        _key: &ConsoleScalar,
+        _modifier: &str,
+        _arguments: &[ConsoleScalar],
+    ) -> ConsoleResult<Box<dyn StagedWrite>> {
+        Err(ConsoleError::ReadOnlyTable(self.name()))
     }
 }
 

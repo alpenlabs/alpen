@@ -3,11 +3,12 @@
 use std::marker::PhantomData;
 
 use strata_db_console::{
-    ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleScalar, ConsoleTable, ConsoleValue,
-    RecordHandle, RecordStream, RegisteredConsoleValue, ScalarType, ScanDirection, ValueMetadata,
+    ConsoleError, ConsoleRegistry, ConsoleResult, ConsoleRow, ConsoleScalar, ConsoleTable,
+    ConsoleValue, RecordHandle, RecordStream, RegisteredConsoleValue, ScalarType, ScanDirection,
+    StagedWrite, ValueMetadata, WritePreview,
 };
 use strata_identifiers::{Buf32, OLBlockId};
-use typed_sled::error::Result as SledResult;
+use typed_sled::error::{Error as SledError, Result as SledResult};
 use typed_sled::{Schema, SledTree, ValueCodec};
 
 use crate::SledBackend;
@@ -28,6 +29,7 @@ where
     parse_key: fn(&ConsoleScalar) -> ConsoleResult<S::Key>,
     render_key: fn(S::Key) -> ConsoleScalar,
     map_value: fn(DecodedValue<S>) -> V,
+    unmap_value: Option<fn(V) -> S::Value>,
     _value: PhantomData<V>,
 }
 
@@ -53,8 +55,15 @@ where
             parse_key,
             render_key,
             map_value,
+            unmap_value: None,
             _value: PhantomData,
         }
+    }
+
+    /// Enables writes by mapping an edited console value back to the stored schema value.
+    pub(crate) fn with_unmap_value(mut self, unmap_value: fn(V) -> S::Value) -> Self {
+        self.unmap_value = Some(unmap_value);
+        self
     }
 
     fn make_handle(&self, key: S::Key, value: DecodedValue<S>) -> RecordHandle
@@ -62,6 +71,97 @@ where
         V: ConsoleValue + 'static,
     {
         RecordHandle::new(self.name, (self.render_key)(key), (self.map_value)(value))
+    }
+}
+
+impl<S, V> SledConsoleTable<S, V>
+where
+    S: Schema + Clone + Send + Sync + 'static,
+    S::Key: Clone + Send + Sync + 'static,
+    S::Value: Clone + Send + Sync + 'static,
+    DecodedValue<S>: 'static,
+    V: RegisteredConsoleValue + Clone + Send + Sync + 'static,
+{
+    /// Prepares one typed replacement and its stable before/after preview.
+    pub(crate) fn stage_write(
+        &self,
+        key: &ConsoleScalar,
+        operation: String,
+        mutate: impl FnOnce(&mut V) -> ConsoleResult<()>,
+    ) -> ConsoleResult<Box<dyn StagedWrite>> {
+        let unmap_value = self
+            .unmap_value
+            .ok_or(ConsoleError::ReadOnlyTable(self.name))?;
+        let key = (self.parse_key)(key)?;
+        let decoded = self
+            .tree
+            .get(&key)
+            .map_err(|error| ConsoleError::storage(self.name, error))?
+            .ok_or(ConsoleError::MissingRecord { table: self.name })?;
+        let original = (self.map_value)(decoded);
+        let mut replacement = original.clone();
+        mutate(&mut replacement)?;
+
+        let rendered_key = (self.render_key)(key.clone());
+        let before = ConsoleRow::from_handle(RecordHandle::new(
+            self.name,
+            rendered_key.clone(),
+            original.clone(),
+        ))?;
+        let after = ConsoleRow::from_handle(RecordHandle::new(
+            self.name,
+            rendered_key,
+            replacement.clone(),
+        ))?;
+
+        Ok(Box::new(SledStagedWrite::<S> {
+            name: self.name,
+            tree: self.tree.clone(),
+            key,
+            expected: unmap_value(original),
+            replacement: unmap_value(replacement),
+            preview: WritePreview {
+                operation,
+                before,
+                after,
+            },
+        }))
+    }
+}
+
+struct SledStagedWrite<S>
+where
+    S: Schema,
+{
+    name: &'static str,
+    tree: SledTree<S>,
+    key: S::Key,
+    expected: S::Value,
+    replacement: S::Value,
+    preview: WritePreview,
+}
+
+impl<S> StagedWrite for SledStagedWrite<S>
+where
+    S: Schema + Send + Sync + 'static,
+    S::Key: Clone + Send + Sync + 'static,
+    S::Value: Clone + Send + Sync + 'static,
+{
+    fn preview(&self) -> &WritePreview {
+        &self.preview
+    }
+
+    fn commit(&self) -> ConsoleResult<()> {
+        self.tree
+            .compare_and_swap(
+                self.key.clone(),
+                Some(self.expected.clone()),
+                Some(self.replacement.clone()),
+            )
+            .map_err(|error| match error {
+                SledError::CASError(_) => ConsoleError::StaleWrite { table: self.name },
+                error => ConsoleError::storage(self.name, error),
+            })
     }
 }
 
@@ -168,7 +268,7 @@ mod tests {
     use proptest::test_runner::TestRunner;
     use strata_db_console::{
         ConsoleError, ConsoleScalar, ReadExecutor, ReadOutput, ReadPlan, RecordFormat,
-        ScanDirection, SourceKind, render_record, write_json_lines,
+        ScanDirection, SourceKind, WriteSession, render_record, write_json_lines,
     };
     use strata_db_types::l1::L1Database;
     use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
@@ -387,5 +487,113 @@ mod tests {
             sync_info.fields.get("ol_tip_block_id"),
             Some(&ConsoleScalar::Bytes(block_id.as_ref().to_vec()))
         );
+    }
+
+    #[test]
+    fn point_writes_preview_abort_commit_and_reject_stale_values() {
+        let backend = SledBackend::new(Arc::new(get_test_sled_db()), SledDbConfig::test())
+            .expect("test: create Sled backend");
+        let key = vec![7];
+        backend
+            .prover_db
+            .put_task(key.clone(), TaskRecordData::new(TaskStatus::Pending))
+            .expect("test: insert prover task");
+
+        let registry = build_console_registry(&backend).expect("test: build console registry");
+        let console_key = ConsoleScalar::Bytes(key.clone());
+        let mut session = WriteSession::new(&registry);
+
+        let preview = session
+            .stage_set(
+                "tasks",
+                &console_key,
+                "retry_after_secs",
+                &ConsoleScalar::U64(42),
+            )
+            .expect("test: stage retry setter");
+        assert_eq!(preview.operation, "set retry_after_secs");
+        assert_eq!(
+            preview.after.fields.get("retry_after_secs"),
+            Some(&ConsoleScalar::U64(42))
+        );
+        assert_eq!(
+            backend
+                .prover_db
+                .get_task(key.clone())
+                .expect("test: read uncommitted task")
+                .expect("test: task exists")
+                .retry_after_secs(),
+            None
+        );
+        session.abort().expect("test: abort staged setter");
+
+        session
+            .stage_set(
+                "ProverTask",
+                &console_key,
+                "retry_after_secs",
+                &ConsoleScalar::U64(42),
+            )
+            .expect("test: restage retry setter");
+        let mut concurrent = backend
+            .prover_db
+            .get_task(key.clone())
+            .expect("test: read concurrent task")
+            .expect("test: concurrent task exists");
+        concurrent.set_retry_after_secs(Some(7));
+        backend
+            .prover_db
+            .put_task(key.clone(), concurrent)
+            .expect("test: write concurrent task change");
+        assert!(matches!(
+            session.commit(),
+            Err(ConsoleError::StaleWrite {
+                table: "ProverTask"
+            })
+        ));
+        assert!(session.staged().is_some());
+        session.abort().expect("test: abort stale setter");
+
+        session
+            .stage_set(
+                "ProverTask",
+                &console_key,
+                "retry_after_secs",
+                &ConsoleScalar::U64(42),
+            )
+            .expect("test: stage current retry setter");
+        session.commit().expect("test: commit retry setter");
+        assert_eq!(
+            backend
+                .prover_db
+                .get_task(key.clone())
+                .expect("test: read committed task")
+                .expect("test: committed task exists")
+                .retry_after_secs(),
+            Some(42)
+        );
+
+        let preview = session
+            .stage_modify(
+                "ProverTask",
+                &console_key,
+                "abandon",
+                &[ConsoleScalar::String("operator cancelled".to_owned())],
+            )
+            .expect("test: stage abandon modifier");
+        assert_eq!(
+            preview.after.fields.get("status"),
+            Some(&ConsoleScalar::String("permanent_failure".to_owned()))
+        );
+        session.commit().expect("test: commit abandon modifier");
+        assert!(matches!(
+            backend
+                .prover_db
+                .get_task(key)
+                .expect("test: read abandoned task")
+                .expect("test: abandoned task exists")
+                .status(),
+            TaskStatus::PermanentFailure { error } if error == "operator cancelled"
+        ));
     }
 }

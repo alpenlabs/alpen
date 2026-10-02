@@ -32,6 +32,7 @@ define_sled_database!(
     parse_key = parse_byte_key,
     render_key = render_byte_key,
     map_value = identity,
+    unmap_value = identity,
     modifier(name = "reset", via = reset_task),
     modifier(
         name = "abandon",

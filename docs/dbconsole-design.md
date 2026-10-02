@@ -91,7 +91,9 @@ scan ProverTask
 
 Staging a stream requires a bound such as `take 20` or an explicit `all`. Cancellation or one modifier failure discards the new batch.
 
-The session holds writes as `Vec<Box<dyn StagedWrite>>`, retaining each typed key, value, registration, and pre-edit fingerprint. `staged` previews the batch, `abort` drops it, and `commit` rechecks fingerprints before using production storage APIs. Once apply begins, cancellation waits rather than interrupting a commit mid-write.
+The first write implementation deliberately holds one `Box<dyn StagedWrite>` at a time. It retains the typed key, original value, replacement, and a stable before/after preview. `abort` drops it. `commit` uses Sled's typed compare-and-swap with the original encoded value as the fingerprint, so it cannot overwrite a record that changed after staging. A failed stale-value commit remains staged for inspection or abort.
+
+Bulk staging can later build on the same boundary, but it should not weaken these semantics. Once a multi-row apply begins, cancellation must wait rather than interrupting a commit mid-write.
 
 The current high-level database traits do not expose one arbitrary transaction spanning any set of Sled trees. A generic commit should therefore contain writes for only one table registration, which may supply its own atomic multi-row apply function. Cross-table or ordered mutations remain recipes until a production transaction coordinator exists. This avoids promising atomicity that the storage APIs do not provide.
 
@@ -170,7 +172,7 @@ fn abandon_task(
     parse_key = parse_byte_key,
     render_key = render_byte_key,
     map_value = identity,
-    write_with = write_task,
+    unmap_value = identity,
     modifier(name = "reset", via = reset_task),
     modifier(
         name = "abandon",
@@ -183,6 +185,8 @@ struct ProverTaskConsoleTable(SledTree<ProverTaskTree>);
 let mut registry = ConsoleRegistry::new();
 registry.register(Arc::new(ProverTaskConsoleTable(tree.clone())))?;
 ```
+
+`map_value` converts a decoded storage value into the registered console value. The optional `unmap_value` converts the edited value back to the schema's stored value and opts the table into point writes. Omitting it leaves the table read-only, even if the value type exposes setters.
 
 The four field forms are:
 

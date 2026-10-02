@@ -630,6 +630,7 @@ struct TableConfig {
     parse_key: Option<Path>,
     render_key: Option<Path>,
     map_value: Option<Path>,
+    unmap_value: Option<Path>,
     modifiers: Vec<Modifier>,
 }
 
@@ -655,6 +656,8 @@ fn parse_table_config(input: &DeriveInput) -> syn::Result<TableConfig> {
             config.render_key = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("map_value") {
             config.map_value = Some(meta.value()?.parse()?);
+        } else if meta.path.is_ident("unmap_value") {
+            config.unmap_value = Some(meta.value()?.parse()?);
         } else if meta.path.is_ident("modifier") {
             config.modifiers.push(parse_modifier(meta)?);
         } else {
@@ -795,7 +798,7 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     });
 
-    let make_adapter = quote! {
+    let base_adapter = quote! {
         #adapter::<#schema, #value>::new(
             #name,
             &[#(#aliases),*],
@@ -806,8 +809,60 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
             #map_value,
         )
     };
+    let make_adapter = config.unmap_value.as_ref().map_or_else(
+        || base_adapter.clone(),
+        |unmap_value| quote!(#base_adapter.with_unmap_value(#unmap_value)),
+    );
+
+    let write_methods = config.unmap_value.is_some().then(|| {
+        quote! {
+            fn stage_set(
+                &self,
+                key: &::strata_db_console::ConsoleScalar,
+                field: &str,
+                value: &::strata_db_console::ConsoleScalar,
+            ) -> ::strata_db_console::ConsoleResult<
+                ::std::boxed::Box<dyn ::strata_db_console::StagedWrite>,
+            > {
+                let adapter = #make_adapter;
+                adapter.stage_write(key, format!("set {field}"), |record| {
+                    ::strata_db_console::ConsoleValue::set(record, field, value)
+                })
+            }
+
+            fn stage_modify(
+                &self,
+                key: &::strata_db_console::ConsoleScalar,
+                modifier: &str,
+                arguments: &[::strata_db_console::ConsoleScalar],
+            ) -> ::strata_db_console::ConsoleResult<
+                ::std::boxed::Box<dyn ::strata_db_console::StagedWrite>,
+            > {
+                let adapter = #make_adapter;
+                adapter.stage_write(key, format!("modify {modifier}"), |record| {
+                    Self::__console_modify_value(record, modifier, arguments)
+                })
+            }
+        }
+    });
 
     Ok(quote! {
+        impl #type_ident {
+            fn __console_modify_value(
+                value: &mut #value,
+                modifier: &str,
+                arguments: &[::strata_db_console::ConsoleScalar],
+            ) -> ::strata_db_console::ConsoleResult<()> {
+                match modifier {
+                    #(#modifier_arms,)*
+                    _ => Err(::strata_db_console::ConsoleError::UnknownModifier {
+                        console_source: #name,
+                        modifier: modifier.to_owned(),
+                    }),
+                }
+            }
+        }
+
         impl ::strata_db_console::ConsoleTable for #type_ident {
             fn name(&self) -> &'static str {
                 #name
@@ -867,14 +922,10 @@ fn expand_console_table(input: &DeriveInput) -> syn::Result<TokenStream2> {
                         "record value has an unexpected concrete type",
                     )
                 })?;
-                match modifier {
-                    #(#modifier_arms,)*
-                    _ => Err(::strata_db_console::ConsoleError::UnknownModifier {
-                        console_source: #name,
-                        modifier: modifier.to_owned(),
-                    }),
-                }
+                Self::__console_modify_value(value, modifier, arguments)
             }
+
+            #write_methods
         }
     })
 }
