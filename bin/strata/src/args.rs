@@ -171,6 +171,12 @@ mod tests {
     fn test_config() -> Config {
         toml::from_str(
             r#"
+            [asm_execution]
+            genesis_predicate = "AlwaysAccept"
+            [[asm_execution.targets]]
+            predicate = "AlwaysAccept"
+            spec_id = 0
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"

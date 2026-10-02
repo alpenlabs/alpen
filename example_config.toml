@@ -1,3 +1,11 @@
+# Regtest example: use the chain's actual genesis predicate in deployments.
+# This catalog selects native ASM implementations; it does not enable proving.
+[asm_execution]
+genesis_predicate = "AlwaysAccept"
+[[asm_execution.targets]]
+predicate = "AlwaysAccept"
+spec_id = 0
+
 [client]
 rpc_port = 8432
 admin_rpc_host = "127.0.0.1"

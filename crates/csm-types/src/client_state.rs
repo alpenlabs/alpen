@@ -3,10 +3,12 @@
 //! implement the consensus logic.
 
 use core::fmt;
+use std::io::{self, Read, Write};
 
 use arbitrary::{Arbitrary, Unstructured};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, Encode};
 use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_identifiers::{
     Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, RBuf32,
@@ -138,7 +140,7 @@ impl CheckpointL1Ref {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct L1Checkpoint {
     /// Tip published by the ASM checkpoint subprotocol for this checkpoint.
     ///
@@ -146,13 +148,35 @@ pub struct L1Checkpoint {
     /// from `l1_reference.l1_commitment`, which records where the checkpoint
     /// envelope was observed on L1.
     ///
-    /// `CheckpointTip` is SSZ-defined; its Borsh impl is provided by
-    /// `impl_borsh_via_ssz_fixed!` in `strata-asm-proto-checkpoint-types`, so a
-    /// plain Borsh derive on the parent works without field-level codecs.
+    /// Stored inline as fixed-size SSZ in the historical Borsh record layout.
     pub tip: CheckpointTip,
 
     /// L1 reference for the envelope that carried this checkpoint.
     pub l1_reference: CheckpointL1Ref,
+}
+
+// ASM no longer implements Borsh for CheckpointTip. Preserve the release encoding:
+// fixed-size SSZ tip without a length prefix, then the Borsh L1 reference.
+impl BorshSerialize for L1Checkpoint {
+    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(&self.tip.as_ssz_bytes())?;
+        BorshSerialize::serialize(&self.l1_reference, writer)
+    }
+}
+
+impl BorshDeserialize for L1Checkpoint {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let mut bytes = vec![0; <CheckpointTip as Decode>::ssz_fixed_len()];
+        reader.read_exact(&mut bytes)?;
+        let tip = CheckpointTip::from_ssz_bytes(&bytes).map_err(|err| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid checkpoint tip SSZ: {err}"),
+            )
+        })?;
+        let l1_reference = CheckpointL1Ref::deserialize_reader(reader)?;
+        Ok(Self { tip, l1_reference })
+    }
 }
 
 impl fmt::Display for L1Checkpoint {

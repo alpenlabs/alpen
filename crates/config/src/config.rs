@@ -2,6 +2,8 @@ use std::{fmt, net::IpAddr, path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
+use strata_asm_common::SpecId;
+use strata_predicate::PredicateKey;
 use zeroize::ZeroizeOnDrop;
 
 use crate::btcio::BtcioConfig;
@@ -439,6 +441,9 @@ pub struct Config {
     pub bitcoind: BitcoindConfig,
     pub btcio: BtcioConfig,
 
+    /// Genesis authority and trusted native implementations, independent of proving.
+    pub asm_execution: AsmExecutionConfig,
+
     /// Sequencer configuration (only required if client.is_sequencer = true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequencer: Option<SequencerConfig>,
@@ -456,6 +461,27 @@ pub struct Config {
     pub prover: Option<ProverConfig>,
 }
 
+/// Local ASM capabilities; on-chain authority selects which implementation executes.
+///
+/// Keep the predicate-to-spec mapping immutable across restarts. The upstream
+/// native assembly validates the catalog when the ASM worker starts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsmExecutionConfig {
+    /// Predicate authorizing the chain's initial ASM ruleset.
+    pub genesis_predicate: PredicateKey,
+    /// Trusted associations between predicates and compiled implementations.
+    pub targets: Vec<AsmExecutionTargetConfig>,
+}
+
+/// An immutable association between an ASM predicate and its native implementation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsmExecutionTargetConfig {
+    /// Program identity associated with this implementation.
+    pub predicate: PredicateKey,
+    /// Protocol spec ID of the compiled implementation.
+    pub spec_id: SpecId,
+}
+
 #[cfg(test)]
 mod test {
     use bitcoin::FeeRate;
@@ -466,6 +492,12 @@ mod test {
     #[test]
     fn test_config_load() {
         let config_string_sequencer = r#"
+            [asm_execution]
+            genesis_predicate = "AlwaysAccept"
+            [[asm_execution.targets]]
+            predicate = "AlwaysAccept"
+            spec_id = 0
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"
@@ -522,6 +554,16 @@ mod test {
             config.err()
         );
         let config = config.unwrap();
+        assert_eq!(
+            config.asm_execution.genesis_predicate,
+            PredicateKey::always_accept()
+        );
+        assert_eq!(config.asm_execution.targets.len(), 1);
+        assert_eq!(
+            config.asm_execution.targets[0].predicate,
+            PredicateKey::always_accept()
+        );
+        assert_eq!(config.asm_execution.targets[0].spec_id, 0);
         assert!(
             config.sequencer.is_some(),
             "sequencer config should be present for sequencer"
@@ -559,6 +601,12 @@ mod test {
         assert_eq!(prover.workers, 4);
 
         let config_string_fullnode = r#"
+            [asm_execution]
+            genesis_predicate = "AlwaysAccept"
+            [[asm_execution.targets]]
+            predicate = "AlwaysAccept"
+            spec_id = 0
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"
@@ -593,6 +641,15 @@ mod test {
             [btcio.broadcaster]
             poll_interval_ms = 1_000
         "#;
+
+        // Execution authority must be explicit even when the prover is disabled.
+        let mut missing_execution: toml::Value = toml::from_str(config_string_fullnode).unwrap();
+        missing_execution
+            .as_table_mut()
+            .unwrap()
+            .remove("asm_execution");
+        let err = missing_execution.try_into::<Config>().unwrap_err();
+        assert!(err.to_string().contains("asm_execution"));
 
         let config = toml::from_str::<Config>(config_string_fullnode);
         assert!(

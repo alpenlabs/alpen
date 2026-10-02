@@ -18,7 +18,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::Buf32;
-use strata_l1_envelope_fmt::builder::MAX_ENVELOPE_PAYLOAD_SIZE;
+use strata_l1_envelope_fmt::MAX_ENVELOPE_PAYLOAD_SIZE;
 use strata_l1_txfmt::TagData;
 
 /// DA destination identifier. This will eventually be used to enable storing
