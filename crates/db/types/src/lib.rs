@@ -3,7 +3,6 @@
 pub mod asm;
 pub mod backend;
 pub mod checkpoint_proof;
-pub mod checkpoint_status;
 pub mod chunked_envelope;
 pub mod client_state;
 pub mod common;

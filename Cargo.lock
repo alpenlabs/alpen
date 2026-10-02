@@ -9231,7 +9231,6 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-codec",
  "strata-csm-types",
- "strata-db-console",
  "strata-db-macros",
  "strata-identifiers",
  "strata-l1-txfmt",

@@ -12,7 +12,6 @@ strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
 strata-csm-types.workspace = true
-strata-db-console.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-merkle-node-store.workspace = true

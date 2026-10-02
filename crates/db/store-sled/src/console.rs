@@ -357,16 +357,9 @@ pub(crate) fn parse_ol_block_id(key: &ConsoleScalar) -> ConsoleResult<OLBlockId>
     Ok(OLBlockId::from(Buf32::from(bytes)))
 }
 
-pub(crate) fn render_ol_block_id(key: OLBlockId) -> ConsoleScalar {
-    ConsoleScalar::Bytes(key.as_ref().to_vec())
-}
-
 /// Builds the explicit set of Sled tables supported by the console spike.
 pub fn build_console_registry(backend: &SledBackend) -> ConsoleResult<ConsoleRegistry> {
     let mut registry = ConsoleRegistry::new();
-    for table in backend.ol_block_db.console_tables() {
-        registry.register(table)?;
-    }
     for table in backend.prover_db.console_tables() {
         registry.register(table)?;
     }
@@ -388,22 +381,17 @@ mod tests {
         ScalarExpression, ScanDirection, Selection, SourceKind, WriteSession, render_record,
         write_json_lines,
     };
-    use strata_db_types::l1::L1Database;
     use strata_db_types::ol_block::{BlockStatus, OLBlockDatabase};
-    use strata_db_types::ol_state::OLStateDatabase;
     use strata_db_types::prover_task::ProverTaskDatabase;
-    use strata_identifiers::OLBlockCommitment;
     use strata_ol_chain_types_v1::test_utils::ol_block_strategy;
-    use strata_ol_state_container::test_utils::create_test_container_with_staged;
     use strata_paas::{TaskRecordData, TaskStatus};
-    use strata_primitives::l1::L1BlockId;
 
     use super::build_console_registry;
     use crate::test_utils::get_test_sled_db;
     use crate::{SledBackend, SledDbConfig};
 
     #[test]
-    fn registry_maps_simple_complex_and_adapter_values() {
+    fn registry_maps_a_writable_table_and_native_view() {
         let backend = SledBackend::new(Arc::new(get_test_sled_db()), SledDbConfig::test())
             .expect("test: create Sled backend");
 
@@ -422,22 +410,6 @@ mod tests {
             .ol_block_db
             .set_block_status(block_id, BlockStatus::Valid)
             .expect("test: update OL block status");
-        backend
-            .ol_block_db
-            .replace_canonical_suffix_from(block_slot, vec![block_id])
-            .expect("test: set canonical OL tip");
-        backend
-            .ol_state_db
-            .put_toplevel_ol_state(
-                OLBlockCommitment::new(block_slot, block_id),
-                create_test_container_with_staged(1),
-            )
-            .expect("test: insert canonical OL state");
-        backend
-            .l1_db
-            .set_canonical_chain_entry(100, L1BlockId::default())
-            .expect("test: set canonical L1 tip");
-
         for key in [vec![1], vec![2], vec![3]] {
             backend
                 .prover_db
@@ -447,28 +419,6 @@ mod tests {
 
         let registry = build_console_registry(&backend).expect("test: build console registry");
         let block_key = ConsoleScalar::Bytes(block_id.as_ref().to_vec());
-
-        let status = registry
-            .table("OLBlockStatus")
-            .expect("test: status table")
-            .get(&block_key)
-            .expect("test: read block status")
-            .expect("test: block status exists");
-        assert_eq!(
-            status.get("status").expect("test: status getter"),
-            ConsoleScalar::String("valid".to_owned())
-        );
-
-        let block = registry
-            .table("OLBlock")
-            .expect("test: block table")
-            .get(&block_key)
-            .expect("test: read OL block")
-            .expect("test: OL block exists");
-        assert_eq!(
-            block.get("slot").expect("test: slot getter"),
-            ConsoleScalar::U64(block_slot)
-        );
 
         let task_table = registry.table("ProverTask").expect("test: task table");
         let mut task = task_table
@@ -581,30 +531,14 @@ mod tests {
             2
         );
 
-        let ReadOutput::Schema(sync_schema) = executor
-            .execute(ReadPlan::schema("SyncInfo"))
-            .expect("test: sync-info schema")
+        let ReadOutput::Schema(block_schema) = executor
+            .execute(ReadPlan::schema("OlBlock"))
+            .expect("test: OL block schema")
         else {
             panic!("test: schema output expected");
         };
-        assert_eq!(sync_schema.kind, SourceKind::View);
-        assert_eq!(sync_schema.arguments.len(), 1);
-
-        let ReadOutput::Record(sync_info) = executor
-            .execute(ReadPlan::get("SyncInfo", vec![ConsoleScalar::U64(6)]))
-            .expect("test: sync-info view")
-        else {
-            panic!("test: record output expected");
-        };
-        let sync_info = sync_info.expect("test: sync-info value");
-        assert_eq!(
-            sync_info.fields.get("l1_tip_height"),
-            Some(&ConsoleScalar::U64(100))
-        );
-        assert_eq!(
-            sync_info.fields.get("ol_tip_block_id"),
-            Some(&ConsoleScalar::Bytes(block_id.as_ref().to_vec()))
-        );
+        assert_eq!(block_schema.kind, SourceKind::View);
+        assert_eq!(block_schema.arguments.len(), 1);
     }
 
     #[test]

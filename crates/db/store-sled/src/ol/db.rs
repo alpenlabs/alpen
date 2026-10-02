@@ -5,15 +5,10 @@ use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use typed_sled::error::Error as TSledError;
 
-use std::sync::Arc;
-use strata_db_console::ConsoleTable;
-use typed_sled::SledTree;
-
 use super::schemas::{
     OLBlockHeightSchema, OLBlockHighWatermarkSchema, OLBlockSchema, OLBlockStatusSchema,
     OLCanonicalBlockSchema, OLHistoryBaseSchema, OLTerminalHeaderSchema,
 };
-use crate::console::{SledConsoleTable, identity, parse_ol_block_id, render_ol_block_id};
 use crate::define_sled_database;
 use crate::utils::{conv_sled_err, first};
 
@@ -31,87 +26,6 @@ define_sled_database!(
         history_base_tree: OLHistoryBaseSchema,
     }
 );
-
-/// Local console adapter that keeps console metadata out of the consensus type.
-#[derive(strata_db_console::ConsoleValue)]
-#[console(
-    name = "OLBlockV1",
-    getter(
-        name = "slot",
-        scalar = "u64",
-        via = OLBlockConsoleValue::console_slot
-    ),
-    getter(
-        name = "epoch",
-        scalar = "u64",
-        via = OLBlockConsoleValue::console_epoch
-    ),
-    getter(
-        name = "timestamp",
-        scalar = "u64",
-        via = OLBlockConsoleValue::console_timestamp
-    ),
-    getter(
-        name = "parent_block_id",
-        scalar = "bytes",
-        via = OLBlockConsoleValue::console_parent_block_id
-    )
-)]
-struct OLBlockConsoleValue(OLBlockV1);
-
-impl OLBlockConsoleValue {
-    fn console_slot(&self) -> u64 {
-        self.0.header().slot()
-    }
-
-    fn console_epoch(&self) -> u64 {
-        u64::from(self.0.header().epoch())
-    }
-
-    fn console_timestamp(&self) -> u64 {
-        self.0.header().timestamp()
-    }
-
-    fn console_parent_block_id(&self) -> Vec<u8> {
-        self.0.header().parent_blkid().as_ref().to_vec()
-    }
-}
-
-#[derive(strata_db_console::ConsoleTable)]
-#[console(
-    name = "OLBlockStatus",
-    key = "bytes",
-    schema = OLBlockStatusSchema,
-    value = BlockStatus,
-    adapter = SledConsoleTable,
-    parse_key = parse_ol_block_id,
-    render_key = render_ol_block_id,
-    map_value = identity
-)]
-struct OLBlockStatusConsoleTable(SledTree<OLBlockStatusSchema>);
-
-#[derive(strata_db_console::ConsoleTable)]
-#[console(
-    name = "OLBlock",
-    alias = "blocks",
-    key = "bytes",
-    schema = OLBlockSchema,
-    value = OLBlockConsoleValue,
-    adapter = SledConsoleTable,
-    parse_key = parse_ol_block_id,
-    render_key = render_ol_block_id,
-    map_value = OLBlockConsoleValue
-)]
-struct OLBlockConsoleTable(SledTree<OLBlockSchema>);
-
-impl OLBlockDBSled {
-    pub(crate) fn console_tables(&self) -> Vec<Arc<dyn ConsoleTable>> {
-        vec![
-            Arc::new(OLBlockStatusConsoleTable(self.blk_status_tree.clone())),
-            Arc::new(OLBlockConsoleTable(self.blk_tree.clone())),
-        ]
-    }
-}
 
 impl OLBlockDatabase for OLBlockDBSled {
     fn put_block_data(&self, block: OLBlockV1) -> DbResult<()> {
