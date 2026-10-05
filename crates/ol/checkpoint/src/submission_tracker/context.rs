@@ -15,7 +15,19 @@ use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
-use tracing::warn;
+
+/// What an L1 writer bundle carries, as far as the tracker is concerned.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BundleContents {
+    /// Something other than a checkpoint.
+    Other,
+
+    /// A checkpoint-tagged payload that does not decode, which only a bug or corruption leaves.
+    Undecodable,
+
+    /// A checkpoint.
+    Checkpoint(CheckpointBundle),
+}
 
 /// A checkpoint the sequencer handed to the L1 writer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,8 +70,8 @@ pub(crate) trait SubmissionTrackerContext: Send + Sync + 'static {
     /// Index the writer will assign to its next bundle.
     fn next_bundle_idx(&self) -> anyhow::Result<BundleIdx>;
 
-    /// Returns the checkpoint in bundle `idx`, or `None` if the bundle carries something else.
-    fn checkpoint_bundle(&self, idx: BundleIdx) -> anyhow::Result<Option<CheckpointBundle>>;
+    /// Returns what bundle `idx` carries.
+    fn bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents>;
 
     /// Resolves a reveal transaction through the broadcaster, or `None` if it is unknown there.
     fn resolve_reveal(&self, txid: L1TxId) -> anyhow::Result<Option<RevealStatus>>;
@@ -119,14 +131,14 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
         Ok(self.storage.l1_writer().get_next_payload_idx_blocking()?)
     }
 
-    fn checkpoint_bundle(&self, idx: BundleIdx) -> anyhow::Result<Option<CheckpointBundle>> {
+    fn bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents> {
         let entry = self
             .storage
             .l1_writer()
             .get_payload_entry_by_idx_blocking(idx)?
             .with_context(|| format!("L1 writer bundle {idx} is missing"))?;
         if *entry.payload.tag() != *OL_STF_CHECKPOINT_TX_TAG {
-            return Ok(None);
+            return Ok(BundleContents::Other);
         }
 
         // The sequencer writes one `CodecSsz<CheckpointPayload>` chunk, the same encoding the
@@ -137,11 +149,7 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
             .next()
             .map(decode_buf_exact::<CodecSsz<CheckpointPayload>>);
         let Some(Ok(payload)) = decoded else {
-            warn!(
-                bundle_idx = idx,
-                "skipping checkpoint bundle with an undecodable payload"
-            );
-            return Ok(None);
+            return Ok(BundleContents::Undecodable);
         };
         let payload = payload.into_inner();
         let tip = payload.new_tip();
@@ -149,7 +157,7 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
 
         // The writer leaves the txids zeroed until it signs the bundle.
         let reveal_txid = (entry.reveal_txid != L1TxId::zero()).then_some(entry.reveal_txid);
-        Ok(Some(CheckpointBundle {
+        Ok(BundleContents::Checkpoint(CheckpointBundle {
             commitment,
             reveal_txid,
         }))

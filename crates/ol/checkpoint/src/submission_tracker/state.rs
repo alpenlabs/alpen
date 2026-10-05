@@ -1,6 +1,6 @@
 //! Submission tracker state: scans writer bundles and records confirmed-but-rejected checkpoints.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use metrics::{counter, gauge};
 use strata_csm_types::CheckpointState;
@@ -9,10 +9,10 @@ use strata_db_types::l1_writer::BundleIdx;
 use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment};
 use strata_service::ServiceState;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use super::classify::{SubmissionVerdict, classify_submission};
-use super::context::SubmissionTrackerContext;
+use super::context::{BundleContents, SubmissionTrackerContext};
 
 /// State of the checkpoint submission tracker.
 ///
@@ -32,6 +32,12 @@ pub(crate) struct SubmissionTrackerState<C: SubmissionTrackerContext> {
 
     /// Recorded rejections, keyed by the transaction that was mined.
     rejected: BTreeMap<L1TxId, RejectedCheckpointEntry>,
+
+    /// Failure the last check hit, so a persistent one warns only once.
+    failure: Option<String>,
+
+    /// Undecodable bundles already reported, so a held cursor does not repeat the warning.
+    undecodable: BTreeSet<BundleIdx>,
 }
 
 impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
@@ -53,6 +59,8 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
             latest,
             cursor,
             rejected,
+            failure: None,
+            undecodable: BTreeSet::new(),
         })
     }
 
@@ -85,12 +93,36 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
             .map(|tip| tip.epoch())
     }
 
+    /// Runs one check; a failed one is retried on the next update or tick.
+    ///
+    /// The first failure is logged at warn, repeats of the same failure at debug, and the
+    /// recovery once at info, so a persistent storage or broadcaster error does not warn on
+    /// every tick.
+    pub(crate) fn check(&mut self) {
+        match self.evaluate() {
+            Ok(()) => {
+                if self.failure.take().is_some() {
+                    info!("checkpoint submission check recovered");
+                }
+            }
+            Err(err) => {
+                let failure = format!("{err:#}");
+                if self.failure.as_ref() == Some(&failure) {
+                    debug!(err = %failure, "checkpoint submission check still failing");
+                } else {
+                    warn!(err = %failure, "checkpoint submission check failed");
+                    self.failure = Some(failure);
+                }
+            }
+        }
+    }
+
     /// Checks every unsettled bundle against the latest CSM checkpoint state.
     ///
     /// New rejections and the advanced cursor are committed together, and each rejection is
     /// logged once, after the commit. An orderly restart therefore never alerts twice; a crash
     /// before the database flushes can repeat one warning.
-    pub(crate) fn evaluate(&mut self) -> anyhow::Result<()> {
+    fn evaluate(&mut self) -> anyhow::Result<()> {
         let csm_tip = self.latest.block;
         if !self.latest.has_genesis_occurred() {
             return Ok(());
@@ -142,14 +174,26 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
 
     /// Classifies bundle `idx`, appending a newly found rejection. Returns whether it is settled.
     fn check_bundle(
-        &self,
+        &mut self,
         idx: BundleIdx,
         csm_tip: L1BlockCommitment,
         verified_tip: Option<EpochCommitment>,
         new_rejections: &mut Vec<RejectedCheckpointEntry>,
     ) -> anyhow::Result<bool> {
-        let Some(bundle) = self.ctx.checkpoint_bundle(idx)? else {
-            return Ok(true);
+        let bundle = match self.ctx.bundle_contents(idx)? {
+            BundleContents::Checkpoint(bundle) => bundle,
+            BundleContents::Other => return Ok(true),
+            BundleContents::Undecodable => {
+                // Nothing to track, but an earlier unsettled bundle can hold the cursor and
+                // bring this one back on every pass.
+                if self.undecodable.insert(idx) {
+                    warn!(
+                        bundle_idx = idx,
+                        "skipping checkpoint bundle with an undecodable payload"
+                    );
+                }
+                return Ok(true);
+            }
         };
         let reveal = match bundle.reveal_txid {
             Some(txid) => self.ctx.resolve_reveal(txid)?,
@@ -206,11 +250,15 @@ impl<C: SubmissionTrackerContext> ServiceState for SubmissionTrackerState<C> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::io;
     use std::sync::{Arc, Mutex, MutexGuard};
 
     use strata_asm_checkpoint_types::CheckpointTip;
     use strata_csm_types::{CheckpointL1Ref, ClientState, L1Checkpoint};
     use strata_identifiers::{Buf32, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, RBuf32};
+    use tracing::Level;
+    use tracing::subscriber::with_default;
+    use tracing_subscriber::fmt::MakeWriter;
 
     use super::*;
     use crate::submission_tracker::context::{CheckpointBundle, RevealStatus};
@@ -219,13 +267,15 @@ mod tests {
 
     #[derive(Default)]
     struct StubData {
-        /// Writer bundles by index; `None` stands for a non-checkpoint bundle.
-        bundles: Vec<Option<CheckpointBundle>>,
+        /// Writer bundles by index.
+        bundles: Vec<BundleContents>,
         reveals: HashMap<L1TxId, RevealStatus>,
         canonical: HashMap<L1Height, L1BlockId>,
         cursor: Option<BundleIdx>,
         rejected: Vec<RejectedCheckpointEntry>,
         commits_with_rejections: usize,
+        /// Error every writer read returns while set.
+        failure: Option<&'static str>,
     }
 
     /// In-memory context; clones share data, so a clone stands in for a restarted node.
@@ -241,10 +291,11 @@ mod tests {
         fn push_checkpoint(&self, epoch: Epoch) -> L1TxId {
             let mut data = self.data();
             let txid = RBuf32::from([data.bundles.len() as u8 + 1; 32]);
-            data.bundles.push(Some(CheckpointBundle {
-                commitment: commitment(epoch),
-                reveal_txid: Some(txid),
-            }));
+            data.bundles
+                .push(BundleContents::Checkpoint(CheckpointBundle {
+                    commitment: commitment(epoch),
+                    reveal_txid: Some(txid),
+                }));
             data.reveals.insert(
                 txid,
                 RevealStatus {
@@ -291,10 +342,14 @@ mod tests {
         }
 
         fn next_bundle_idx(&self) -> anyhow::Result<BundleIdx> {
-            Ok(self.data().bundles.len() as BundleIdx)
+            let data = self.data();
+            if let Some(failure) = data.failure {
+                anyhow::bail!(failure);
+            }
+            Ok(data.bundles.len() as BundleIdx)
         }
 
-        fn checkpoint_bundle(&self, idx: BundleIdx) -> anyhow::Result<Option<CheckpointBundle>> {
+        fn bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents> {
             Ok(self.data().bundles[idx as usize])
         }
 
@@ -305,6 +360,49 @@ mod tests {
         fn canonical_l1_block(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>> {
             Ok(self.data().canonical.get(&height).copied())
         }
+    }
+
+    /// Log sink for [`capture_logs`].
+    #[derive(Clone, Default)]
+    struct LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for LogBuffer {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for LogBuffer {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    /// Returns the log lines `f` emits at debug and above.
+    fn capture_logs(f: impl FnOnce()) -> Vec<String> {
+        let buffer = LogBuffer::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(buffer.clone())
+            .with_max_level(Level::DEBUG)
+            .with_ansi(false)
+            .without_time()
+            .finish();
+        with_default(subscriber, f);
+        let logs = String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap();
+        logs.lines().map(str::to_owned).collect()
+    }
+
+    fn count_logs(logs: &[String], level: &str, message: &str) -> usize {
+        logs.iter()
+            .filter(|line| line.trim_start().starts_with(level) && line.contains(message))
+            .count()
     }
 
     /// Epochs of the recorded rejections, in txid order.
@@ -451,6 +549,52 @@ mod tests {
     }
 
     #[test]
+    fn persistent_failure_warns_once_then_recovers() {
+        let ctx = StubCtx::default();
+        let mut state = new_state(&ctx);
+        state.set_latest(csm_state(&ctx, 101, Some(1), Some(1)));
+        ctx.data().failure = Some("writer database unavailable");
+
+        let logs = capture_logs(|| {
+            for _ in 0..3 {
+                state.check();
+            }
+            ctx.data().failure = None;
+            state.check();
+            state.check();
+        });
+
+        let failed = "checkpoint submission check failed";
+        assert_eq!(count_logs(&logs, "WARN", failed), 1, "{logs:#?}");
+        let still_failing = "checkpoint submission check still failing";
+        assert_eq!(count_logs(&logs, "DEBUG", still_failing), 2, "{logs:#?}");
+        let recovered = "checkpoint submission check recovered";
+        assert_eq!(count_logs(&logs, "INFO", recovered), 1, "{logs:#?}");
+    }
+
+    #[test]
+    fn undecodable_bundle_warns_once_while_the_cursor_is_held() {
+        let ctx = StubCtx::default();
+        ctx.push_checkpoint(2);
+        ctx.data().bundles.push(BundleContents::Undecodable);
+        let mut state = new_state(&ctx);
+
+        let logs = capture_logs(|| {
+            for tip in [101, 102, 103] {
+                evaluate_at(&mut state, &ctx, tip, Some(1));
+            }
+        });
+
+        let message = "skipping checkpoint bundle with an undecodable payload";
+        assert_eq!(count_logs(&logs, "WARN", message), 1, "{logs:#?}");
+        assert_eq!(
+            state.cursor(),
+            0,
+            "the unmined epoch 2 bundle holds the cursor"
+        );
+    }
+
+    #[test]
     fn restart_keeps_recorded_rejection_without_realerting() {
         let ctx = StubCtx::default();
         let txid = ctx.push_checkpoint(2);
@@ -482,7 +626,7 @@ mod tests {
         ctx.mine(stale, block(100, 1));
         let rebuilt = ctx.push_checkpoint(11);
         ctx.mine(rebuilt, block(101, 1));
-        ctx.data().bundles.insert(1, None);
+        ctx.data().bundles.insert(1, BundleContents::Other);
 
         let mut state = new_state(&ctx);
         evaluate_at(&mut state, &ctx, 110, Some(11));

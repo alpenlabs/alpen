@@ -28,7 +28,6 @@ use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
-use tracing::warn;
 
 use self::context::{SubmissionTrackerContext, SubmissionTrackerContextImpl};
 use self::state::SubmissionTrackerState;
@@ -115,9 +114,7 @@ impl<C: SubmissionTrackerContext> SyncService for SubmissionTrackerService<C> {
             state.set_latest(checkpoint_state);
         }
         // A failed check must not stop the node; the next update or tick retries it.
-        if let Err(err) = state.evaluate() {
-            warn!(?err, "checkpoint submission check failed");
-        }
+        state.check();
         Ok(Response::Continue)
     }
 }
