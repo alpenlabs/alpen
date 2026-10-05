@@ -525,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn startup_accepts_preloaded_artifacts_before_and_after_enactment() {
+    fn startup_accepts_v0_and_v1_artifacts_across_the_switch_and_restart() {
         let storage = storage();
         let native = native_checkpoint_registry(OLRuntimeParams::test_default());
         let successor = native.get(OLSpecId::V1).unwrap();
@@ -551,20 +551,30 @@ mod tests {
             ))
             .unwrap();
         let predicates = registry.to_predicates();
-        let mut checkpoint = checkpoint(&predicates);
-        checkpoint.checkpoint_predicate = previous_predicate;
-        let genesis = extend_snapshot(&storage, 1, &checkpoint);
+        let mut checkpoint_state = checkpoint(&predicates);
+        checkpoint_state.checkpoint_predicate = previous_predicate;
+        let genesis = extend_snapshot(&storage, 1, &checkpoint_state);
 
         // The loaded predicates form a strict superset of the active/pending requirements.
         let startup = check_startup_artifacts_blocking(&storage, &predicates, genesis).unwrap();
         assert_eq!(predicates.iter().count(), 2);
         assert_eq!(startup, genesis);
+        let error = check_startup_artifacts_blocking(&storage, &native.to_predicates(), genesis)
+            .unwrap_err();
+        let CheckpointArtifactCheckError::MissingArtifacts(error) = error else {
+            panic!("expected missing active V0 artifact");
+        };
+        assert_eq!(error.missing_artifacts().len(), 1);
+        assert_eq!(
+            error.missing_artifacts()[0].status(),
+            CheckpointPredicateStatus::Active
+        );
 
-        checkpoint.queue_predicate_transition(PendingPredicateTransition::new(
+        checkpoint_state.queue_predicate_transition(PendingPredicateTransition::new(
             successor.predicate().clone(),
             10,
         ));
-        let enacted = extend_snapshot(&storage, 2, &checkpoint);
+        let enacted = extend_snapshot(&storage, 2, &checkpoint_state);
         let checked_block =
             check_startup_artifacts_blocking(&storage, &predicates, genesis).unwrap();
         assert_eq!(checked_block, enacted);
@@ -580,13 +590,27 @@ mod tests {
             missing.status(),
             CheckpointPredicateStatus::Pending { boundary: 10 }
         );
+
+        // After acceptance of the last V0 checkpoint, ASM only requires V1. A fresh set
+        // of storage managers must accept the same persisted state after restart.
+        let checkpoint = checkpoint(&predicates);
+        let activated = extend_snapshot(&storage, 3, &checkpoint);
+        let restarted = create_node_storage(storage.db().clone(), test_runtime_handle()).unwrap();
+        assert_eq!(
+            check_startup_artifacts_blocking(&restarted, &predicates, genesis).unwrap(),
+            activated,
+        );
+        assert_eq!(
+            check_startup_artifacts_blocking(&restarted, &native.to_predicates(), genesis).unwrap(),
+            activated,
+        );
         assert_eq!(
             registry
-                .into_hosts()
+                .into_proving_hosts()
                 .map(|(spec, _)| spec)
                 .collect::<Vec<_>>(),
-            vec![OLSpecId::V0, OLSpecId::V1],
-            "artifact checks retain both resident hosts for fixed-spec services"
+            vec![OLSpecId::V1],
+            "V0 satisfies startup checks without creating a prover service"
         );
     }
 

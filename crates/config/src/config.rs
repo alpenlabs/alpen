@@ -376,10 +376,10 @@ pub struct ProverConfig {
     /// The `sp1` feature must be enabled at compile time for `sp1` to work.
     pub backend: ProverBackend,
 
-    /// Resident SP1 artifact bundles indexed by OL spec. Each directory contains
-    /// the ELF, predicate, and manifest from one build. SP1 requires at least one
-    /// explicit entry. This list must be empty for native proving, which uses its built-in
-    /// program.
+    /// Resident SP1 artifact bundles indexed by OL spec. V1 bundles contain the ELF,
+    /// predicate, and manifest from one build. V0 bundles contain only an ELF and
+    /// predicate for startup validation. SP1 requires at least one explicit entry.
+    /// This list must be empty for native proving, which uses its built-in program.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<CheckpointArtifactConfig>,
 

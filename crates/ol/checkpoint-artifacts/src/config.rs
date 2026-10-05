@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use strata_ol_state_types::{OLSpecId, UnknownOLSpecId};
 
-/// Identifies one checkpoint artifact bundle and the OL rules it proves.
+/// Identifies one checkpoint artifact bundle and its OL rules version.
 ///
-/// Each directory contains `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
+/// V1 directories contain `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
 /// `guest-checkpoint.artifact-manifest.json`. Keeping these files together avoids combining an
-/// ELF from one release with metadata from another.
+/// ELF from one release with metadata from another. V0 bundles require only the ELF and predicate;
+/// they are validated for startup checks and are never used to prove checkpoints.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(try_from = "ArtifactConfigFields", into = "ArtifactConfigFields")]
 pub struct CheckpointArtifactConfig {
@@ -16,7 +17,7 @@ pub struct CheckpointArtifactConfig {
 }
 
 impl CheckpointArtifactConfig {
-    /// Declares a bundle whose versioned manifest names `spec`.
+    /// Declares a bundle for `spec`, including V0 bundles without a manifest.
     pub fn new(spec: OLSpecId, bundle_dir: PathBuf) -> Self {
         Self { spec, bundle_dir }
     }

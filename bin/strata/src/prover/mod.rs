@@ -70,7 +70,7 @@ pub(crate) fn checkpoint_sp1_host_config(prover_config: &ProverConfig) -> SP1Hos
 
 /// Starts the integrated prover service.
 ///
-/// Launches a fixed-host paas service for every resident spec and spawns a
+/// Launches a fixed-host paas service for each supported proving spec and spawns a
 /// background runner that routes checkpoints by the current spec in their terminal OL state.
 ///
 /// The caller must ensure that `config.prover` is `Some` before calling.
@@ -95,7 +95,8 @@ pub(crate) fn start_prover_service(
 
     let runtime_params = runctx.ol_params().runtime_params();
 
-    // Each resident spec owns a fixed host and sees only its own task records.
+    // Each proving spec owns a fixed host and sees only its own task records.
+    // V0 artifacts are retained for the startup key check but have no proving service.
     let (provers, predicates) = match prover_config.backend {
         ProverBackend::Native => build_checkpoint_provers(
             native_checkpoint_registry(runtime_params),
@@ -440,7 +441,7 @@ fn build_checkpoint_provers<H>(
 ) {
     let predicates = registry.to_predicates();
     let provers = registry
-        .into_hosts()
+        .into_proving_hosts()
         .map(|(spec, host)| {
             let builder = ProverBuilder::new(CheckpointSpec::new(
                 Arc::clone(storage),

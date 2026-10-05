@@ -32,9 +32,6 @@ pub enum RegistryError {
 /// Describes why a configured artifact cannot be used.
 #[derive(Debug, Error)]
 pub enum ArtifactError {
-    /// A configured spec is not supported for checkpoint proving.
-    #[error("checkpoint proving does not support OL spec {spec:?}")]
-    UnsupportedSpec { spec: OLSpecId },
     /// A bundle file could not be read.
     #[error("failed to read checkpoint artifact {path}: {source}")]
     Read { path: PathBuf, source: io::Error },

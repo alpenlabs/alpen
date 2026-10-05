@@ -25,7 +25,7 @@ spec = 1
 bundle_dir = "elfs/sp1/v1"
 ```
 
-Each bundle contains `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
+Each V1 bundle contains `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
 `guest-checkpoint.artifact-manifest.json`. The schema 1 manifest records `spec`,
 `program_id`, and `runtime_params_hash`. Loading derives the program identity and
 predicate from the ELF and checks both sidecars and the node's runtime parameters
@@ -33,12 +33,42 @@ before exposing the host. Unknown specs and duplicate spec declarations are
 configuration errors. V0 proving is not supported. Startup fails if any active or
 pending checkpoint VK has no matching loaded artifact.
 
+### V0 artifacts during the upgrade
+
+If local ASM state still has the deployed V0 key, configure its artifact alongside
+V1 so the startup check can validate both keys:
+
+```toml
+[[prover.artifacts]]
+spec = 0
+bundle_dir = "elfs/sp1/v0"
+
+[[prover.artifacts]]
+spec = 1
+bundle_dir = "elfs/sp1/v1"
+```
+
+The V0 directory contains the deployed `guest-checkpoint.elf` and a
+`guest-checkpoint.predicate` sidecar holding its published predicate string. Copy
+the ELF from the deployed release image and the predicate from that deployment's
+configuration. Do not rebuild the old guest or derive the expected predicate with
+the new binary. Loading derives the complete predicate from the ELF and requires
+an exact match; the usual startup check then compares loaded predicates with ASM.
+
+V0 loading uses only the ELF and predicate; it does not read a manifest.
+V1 still requires its full manifest, including the matching runtime-parameter hash.
+
+V0 is loaded only for startup validation and never gets a proving service or task
+recovery. The 0.3.x sequencer proves the final V0 epoch; the promoted node starts at
+the following V1 epoch. Once local ASM state requires only V1, the V0 entry can be
+removed. Promotion and V0 checkpoint replay are handled by STR-4486.
+
 SP1 proving requires at least one explicit artifact entry, even for a single
-program. Each entry must name its spec and bundle directory, and each manifest
-must declare its spec. Missing configuration fails startup; there is no default
+program. Each entry must name its spec and bundle directory. V1 bundles must also
+have a manifest declaring the spec. Missing configuration fails startup; there is no default
 bundle directory or inferred V1 program. To use locally built artifacts, configure
 `bundle_dir` to point to the builder's output directory. Existing deployments must
-add artifact entries and supply manifests with the spec field. Artifact publishing
+add artifact entries and supply V1 manifests with the spec field. Artifact publishing
 includes the per-guest manifest and its checksum.
 
 ## Availability and recovery
@@ -80,7 +110,8 @@ and required spec before assembling a witness, including recovery and retry
 attempts. An artifact first needed after startup follows this policy, including
 after L1 catch-up.
 
-Each resident spec has its own fixed-host prover service. The spec-scoped task
+Each supported proving spec has its own fixed-host prover service. V0 has none.
+The spec-scoped task
 store filters both unfinished-task recovery and due retries; a service never
 claims another spec's work. Like EE, `VersionedTaskStore` prepends the spec to
 the unchanged task key and strips it before returning records to the prover.
@@ -125,3 +156,15 @@ cargo test --release -p strata-ol-checkpoint-artifacts --features sp1 \
 Use runtime parameters matching the bundle's build. Live rotation after V1 also
 requires the separately owned OL spec-activation implementation and an actual
 supported successor program.
+
+To check the deployed V0 ELF against its independently published predicate:
+
+```sh
+SP1_PROVER=cpu \
+CHECKPOINT_V0_ARTIFACT_TEST_BUNDLE="$PWD/elfs/sp1/v0" \
+cargo test --release -p strata-ol-checkpoint-artifacts --features sp1 \
+  validates_deployed_v0_without_enabling_proving -- --ignored --nocapture
+```
+
+This checks that the current SP1 SDK derives the expected V0 predicate and that
+the loaded V0 artifact cannot create a proving service. It does not generate a proof.
