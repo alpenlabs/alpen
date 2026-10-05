@@ -20,6 +20,8 @@
 //! drain that advances state to the next epoch, runs under the spec of the
 //! epoch it ends. Genesis runs under the network's genesis spec,
 //! [`OLParams::genesis_spec`](strata_ol_params::OLParams::genesis_spec).
+//! Checkpoint sync selects each epoch's spec with [`select_next_epoch_spec`],
+//! which reads the switch from V0 to V1 off the parent epoch's last manifest.
 //!
 //! # Unknown and unimplemented specs
 //!
@@ -28,13 +30,15 @@
 //! ones. Halting with upgrade instructions when a predicate enactment
 //! activates a spec this binary does not know belongs to enactment discovery
 //! (STR-4086), which must run before any operation here is called for the new
-//! epoch. Until it lands, enactments do not advance the spec.
+//! epoch. Until it lands, the checkpoint predicate enactment that ends V0 is
+//! the only enactment that advances the spec, and an epoch after a V1 epoch
+//! runs V1 whatever spec its parent state stages.
 //!
 //! [`OLSpecId::V0`] names the 0.3.0 rules, which networks launched on that
 //! release run from genesis. This binary implements V0 only for building
-//! such a network's genesis block. Every other operation under V0 returns
-//! [`ExecError::UnimplementedSpec`] instead of running V0 epochs under V1
-//! rules.
+//! such a network's genesis block and replaying its V0 epochs from checkpoint
+//! DA. Every other operation under V0 returns [`ExecError::UnimplementedSpec`]
+//! instead of running V0 epochs under V1 rules.
 //!
 //! # Root form
 //!
@@ -58,6 +62,7 @@
 
 mod block;
 mod da;
+mod selection;
 pub mod sequencer;
 mod spec;
 mod v0;
@@ -67,6 +72,7 @@ pub use block::{
     construct_block, execute_and_complete_block, execute_block_batch_predrain, verify_block,
 };
 pub use da::{EpochDaReplayError, apply_da_epoch, verify_epoch_with_diff};
+pub use selection::{EpochSpecSelectionError, next_epoch_spec, select_next_epoch_spec};
 pub use strata_ol_state_types::OLSpecId;
 pub use strata_ol_stf_v1::{
     BasicExecContext, BlockComponents, BlockContext, BlockExecOutputs, BlockInfo, CompletedBlock,

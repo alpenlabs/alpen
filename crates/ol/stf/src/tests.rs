@@ -1,28 +1,39 @@
-//! Smoke tests for dispatch under [`OLSpecId::V1`], and for [`OLSpecId::V0`],
-//! whose rules this binary implements only for genesis.
+//! Smoke tests for dispatch under [`OLSpecId::V1`], tests for the
+//! [`OLSpecId::V0`] genesis and epoch replay, and for spec selection.
 //!
 //! The differential tests in `strata-ol-checkpoint` and
 //! `strata-ol-block-assembly` compare the drivers against each other.
 
-use std::iter;
+use std::{iter, slice};
 
-use strata_acct_types::BitcoinAmount;
-use strata_ol_chain_types_v1::OLBlockV1;
+use strata_acct_types::{BitcoinAmount, Hash};
+use strata_asm_common::AsmLogEntry;
+use strata_asm_logs::EePredicateKeyUpdate;
+use strata_codec::encode_to_vec;
+use strata_da_framework::{DaCounter, DaLinacc, DaRegister};
+use strata_identifiers::{AccountSerial, OLBlockCommitment, SubjectId};
+use strata_ol_chain_types_v1::{AsmManifest, OLBlockV1};
+use strata_ol_da_common::{U16LenBytes, U16LenList};
+use strata_ol_da_types_v1::{
+    AccountDiffEntryV1, AccountDiffV1, DaProofStateDiffV1, GlobalStateDiffV1, LedgerDiffV1,
+    OLDaPayloadV1, OLStateDiffV1, SnarkAccountDiffV1, decode_ol_da_payload_bytes,
+};
 use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{IStateAccessor, OLSpecVersions};
-use strata_ol_state_types_v1::OLStateV1;
+use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor, OLSpecVersions};
+use strata_ol_state_types_v1::{OLSnarkAccountStateV1, OLStateV1};
 use strata_ol_stf_v1::process_block_manifests;
 use strata_ol_stf_v1::test_utils::*;
 use strata_ol_tx_types_v1::{
     OLTransactionDataV1, OLTransactionV1, TransactionPayloadV1, TxProofsV1,
 };
+use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{
     BasicExecContext, BlockComponents, BlockContext, BlockInfo, CompletedBlock, EpochDaReplayError,
     EpochExecExpectations, EpochInfo, ExecError, ExecOutputBuffer, ExecResult, OLSpecId,
     TxExecContext, apply_da_epoch, construct_block, execute_and_complete_block,
-    execute_block_batch_predrain, sequencer, verify_block, verify_epoch_with_diff,
+    execute_block_batch_predrain, next_epoch_spec, sequencer, verify_block, verify_epoch_with_diff,
 };
 
 /// An epoch built with the V1 STF, with its pre-genesis and pre-epoch states.
@@ -167,7 +178,7 @@ fn test_verify_block_under_v0_is_unimplemented() {
 }
 
 #[test]
-fn test_apply_da_epoch_under_v0_is_unimplemented() {
+fn test_v0_apply_da_epoch_rejects_v1_state() {
     let epoch = build_v1_epoch();
     let terminal = epoch.epoch_blocks.last().expect("epoch has a terminal");
     let epoch_info = EpochInfo::new(
@@ -175,9 +186,10 @@ fn test_apply_da_epoch_under_v0_is_unimplemented() {
         epoch.genesis.header().compute_block_commitment(),
     );
     let mut state = epoch.pre_epoch_state;
+    let pre_root = state.compute_state_root().expect("state root");
 
-    // The spec is rejected before its DA encoding is chosen, so even bytes
-    // that would not decode report the unimplemented spec.
+    // V0 rules never take over a later state. The state is checked before the
+    // diff is decoded, so even bytes that would not decode report it.
     let err = apply_da_epoch(
         OLSpecId::V0,
         &mut state,
@@ -186,12 +198,16 @@ fn test_apply_da_epoch_under_v0_is_unimplemented() {
         &[],
         &OLRuntimeParams::test_default(),
     )
-    .expect_err("V0 DA replay is not implemented");
+    .expect_err("V0 does not replay a V1 state");
 
     assert!(matches!(
         err,
-        EpochDaReplayError::Exec(ExecError::UnimplementedSpec(OLSpecId::V0))
+        EpochDaReplayError::Exec(ExecError::StateFromLaterSpec {
+            spec: OLSpecId::V0,
+            state_spec_version: 1,
+        })
     ));
+    assert_eq!(state.compute_state_root().expect("state root"), pre_root);
 }
 
 /// Executes the genesis block 0.3.0 networks run, with no transactions or
@@ -538,4 +554,335 @@ fn test_v0_non_genesis_block_is_unimplemented() {
         post_genesis_root,
         "a rejected block must not touch the state"
     );
+}
+
+/// A V0 genesis state with the epoch runner's snark and empty accounts, past
+/// its genesis block, with the commitment of that block.
+fn v0_post_genesis_state() -> (MemoryStateBaseLayer<OLStateV1>, OLBlockCommitment) {
+    let params = v0_params();
+    let mut state = MemoryStateBaseLayer::new_genesis(&params).expect("genesis state");
+    epoch_runner_seed_accounts(&mut state);
+    let genesis_info = BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP);
+    let genesis = execute_and_complete_block(
+        OLSpecId::V0,
+        &mut state,
+        BlockContext::new(&genesis_info, None),
+        BlockComponents::new_manifests(vec![]).as_terminal(),
+        &params.runtime_params(),
+    )
+    .expect("V0 genesis executes");
+    (state, genesis.header().compute_block_commitment())
+}
+
+/// Replays epoch 1 on `state` under `spec`, with an empty DA diff and
+/// `manifests`.
+fn replay_epoch_1(
+    spec: OLSpecId,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
+    prev_terminal: OLBlockCommitment,
+    manifests: &[AsmManifest],
+) -> Result<(), EpochDaReplayError> {
+    let diff = encode_to_vec(&OLDaPayloadV1::new(OLStateDiffV1::default())).expect("encode diff");
+    replay_epoch_1_with_diff(spec, state, prev_terminal, &diff, manifests)
+}
+
+/// Replays epoch 1 on `state` under `spec`, with the encoded DA diff `diff`
+/// and `manifests`.
+fn replay_epoch_1_with_diff(
+    spec: OLSpecId,
+    state: &mut MemoryStateBaseLayer<OLStateV1>,
+    prev_terminal: OLBlockCommitment,
+    diff: &[u8],
+    manifests: &[AsmManifest],
+) -> Result<(), EpochDaReplayError> {
+    let terminal_info = BlockInfo::new(
+        EPOCH_RUNNER_GENESIS_TIMESTAMP + EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+        1,
+        1,
+    );
+    apply_da_epoch(
+        spec,
+        state,
+        &EpochInfo::new(terminal_info, prev_terminal),
+        diff,
+        manifests,
+        &OLRuntimeParams::test_default(),
+    )
+}
+
+fn ee_key_update_manifest(height: u32, updates: &[(AccountSerial, PredicateKey)]) -> AsmManifest {
+    let logs = updates.iter().map(|(serial, key)| {
+        AsmLogEntry::from_log(&EePredicateKeyUpdate::new(*serial, key.clone()))
+            .expect("key update log encodes")
+    });
+    FixtureAsmManifestBuilder::new_at_height(height)
+        .with_logs(logs)
+        .build()
+}
+
+fn snark_account(state: &MemoryStateBaseLayer<OLStateV1>) -> OLSnarkAccountStateV1 {
+    get_snark_state_expect(state, make_account_id(TEST_SNARK_ACCOUNT_ID))
+        .1
+        .clone()
+}
+
+fn account_serial(state: &MemoryStateBaseLayer<OLStateV1>, index: u32) -> AccountSerial {
+    state
+        .get_account_state(make_account_id(index))
+        .expect("read account")
+        .expect("account exists")
+        .serial()
+}
+
+/// The V0 drain sets the EE key at once and skips updates for an unknown
+/// serial or a non-snark account; V1 queues the key in the inbox instead.
+#[test]
+fn test_v0_ee_key_update_applies_at_once() {
+    let (state, genesis) = v0_post_genesis_state();
+    let new_key = PredicateKey::try_new(PredicateTypeId::AlwaysAccept, b"rotated".to_vec())
+        .expect("predicate condition fits");
+    let manifest = ee_key_update_manifest(
+        state.last_l1_height() + 1,
+        &[
+            (AccountSerial::from(9_999), new_key.clone()),
+            (account_serial(&state, TEST_RECIPIENT_ID), new_key.clone()),
+            (
+                account_serial(&state, TEST_SNARK_ACCOUNT_ID),
+                new_key.clone(),
+            ),
+        ],
+    );
+    let before = snark_account(&state);
+
+    let mut v0_state = state.clone();
+    replay_epoch_1(
+        OLSpecId::V0,
+        &mut v0_state,
+        genesis,
+        slice::from_ref(&manifest),
+    )
+    .expect("V0 replay");
+    let v0_snark = snark_account(&v0_state);
+    assert_eq!(v0_snark.update_vk(), &new_key);
+    assert_eq!(
+        v0_snark.inbox_mmr().num_entries(),
+        before.inbox_mmr().num_entries()
+    );
+    assert!(
+        v0_state
+            .get_account_state(make_account_id(TEST_RECIPIENT_ID))
+            .expect("read empty account")
+            .expect("empty account exists")
+            .as_snark_account()
+            .is_err()
+    );
+    assert_eq!(
+        v0_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V0)
+    );
+    assert_eq!(
+        v0_state.compute_state_root().expect("state root"),
+        v0_state.chainstate().compute_chainstate_root()
+    );
+
+    let mut v1_state = state;
+    replay_epoch_1(OLSpecId::V1, &mut v1_state, genesis, &[manifest]).expect("V1 replay");
+    let v1_snark = snark_account(&v1_state);
+    assert_eq!(v1_snark.update_vk(), before.update_vk());
+    assert_eq!(
+        v1_snark.inbox_mmr().num_entries(),
+        before.inbox_mmr().num_entries() + 1
+    );
+}
+
+/// V0 replay ignores checkpoint predicate enactments and does not check where
+/// they sit; V1 rejects an enactment before the last manifest.
+#[test]
+fn test_v0_replay_ignores_enactments() {
+    let (state, genesis) = v0_post_genesis_state();
+    let next_height = state.last_l1_height() + 1;
+    let manifests = [
+        make_checkpoint_predicate_enactment_manifest(next_height, 1),
+        make_empty_manifest(next_height + 1, 0),
+    ];
+
+    let mut v0_state = state.clone();
+    replay_epoch_1(OLSpecId::V0, &mut v0_state, genesis, &manifests).expect("V0 replay");
+    assert_eq!(v0_state.last_l1_height(), next_height + 1);
+    assert_eq!(
+        v0_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V0)
+    );
+
+    let mut v1_state = state;
+    let err = replay_epoch_1(OLSpecId::V1, &mut v1_state, genesis, &manifests)
+        .expect_err("V1 rejects an enactment before the last manifest");
+    assert!(
+        matches!(
+            err,
+            EpochDaReplayError::Exec(ExecError::CheckpointPredicateBoundaryNotLast { .. })
+        ),
+        "{err}"
+    );
+}
+
+/// Encodes a DA payload whose only change sets the snark account's inner
+/// state, and `update_vk` if given.
+fn snark_inner_state_payload(
+    state: &MemoryStateBaseLayer<OLStateV1>,
+    update_vk: Option<Vec<u8>>,
+) -> Vec<u8> {
+    let snark_diff = SnarkAccountDiffV1::new(
+        DaCounter::new_unchanged(),
+        DaProofStateDiffV1::new(
+            DaRegister::new_set(Hash::from([0x22; 32])),
+            DaCounter::new_unchanged(),
+        ),
+        DaLinacc::new(),
+        DaRegister::new(update_vk.map(U16LenBytes::new)),
+    );
+    let account_diff = AccountDiffEntryV1::new(
+        account_serial(state, TEST_SNARK_ACCOUNT_ID),
+        AccountDiffV1::new(DaCounter::new_unchanged(), snark_diff),
+    );
+    let diff = OLStateDiffV1::new(
+        GlobalStateDiffV1::default(),
+        LedgerDiffV1::new(
+            U16LenList::new(Vec::new()),
+            U16LenList::new(vec![account_diff]),
+        ),
+    );
+    encode_to_vec(&OLDaPayloadV1::new(diff)).expect("encode diff")
+}
+
+/// V0 reads a snark account diff from its first three presence bits and
+/// ignores the rest, and V0 checkpoints prove the DA bytes as read that way.
+/// So a payload that also sets the `update_vk` bit replays as the canonical
+/// one under V0, where the V1 decoder rejects it.
+#[test]
+fn test_v0_replay_ignores_snark_bits_past_v0_members() {
+    let (state, genesis) = v0_post_genesis_state();
+    let canonical = snark_inner_state_payload(&state, None);
+    let with_update_vk = snark_inner_state_payload(&state, Some(vec![0x42; 33]));
+    // The two encodings first differ in the snark diff's presence bitmap.
+    let bitmap_offset = canonical
+        .iter()
+        .zip(&with_update_vk)
+        .position(|(canonical, with_update_vk)| canonical != with_update_vk)
+        .expect("the encodings differ");
+    let mut flagged = canonical.clone();
+    flagged[bitmap_offset] |= 0b1000;
+    assert_eq!(flagged[bitmap_offset], with_update_vk[bitmap_offset]);
+    assert!(decode_ol_da_payload_bytes(&flagged).is_err());
+
+    let mut canonical_state = state.clone();
+    replay_epoch_1_with_diff(OLSpecId::V0, &mut canonical_state, genesis, &canonical, &[])
+        .expect("canonical payload replays");
+    let mut flagged_state = state.clone();
+    replay_epoch_1_with_diff(OLSpecId::V0, &mut flagged_state, genesis, &flagged, &[])
+        .expect("payload with an ignored bit replays");
+
+    let canonical_root = canonical_state.compute_state_root().expect("state root");
+    assert_eq!(
+        flagged_state.compute_state_root().expect("state root"),
+        canonical_root
+    );
+    assert_ne!(
+        canonical_root,
+        state.compute_state_root().expect("state root"),
+        "the payload changes the state"
+    );
+    assert_eq!(
+        snark_account(&flagged_state).update_vk(),
+        snark_account(&state).update_vk()
+    );
+}
+
+/// Deposits V0 sweeps to limbo and the log types it ignores leave the
+/// chainstate V1 leaves, whose deposit handler V0 shares; only the root form
+/// differs.
+#[test]
+fn test_v0_replay_limbos_deposits_and_ignores_logs_like_v1() {
+    let (state, genesis) = v0_post_genesis_state();
+    let height = state.last_l1_height() + 1;
+    let amount = BitcoinAmount::try_from(150_000_000)
+        .expect("amount must not exceed the Bitcoin money supply");
+    let malformed_destination =
+        make_deposit_manifest_with_destination_bytes(height, 0, vec![0xff], amount).logs()[0]
+            .clone();
+    let unknown_serial = make_deposit_log_for_account(
+        AccountSerial::from(9_999),
+        SubjectId::from([0xee; 32]),
+        amount,
+    );
+    let mut logs = vec![malformed_destination, unknown_serial];
+    for ty in [2, 11, 12, 13] {
+        logs.push(AsmLogEntry::from_msg(ty, vec![0xab; 8]).expect("log encodes"));
+    }
+    let manifest = FixtureAsmManifestBuilder::new_at_height(height)
+        .with_logs(logs)
+        .build();
+
+    let mut v0_state = state.clone();
+    replay_epoch_1(
+        OLSpecId::V0,
+        &mut v0_state,
+        genesis,
+        slice::from_ref(&manifest),
+    )
+    .expect("V0 replay");
+    assert_eq!(
+        v0_state.limbo_funds().to_sat(),
+        state.limbo_funds().to_sat() + 2 * amount.to_sat()
+    );
+
+    let mut v1_state = state;
+    replay_epoch_1(OLSpecId::V1, &mut v1_state, genesis, &[manifest]).expect("V1 replay");
+    assert_eq!(
+        v0_state.chainstate().compute_chainstate_root(),
+        v1_state.chainstate().compute_chainstate_root()
+    );
+}
+
+#[test]
+fn test_v0_replay_rejects_manifest_height_gap() {
+    let (mut state, genesis) = v0_post_genesis_state();
+    let gap_height = state.last_l1_height() + 2;
+
+    let err = replay_epoch_1(
+        OLSpecId::V0,
+        &mut state,
+        genesis,
+        &[make_empty_manifest(gap_height, 0)],
+    )
+    .expect_err("manifest heights must follow on");
+
+    assert!(
+        matches!(
+            err,
+            EpochDaReplayError::Exec(ExecError::AsmManifestHeightMismatch { .. })
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_next_epoch_spec() {
+    let v0 = OLSpecVersions::uniform(OLSpecId::V0);
+    let v1 = OLSpecVersions::uniform(OLSpecId::V1);
+    let plain = make_empty_manifest(10, 0);
+    let enactment = make_checkpoint_predicate_enactment_manifest(10, 1);
+
+    assert_eq!(next_epoch_spec(v0, None).unwrap(), OLSpecId::V0);
+    assert_eq!(next_epoch_spec(v0, Some(&plain)).unwrap(), OLSpecId::V0);
+    assert_eq!(next_epoch_spec(v0, Some(&enactment)).unwrap(), OLSpecId::V1);
+    for manifest in [None, Some(&plain), Some(&enactment)] {
+        assert_eq!(next_epoch_spec(v1, manifest).unwrap(), OLSpecId::V1);
+    }
+
+    let duplicate = make_checkpoint_predicate_enactment_manifest(10, 2);
+    assert!(matches!(
+        next_epoch_spec(v0, Some(&duplicate)),
+        Err(ExecError::DuplicateCheckpointPredicateEnactment { height: 10 })
+    ));
 }

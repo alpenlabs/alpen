@@ -29,14 +29,15 @@ use strata_ol_state_support_types::{
 use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLSpecId, OLSpecVersions};
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf_v1::{
-    BlockComponents, execute_block_batch_predrain,
+    BlockComponents, BlockInfo, execute_block_batch_predrain,
     test_utils::{
-        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, InboxMmrTracker, SnarkUpdateBuilder,
-        TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
-        epoch_runner_run_genesis as run_genesis, epoch_runner_seed_accounts as seed_accounts,
-        get_snark_state_expect, make_account_id, make_deposit_manifest_for_account,
-        make_empty_manifest, make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload,
-        snark_inbox_msg_with_data, tamper_state_root,
+        EPOCH_RUNNER_GENESIS_TIMESTAMP, EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT,
+        InboxMmrTracker, SnarkUpdateBuilder, TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID,
+        epoch_runner_run_block as run_block, epoch_runner_run_genesis as run_genesis,
+        epoch_runner_seed_accounts as seed_accounts, execute_block, get_snark_state_expect,
+        make_account_id, make_checkpoint_predicate_enactment_manifest,
+        make_deposit_manifest_for_account, make_empty_manifest, make_p2wpkh_bosd_descriptor,
+        make_state_root, make_withdrawal_payload, snark_inbox_msg_with_data, tamper_state_root,
     },
     verify_block,
 };
@@ -89,7 +90,8 @@ impl EpochPlan {
 
     /// Builds the epoch on genesis relabelled as the last V0 terminal: the
     /// same chainstate as a V0 state, under a header committing to its bare
-    /// root. The epoch then runs as the first V1 epoch and wraps it.
+    /// root. Its last manifest carries the checkpoint predicate enactment that
+    /// ends V0, so the epoch runs as the first V1 epoch and wraps it.
     pub fn on_v0_terminal(mut self) -> Self {
         self.on_v0_terminal = true;
         self
@@ -149,6 +151,10 @@ impl BlockPlan {
 
 /// One built OL epoch with the reference values for cross-mode comparison.
 pub struct BuiltEpoch {
+    /// L1 block genesis anchors to, before the genesis block's manifests.
+    pub genesis_l1_block: L1BlockCommitment,
+    /// ASM manifests the previous (genesis) epoch processed, keyed by L1 height.
+    pub prev_manifests_by_height: Vec<(u32, AsmManifest)>,
     /// Epoch commitment of the built epoch (epoch 1).
     pub epoch_commitment: EpochCommitment,
     /// Index of the previous epoch (genesis epoch 0).
@@ -194,8 +200,28 @@ impl BuiltEpoch {
 pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     let mut state = make_marked_genesis_state();
     let snark_serial = seed_accounts(&mut state);
+    let genesis_l1_block = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
 
-    let genesis = run_genesis(&mut state);
+    let (genesis, genesis_manifest) = if plan.on_v0_terminal {
+        let manifest = make_checkpoint_predicate_enactment_manifest(1, 1);
+        let genesis = execute_block(
+            &mut state,
+            &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
+            None,
+            BlockComponents::new_manifests(vec![manifest.clone()]).as_terminal(),
+        )
+        .expect("genesis block");
+        (genesis, manifest)
+    } else {
+        let genesis = run_genesis(&mut state);
+        let manifest = genesis
+            .body()
+            .manifests()
+            .and_then(|container| container.manifests().first())
+            .expect("genesis carries a manifest")
+            .clone();
+        (genesis, manifest)
+    };
     let genesis_header = if plan.on_v0_terminal {
         state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
         let v0_root = state.compute_state_root().expect("V0 root");
@@ -288,6 +314,8 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
     );
 
     BuiltEpoch {
+        genesis_l1_block,
+        prev_manifests_by_height: vec![(genesis_manifest.height(), genesis_manifest)],
         epoch_commitment,
         prev_epoch_idx: 0,
         prev_summary,

@@ -30,7 +30,8 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{
-    BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId,
+    BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Epoch, EpochCommitment, L1BlockCommitment,
+    OLBlockCommitment, OLBlockId,
 };
 use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog as ChainOLLog,
@@ -50,25 +51,28 @@ use crate::{
     traits::ChainWorkerContext,
 };
 
-/// A [`ChainWorkerContext`] backed by in-memory maps for the four reads
+/// A [`ChainWorkerContext`] backed by in-memory maps for the reads
 /// [`apply_checkpoint_epoch`] performs. All other methods are unreachable.
-struct MockChainWorkerContext {
+pub(super) struct MockChainWorkerContext {
     /// Runtime params used by checkpoint-sync reconstruction.
-    runtime_params: OLRuntimeParams,
+    pub(super) runtime_params: OLRuntimeParams,
+    /// L1 block genesis anchors to.
+    pub(super) genesis_l1_block: L1BlockCommitment,
     /// Checkpoint payloads keyed by epoch commitment.
-    checkpoint_payloads: HashMap<EpochCommitment, CheckpointPayload>,
+    pub(super) checkpoint_payloads: HashMap<EpochCommitment, CheckpointPayload>,
     /// Epoch summaries keyed by epoch index.
-    epoch_summaries: HashMap<Epoch, Vec<EpochSummary>>,
+    pub(super) epoch_summaries: HashMap<Epoch, Vec<EpochSummary>>,
     /// OL states keyed by block commitment.
-    ol_states: HashMap<OLBlockCommitment, OLStateContainer>,
+    pub(super) ol_states: HashMap<OLBlockCommitment, OLStateContainer>,
     /// ASM manifests keyed by L1 height.
-    manifests: HashMap<u32, AsmManifest>,
+    pub(super) manifests: HashMap<u32, AsmManifest>,
 }
 
 impl MockChainWorkerContext {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             runtime_params: OLRuntimeParams::test_default(),
+            genesis_l1_block: L1BlockCommitment::default(),
             checkpoint_payloads: HashMap::new(),
             epoch_summaries: HashMap::new(),
             ol_states: HashMap::new(),
@@ -80,6 +84,10 @@ impl MockChainWorkerContext {
 impl ChainWorkerContext for MockChainWorkerContext {
     fn runtime_params(&self) -> OLRuntimeParams {
         self.runtime_params
+    }
+
+    fn genesis_l1_block(&self) -> L1BlockCommitment {
+        self.genesis_l1_block
     }
 
     fn fetch_checkpoint_payload(
@@ -102,6 +110,10 @@ impl ChainWorkerContext for MockChainWorkerContext {
         commitment: OLBlockCommitment,
     ) -> WorkerResult<Option<OLStateContainer>> {
         Ok(self.ol_states.get(&commitment).cloned())
+    }
+
+    fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>> {
+        Ok(self.manifests.get(&height).cloned())
     }
 
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {
@@ -188,6 +200,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
 /// reconstruct `built`'s epoch.
 fn mock_for(built: &BuiltEpoch) -> (MockChainWorkerContext, EpochCommitment) {
     let mut ctx = MockChainWorkerContext::new();
+    ctx.genesis_l1_block = built.genesis_l1_block;
 
     // Prev-epoch summary so get_prev_terminal resolves the base state.
     ctx.epoch_summaries
@@ -195,8 +208,12 @@ fn mock_for(built: &BuiltEpoch) -> (MockChainWorkerContext, EpochCommitment) {
     ctx.ol_states
         .insert(built.prev_terminal, built.pre_epoch_state.clone());
 
-    // Manifests over the epoch's L1 height range.
-    for (height, manifest) in &built.manifests_by_height {
+    // Manifests over the previous epoch's and this epoch's L1 height ranges.
+    for (height, manifest) in built
+        .prev_manifests_by_height
+        .iter()
+        .chain(&built.manifests_by_height)
+    {
         ctx.manifests.insert(*height, manifest.clone());
     }
 
