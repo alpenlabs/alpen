@@ -11,6 +11,7 @@ use strata_ol_stf_v1::{EpochExecExpectations, EpochInfo, ExecError};
 use thiserror::Error;
 
 use crate::spec::{OLStfSpec, dispatch_spec};
+use crate::v0::StfV0;
 use crate::v1::StfV1;
 
 /// Errors produced while reconstructing an epoch from its encoded DA diff.

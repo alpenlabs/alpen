@@ -31,20 +31,21 @@
 //! epoch. Until it lands, enactments do not advance the spec.
 //!
 //! [`OLSpecId::V0`] names the 0.3.0 rules, which networks launched on that
-//! release run from genesis. This binary does not implement them yet
-//! (STR-4486), so every operation under V0 returns
+//! release run from genesis. This binary implements V0 only for building
+//! such a network's genesis block. Every other operation under V0 returns
 //! [`ExecError::UnimplementedSpec`] instead of running V0 epochs under V1
-//! rules. Building genesis from V0 params therefore fails.
+//! rules.
 //!
 //! # Root form
 //!
 //! The current spec selects the form of the state root: the bare chainstate
 //! root under V0, which is what 0.3.0 headers commit to, and
-//! `hash_tree_root(OLRootState)` from V1 on. V1 rules take over a V0 state at
-//! the first block of an epoch, whose epoch-initial processing wraps it as
-//! `cur = staged = V1`. Every driver runs that processing, DA replay included,
-//! so they all reach the same wrapped root. A V1 block that does not start an
-//! epoch fails on a V0 state with [`ExecError::ContinuesV0Epoch`].
+//! `hash_tree_root(OLRootState)` from V1 on. V0 rules keep a V0 state in the
+//! bare form. V1 rules take over a V0 state at the first block of an epoch,
+//! whose epoch-initial processing wraps it as `cur = staged = V1`. Every
+//! driver runs that processing, DA replay included, so they all reach the same
+//! wrapped root. A V1 block that does not start an epoch fails on a V0 state
+//! with [`ExecError::ContinuesV0Epoch`].
 //!
 //! # V1-compatible surface
 //!
@@ -59,6 +60,7 @@ mod block;
 mod da;
 pub mod sequencer;
 mod spec;
+mod v0;
 mod v1;
 
 pub use block::{

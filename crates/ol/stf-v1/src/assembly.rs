@@ -348,6 +348,12 @@ impl ConstructBlockOutput {
         &self.completed_block
     }
 
+    /// Consumes the output and returns the completed block, dropping the
+    /// execution outputs.
+    pub fn into_completed_block(self) -> CompletedBlock {
+        self.completed_block
+    }
+
     pub fn outputs(&self) -> &BlockExecOutputs {
         &self.outputs
     }
@@ -397,12 +403,30 @@ pub fn construct_block<S: IStateAccessorMut>(
     runtime_params: &OLRuntimeParams,
 ) -> ExecResult<ConstructBlockOutput> {
     // 1. First just execute the block with the inputs.
-    let is_terminal = block_components.is_terminal();
     let block_exec_input = block_components.to_exec_input();
     let exec_outputs =
         execute_block_inputs(state, block_context, block_exec_input, runtime_params)?;
 
     // 2. Take the inputs and outputs and compute the commitments for the header.
+    Ok(complete_block(
+        &block_context,
+        block_components,
+        exec_outputs,
+    ))
+}
+
+/// Assembles the body and header of an executed block from its components and
+/// execution outputs.
+///
+/// The header takes its timestamp, slot and epoch from `block_context` and
+/// commits to the parent block, the body, the outputs' logs and final state
+/// root, and the components' terminal flag.
+pub fn complete_block(
+    block_context: &BlockContext<'_>,
+    block_components: BlockComponents,
+    exec_outputs: BlockExecOutputs,
+) -> ConstructBlockOutput {
+    let is_terminal = block_components.is_terminal();
 
     // Compute the logs root from the execution outputs.
     let logs_root = exec_outputs.compute_block_logs_root();
@@ -425,7 +449,7 @@ pub fn construct_block<S: IStateAccessorMut>(
     let mut flags = BlockFlagsV1::zero();
     flags.set_is_terminal(is_terminal);
 
-    // 3. Assemble the final completed block.
+    // Assemble the final completed block.
     let header = OLBlockHeaderV1::new(
         block_context.timestamp(),
         flags,
@@ -438,7 +462,7 @@ pub fn construct_block<S: IStateAccessorMut>(
     );
 
     let completed = CompletedBlock::new(header, body);
-    Ok(ConstructBlockOutput::new(completed, exec_outputs))
+    ConstructBlockOutput::new(completed, exec_outputs)
 }
 
 /// Given components of a block, executes it and uses it to construct the
