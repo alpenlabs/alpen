@@ -3,8 +3,6 @@ Configuration and parameter dataclasses.
 """
 
 from common.config.config import (
-    AsmExecutionConfig,
-    AsmExecutionTargetConfig,
     BitcoindConfig,
     BroadcasterConfig,
     BtcioConfig,
@@ -40,8 +38,6 @@ from common.config.params import (
 
 __all__ = [
     # config.py
-    "AsmExecutionConfig",
-    "AsmExecutionTargetConfig",
     "StrataConfig",
     "ClientConfig",
     "BitcoindConfig",
