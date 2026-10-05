@@ -78,7 +78,7 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
             timeout=120,
             step=1.0,
         )
-        reported = strata_rpc.strata_getRejectedCheckpoints()
+        reported = strata_rpc.strata_getRejectedCheckpoints(0)
         if reported != []:
             raise AssertionError(f"rejections reported under AlwaysAccept: {reported}")
 
@@ -96,7 +96,7 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
         log_offset = log_path.stat().st_size if log_path.exists() else 0
 
         reported = bitcoin.mine_until(
-            check=strata_rpc.strata_getRejectedCheckpoints,
+            check=lambda: strata_rpc.strata_getRejectedCheckpoints(0),
             predicate=lambda entries: len(entries) > 0,
             error_with="no rejected checkpoint reported after rotating to NeverAccept",
             timeout=REJECTION_TIMEOUT_SECONDS,
@@ -148,7 +148,9 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
             btc_rpc.proxy.generatetoaddress(1, btc_rpc.proxy.getnewaddress())
             strata.wait_for_asm_manifest_commitment_at(start + 1, rpc=strata_rpc, timeout=60)
         records = [
-            entry for entry in strata_rpc.strata_getRejectedCheckpoints() if entry["txid"] == txid
+            entry
+            for entry in strata_rpc.strata_getRejectedCheckpoints(epoch)
+            if entry["txid"] == txid
         ]
         if records != [rejected]:
             raise AssertionError(f"expected one unchanged record for {txid}, got {records}")
