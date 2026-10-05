@@ -24,6 +24,7 @@ ARTIFACT_FILES = tuple(
         f"{guest}.elf",
         f"{guest}.predicate",
         f"{guest}.vk-hash",
+        f"{guest}.artifact-manifest.json",
     )
 ) + ("manifest.json",)
 
@@ -87,7 +88,7 @@ def cmd_summarize() -> None:
     predicates: dict[str, str] = {}
     vk_hashes: dict[str, str] = {}
     for guest, key in GUESTS:
-        for suffix in ("elf", "predicate", "vk-hash"):
+        for suffix in ("elf", "predicate", "vk-hash", "artifact-manifest.json"):
             src = elf_root / f"{guest}.{suffix}"
             require_file(src)
             (artifact_dir / src.name).write_bytes(src.read_bytes())

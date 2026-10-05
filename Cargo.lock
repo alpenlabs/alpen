@@ -10232,6 +10232,7 @@ dependencies = [
  "sp1-verifier",
  "ssz",
  "strata-ol-params",
+ "strata-ol-state-types",
  "zkaleido-sp1-groth16-verifier",
 ]
 
