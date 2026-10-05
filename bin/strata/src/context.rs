@@ -207,18 +207,29 @@ fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
     toml::from_str(&config_str).map_err(InitError::TomlParse)
 }
 
+/// Validates that the integrated prover can satisfy the checkpoint predicate ASM enforces.
+///
+/// Only a sequencer builds and posts checkpoints, so a non-sequencer node without a
+/// `[prover]` section has nothing to validate. This is the configuration an operator
+/// uses to replay ASM history after an ASM reset: proving and sequencing stay off
+/// until the replay completes.
 #[cfg(feature = "prover")]
 fn validate_integrated_prover_compatibility(
     config: &Config,
     asm_params: &AsmParams,
     handle: &Handle,
 ) -> Result<(), InitError> {
+    if config.prover.is_none() && !config.client.is_sequencer {
+        info!("no [prover] section on a non-sequencer node, skipping integrated prover checks");
+        return Ok(());
+    }
+
     let checkpoint_predicate = checkpoint_predicate_from_asm_params(asm_params)?;
     let checkpoint_predicate_type = checkpoint_predicate_type(checkpoint_predicate)?;
     let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
 
-    // When the prover is not configured, validate that the checkpoint predicate
-    // does not require real proofs (e.g. Sp1Groth16 needs a prover to produce them).
+    // A sequencer without a prover would post checkpoints with empty proofs, so
+    // reject predicates that require real proofs (e.g. Sp1Groth16).
     let Some(prover_config) = config.prover.as_ref() else {
         if expected_backend.is_some() {
             return Err(InitError::InvalidProverConfig(format!(
@@ -571,10 +582,14 @@ mod tests {
     };
 
     #[cfg(feature = "prover")]
-    use strata_config::ProverBackend;
+    use strata_asm_params::AsmParams;
     use strata_config::{Config, SequencerConfig};
     #[cfg(feature = "prover")]
+    use strata_config::{ProverBackend, ProverConfig};
+    #[cfg(feature = "prover")]
     use strata_predicate::PredicateTypeId;
+    #[cfg(feature = "prover")]
+    use tokio::runtime::Runtime;
 
     use super::{
         load_asm_execution_params, load_block_assembly_config, load_sequencer_runtime_config,
@@ -841,5 +856,91 @@ mod tests {
         let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
 
         assert!(err.to_string().contains("predicate key mismatch"));
+    }
+
+    /// Builds staging-v2 ASM params whose checkpoint predicate is `Sp1Groth16`, as on the
+    /// deployed networks.
+    #[cfg(feature = "prover")]
+    fn sp1_checkpoint_asm_params() -> AsmParams {
+        let json = include_str!("../../../.github/params/templates/staging-v2/asm-params.json")
+            .replace(
+                r#""__ANCHOR__""#,
+                r#"{
+                    "block": {
+                        "height": 20919,
+                        "blkid": "0000000005f6ea88454b25aa8c8823e34267ed6631cde82e1614d49f5ad4e0a3"
+                    },
+                    "next_target": 487289475,
+                    "epoch_start_timestamp": 1783763984,
+                    "network": "signet"
+                }"#,
+            )
+            .replace(
+                "__CHECKPOINT_PREDICATE__",
+                &format!("Sp1Groth16:{}", "11".repeat(32)),
+            )
+            .replace(r#""__GENESIS_L1_HEIGHT__""#, "20919")
+            .replace(
+                "__GENESIS_OL_BLKID__",
+                "0d949ed7308980e121fc1f98846d1bd055d1fd205e536a511c589aa070c414ab",
+            );
+        serde_json::from_str(&json).expect("staging-v2 ASM params template must parse")
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn non_sequencer_without_prover_skips_integrated_prover_checks() {
+        let runtime = Runtime::new().unwrap();
+        let config = fullnode_config();
+
+        super::validate_integrated_prover_compatibility(
+            &config,
+            &sp1_checkpoint_asm_params(),
+            runtime.handle(),
+        )
+        .unwrap();
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn sequencer_without_prover_rejects_predicate_requiring_proofs() {
+        let runtime = Runtime::new().unwrap();
+        let mut config = fullnode_config();
+        config.client.is_sequencer = true;
+
+        let err = super::validate_integrated_prover_compatibility(
+            &config,
+            &sp1_checkpoint_asm_params(),
+            runtime.handle(),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(&err, InitError::InvalidProverConfig(msg) if msg.contains("requires a prover")),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn non_sequencer_with_prover_still_validates_backend() {
+        let runtime = Runtime::new().unwrap();
+        let mut config = fullnode_config();
+        config.prover = Some(ProverConfig {
+            backend: ProverBackend::Native,
+            ..ProverConfig::default()
+        });
+
+        let err = super::validate_integrated_prover_compatibility(
+            &config,
+            &sp1_checkpoint_asm_params(),
+            runtime.handle(),
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(&err, InitError::InvalidProverConfig(msg) if msg.contains("mismatch")),
+            "unexpected error: {err}"
+        );
     }
 }
