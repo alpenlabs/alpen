@@ -20,6 +20,7 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult,
     ol_block::BlockAvailability,
+    ol_checkpoint::RejectedCheckpointEntry,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::*;
@@ -93,6 +94,7 @@ struct MockProvider {
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
+    rejected_checkpoints: Vec<RejectedCheckpointEntry>,
     account_update_entries: HashMap<(Epoch, AccountId), Vec<AccountUpdateRecord>>,
     account_inbox_entries: HashMap<(Epoch, AccountId), Vec<InboxMessageRecord>>,
     account_creation_epochs: HashMap<AccountId, Epoch>,
@@ -116,6 +118,7 @@ impl MockProvider {
             epoch_commitments: HashMap::new(),
             epoch_summaries: HashMap::new(),
             checkpoint_l1_refs: HashMap::new(),
+            rejected_checkpoints: Vec::new(),
             account_update_entries: HashMap::new(),
             account_inbox_entries: HashMap::new(),
             account_creation_epochs: HashMap::new(),
@@ -171,6 +174,11 @@ impl MockProvider {
         l1_ref: CheckpointL1Ref,
     ) -> Self {
         self.checkpoint_l1_refs.insert(commitment, l1_ref);
+        self
+    }
+
+    fn with_rejected_checkpoint(mut self, entry: RejectedCheckpointEntry) -> Self {
+        self.rejected_checkpoints.push(entry);
         self
     }
 
@@ -426,6 +434,10 @@ impl OLRpcProvider for MockProvider {
         commitment: EpochCommitment,
     ) -> DbResult<Option<CheckpointL1Ref>> {
         Ok(self.checkpoint_l1_refs.get(&commitment).cloned())
+    }
+
+    async fn get_rejected_checkpoints(&self) -> DbResult<Vec<RejectedCheckpointEntry>> {
+        Ok(self.rejected_checkpoints.clone())
     }
 
     async fn get_account_update_records(
@@ -970,6 +982,39 @@ async fn chain_status_returns_correct_values() {
     assert_eq!(status.finalized().last_slot(), 20);
     assert_eq!(status.latest().epoch(), 1);
     assert_eq!(status.latest().last_slot(), 50);
+}
+
+// ── get_rejected_checkpoints ──
+
+#[tokio::test]
+async fn rejected_checkpoints_report_recorded_entries() {
+    let rpc = make_rpc(MockProvider::new());
+    assert!(rpc.get_rejected_checkpoints().await.unwrap().is_empty());
+
+    let commitment = test_epoch_commitment(3, 12, 0x33);
+    let verified_tip = test_epoch_commitment(2, 8, 0x22);
+    let txid = RBuf32::from([0x44; 32]);
+    let l1_block = L1BlockCommitment::new(120, L1BlockId::from(Buf32::from([0x55; 32])));
+    let rpc = make_rpc(
+        MockProvider::new().with_rejected_checkpoint(RejectedCheckpointEntry::new(
+            commitment,
+            txid,
+            l1_block,
+            Some(verified_tip),
+        )),
+    );
+
+    let rejected = rpc.get_rejected_checkpoints().await.unwrap();
+    assert_eq!(
+        rejected,
+        vec![RpcRejectedCheckpoint {
+            epoch: 3,
+            commitment,
+            txid,
+            l1_block,
+            asm_verified_tip: Some(verified_tip),
+        }]
+    );
 }
 
 // ── get_checkpoint_info ──

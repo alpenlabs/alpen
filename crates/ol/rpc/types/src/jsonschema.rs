@@ -2,7 +2,10 @@
 
 use std::borrow::Cow;
 
-use crate::{OLBlockTag, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
+use crate::{
+    OLBlockTag, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
+    RpcRejectedCheckpoint,
+};
 
 impl schemars::JsonSchema for OLBlockTag {
     fn schema_name() -> Cow<'static, str> {
@@ -106,6 +109,27 @@ impl schemars::JsonSchema for RpcCheckpointInfo {
                 "confirmation_status": {
                     "type": "object"
                 }
+            }
+        })
+    }
+}
+
+impl schemars::JsonSchema for RpcRejectedCheckpoint {
+    fn schema_name() -> Cow<'static, str> {
+        "RpcRejectedCheckpoint".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Keep schema permissive for commitment wrappers not exposing JsonSchema.
+        schemars::json_schema!({
+            "type": "object",
+            "required": ["epoch", "commitment", "txid", "l1_block", "asm_verified_tip"],
+            "properties": {
+                "epoch": { "type": "integer", "minimum": 0 },
+                "commitment": { "type": "object" },
+                "txid": { "type": "string" },
+                "l1_block": { "type": "object" },
+                "asm_verified_tip": { "type": ["object", "null"] }
             }
         })
     }
