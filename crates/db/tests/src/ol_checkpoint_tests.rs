@@ -5,7 +5,7 @@ pub use strata_asm_checkpoint_types::test_utils::checkpoint_payload_strategy;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::common::L1PayloadIntentIndex;
-use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
+use strata_db_types::ol_checkpoint::{OLCheckpointDatabase, RejectedCheckpointEntry};
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
     RBuf32,
@@ -991,9 +991,47 @@ pub fn test_get_last_checkpoint_l1_ref_epoch_ignores_sequencer_table(
     assert_eq!(last, key_2);
 }
 
+fn rejected_entry(epoch: u32, txid_byte: u8) -> RejectedCheckpointEntry {
+    let commitment = EpochCommitment::new(
+        Epoch::from(epoch),
+        u64::from(epoch) * 4,
+        OLBlockId::from(Buf32::from([epoch as u8; 32])),
+    );
+    let l1_block =
+        L1BlockCommitment::new(100 + epoch, L1BlockId::from(Buf32::from([txid_byte; 32])));
+    RejectedCheckpointEntry::new(commitment, RBuf32::from([txid_byte; 32]), l1_block, None)
+}
+
+pub fn test_checkpoint_submission_scan_roundtrip(db: &impl OLCheckpointDatabase) {
+    assert_eq!(db.get_checkpoint_submission_cursor().unwrap(), None);
+    assert!(db.get_rejected_checkpoints().unwrap().is_empty());
+
+    // The later epoch gets the smaller txid, so key order disagrees with epoch order.
+    let later = rejected_entry(9, 0x01);
+    let earlier = rejected_entry(4, 0x02);
+    db.put_checkpoint_submission_scan(3, vec![later.clone()])
+        .unwrap();
+    db.put_checkpoint_submission_scan(5, vec![earlier.clone()])
+        .unwrap();
+    // Recording the same transaction again keeps one entry; a scan without rejections only
+    // moves the cursor.
+    db.put_checkpoint_submission_scan(5, vec![later.clone()])
+        .unwrap();
+    db.put_checkpoint_submission_scan(7, Vec::new()).unwrap();
+
+    assert_eq!(db.get_checkpoint_submission_cursor().unwrap(), Some(7));
+    assert_eq!(db.get_rejected_checkpoints().unwrap(), vec![earlier, later]);
+}
+
 #[macro_export]
 macro_rules! ol_checkpoint_db_tests {
     ($setup_expr:expr) => {
+        #[test]
+        fn test_checkpoint_submission_scan_roundtrip() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_checkpoint_submission_scan_roundtrip(&db);
+        }
+
         #[test]
         fn test_get_nonexistent_checkpoint_payload_entry() {
             let db = $setup_expr;

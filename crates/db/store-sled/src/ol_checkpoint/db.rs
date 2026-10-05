@@ -2,7 +2,8 @@ use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::common::L1PayloadIntentIndex;
-use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
+use strata_db_types::l1_writer::BundleIdx;
+use strata_db_types::ol_checkpoint::{OLCheckpointDatabase, RejectedCheckpointEntry};
 use strata_db_types::{DbError, DbResult};
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, OLBlockId};
 use typed_sled::error;
@@ -10,6 +11,9 @@ use typed_sled::error;
 use super::schemas::*;
 use crate::define_sled_database;
 use crate::utils::conv_sled_err;
+
+/// Key of the only row in the submission cursor table.
+const SUBMISSION_CURSOR_KEY: u8 = 0;
 
 /// The lowest [`EpochCommitment`] key belonging to `epoch`.
 ///
@@ -29,6 +33,8 @@ define_sled_database!(
         unsigned_tree: UnsignedCheckpointIndexSchema,
         epoch_summary_tree: OLEpochSummarySchema,
         l1_ref_epoch_index_tree: OLCheckpointEpochIndexSchema,
+        rejected_tree: OLRejectedCheckpointSchema,
+        submission_cursor_tree: OLCheckpointSubmissionCursorSchema,
     }
 );
 
@@ -628,6 +634,40 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
                     Ok(deleted_epochs)
                 })?;
         Ok(deleted_epochs)
+    }
+
+    fn get_checkpoint_submission_cursor(&self) -> DbResult<Option<BundleIdx>> {
+        self.submission_cursor_tree
+            .get(&SUBMISSION_CURSOR_KEY)
+            .map_err(conv_sled_err)
+    }
+
+    fn put_checkpoint_submission_scan(
+        &self,
+        cursor: BundleIdx,
+        rejected: Vec<RejectedCheckpointEntry>,
+    ) -> DbResult<()> {
+        self.config.with_retry(
+            (&self.submission_cursor_tree, &self.rejected_tree),
+            |(ct, rt)| {
+                for entry in &rejected {
+                    rt.insert(&entry.txid(), entry)?;
+                }
+                ct.insert(&SUBMISSION_CURSOR_KEY, &cursor)?;
+                Ok(())
+            },
+        )
+    }
+
+    fn get_rejected_checkpoints(&self) -> DbResult<Vec<RejectedCheckpointEntry>> {
+        let mut entries = self
+            .rejected_tree
+            .iter()
+            .map(|item| item.map(|(_txid, entry)| entry).map_err(conv_sled_err))
+            .collect::<DbResult<Vec<_>>>()?;
+        // Keys are txids, so tree order is arbitrary with respect to epochs.
+        entries.sort_by_key(|entry| (entry.epoch(), entry.txid()));
+        Ok(entries)
     }
 }
 
