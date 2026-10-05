@@ -349,7 +349,7 @@ elif [ "${MODE}" = "fullnode" ]; then
         echo "copied params from ${PARAMS_DIR}"
     fi
 
-and     # ASM checkpoint envelopes use a raw x-only sequencer key, independent of
+    # ASM checkpoint envelopes use a raw x-only sequencer key, independent of
     # the checkpoint proof predicate.
     SEQUENCER_PUBKEY=$("${PYTHON}" -c "
 import json, re, sys
