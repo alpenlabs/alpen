@@ -14,5 +14,6 @@ strata-predicate.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 proptest.workspace = true
 toml.workspace = true

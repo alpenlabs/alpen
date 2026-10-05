@@ -8,7 +8,7 @@ use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_asm_spec::host::{build_execution_registry, CompiledSpec};
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, AsmWorkerStatus};
-use strata_config::AsmExecutionConfig;
+use strata_config::AsmExecutionParams;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_node_context::NodeContext;
 use strata_primitives::prelude::L1BlockCommitment;
@@ -106,7 +106,7 @@ pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWor
         nodectx.executor().handle().clone(),
         nodectx.storage().clone(),
         nodectx.asm_params().clone(),
-        &nodectx.config().asm_execution,
+        nodectx.asm_execution(),
         nodectx.bitcoin_client().clone(),
     )
 }
@@ -116,7 +116,7 @@ pub fn spawn_asm_worker(
     handle: Handle,
     storage: Arc<NodeStorage>,
     asm_params: Arc<AsmParams>,
-    execution: &AsmExecutionConfig,
+    execution: &AsmExecutionParams,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<AsmWorkerHandle> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
@@ -126,12 +126,12 @@ pub fn spawn_asm_worker(
 
     let registry = build_execution_registry(
         execution
-            .targets
+            .targets()
             .iter()
-            .map(|target| (target.predicate.clone(), target.spec_id)),
+            .map(|target| (target.predicate().clone(), target.spec_id())),
     )?;
     let genesis_spec =
-        CompiledSpec::resolve(registry.resolve(&execution.genesis_predicate)?.spec_id())?;
+        CompiledSpec::resolve(registry.resolve(execution.genesis_predicate())?.spec_id())?;
     let genesis = genesis_spec.construct_genesis_state(&asm_params);
 
     let context = AsmWorkerCtx::new(
@@ -146,7 +146,7 @@ pub fn spawn_asm_worker(
     // The worker validates the L1 anchor and prefills the manifest MMR.
     let handle = AsmWorkerBuilder::new()
         .with_context(context)
-        .with_genesis(genesis, execution.genesis_predicate.clone())
+        .with_genesis(genesis, execution.genesis_predicate().clone())
         .with_registry(registry)
         .launch(executor)?;
 

@@ -2,8 +2,6 @@ use std::{fmt, net::IpAddr, path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
-use strata_asm_common::SpecId;
-use strata_predicate::PredicateKey;
 use zeroize::ZeroizeOnDrop;
 
 use crate::btcio::BtcioConfig;
@@ -441,8 +439,8 @@ pub struct Config {
     pub bitcoind: BitcoindConfig,
     pub btcio: BtcioConfig,
 
-    /// Genesis authority and trusted native implementations, independent of proving.
-    pub asm_execution: AsmExecutionConfig,
+    /// Path to trusted ASM execution-parameters JSON, relative to the node TOML file.
+    pub asm_execution: PathBuf,
 
     /// Sequencer configuration (only required if client.is_sequencer = true).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -461,27 +459,6 @@ pub struct Config {
     pub prover: Option<ProverConfig>,
 }
 
-/// Local ASM capabilities; on-chain authority selects which implementation executes.
-///
-/// Keep the predicate-to-spec mapping immutable across restarts. The upstream
-/// native assembly validates the catalog when the ASM worker starts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AsmExecutionConfig {
-    /// Predicate authorizing the chain's initial ASM ruleset.
-    pub genesis_predicate: PredicateKey,
-    /// Trusted associations between predicates and compiled implementations.
-    pub targets: Vec<AsmExecutionTargetConfig>,
-}
-
-/// An immutable association between an ASM predicate and its native implementation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AsmExecutionTargetConfig {
-    /// Program identity associated with this implementation.
-    pub predicate: PredicateKey,
-    /// Protocol spec ID of the compiled implementation.
-    pub spec_id: SpecId,
-}
-
 #[cfg(test)]
 mod test {
     use bitcoin::FeeRate;
@@ -490,7 +467,7 @@ mod test {
     use crate::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
 
     #[test]
-    fn checked_in_node_configs_include_asm_execution() {
+    fn checked_in_node_configs_reference_execution_params() {
         for (name, contents) in [
             ("example", include_str!("../../../example_config.toml")),
             (
@@ -508,25 +485,31 @@ mod test {
         ] {
             let config: Config = toml::from_str(contents)
                 .unwrap_or_else(|error| panic!("{name} node config must deserialize: {error}"));
-            assert!(
-                config
-                    .asm_execution
-                    .targets
-                    .iter()
-                    .any(|target| { target.predicate == config.asm_execution.genesis_predicate }),
-                "{name} must declare its genesis ASM execution target"
-            );
+            assert_eq!(config.asm_execution.extension().unwrap(), "json", "{name}");
         }
+    }
+
+    #[test]
+    fn inline_execution_authority_is_not_runtime_config() {
+        let mut config: toml::Value =
+            toml::from_str(include_str!("../../../example_config.toml")).unwrap();
+        config.as_table_mut().unwrap().insert(
+            "asm_execution".to_owned(),
+            toml::from_str::<toml::Value>(
+                r#"
+                genesis_predicate = "AlwaysAccept"
+                targets = [{ predicate = "AlwaysAccept", spec_id = 0 }]
+            "#,
+            )
+            .unwrap(),
+        );
+        assert!(config.try_into::<Config>().is_err());
     }
 
     #[test]
     fn test_config_load() {
         let config_string_sequencer = r#"
-            [asm_execution]
-            genesis_predicate = "AlwaysAccept"
-            [[asm_execution.targets]]
-            predicate = "AlwaysAccept"
-            spec_id = 0
+            asm_execution = "asm-execution-params.json"
 
             [bitcoind]
             rpc_url = "http://localhost:18332"
@@ -585,15 +568,9 @@ mod test {
         );
         let config = config.unwrap();
         assert_eq!(
-            config.asm_execution.genesis_predicate,
-            PredicateKey::always_accept()
+            config.asm_execution,
+            PathBuf::from("asm-execution-params.json")
         );
-        assert_eq!(config.asm_execution.targets.len(), 1);
-        assert_eq!(
-            config.asm_execution.targets[0].predicate,
-            PredicateKey::always_accept()
-        );
-        assert_eq!(config.asm_execution.targets[0].spec_id, 0);
         assert!(
             config.sequencer.is_some(),
             "sequencer config should be present for sequencer"
@@ -631,11 +608,7 @@ mod test {
         assert_eq!(prover.workers, 4);
 
         let config_string_fullnode = r#"
-            [asm_execution]
-            genesis_predicate = "AlwaysAccept"
-            [[asm_execution.targets]]
-            predicate = "AlwaysAccept"
-            spec_id = 0
+            asm_execution = "asm-execution-params.json"
 
             [bitcoind]
             rpc_url = "http://localhost:18332"

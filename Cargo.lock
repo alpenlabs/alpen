@@ -15364,6 +15364,7 @@ dependencies = [
  "bitcoin",
  "proptest",
  "serde",
+ "serde_json",
  "strata-asm-common",
  "strata-predicate",
  "toml 0.5.11",

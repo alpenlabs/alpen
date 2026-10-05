@@ -1,12 +1,8 @@
 # adjust according to deployment
 
-# Initial native ASM spec, independent of the checkpoint proof backend.
-# Chains with different ASM genesis authority must replace both predicates.
-[asm_execution]
-genesis_predicate = "AlwaysAccept"
-[[asm_execution.targets]]
-predicate = "AlwaysAccept"
-spec_id = 0
+# Trusted network execution parameters, independent of the checkpoint proof backend.
+# Relative to this config file; deploy the catalog supplied for the network.
+asm_execution = "asm-execution-params.json"
 
 [client]
 rpc_host = "0.0.0.0"

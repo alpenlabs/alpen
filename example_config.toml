@@ -1,10 +1,6 @@
-# Regtest example: use the chain's actual genesis predicate in deployments.
-# This catalog selects native ASM implementations; it does not enable proving.
-[asm_execution]
-genesis_predicate = "AlwaysAccept"
-[[asm_execution.targets]]
-predicate = "AlwaysAccept"
-spec_id = 0
+# Regtest example; deploy the network's trusted execution-parameters file.
+# Relative paths resolve against this TOML file, independently of the working directory.
+asm_execution = "docker/configs/asm-execution-params.json"
 
 [client]
 rpc_host = "127.0.0.1"
