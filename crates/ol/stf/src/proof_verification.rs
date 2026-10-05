@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn sp1_groth16_predicate_verifier_is_available() {
-        let predicate_key = PredicateKey::new(PredicateTypeId::Sp1Groth16, Vec::new());
+        let predicate_key = PredicateKey::try_new(PredicateTypeId::Sp1Groth16, Vec::new()).unwrap();
         let err = predicate_key
             .verify_claim_witness(&[], &[])
             .expect_err("empty condition is invalid, but verifier must be compiled in");

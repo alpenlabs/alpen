@@ -14,7 +14,8 @@ use strata_asm_params::AsmParams;
 #[cfg(feature = "prover")]
 use strata_asm_params::SubprotocolInstance;
 use strata_config::{
-    BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
+    AsmExecutionParams, BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig,
+    SequencerRuntimeConfig,
 };
 #[cfg(feature = "prover")]
 use strata_config::{ProverBackend, ProverConfig};
@@ -67,6 +68,7 @@ pub(crate) fn init_node_context(
         .as_ref()
         .ok_or(InitError::MissingAsmParams)?;
     let asm_params = load_asm_params(asm_params_path)?;
+    let asm_execution = load_asm_execution_params(&args.config, &config.asm_execution)?;
 
     // When the integrated prover is enabled, validate that its backend matches the
     // checkpoint predicate the runtime ASM will enforce.
@@ -102,6 +104,7 @@ pub(crate) fn init_node_context(
         handle,
         config,
         blockasm_config,
+        asm_execution,
         Arc::new(asm_params),
         ol_params.into(),
         storage,
@@ -387,6 +390,20 @@ pub(crate) fn load_block_assembly_config(
     ))))
 }
 
+fn load_asm_execution_params(
+    config_path: &Path,
+    params_path: &Path,
+) -> Result<AsmExecutionParams, InitError> {
+    let path = config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(params_path);
+    let json = fs::read_to_string(&path)
+        .map_err(|source| InitError::AsmExecutionParamsRead { path, source })?;
+    serde_json::from_str(&json)
+        .map_err(|err| InitError::UnparsableParamsFile(SerdeError::new(json, err)))
+}
+
 fn load_asm_params(path: &Path) -> Result<AsmParams, InitError> {
     let json = fs::read_to_string(path)?;
     let asm_params =
@@ -560,10 +577,48 @@ mod tests {
     use strata_predicate::PredicateTypeId;
 
     use super::{
-        load_block_assembly_config, load_sequencer_runtime_config,
+        load_asm_execution_params, load_block_assembly_config, load_sequencer_runtime_config,
         resolve_default_sequencer_config_path,
     };
     use crate::errors::InitError;
+
+    #[test]
+    fn execution_params_resolve_relative_to_node_config() {
+        let dir = unique_temp_dir().with_extension("execution-path");
+        fs::create_dir_all(&dir).unwrap();
+        let params_path = dir.join("execution.json");
+        fs::write(
+            &params_path,
+            include_str!("../../../docker/configs/asm-execution-params.json"),
+        )
+        .unwrap();
+        let config_path = dir.join("node.toml");
+        let relative =
+            load_asm_execution_params(&config_path, Path::new("execution.json")).unwrap();
+        let absolute = load_asm_execution_params(&config_path, &params_path).unwrap();
+        assert_eq!(relative, absolute);
+        assert_eq!(relative.targets()[0].spec_id(), 0);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn execution_params_reject_missing_or_malformed_file() {
+        let dir = unique_temp_dir().with_extension("execution-errors");
+        fs::create_dir_all(&dir).unwrap();
+        let config_path = dir.join("node.toml");
+        let params_path = dir.join("execution.json");
+        let error =
+            load_asm_execution_params(&config_path, Path::new("execution.json")).unwrap_err();
+        assert!(
+            matches!(error, InitError::AsmExecutionParamsRead { path, .. } if path == params_path)
+        );
+        fs::write(&params_path, r#"{"genesis_predicate": "AlwaysAccept"}"#).unwrap();
+        assert!(matches!(
+            load_asm_execution_params(&config_path, Path::new("execution.json")),
+            Err(InitError::UnparsableParamsFile(_)),
+        ));
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     fn unique_temp_dir() -> PathBuf {
         let nanos = SystemTime::now()
@@ -576,6 +631,8 @@ mod tests {
     fn fullnode_config() -> Config {
         toml::from_str(
             r#"
+            asm_execution = "asm-execution-params.json"
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"
@@ -778,7 +835,8 @@ mod tests {
         };
 
         let configured = NativeCheckpointPredicateKey.predicate_key().unwrap();
-        let expected = PredicateKey::new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]);
+        let expected =
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]).unwrap();
 
         let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
 

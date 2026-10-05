@@ -1,12 +1,11 @@
 //! State bookkeeping necessary for ASM to run.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_common::{AnchorState, AsmLogEntry};
 use strata_asm_stf::AsmStfOutput;
 
 /// ASM bookkeping "umbrella" state.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AsmState {
     state: AnchorState,
     logs: Vec<AsmLogEntry>,

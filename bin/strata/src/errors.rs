@@ -21,6 +21,13 @@ pub(crate) enum InitError {
     #[error("config: {0}")]
     MalformedConfig(#[from] ConfigError),
 
+    #[error("failed to read ASM execution parameters {path}: {source}")]
+    AsmExecutionParamsRead {
+        path: path::PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
     #[error("missing ASM params path in arguments")]
     MissingAsmParams,
 

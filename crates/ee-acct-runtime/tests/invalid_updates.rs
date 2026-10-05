@@ -33,7 +33,7 @@ fn test_mismatched_coinput_count() {
     let ee = SimpleExecutionEnvironment;
 
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
@@ -69,7 +69,7 @@ fn test_nonempty_coinput_rejected() {
     let ee = SimpleExecutionEnvironment;
 
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
@@ -102,7 +102,7 @@ fn test_output_mismatch_fails() {
     wrong_outputs
         .try_extend_transfers(iter::once(OutputTransfer::new(
             AccountId::from([99u8; 32]),
-            BitcoinAmount::from(500u64),
+            BitcoinAmount::try_from(500u64).unwrap(),
         )))
         .unwrap();
 
@@ -197,7 +197,7 @@ fn test_builder_rejects_wrong_deposit() {
     let ee = SimpleExecutionEnvironment;
 
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
@@ -236,7 +236,7 @@ fn test_builder_advances_tip() {
 
     let dest1 = SubjectId::from([1u8; 32]);
     let dest2 = SubjectId::from([2u8; 32]);
-    let value = BitcoinAmount::from(500u64);
+    let value = BitcoinAmount::try_from(500u64).unwrap();
     let source = AccountId::from([3u8; 32]);
 
     let msg1 = create_deposit_message(dest1, value, source, 1);
@@ -369,7 +369,7 @@ fn test_deposit_mismatch_in_chunk() {
     let ee = SimpleExecutionEnvironment;
 
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let deposit = SubjectDepositData::new(dest, value);
 
     let initial_state = strata_ee_acct_types::EeAccountState::new(
@@ -432,7 +432,7 @@ fn test_input_count_mismatch() {
     let tip = Hash::new([0xFF; 32]);
 
     let dest = SubjectId::from([1u8; 32]);
-    let value = BitcoinAmount::from(1000u64);
+    let value = BitcoinAmount::try_from(1000u64).unwrap();
     let deposit = SubjectDepositData::new(dest, value);
     let mut inputs = ExecInputs::new_empty();
     inputs.add_subject_deposit(deposit);

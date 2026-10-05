@@ -1,4 +1,4 @@
-"""Strata environment with CredRule::Unchecked."""
+"""Legacy unchecked environment, now using mandatory ASM checkpoint authentication."""
 
 from typing import cast
 
@@ -12,13 +12,9 @@ from factories.strata import StrataFactory
 
 
 class StrataUncheckedEnvConfig(flexitest.EnvConfig):
-    """
-    Strata environment with ``CredRule::Unchecked``.
+    """Run the legacy environment with a sequencer key and detached signer.
 
-    The sequencer key is NOT embedded in rollup params, so signature
-    verification is bypassed.  The signer still runs to fulfill block signing
-    duties; it will never receive ``SignRevealTx`` duties because those are
-    handled in-process by the btcio writer.
+    ASM requires authenticated checkpoint envelopes even in this environment.
     """
 
     def __init__(self, pre_generate_blocks: int = 0):
@@ -51,7 +47,6 @@ class StrataUncheckedEnvConfig(flexitest.EnvConfig):
             bitcoind_config,
             genesis_l1_block.height,
             is_sequencer=True,
-            use_unchecked_cred_rule=True,
             epoch_sealing_config=EpochSealingConfig.new_fixed_slot(4),
         )
         strata = sequencer_node.service

@@ -92,7 +92,7 @@ class SequencerArtifacts:
     """Sequencer key material and operator pubkeys consumed when building ASM params."""
 
     sequencer_key_path: Path
-    sequencer_pubkey: str | None
+    sequencer_pubkey: str
     operator_keys: list[str]
 
 
@@ -115,22 +115,16 @@ def write_sequencer_runtime_config(
 
 def generate_sequencer_artifacts(
     datadir: Path,
-    use_unchecked_cred_rule: bool,
     seq_fname: str = "sequencer_root_key",
 ) -> SequencerArtifacts:
     """Ensures the sequencer key and operator pubkeys used to build ASM params.
 
-    A sequencer key is always generated so the signer can fulfill block-signing
-    duties. When ``use_unchecked_cred_rule`` is True, the sequencer pubkey is
-    NOT embedded in the ASM checkpoint sequencer predicate (it stays
-    ``AlwaysAccept``); otherwise the derived pubkey is returned so the ASM
-    checkpoint predicate requires that sequencer's signature.
+    ASM always authenticates checkpoint envelopes with the derived sequencer key,
+    including environments that previously used unchecked credentials.
     """
     sequencer_key_path = datadir / seq_fname
     ensure_priv_key(sequencer_key_path)
-    sequencer_pubkey = (
-        None if use_unchecked_cred_rule else generate_sequencer_pubkey(sequencer_key_path)
-    )
+    sequencer_pubkey = generate_sequencer_pubkey(sequencer_key_path)
     operator_pubkeys = get_operator_pubkeys(datadir, "bridge-operator_keys")
     return SequencerArtifacts(
         sequencer_key_path=sequencer_key_path,
@@ -205,8 +199,8 @@ def generate_asm_params(
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
     operator_pubkeys: list[str],
+    sequencer_pubkey: str,
     ol_params_path: Path | None = None,
-    sequencer_pubkey: str | None = None,
     admin_confirmation_depth: int | None = None,
 ) -> Path:
     params_path = datadir / "asm-params.json"
@@ -215,6 +209,8 @@ def generate_asm_params(
 
     args = [
         "gen-asm-params",
+        "--seq-pk",
+        sequencer_pubkey,
         "--checkpoint-predicate",
         "bip340-schnorr-test",
         "--name",
@@ -228,8 +224,6 @@ def generate_asm_params(
     ]
     if ol_params_path is not None:
         args.extend(["--ol-params", str(ol_params_path)])
-    if sequencer_pubkey is not None:
-        args.extend(["--seq-pk", sequencer_pubkey])
     if admin_confirmation_depth is not None:
         args.extend(["--confirmation-depth", str(admin_confirmation_depth)])
     for pk in operator_pubkeys:

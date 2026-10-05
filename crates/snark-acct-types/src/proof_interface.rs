@@ -63,6 +63,7 @@ impl UpdateProofPubParams {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::Amount;
     use proptest::prelude::*;
     use ssz::Encode as _;
     use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
@@ -83,14 +84,16 @@ mod tests {
     }
 
     fn msg_payload_strategy() -> impl Strategy<Value = MsgPayload> {
-        (any::<u64>(), prop::collection::vec(any::<u8>(), 0..32)).prop_map(|(value, data)| {
-            MsgPayload {
-                value: BitcoinAmount::from_sat(value),
+        (
+            0..=Amount::MAX_MONEY.to_sat(),
+            prop::collection::vec(any::<u8>(), 0..32),
+        )
+            .prop_map(|(value, data)| MsgPayload {
+                value: BitcoinAmount::try_from(value).unwrap(),
                 data: data
                     .try_into()
                     .expect("message payload bytes must fit within SSZ max length"),
-            }
-        })
+            })
     }
 
     fn message_entry_strategy() -> impl Strategy<Value = MessageEntry> {
@@ -124,9 +127,11 @@ mod tests {
     }
 
     fn output_transfer_strategy() -> impl Strategy<Value = OutputTransfer> {
-        (account_id_strategy(), any::<u64>()).prop_map(|(dest, value)| OutputTransfer {
-            dest,
-            value: BitcoinAmount::from_sat(value),
+        (account_id_strategy(), 0..=Amount::MAX_MONEY.to_sat()).prop_map(|(dest, value)| {
+            OutputTransfer {
+                dest,
+                value: BitcoinAmount::try_from(value).unwrap(),
+            }
         })
     }
 

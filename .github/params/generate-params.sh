@@ -97,6 +97,7 @@ python3 "${SCRIPT_DIR}/params-helper.py" extract-keys \
     --template-dir "${TEMPLATE_DIR}" \
     --output-dir "${WORK_DIR}"
 SAFE_HARBOUR=$(tr -d '[:space:]' < "${WORK_DIR}/safe-harbour.txt")
+SEQUENCER_KEY=$(tr -d '[:space:]' < "${WORK_DIR}/sequencer-key.txt")
 EE_ACCOUNT_ID=$(tr -d '[:space:]' < "${WORK_DIR}/ee-account-id.txt")
 EE_PARAMS_TEMPLATE="${TEMPLATE_DIR}/ee-params.json"
 BRIDGE_DENOMINATION_SATS=$(json_value "${EE_PARAMS_TEMPLATE}" "bridge_params.denomination")
@@ -140,10 +141,10 @@ run_datatool "${CHAIN_CONFIG_ABS}:/app/chain.json:ro" -- \
     -o /out/ol-params-raw.json
 echo "  ol-params-raw.json generated"
 
-# The ASM checkpoint sequencer_predicate is static (from the template); the raw
-# generation only needs operators + safe-harbour, so no -s/sequencer key here.
+# Use the template sequencer key for ASM checkpoint authentication.
 run_datatool -- \
     gen-asm-params \
+    --seq-pk "${SEQUENCER_KEY}" \
     -B /out/op-pks.txt \
     --checkpoint-predicate sp1-groth16 \
     --ol-params /out/ol-params-raw.json \

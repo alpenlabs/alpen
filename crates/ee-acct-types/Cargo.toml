@@ -20,6 +20,7 @@ tree_hash_derive.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+bitcoin.workspace = true
 proptest.workspace = true
 strata-test-utils-ssz.workspace = true
 

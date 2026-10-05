@@ -1,5 +1,6 @@
 //! Test utilities and proptest strategies for OL state types.
 
+use bitcoin::Amount;
 use proptest::prelude::*;
 use ssz_types::VariableList;
 use strata_acct_types::BitcoinAmount;
@@ -20,7 +21,7 @@ pub fn create_test_genesis_state() -> OLState {
 }
 
 pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
-    any::<u64>().prop_map(BitcoinAmount::from_sat)
+    (0..=Amount::MAX_MONEY.to_sat()).prop_map(|sats| BitcoinAmount::try_from(sats).unwrap())
 }
 
 pub fn global_state_strategy() -> impl Strategy<Value = GlobalState> {

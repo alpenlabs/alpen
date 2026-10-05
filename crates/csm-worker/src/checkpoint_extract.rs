@@ -9,9 +9,7 @@ use strata_asm_proto_checkpoint_txs::{
 use strata_asm_proto_checkpoint_types::{
     AsmManifestRangeHash, CheckpointPayload, CheckpointTip, compute_asm_manifests_hash_from_leaves,
 };
-use strata_checkpoint_verification::{
-    CheckpointL1Range, verify_progression, verify_sequencer_predicate,
-};
+use strata_checkpoint_verification::{CheckpointL1Range, verify_progression, verify_sequencer_key};
 use strata_identifiers::RBuf32;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use tracing::{debug, warn};
@@ -127,17 +125,16 @@ fn verify_checkpoint(
     current_l1_height: u32,
     verified_aux_data: &VerifiedAuxData,
 ) -> CsmWorkerResult<()> {
-    let coverage = verify_sequencer_predicate(
-        checkpoint_state.sequencer_predicate(),
-        &envelope.envelope_pubkey,
-    )
-    .and_then(|_| {
-        verify_progression(
-            checkpoint_state.verified_tip(),
-            envelope.payload.new_tip(),
-            current_l1_height,
-        )
-    })?;
+    let coverage =
+        verify_sequencer_key(checkpoint_state.sequencer_key(), &envelope.envelope_pubkey)
+            .and_then(|_| {
+                verify_progression(
+                    checkpoint_state.verified_tip(),
+                    envelope.payload.new_tip(),
+                    current_l1_height,
+                    checkpoint_state.next_transition(),
+                )
+            })?;
 
     let asm_manifests_hash = match &coverage {
         CheckpointL1Range::Empty => AsmManifestRangeHash::ZERO,
@@ -174,7 +171,7 @@ mod tests {
     use strata_asm_proto_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
     use strata_codec::encode_to_vec;
     use strata_codec_utils::CodecSsz;
-    use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+    use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils_checkpoint::CheckpointTestHarness;
 
@@ -255,7 +252,7 @@ mod tests {
     fn harness_checkpoint_state(harness: &CheckpointTestHarness) -> CheckpointState {
         let genesis_blkid = *harness.verified_tip().l2_commitment().blkid();
         let config = CheckpointInitConfig {
-            sequencer_predicate: harness.sequencer_predicate(),
+            sequencer_key: harness.sequencer_key(),
             checkpoint_predicate: harness.checkpoint_predicate(),
             genesis_l1_height: harness.genesis_l1_height(),
             genesis_ol_blkid: genesis_blkid,

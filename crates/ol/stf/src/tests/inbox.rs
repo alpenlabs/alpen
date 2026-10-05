@@ -9,7 +9,7 @@ use strata_ledger_types::ISnarkAccountState;
 use crate::{SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
 
 fn msg_payload_from_bytes(data: Vec<u8>) -> MsgPayload {
-    MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data)
+    MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), data)
         .expect("message payload bytes must fit within SSZ max length")
 }
 
@@ -19,7 +19,7 @@ fn test_snark_inbox_message_insertion() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .execute_genesis();
 
@@ -48,7 +48,7 @@ fn test_snark_inbox_message_insertion() {
     // Balance unchanged (GAM messages have 0 value)
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000),
+        BitcoinAmount::try_from(100_000_000).unwrap(),
         "Snark account balance should be unchanged"
     );
 }
@@ -60,7 +60,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -106,7 +106,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
         .child_block()
         .with_sau(snark_acct_id, |sau| {
             sau.with_processed_messages(vec![gam_msg_entry], vec![gam_proof])
-                .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+                .transfer(recipient_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .with_state_root(make_state_root(2))
                 .with_proof(vec![0u8; 32])
         })
@@ -122,7 +122,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     // Verify the update was applied
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(90_000_000),
+        BitcoinAmount::try_from(90_000_000).unwrap(),
         "Sender account should be debited"
     );
 
@@ -141,7 +141,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
 
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(10_000_000),
+        BitcoinAmount::try_from(10_000_000).unwrap(),
         "Recipient should receive transfer"
     );
 }
@@ -153,7 +153,7 @@ fn test_snark_update_invalid_message_index() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -163,7 +163,7 @@ fn test_snark_update_invalid_message_index() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .force_next_inbox_msg_idx(5)
                 .with_state_root(make_state_root(2))
         })
@@ -186,7 +186,7 @@ fn test_snark_update_invalid_message_proof() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .execute_genesis();
 
@@ -247,7 +247,7 @@ fn test_snark_update_skip_message_out_of_order() {
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -273,7 +273,7 @@ fn test_snark_update_skip_message_out_of_order() {
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
-            sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+            sau.transfer(recipient_id, BitcoinAmount::try_from(10_000_000).unwrap())
                 .force_next_inbox_msg_idx(2)
                 .with_state_root(make_state_root(2))
         })
@@ -299,7 +299,7 @@ fn test_snark_update_rejects_reversed_processed_messages() {
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -342,7 +342,7 @@ fn test_snark_update_rejects_reversed_processed_messages() {
                 vec![second_msg, first_msg],
                 vec![second_proof, first_proof],
             )
-            .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+            .transfer(recipient_id, BitcoinAmount::try_from(10_000_000).unwrap())
             .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -360,13 +360,13 @@ fn test_snark_update_rejects_reversed_processed_messages() {
     let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000)
+        BitcoinAmount::try_from(100_000_000).unwrap()
     );
     assert_eq!(*account_state.seqno().inner(), 0);
     assert_eq!(account_state.next_inbox_msg_idx(), 0);
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(0)
+        BitcoinAmount::try_from(0).unwrap()
     );
 }
 
@@ -376,7 +376,7 @@ fn test_snark_update_rejects_duplicate_processed_message() {
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
-            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+            acct.with_balance(BitcoinAmount::try_from(100_000_000).unwrap())
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
@@ -420,7 +420,7 @@ fn test_snark_update_rejects_duplicate_processed_message() {
                 vec![first_msg.clone(), first_msg],
                 vec![first_proof.clone(), first_proof],
             )
-            .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+            .transfer(recipient_id, BitcoinAmount::try_from(10_000_000).unwrap())
             .with_state_root(make_state_root(2))
         })
         .execute_err();
@@ -438,12 +438,12 @@ fn test_snark_update_rejects_duplicate_processed_message() {
     let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(
         fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000)
+        BitcoinAmount::try_from(100_000_000).unwrap()
     );
     assert_eq!(*account_state.seqno().inner(), 0);
     assert_eq!(account_state.next_inbox_msg_idx(), 0);
     assert_eq!(
         fixture.account_balance(recipient_id),
-        BitcoinAmount::from_sat(0)
+        BitcoinAmount::try_from(0).unwrap()
     );
 }

@@ -113,7 +113,8 @@ impl EeAcctProgram {
     /// functional-test params so the resulting witness verifies under `Bip340Schnorr`.
     pub fn test_predicate_key() -> PredicateKey {
         let pk = test_signing_key().verifying_key().to_bytes().to_vec();
-        PredicateKey::new(PredicateTypeId::Bip340Schnorr, pk)
+        PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, pk)
+            .expect("32-byte Schnorr key fits predicate condition limit")
     }
 
     /// Executes the account proof program using the native host for testing.
@@ -190,10 +191,9 @@ mod tests {
         // zero-chunks test; either `always_accept` or a real Schnorr
         // key would work. Using `Bip340Schnorr` to exercise the
         // non-trivial path.
-        let program = EeAcctProgram::new(PredicateKey::new(
-            PredicateTypeId::Bip340Schnorr,
-            vec![0u8; 32],
-        ));
+        let program = EeAcctProgram::new(
+            PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32]).unwrap(),
+        );
         let result = program
             .execute(&proof_input)
             .expect("native execution should succeed");

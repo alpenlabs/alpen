@@ -34,7 +34,7 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
         for deposit in inputs.subject_deposits() {
             let balance = accounts.entry(deposit.dest()).or_insert(0);
             *balance = balance
-                .checked_add(*deposit.value())
+                .checked_add(deposit.value().to_sat())
                 .ok_or(strata_ee_acct_types::EnvError::InvalidBlockTx)?;
         }
 
@@ -235,7 +235,7 @@ mod tests {
         let mut inputs = ExecInputs::new_empty();
         inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
             alice(),
-            BitcoinAmount::from(1000u64),
+            BitcoinAmount::try_from(1000u64).unwrap(),
         ));
 
         let body = SimpleBlockBody::new(vec![]);
@@ -263,15 +263,15 @@ mod tests {
         let mut inputs = ExecInputs::new_empty();
         inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
             alice(),
-            BitcoinAmount::from(500u64),
+            BitcoinAmount::try_from(500u64).unwrap(),
         ));
         inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
             bob(),
-            BitcoinAmount::from(300u64),
+            BitcoinAmount::try_from(300u64).unwrap(),
         ));
         inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
             charlie(),
-            BitcoinAmount::from(1000u64),
+            BitcoinAmount::try_from(1000u64).unwrap(),
         ));
 
         let body = SimpleBlockBody::new(vec![]);
@@ -326,7 +326,7 @@ mod tests {
         assert_eq!(output.outputs().output_transfers().len(), 1);
         let transfer = &output.outputs().output_transfers()[0];
         assert_eq!(transfer.dest(), account_123());
-        assert_eq!(transfer.value(), BitcoinAmount::from(400u64));
+        assert_eq!(transfer.value(), BitcoinAmount::try_from(400u64).unwrap());
     }
 
     #[test]
@@ -386,17 +386,17 @@ mod tests {
         assert_eq!(output.outputs().output_transfers()[0].dest(), account_123());
         assert_eq!(
             output.outputs().output_transfers()[0].value(),
-            BitcoinAmount::from(300u64)
+            BitcoinAmount::try_from(300u64).unwrap()
         );
         assert_eq!(output.outputs().output_transfers()[1].dest(), account_456);
         assert_eq!(
             output.outputs().output_transfers()[1].value(),
-            BitcoinAmount::from(250u64)
+            BitcoinAmount::try_from(250u64).unwrap()
         );
         assert_eq!(output.outputs().output_transfers()[2].dest(), account_456);
         assert_eq!(
             output.outputs().output_transfers()[2].value(),
-            BitcoinAmount::from(200u64)
+            BitcoinAmount::try_from(200u64).unwrap()
         );
     }
 
@@ -414,11 +414,11 @@ mod tests {
             let mut inputs = ExecInputs::new_empty();
             inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
                 alice(),
-                BitcoinAmount::from(2000u64),
+                BitcoinAmount::try_from(2000u64).unwrap(),
             ));
             inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
                 bob(),
-                BitcoinAmount::from(1500u64),
+                BitcoinAmount::try_from(1500u64).unwrap(),
             ));
 
             let body = SimpleBlockBody::new(vec![]);
@@ -493,7 +493,7 @@ mod tests {
             let mut inputs = ExecInputs::new_empty();
             inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
                 charlie(),
-                BitcoinAmount::from(500u64),
+                BitcoinAmount::try_from(500u64).unwrap(),
             ));
 
             let txs = vec![
@@ -536,7 +536,7 @@ mod tests {
             assert_eq!(output.outputs().output_transfers()[0].dest(), account_123());
             assert_eq!(
                 output.outputs().output_transfers()[0].value(),
-                BitcoinAmount::from(600u64)
+                BitcoinAmount::try_from(600u64).unwrap()
             );
 
             let header = complete_header_for_test(&intrinsics, &output);
@@ -548,7 +548,7 @@ mod tests {
             let mut inputs = ExecInputs::new_empty();
             inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
                 alice(),
-                BitcoinAmount::from(1000u64),
+                BitcoinAmount::try_from(1000u64).unwrap(),
             ));
 
             let account_789 = AccountId::from([78u8; 32]);
@@ -592,12 +592,12 @@ mod tests {
             assert_eq!(output.outputs().output_transfers()[0].dest(), account_123());
             assert_eq!(
                 output.outputs().output_transfers()[0].value(),
-                BitcoinAmount::from(800u64)
+                BitcoinAmount::try_from(800u64).unwrap()
             );
             assert_eq!(output.outputs().output_transfers()[1].dest(), account_789);
             assert_eq!(
                 output.outputs().output_transfers()[1].value(),
-                BitcoinAmount::from(400u64)
+                BitcoinAmount::try_from(400u64).unwrap()
             );
         }
     }
@@ -741,7 +741,7 @@ mod tests {
         assert_eq!(output.outputs().output_transfers()[0].dest(), account_123());
         assert_eq!(
             output.outputs().output_transfers()[0].value(),
-            BitcoinAmount::from(750u64)
+            BitcoinAmount::try_from(750u64).unwrap()
         );
     }
 
@@ -859,7 +859,10 @@ mod tests {
         assert_eq!(output.outputs().output_messages().len(), 1);
         let message = &output.outputs().output_messages()[0];
         assert_eq!(message.dest(), account_123());
-        assert_eq!(message.payload().value(), BitcoinAmount::from(300u64));
+        assert_eq!(
+            message.payload().value(),
+            BitcoinAmount::try_from(300u64).unwrap()
+        );
 
         // Message data should contain: dest_subject (32 bytes) + user data
         let msg_payload_data = message.payload().data();
@@ -932,19 +935,28 @@ mod tests {
 
         let msg1 = &output.outputs().output_messages()[0];
         assert_eq!(msg1.dest(), account_123());
-        assert_eq!(msg1.payload().value(), BitcoinAmount::from(400u64));
+        assert_eq!(
+            msg1.payload().value(),
+            BitcoinAmount::try_from(400u64).unwrap()
+        );
         assert_eq!(&msg1.payload().data()[0..32], bob().inner());
         assert_eq!(&msg1.payload().data()[32..], &[10, 20, 30]);
 
         let msg2 = &output.outputs().output_messages()[1];
         assert_eq!(msg2.dest(), account_456);
-        assert_eq!(msg2.payload().value(), BitcoinAmount::from(250u64));
+        assert_eq!(
+            msg2.payload().value(),
+            BitcoinAmount::try_from(250u64).unwrap()
+        );
         assert_eq!(&msg2.payload().data()[0..32], charlie_remote.inner());
         assert_eq!(msg2.payload().data().len(), 32); // no user data
 
         let msg3 = &output.outputs().output_messages()[2];
         assert_eq!(msg3.dest(), account_456);
-        assert_eq!(msg3.payload().value(), BitcoinAmount::from(600u64));
+        assert_eq!(
+            msg3.payload().value(),
+            BitcoinAmount::try_from(600u64).unwrap()
+        );
         assert_eq!(&msg3.payload().data()[0..32], charlie().inner());
         assert_eq!(&msg3.payload().data()[32..], &[99, 88, 77, 66]);
     }
@@ -1082,16 +1094,22 @@ mod tests {
         assert_eq!(output.outputs().output_transfers()[0].dest(), account_123());
         assert_eq!(
             output.outputs().output_transfers()[0].value(),
-            BitcoinAmount::from(400u64)
+            BitcoinAmount::try_from(400u64).unwrap()
         );
 
         // Check message outputs
         let msg1 = &output.outputs().output_messages()[0];
         assert_eq!(msg1.dest(), account_123());
-        assert_eq!(msg1.payload().value(), BitcoinAmount::from(300u64));
+        assert_eq!(
+            msg1.payload().value(),
+            BitcoinAmount::try_from(300u64).unwrap()
+        );
 
         let msg2 = &output.outputs().output_messages()[1];
         assert_eq!(msg2.dest(), account_123());
-        assert_eq!(msg2.payload().value(), BitcoinAmount::from(100u64));
+        assert_eq!(
+            msg2.payload().value(),
+            BitcoinAmount::try_from(100u64).unwrap()
+        );
     }
 }

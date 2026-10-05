@@ -1,6 +1,7 @@
 """STR-3130: OL checkpoint predicate rotation is enforced end to end."""
 
 import logging
+import re
 from pathlib import Path
 
 import flexitest
@@ -18,7 +19,7 @@ from tests.checkpoint.helpers import (
 
 logger = logging.getLogger(__name__)
 
-POST_ADMIN_UPDATE_L1_BLOCKS = 5
+ADMIN_CONFIRMATION_DEPTH = 2
 PREDICATE_REJECTION_L1_BLOCKS = 8
 PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
 
@@ -33,7 +34,8 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 pre_generate_blocks=110,
                 epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
                 fund_test_cli_wallet=True,
-                admin_confirmation_depth=2,
+                admin_confirmation_depth=ADMIN_CONFIRMATION_DEPTH,
+                l1_reorg_safe_depth=1,
             )
         )
 
@@ -53,7 +55,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             timeout=120,
             step=1.0,
         )
-        logger.info("baseline finalized epoch under AlwaysAccept: %s", baseline["epoch"])
+        logger.info("baseline finalized epoch under the initial predicate: %s", baseline["epoch"])
 
         admin_xpriv = self._read_admin_xpriv(strata)
         result = create_checkpoint_predicate_update(
@@ -72,24 +74,77 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             strata_rpc=strata_rpc,
             btc_rpc=btc_rpc,
             mine_addr=mine_addr,
-            blocks=POST_ADMIN_UPDATE_L1_BLOCKS,
+            blocks=1,
             timeout=PREDICATE_SETTLE_TIMEOUT_SECONDS,
         )
 
-        activated_finalized_epoch = self._finalized_epoch(strata, strata_rpc)
-        blocked_epoch = activated_finalized_epoch + 1
+        reveal = btc_rpc.proxy.getrawtransaction(result["reveal_txid"], True)
+        inclusion_height = btc_rpc.proxy.getblockheader(reveal["blockhash"])["height"]
+        boundary = inclusion_height + ADMIN_CONFIRMATION_DEPTH
+        self._mine_l1_and_wait_for_asm(
+            bitcoin=bitcoin,
+            strata=strata,
+            strata_rpc=strata_rpc,
+            btc_rpc=btc_rpc,
+            mine_addr=mine_addr,
+            blocks=boundary - btc_rpc.proxy.getblockcount(),
+            timeout=PREDICATE_SETTLE_TIMEOUT_SECONDS,
+        )
+
+        # The old predicate authorizes coverage through the boundary. Hold L1
+        # here until OL seals exactly that range; only accepting this checkpoint
+        # promotes NeverAccept. A checkpoint straddling the boundary would be
+        # rejected before exercising the new predicate.
+        boundary_epoch = baseline["epoch"] + 1
+
+        def find_boundary_checkpoint():
+            nonlocal boundary_epoch
+            info = strata_rpc.strata_getCheckpointInfo(boundary_epoch)
+            if info is None:
+                return None
+            end_height = info["l1_range"][1]["height"]
+            assert end_height <= boundary, (boundary, info)
+            if end_height == boundary:
+                return info
+            boundary_epoch += 1
+            return None
+
+        wait_until_with_value(
+            find_boundary_checkpoint,
+            lambda info: info is not None,
+            error_with=f"no checkpoint sealed at predicate boundary {boundary}",
+            timeout=PREDICATE_SETTLE_TIMEOUT_SECONDS,
+            step=1.0,
+        )
+
+        mine_until_finalized_epoch(
+            bitcoin=bitcoin,
+            strata=strata,
+            strata_rpc=strata_rpc,
+            target_epoch=boundary_epoch,
+            timeout=120,
+            step=1.0,
+        )
+        assert self._finalized_epoch(strata, strata_rpc) == boundary_epoch
+        blocked_epoch = boundary_epoch + 1
+        self._wait_for_checkpoint_info(strata_rpc, blocked_epoch)
         logger.info(
-            "checkpoint predicate update processed; finalized=%s, "
-            "expecting epoch %s to remain unfinalized",
-            activated_finalized_epoch,
+            "boundary checkpoint %s finalized at L1 height %s; expecting epoch %s to be rejected",
+            boundary_epoch,
+            boundary,
             blocked_epoch,
         )
 
-        checkpoint_info = self._wait_for_checkpoint_info(strata_rpc, blocked_epoch)
-        logger.info(
-            "checkpoint epoch %s created with status %s",
-            blocked_epoch,
-            self._checkpoint_status(checkpoint_info),
+        # Pending alone could mean the checkpoint has not been posted yet.
+        # Require ASM to reject this epoch with the newly active predicate.
+        log_path = Path(strata.props["datadir"]) / "service.log"
+        rejected = re.compile(rf"checkpoint rejected.*epoch={blocked_epoch}\b.*NeverAccept")
+        bitcoin.mine_until(
+            lambda: rejected.search(re.sub(r"\x1b\[[0-9;]*m", "", log_path.read_text())),
+            lambda match: match is not None,
+            timeout=PREDICATE_SETTLE_TIMEOUT_SECONDS,
+            step=1.0,
+            error_with=f"ASM did not reject checkpoint {blocked_epoch} under NeverAccept",
         )
 
         for _ in range(PREDICATE_REJECTION_L1_BLOCKS):
@@ -103,10 +158,10 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 timeout=30,
             )
             finalized_epoch = self._finalized_epoch(strata, strata_rpc)
-            if finalized_epoch > activated_finalized_epoch:
+            if finalized_epoch > boundary_epoch:
                 raise AssertionError(
                     "checkpoint finalized after rotating predicate to NeverAccept: "
-                    f"before={activated_finalized_epoch}, after={finalized_epoch}"
+                    f"before={boundary_epoch}, after={finalized_epoch}"
                 )
 
         checkpoint_info = strata_rpc.strata_getCheckpointInfo(blocked_epoch)

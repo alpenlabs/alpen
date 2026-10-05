@@ -2,7 +2,7 @@
 Test mock deposit and withdrawal via strata-test-cli.
 
 This test verifies the end-to-end flow of depositing funds into a snark account
-via the debug subprotocol and then withdrawing them, all without a real EE.
+via the bridge subprotocol and then withdrawing them, all without a real EE.
 """
 
 import logging
@@ -10,8 +10,10 @@ import logging
 import flexitest
 
 from common.base_test import StrataNodeTest
+from common.bridge import read_operator_xprivs, submit_real_bridge_deposit
 from common.config import ServiceType
-from common.test_cli import build_snark_withdrawal, create_mock_deposit
+from common.test_cli import build_snark_withdrawal
+from envconfigs.ol_isolated import OlIsolatedEnvConfig
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +26,8 @@ TEST_ACCOUNT_SERIAL = 128
 # Withdrawal denomination: 1 BTC in satoshis
 WITHDRAWAL_DENOMINATION_SATS = 100_000_000
 
-# Deposit amount: 20 BTC in satoshis
-DEPOSIT_AMOUNT_SATS = 2_000_000_000
+# Bridge denomination: 1 BTC in satoshis
+DEPOSIT_AMOUNT_SATS = 100_000_000
 
 
 def make_test_account_id_hex() -> str:
@@ -59,7 +61,7 @@ class TestMockWithdrawal(StrataNodeTest):
 
     1. Start bitcoind + strata (OL, no EE)
     2. Wait for OL RPC ready
-    3. Deposit via create-mock-deposit (debug subprotocol)
+    3. Deposit through the real bridge subprotocol
     4. Generate Bitcoin blocks to mature the tx
     5. Wait for OL to process the manifest
     6. Assert balance == deposit amount
@@ -69,7 +71,7 @@ class TestMockWithdrawal(StrataNodeTest):
     """
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("ol_isolated")
+        ctx.set_env(OlIsolatedEnvConfig())
 
     def main(self, ctx):
         strata = self.get_service(ServiceType.Strata)
@@ -82,24 +84,17 @@ class TestMockWithdrawal(StrataNodeTest):
         account_id_hex = make_test_account_id_hex()
         logger.info(f"Test account ID: {account_id_hex}")
 
-        # Get Bitcoin RPC config
-        btc_url = bitcoin.props["rpc_url"]
-        btc_user = bitcoin.props["rpc_user"]
-        btc_password = bitcoin.props["rpc_password"]
         btc_rpc = bitcoin.create_rpc()
 
-        # Step 1: Deposit via debug subprotocol
-        logger.info(
-            f"Injecting mock deposit: {DEPOSIT_AMOUNT_SATS} sats to serial {TEST_ACCOUNT_SERIAL:#x}"
-        )
-        txid = create_mock_deposit(
+        # Step 1: Deposit through the bridge using the configured operator keys.
+        _, txid, _ = submit_real_bridge_deposit(
+            btc_rpc,
+            read_operator_xprivs(strata),
+            "00" * 20,
+            dt_index=0,
             account_serial=TEST_ACCOUNT_SERIAL,
-            amount=DEPOSIT_AMOUNT_SATS,
-            btc_url=btc_url,
-            btc_user=btc_user,
-            btc_password=btc_password,
         )
-        logger.info(f"Mock deposit broadcast, txid: {txid}")
+        logger.info("Bridge deposit broadcast, txid: %s", txid)
 
         # Step 2: Mine Bitcoin blocks to mature the tx and let ASM process it
         logger.info("Mining Bitcoin blocks to mature deposit tx...")

@@ -53,7 +53,12 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
 
         trace!("CSM is processing ASM logs.");
 
-        if let Err(e) = state.process_asm_block(asm_block, asm_status.logs()) {
+        // Status is a notification; use the same persisted logs as gap replay.
+        let result = state
+            .ctx
+            .get_asm_state(&asm_block)
+            .and_then(|asm_state| state.process_asm_block(asm_block, asm_state.logs()));
+        if let Err(e) = result {
             // If it is reorg past finality, halt the service.
             if matches!(e, CsmWorkerError::ReorgPastFinality { .. }) {
                 error!(%asm_block, err = ?e, "reorg past finality; shutting down CSM worker");
@@ -73,12 +78,13 @@ mod tests {
 
     use strata_asm_logs::CheckpointTipUpdate;
     use strata_asm_proto_checkpoint_types::CheckpointTip;
-    use strata_asm_worker::{AsmState, AsmWorkerStatus};
+    use strata_asm_worker::AsmWorkerStatus;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId, OLBlockId};
     use strata_primitives::prelude::*;
     use strata_service::{Response, SyncService};
+    use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
@@ -141,10 +147,16 @@ mod tests {
         (state, storage, last)
     }
 
-    /// Build an `AsmWorkerStatus` for `block` carrying a single checkpoint-tip
-    /// log. With `with_l1_fetch_failure`, that log triggers the failure path
-    /// in `process_asm_block`.
-    fn status_with_tip_log(block: L1BlockCommitment, epoch: u32) -> AsmWorkerStatus {
+    fn status_for_block(block: L1BlockCommitment) -> AsmWorkerStatus {
+        AsmWorkerStatus {
+            is_initialized: true,
+            cur_block: Some(block),
+            cur_state: None,
+        }
+    }
+
+    /// Builds persisted logs that trigger the checkpoint verification path.
+    fn state_with_tip_log(block: L1BlockCommitment, epoch: u32) -> AsmState {
         let l2_commitment = OLBlockCommitment::new(
             epoch as u64 * 10,
             OLBlockId::from(Buf32::from([epoch as u8; 32])),
@@ -156,13 +168,7 @@ mod tests {
         };
         let log = strata_asm_common::AsmLogEntry::from_log(&CheckpointTipUpdate::new(tip))
             .expect("tip log");
-        let anchor = make_anchor();
-        let asm_state = AsmState::new(anchor, vec![log]);
-        AsmWorkerStatus {
-            is_initialized: true,
-            cur_block: Some(block),
-            cur_state: Some(asm_state),
-        }
+        AsmState::new(make_anchor(), vec![log])
     }
 
     fn make_anchor() -> strata_asm_common::AnchorState {
@@ -180,6 +186,7 @@ mod tests {
             network: Network::Bitcoin,
         };
         AnchorState {
+            spec_id: 0,
             magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
             chain_view: ChainViewState {
                 pow_state: HeaderVerificationState::init(anchor),
@@ -245,7 +252,12 @@ mod tests {
         // A divergent block at the tip's height triggers a same-height reorg;
         // with no canonical entry in the window it reaches past finality.
         let incoming = L1BlockCommitment::new(100, L1BlockId::from(Buf32::from([9; 32])));
-        let status = status_with_tip_log(incoming, /* epoch */ 1);
+        state.ctx = state.ctx.with_canonical_asm_state(
+            incoming.height(),
+            *incoming.blkid(),
+            state_with_tip_log(incoming, /* epoch */ 1),
+        );
+        let status = status_for_block(incoming);
 
         let response =
             <CsmWorkerService<StubCtx> as SyncService>::process_input(&mut state, status)
@@ -263,7 +275,12 @@ mod tests {
         let (mut state, storage, last) = state_with_failing_block(last_height, finality_depth);
 
         let target = L1BlockCommitment::new(last_height + 1, L1BlockId::from(Buf32::from([8; 32])));
-        let status = status_with_tip_log(target, /* epoch */ 1);
+        state.ctx = state.ctx.with_canonical_asm_state(
+            target.height(),
+            *target.blkid(),
+            state_with_tip_log(target, /* epoch */ 1),
+        );
+        let status = status_for_block(target);
 
         let response =
             <CsmWorkerService<StubCtx> as SyncService>::process_input(&mut state, status)
@@ -286,6 +303,57 @@ mod tests {
                 .expect("query client state")
                 .is_none(),
             "no ClientState row should be persisted at the failed block"
+        );
+    }
+
+    #[test]
+    fn process_input_uses_persisted_logs_without_status_state() {
+        let (mut state, storage, last) = state_with_failing_block(100, 3);
+        let target =
+            L1BlockCommitment::new(last.height() + 1, L1BlockId::from(Buf32::from([8; 32])));
+        state.ctx = state.ctx.with_canonical_asm_state(
+            target.height(),
+            *target.blkid(),
+            AsmState::new(make_anchor(), vec![]),
+        );
+
+        let response = <CsmWorkerService<StubCtx> as SyncService>::process_input(
+            &mut state,
+            status_for_block(target),
+        )
+        .unwrap();
+
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&target));
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&target)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn process_input_does_not_commit_when_persisted_asm_state_is_missing() {
+        let (mut state, storage, last) = state_with_failing_block(100, 3);
+        let target =
+            L1BlockCommitment::new(last.height() + 1, L1BlockId::from(Buf32::from([8; 32])));
+
+        let response = <CsmWorkerService<StubCtx> as SyncService>::process_input(
+            &mut state,
+            status_for_block(target),
+        )
+        .unwrap();
+
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(state.recent_asm_blocks.last(), Some(&last));
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&target)
+                .unwrap()
+                .is_none()
         );
     }
 }

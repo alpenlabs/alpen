@@ -5,6 +5,7 @@
 
 use std::{fmt, iter};
 
+use bitcoin::Amount;
 use strata_acct_types::{
     AccountId, AccountSerial, BitcoinAmount, L1BlockRecord, Mmr64, append_l1_block_rec_to_mmr,
 };
@@ -97,7 +98,7 @@ where
         self.batch
             .global_writes()
             .limbo_funds_sats
-            .map(BitcoinAmount::from_sat)
+            .map(|sats| Amount::from_sat(sats).into())
             .unwrap_or_else(|| self.base.limbo_funds())
     }
 
@@ -239,7 +240,7 @@ where
     fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
         let cur = self.limbo_funds();
         let amt = coin.amt();
-        let Some(new) = cur.checked_add(amt) else {
+        let Some(new) = cur.checked_add(amt.into()) else {
             // Defuse the coin before returning: the whole STF is discarded on
             // this error, so no value is actually lost, and dropping a live coin
             // would panic in `Coin::drop`.
@@ -254,7 +255,7 @@ where
     fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
         let cur = self.limbo_funds();
         let new = cur
-            .checked_sub(amt)
+            .checked_sub(amt.into())
             .ok_or(StateError::InsufficientLimboFunds {
                 need: amt,
                 have: cur,
@@ -372,14 +373,14 @@ mod tests {
     fn test_read_falls_back_to_base() {
         let account_id = test_account_id(1);
         let (base_layer, serial) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::try_from(1000).unwrap());
         let diff = BatchDiffState::new(&base_layer, &[]);
         let tracking = WriteTrackingState::new_empty(&diff);
 
         // Read should fall back to base since batch is empty
         let account = tracking.get_account_state(account_id).unwrap().unwrap();
         assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
+        assert_eq!(account.balance(), BitcoinAmount::try_from(1000).unwrap());
     }
 
     #[test]
@@ -387,7 +388,7 @@ mod tests {
         let account_id = test_account_id(1);
         let nonexistent_id = test_account_id(99);
         let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::try_from(1000).unwrap());
         let diff = BatchDiffState::new(&base_layer, &[]);
         let tracking = WriteTrackingState::new_empty(&diff);
 
@@ -399,7 +400,7 @@ mod tests {
     fn test_write_copies_to_batch() {
         let account_id = test_account_id(1);
         let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::try_from(1000).unwrap());
         let original_balance = base_layer
             .get_account_state(account_id)
             .unwrap()
@@ -411,7 +412,7 @@ mod tests {
         // Modify account
         tracking
             .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                let coin = Coin::new_unchecked(BitcoinAmount::try_from(500).unwrap());
                 acct.add_balance(coin);
             })
             .unwrap();
@@ -421,7 +422,10 @@ mod tests {
 
         // Verify the modified balance through tracking state
         let modified_account = tracking.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(modified_account.balance(), BitcoinAmount::from_sat(1500));
+        assert_eq!(
+            modified_account.balance(),
+            BitcoinAmount::try_from(1500).unwrap()
+        );
 
         // Verify base state is unchanged
         let base_account = base_layer.get_account_state(account_id).unwrap().unwrap();
@@ -432,14 +436,14 @@ mod tests {
     fn test_read_prefers_batch_over_base() {
         let account_id = test_account_id(1);
         let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::try_from(1000).unwrap());
         let diff = BatchDiffState::new(&base_layer, &[]);
         let mut tracking = WriteTrackingState::new_empty(&diff);
 
         // Modify the account to put it in the batch
         tracking
             .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                let coin = Coin::new_unchecked(BitcoinAmount::try_from(500).unwrap());
                 acct.add_balance(coin);
             })
             .unwrap();
@@ -447,14 +451,14 @@ mod tests {
         // Modify again - should use batch version
         tracking
             .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(100));
+                let coin = Coin::new_unchecked(BitcoinAmount::try_from(100).unwrap());
                 acct.add_balance(coin);
             })
             .unwrap();
 
         // Final balance should be 1000 + 500 + 100 = 1600
         let account = tracking.get_account_state(account_id).unwrap().unwrap();
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1600));
+        assert_eq!(account.balance(), BitcoinAmount::try_from(1600).unwrap());
     }
 
     // =========================================================================
@@ -469,7 +473,8 @@ mod tests {
 
         let account_id = test_account_id(1);
         let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let new_acct =
+            test_new_snark_account_data(&snark_state, BitcoinAmount::try_from(5000).unwrap());
 
         let serial = tracking.create_new_account(account_id, new_acct).unwrap();
 
@@ -479,7 +484,7 @@ mod tests {
         // Verify we can retrieve it
         let account = tracking.get_account_state(account_id).unwrap().unwrap();
         assert_eq!(account.serial(), serial);
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
+        assert_eq!(account.balance(), BitcoinAmount::try_from(5000).unwrap());
 
         // Verify base is unchanged
         assert!(!base_layer.check_account_exists(account_id).unwrap());
@@ -493,7 +498,8 @@ mod tests {
 
         let account_id = test_account_id(1);
         let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let new_acct =
+            test_new_snark_account_data(&snark_state, BitcoinAmount::try_from(5000).unwrap());
 
         let serial = tracking.create_new_account(account_id, new_acct).unwrap();
 
@@ -544,11 +550,11 @@ mod tests {
         let diff = BatchDiffState::new(&base_layer, &[]);
         let mut tracking = WriteTrackingState::new_empty(&diff);
 
-        tracking.set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
+        tracking.set_total_ledger_balance(BitcoinAmount::try_from(1_000_000).unwrap());
 
         assert_eq!(
             tracking.total_ledger_balance(),
-            BitcoinAmount::from_sat(1_000_000)
+            BitcoinAmount::try_from(1_000_000).unwrap()
         );
     }
 
@@ -614,7 +620,7 @@ mod tests {
     fn test_into_batch_returns_modifications() {
         let account_id = test_account_id(1);
         let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::try_from(1000).unwrap());
         let diff = BatchDiffState::new(&base_layer, &[]);
         let mut tracking = WriteTrackingState::new_empty(&diff);
 
@@ -622,7 +628,7 @@ mod tests {
         tracking.set_cur_slot(100);
         tracking
             .update_account(account_id, |acct: &mut OLAccountState| {
-                let coin = Coin::new_unchecked(BitcoinAmount::from_sat(500));
+                let coin = Coin::new_unchecked(BitcoinAmount::try_from(500).unwrap());
                 acct.add_balance(coin);
             })
             .unwrap();
@@ -635,7 +641,7 @@ mod tests {
         assert!(batch.ledger().contains_account(&account_id));
 
         let account = batch.ledger().get_account(&account_id).unwrap();
-        assert_eq!(account.balance(), BitcoinAmount::from_sat(1500));
+        assert_eq!(account.balance(), BitcoinAmount::try_from(1500).unwrap());
     }
 
     #[test]

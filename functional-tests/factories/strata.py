@@ -38,6 +38,7 @@ class StrataNodeParams(NamedTuple):
 
     ee_params: Path
     ol_params: Path
+    asm_execution: Path
     asm_params: Path
 
 
@@ -73,7 +74,6 @@ class StrataFactory(flexitest.Factory):
         config_overrides: dict[str, object] | None = None,
         ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
-        use_unchecked_cred_rule: bool = False,
         admin_confirmation_depth: int | None = None,
         env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
@@ -91,7 +91,6 @@ class StrataFactory(flexitest.Factory):
             config_overrides: Additional config overrides (-o flag)
             ol_params: Custom OL parameters (genesis accounts, etc.)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
-            use_unchecked_cred_rule: If True, generates params with CredRule::Unchecked.
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
             env: Additional process environment variables.
             ol_block_time_ms: Optional sequencer OL block time override.
@@ -142,7 +141,15 @@ class StrataFactory(flexitest.Factory):
             if l1_reorg_safe_depth is not None
             else BtcioConfig()
         )
+        execution_params_path = datadir / "asm-execution-params.json"
+        execution_source = (
+            shared_params.asm_execution
+            if shared_params is not None
+            else Path(__file__).resolve().parents[2] / "docker/configs/asm-execution-params.json"
+        )
+        shutil.copyfile(execution_source, execution_params_path)
         config = StrataConfig(
+            asm_execution="asm-execution-params.json",
             bitcoind=bconfig,
             client=client_config,
             logging=logging_config,
@@ -176,7 +183,7 @@ class StrataFactory(flexitest.Factory):
             shutil.copyfile(shared_params.asm_params, asm_params_path)
         else:
             # Generate the sequencer key + operator pubkeys consumed when building ASM params.
-            seq_artifacts = generate_sequencer_artifacts(datadir, use_unchecked_cred_rule)
+            seq_artifacts = generate_sequencer_artifacts(datadir)
             ee_params_path = generate_ee_params(datadir)
 
             # Generate or write OL params.
@@ -203,6 +210,7 @@ class StrataFactory(flexitest.Factory):
             )
 
         node_params = StrataNodeParams(
+            asm_execution=execution_params_path,
             ee_params=ee_params_path,
             ol_params=ol_params_path,
             asm_params=asm_params_path,

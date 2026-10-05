@@ -175,7 +175,7 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "sequencer x-only public key, 32-byte hex (default unchecked)",
+        description = "sequencer x-only public key, 32-byte hex (required by ASM)",
         short = 's'
     )]
     pub(crate) seq_pk: Option<String>,

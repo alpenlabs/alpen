@@ -9,6 +9,7 @@ configs/*.bin
 configs/*.hex
 configs/*.key
 configs/*.json
+!configs/asm-execution-params.json
 
 # Exception: shipped with the repo rather than generated, so that
 # compose-fullnode.yml has an EE params file to mount on a fresh clone. Every

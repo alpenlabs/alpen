@@ -939,8 +939,8 @@ mod tests {
     }
 
     fn snark_inbox_message(seed: u8) -> MessageEntry {
-        let payload =
-            MsgPayload::from_bytes(BitcoinAmount::from_sat(1), vec![seed]).expect("payload");
+        let payload = MsgPayload::from_bytes(BitcoinAmount::try_from(1).unwrap(), vec![seed])
+            .expect("payload");
         MessageEntry::new(AccountId::new([seed; 32]), 0, payload)
     }
 
@@ -954,7 +954,7 @@ mod tests {
             GenesisSnarkAccountData {
                 predicate: PredicateKey::always_accept(),
                 inner_state: Hash::zero(),
-                balance: BitcoinAmount::ZERO,
+                balance: BitcoinAmount::default(),
             },
         );
 
@@ -1541,7 +1541,8 @@ mod tests {
         let raw_mmr_id = mmr_id.to_bytes();
         let leaf_pos = LeafPos::new(0);
         let payload =
-            MsgPayload::from_bytes(BitcoinAmount::from_sat(42), vec![0xaa, 0xbb]).expect("payload");
+            MsgPayload::from_bytes(BitcoinAmount::try_from(42).unwrap(), vec![0xaa, 0xbb])
+                .expect("payload");
         let message = MessageEntry::new(source, 12, payload);
         let leaf_hash = message.compute_msg_commitment();
         let preimage = message.as_ssz_bytes();

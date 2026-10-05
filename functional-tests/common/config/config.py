@@ -143,6 +143,7 @@ class EpochSealingConfig:
 
 @dataclass
 class StrataConfig:
+    asm_execution: str
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
     btcio: BtcioConfig = field(default_factory=BtcioConfig)

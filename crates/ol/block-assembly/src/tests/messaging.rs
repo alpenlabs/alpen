@@ -54,13 +54,13 @@ async fn test_multi_sender_attribution() {
     let expected_msg_from_a = MessageEntry::new(
         sender_a,
         epoch,
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(100), vec![])
+        MsgPayload::from_bytes(BitcoinAmount::try_from(100).unwrap(), vec![])
             .expect("message payload bytes must fit within SSZ max length"),
     );
     let expected_msg_from_b = MessageEntry::new(
         sender_b,
         epoch,
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(250), vec![])
+        MsgPayload::from_bytes(BitcoinAmount::try_from(250).unwrap(), vec![])
             .expect("message payload bytes must fit within SSZ max length"),
     );
     let included_block1 = included_txids(&output_block1.template);
@@ -210,12 +210,12 @@ async fn test_message_value_flow_balance_updates() {
 
     assert_eq!(
         account_balance(&output.post_state, sender),
-        BitcoinAmount::from_sat(600),
+        BitcoinAmount::try_from(600).unwrap(),
         "sender balance should be debited by message value"
     );
     assert_eq!(
         account_balance(&output.post_state, receiver),
-        BitcoinAmount::from_sat(400),
+        BitcoinAmount::try_from(400).unwrap(),
         "receiver balance should be credited by message value"
     );
     assert_eq!(

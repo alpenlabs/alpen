@@ -349,11 +349,10 @@ elif [ "${MODE}" = "fullnode" ]; then
         echo "copied params from ${PARAMS_DIR}"
     fi
 
-    # The sequencer pubkey lives in the ASM checkpoint subprotocol's
-    # `sequencer_predicate`, serialized as "Bip340Schnorr:<hex>" (or
-    # "AlwaysAccept" when block signatures are unchecked).
+    # ASM checkpoint envelopes use a raw x-only sequencer key, independent of
+    # the checkpoint proof predicate.
     SEQUENCER_PUBKEY=$("${PYTHON}" -c "
-import json, sys
+import json, re, sys
 params = json.load(open('${OUTPUT_DIR}/asm-params.json'))
 checkpoint = None
 for sub in params['subprotocols']:
@@ -363,12 +362,11 @@ for sub in params['subprotocols']:
 if checkpoint is None:
     sys.stderr.write('error: asm-params missing Checkpoint subprotocol\n')
     sys.exit(1)
-pred = checkpoint['sequencer_predicate']
-if isinstance(pred, str) and pred.startswith('Bip340Schnorr:'):
-    sys.stdout.write(pred.split(':', 1)[1])
-else:
-    sys.stderr.write('warning: sequencer_predicate is not a schnorr key, no sequencer pubkey\n')
-    sys.stdout.write('')
+key = checkpoint.get('sequencer_key')
+if not isinstance(key, str) or re.fullmatch('[0-9a-fA-F]{64}', key) is None:
+    sys.stderr.write('error: Checkpoint sequencer_key must be a 32-byte hex string\n')
+    sys.exit(1)
+sys.stdout.write(key)
 ")
 
     if [ -z "${SEQUENCER_PUBKEY}" ]; then

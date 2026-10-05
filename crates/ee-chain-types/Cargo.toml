@@ -18,6 +18,7 @@ thiserror.workspace = true
 ssz_codegen.workspace = true
 
 [dev-dependencies]
+bitcoin.workspace = true
 strata-identifiers.workspace = true
 strata-test-utils-ssz.workspace = true
 

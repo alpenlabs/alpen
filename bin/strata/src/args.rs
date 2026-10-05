@@ -171,6 +171,8 @@ mod tests {
     fn test_config() -> Config {
         toml::from_str(
             r#"
+            asm_execution = "asm-execution-params.json"
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"

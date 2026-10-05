@@ -9,15 +9,9 @@ placeholder `AccountId::zero()` rather than to a real account. The OL
 then handles the funds through the target-does-not-exist branch in
 `account_processing::process_message`.
 
-This test injects a mock deposit with `account_serial=0` via the debug
-subprotocol. That path goes through the same `process_asm_log -> process_deposit_log
--> process_message` chain the real bridge uses, so it reproduces the on-chain
-failure deterministically without standing up bridge operators.
+The test submits a real bridge deposit with account_serial=0 and checks that
+it does not credit the registered account at serial 128.
 
-We assert the registered test account at serial 128 is not credited. Once
-the alpen-cli is fixed (separate commit in this PR) the wallet stops
-encoding serial=0, but this test keeps the regression observable at the OL
-boundary.
 """
 
 import logging
@@ -25,9 +19,10 @@ import logging
 import flexitest
 
 from common.base_test import StrataNodeTest
+from common.bridge import read_operator_xprivs, submit_real_bridge_deposit
 from common.config import ServiceType
-from common.test_cli import create_mock_deposit
 from common.wait import wait_until_with_value
+from envconfigs.ol_isolated import OlIsolatedEnvConfig
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +35,7 @@ TEST_ACCOUNT_SERIAL = 128
 # The buggy descriptor serial we are reproducing.
 UNREGISTERED_SERIAL = 0
 
-DEPOSIT_AMOUNT_SATS = 1_000_000_000
+DEPOSIT_AMOUNT_SATS = 100_000_000
 DEPOSIT_CONFIRMATION_DEPTH = 6
 INITIAL_DEPOSIT_BLOCKS = 8
 
@@ -65,7 +60,7 @@ def get_confirmations_in_mined_blocks(btc_rpc, txid: str, block_hashes: list[str
 @flexitest.register
 class TestDepositUnregisteredSerial(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("ol_isolated")
+        ctx.set_env(OlIsolatedEnvConfig())
 
     def main(self, ctx):
         strata = self.get_service(ServiceType.Strata)
@@ -86,24 +81,24 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
             UNREGISTERED_SERIAL,
             DEPOSIT_AMOUNT_SATS,
         )
-        txid = create_mock_deposit(
+        _, txid, _ = submit_real_bridge_deposit(
+            btc_rpc,
+            read_operator_xprivs(strata),
+            "00" * 20,
+            dt_index=0,
             account_serial=UNREGISTERED_SERIAL,
-            amount=DEPOSIT_AMOUNT_SATS,
-            btc_url=bitcoin.props["rpc_url"],
-            btc_user=bitcoin.props["rpc_user"],
-            btc_password=bitcoin.props["rpc_password"],
         )
-        logger.info("mock deposit broadcast txid=%s", txid)
+        logger.info("bridge deposit broadcast txid=%s", txid)
 
         addr = btc_rpc.proxy.getnewaddress()
         block_hashes = btc_rpc.proxy.generatetoaddress(INITIAL_DEPOSIT_BLOCKS, addr)
         confirmations = get_confirmations_in_mined_blocks(btc_rpc, txid, block_hashes)
         if confirmations < DEPOSIT_CONFIRMATION_DEPTH:
             raise AssertionError(
-                f"mock deposit tx {txid} has {confirmations} confirmations, "
+                f"bridge deposit tx {txid} has {confirmations} confirmations, "
                 f"expected at least {DEPOSIT_CONFIRMATION_DEPTH}"
             )
-        logger.info("mock deposit tx %s confirmed with %d confirmations", txid, confirmations)
+        logger.info("bridge deposit tx %s confirmed with %d confirmations", txid, confirmations)
 
         # The deposit-bearing manifest is only processed once an epoch closes
         # after the deposit lands on L1. Mine and poll the tip epoch rather

@@ -9,6 +9,7 @@
 //! implicitly proves no coin was lost: if the fix regressed, the test would
 //! abort with `coin: accidentally destroyed value` rather than fail an assert.
 
+use bitcoin::Amount;
 use strata_acct_types::{BRIDGE_GATEWAY_ACCT_ID, BitcoinAmount, MsgPayloadData, TxEffects};
 use strata_ledger_types::{Coin, IStateAccessorMut, StateError};
 
@@ -28,7 +29,7 @@ use crate::{
 fn credit_account_missing_account_returns_clean_error() {
     let mut state = make_genesis_state();
     let nonexistent = make_account_id(TEST_NONEXISTENT_ID);
-    let value = BitcoinAmount::from_sat(3_000_000);
+    let value = BitcoinAmount::try_from(3_000_000).unwrap();
 
     let err = account_processing::credit_account_noop(
         &mut state,
@@ -51,12 +52,14 @@ fn limbo_overflow_returns_clean_error() {
 
     // Fill limbo to just below the u64 sat ceiling so a further deposit overflows.
     state
-        .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(u64::MAX - 100)))
+        .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from(Amount::from_sat(
+            u64::MAX - 100,
+        ))))
         .expect("seeding limbo near the ceiling should succeed");
 
     let err = account_processing::handle_misplaced_funds(
         &mut state,
-        Coin::new_unchecked(BitcoinAmount::from_sat(200)),
+        Coin::new_unchecked(BitcoinAmount::try_from(200).unwrap()),
     )
     .expect_err("overflowing limbo should error, not panic");
 
@@ -78,7 +81,7 @@ fn bridge_withdrawal_log_overflow_returns_clean_error() {
 
     // A valid, denomination-multiple withdrawal to a well-formed descriptor so
     // execution reaches the `emit_typed_log` call.
-    let withdrawal_amount = BitcoinAmount::from_sat(100_000_000);
+    let withdrawal_amount = BitcoinAmount::try_from(100_000_000).unwrap();
     let dest_desc = make_p2wpkh_bosd_descriptor(0x14);
     let msg_bytes = make_withdrawal_payload(dest_desc);
     let msg_data: MsgPayloadData = msg_bytes
@@ -123,7 +126,9 @@ fn apply_tx_effects_defuses_remaining_on_midloop_error() {
 
     // Fill limbo to the ceiling so the first transfer's sweep-to-limbo overflows.
     state
-        .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from_sat(u64::MAX - 100)))
+        .add_limbo_funds_coin(Coin::new_unchecked(BitcoinAmount::from(Amount::from_sat(
+            u64::MAX - 100,
+        ))))
         .expect("seeding limbo near the ceiling should succeed");
 
     // Two transfers to a nonexistent account: the first sweeps to limbo and

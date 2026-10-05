@@ -1,5 +1,7 @@
 //! Transaction effects.
 
+use bitcoin::Amount;
+
 use crate::{
     AccountId, BitcoinAmount, MsgPayload, MsgPayloadError, SentMessage, SentTransfer, TxEffects,
 };
@@ -27,7 +29,7 @@ impl TxEffects {
     /// Constructs a [`SentTransfer`] internally and appends it.  Returns false
     /// if the transfer list is full.
     pub fn push_transfer(&mut self, dest: AccountId, sats: u64) -> bool {
-        self.add_transfer(SentTransfer::new(dest, BitcoinAmount::from_sat(sats)))
+        self.add_transfer(SentTransfer::new(dest, Amount::from_sat(sats).into()))
     }
 
     /// Returns an iterator over the transfers.
@@ -65,7 +67,7 @@ impl TxEffects {
         sats: u64,
         data: Vec<u8>,
     ) -> Result<bool, MsgPayloadError> {
-        let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(sats), data)?;
+        let payload = MsgPayload::from_bytes(Amount::from_sat(sats).into(), data)?;
         Ok(self.add_message(SentMessage::new(dest, payload)))
     }
 
@@ -80,10 +82,50 @@ impl TxEffects {
     /// Gets the total value sent from the bundle of effects, or `None` if it's
     /// overflowing.
     pub fn get_total_value_sent(&self) -> Option<BitcoinAmount> {
-        // Absolutely beautiful iterator combinator chain.
         self.transfers_iter()
             .map(|t| t.value())
             .chain(self.messages_iter().map(|m| m.payload().value()))
-            .try_fold(BitcoinAmount::zero(), |acc, e| acc.checked_add(e))
+            .try_fold(Amount::ZERO, |acc, e| acc.checked_add(e.into()))
+            .map(BitcoinAmount::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_effects_send_zero_value() {
+        assert_eq!(
+            TxEffects::default().get_total_value_sent(),
+            Some(BitcoinAmount::default()),
+        );
+    }
+
+    #[test]
+    fn total_includes_transfers_and_messages() {
+        let dest = AccountId::new([1; 32]);
+        let mut effects = TxEffects::default();
+        assert!(effects.push_transfer(dest, 1_000));
+        assert!(effects.push_message(dest, 2_000, vec![42]).unwrap());
+        assert_eq!(effects.get_total_value_sent().unwrap().to_sat(), 3_000);
+        assert_eq!(
+            effects.messages_iter().next().unwrap().payload().data(),
+            &[42]
+        );
+    }
+
+    #[test]
+    fn total_reports_u64_overflow_without_clamping() {
+        let dest = AccountId::new([1; 32]);
+        let mut effects = TxEffects::default();
+        assert!(effects.push_transfer(dest, Amount::MAX_MONEY.to_sat()));
+        assert!(effects.push_message(dest, 1, vec![]).unwrap());
+        assert_eq!(
+            effects.get_total_value_sent().unwrap().to_sat(),
+            Amount::MAX_MONEY.to_sat() + 1,
+        );
+        assert!(effects.push_transfer(dest, u64::MAX));
+        assert_eq!(effects.get_total_value_sent(), None);
     }
 }
