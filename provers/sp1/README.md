@@ -60,18 +60,28 @@ records the rules compiled into the guest; it can differ from the network's `gen
 ## Publishing
 
 The [Publish SP1 Artifacts workflow](../../.github/workflows/publish-sp1-artifacts.yml) requires
-`env` and `checkpoint_runtime_params_url` for manual dispatch and reusable workflow calls.
+`env` (`dev`, `staging`, `testnet`, or `mainnet`) and `checkpoint_runtime_params_url` for manual
+dispatch and reusable workflow calls. Run the workflow from `main` and set `ref` to the commit,
+tag, or branch to build (default: `main`). Publishing scripts and local actions stay on the
+workflow's `main` commit; the guest builds in a separate checkout of `ref`, using its Rust
+toolchain and locked SP1 build and runner versions. The selected ref must support the builder
+and artifact bundle described above.
+
 Supply a raw HTTPS download URL for either params format described above. GitHub `/blob/`
 URLs serve HTML and are rejected. The workflow downloads and JSON-validates the file in
 `${{ runner.temp }}`, then passes its path to the existing builder through
 `CHECKPOINT_RUNTIME_PARAMS_PATH`.
 
 The bundle includes all four artifacts above, their SHA-256 sidecars, and a separate
-`manifest.json` recording the source commit, SP1 version, params URL, and file checksums.
+`manifest.json` recording the built ref and commit, requesting network, SP1 version, params URL,
+and file checksums.
 The downloaded JSON's checksum records the input bytes; `runtime_params_hash` in the guest
 manifest hashes the SSZ-encoded runtime params.
 
 Only the separate, environment-gated publish job receives AWS publishing credentials. It
 checks every required file and checksum before uploading to
-`s3://alpen-mosaic-artifacts/sp1-artifacts/<env>-<source-sha>/`. This write-once location
-allows one bundle per environment and source commit.
+`s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>/`, where `commit8` and `params8` are
+the first eight characters of the built commit SHA and downloaded JSON's SHA-256. This
+write-once location is shared across networks: reuse the existing bundle for the same commit
+and exact params file instead of publishing it again for each network. `env` records the
+network requesting the original publish and does not restrict which networks can use it.

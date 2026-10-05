@@ -4,13 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       env:
-        description: Deployment environment. Prefixes the S3 version segment.
+        description: Deployment network recorded in the manifest.
         required: true
         type: choice
         options:
           - dev
           - staging
-          - prod
+          - testnet
+          - mainnet
+      ref:
+        description: Commit, tag, or branch to build. Run the workflow itself from main.
+        required: true
+        default: main
+        type: string
       checkpoint_runtime_params_url:
         description: HTTPS download URL for full OL params or bare runtime params (raw URL, not a GitHub /blob/ page).
         required: true
@@ -18,8 +24,13 @@ on:
   workflow_call:
     inputs:
       env:
-        description: Deployment environment (dev | staging | prod).
+        description: Deployment network (dev | staging | testnet | mainnet).
         required: true
+        type: string
+      ref:
+        description: Commit, tag, or branch to build.
+        required: false
+        default: main
         type: string
       checkpoint_runtime_params_url:
         description: HTTPS download URL for full OL params or bare runtime params.
@@ -29,16 +40,12 @@ on:
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
   CARGO_TERM_COLOR: always
-  # Central artifact bucket (shared-services). The publish role below is
-  # prefix-scoped to sp1-artifacts/* — see alpen-infra
-  # aws/shared-services/us-east-1/shared/iam/github-actions-alpen-sp1-s3.
+  # Cluster readers and the publish role share the elfs/ prefix.
   S3_BUCKET: alpen-mosaic-artifacts
-  S3_PREFIX: sp1-artifacts
-  # Match the locked sp1-build version, which selects the guest's Docker image tag.
-  SP1_VERSION: v6.4.0
+  S3_PREFIX: elfs/alpen
 
 concurrency:
-  group: publish-sp1-artifacts-${{ inputs.env }}-${{ github.ref }}
+  group: publish-sp1-artifacts-${{ inputs.ref }}
   cancel-in-progress: false
 
 permissions: {}
@@ -46,6 +53,8 @@ permissions: {}
 jobs:
   build-sp1-artifacts:
     name: Build SP1 artifacts
+    # Keep the workflow, helpers, and local actions on main; only guest-source varies.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     outputs:
@@ -53,15 +62,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout repository
+      - name: Checkout publishing scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-
-      - name: Resolve checked-out commit
-        id: resolve-sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Validate inputs
         env:
@@ -75,18 +80,32 @@ jobs:
           CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ runner.temp }}/checkpoint-runtime-params.json
         run: python3 .github/scripts/sp1_artifact_publish.py fetch
 
+      - name: Checkout guest source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          path: guest-source
+          persist-credentials: false
+
+      - name: Resolve guest commit and SP1 versions
+        id: resolve-build
+        env:
+          SOURCE_DIR: guest-source
+        run: python3 .github/scripts/sp1_artifact_publish.py resolve-build
+
       - name: Free up disk space
         uses: ./.github/actions/cleanup # zizmor: ignore[self-repository]
 
       - name: Set up Rust toolchain
         run: |
-          RUST_TOOLCHAIN=$(sed -n 's/channel = "\(.*\)"/\1/p' rust-toolchain.toml)
+          RUST_TOOLCHAIN=$(sed -n 's/channel = "\(.*\)"/\1/p' guest-source/rust-toolchain.toml)
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
           rustup default "$RUST_TOOLCHAIN"
 
       - name: Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
+          workspaces: guest-source -> target
           cache-on-failure: true
 
       - name: Install protoc
@@ -96,8 +115,12 @@ jobs:
 
       - name: Install SP1 core runner override
         uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[self-repository,unpinned-uses]
+        with:
+          version: ${{ steps.resolve-build.outputs.sp1_runner_version }}
 
       - name: Install SP1 toolchain
+        env:
+          SP1_VERSION: ${{ steps.resolve-build.outputs.sp1_version }}
         run: |
           curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
           ~/.sp1/bin/sp1up -v "$SP1_VERSION" -c
@@ -107,6 +130,7 @@ jobs:
         run: cargo prove --version
 
       - name: Build SP1 guest artifacts
+        working-directory: guest-source
         env:
           BUILD_ELF: "1"
           BUILD_VKEY: "1"
@@ -117,11 +141,11 @@ jobs:
         id: summarize
         env:
           ARTIFACT_DIR: artifacts/sp1
-          ELF_ROOT: provers/sp1/generated
+          ELF_ROOT: guest-source/provers/sp1/generated
           DEPLOY_ENV: ${{ inputs.env }}
-          ALPEN_REF: ${{ github.ref }}
-          ALPEN_SHA: ${{ steps.resolve-sha.outputs.sha }}
-          SP1_VERSION: ${{ env.SP1_VERSION }}
+          ALPEN_REF: ${{ inputs.ref }}
+          ALPEN_SHA: ${{ steps.resolve-build.outputs.sha }}
+          SP1_VERSION: ${{ steps.resolve-build.outputs.sp1_version }}
           CHECKPOINT_RUNTIME_PARAMS_URL: ${{ inputs.checkpoint_runtime_params_url }}
           CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ runner.temp }}/checkpoint-runtime-params.json
         run: python3 .github/scripts/sp1_artifact_publish.py summarize
@@ -147,7 +171,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Checkout repository
+      - name: Checkout publishing scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}

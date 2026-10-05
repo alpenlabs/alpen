@@ -9,7 +9,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ENVIRONMENTS = ("dev", "staging", "prod")
+import tomllib
+
+ENVIRONMENTS = ("dev", "staging", "testnet", "mainnet")
 VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 GITHUB_BLOB_URL_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+/blob/")
 
@@ -76,6 +78,32 @@ def cmd_validate() -> None:
     """Env: INPUT_ENV, CHECKPOINT_RUNTIME_PARAMS_URL."""
     validate_env(os.environ["INPUT_ENV"])
     validate_runtime_params_url(os.environ["CHECKPOINT_RUNTIME_PARAMS_URL"])
+
+
+def cmd_resolve_build() -> None:
+    """Env: SOURCE_DIR, GITHUB_OUTPUT."""
+    source_dir = Path(os.environ["SOURCE_DIR"])
+    with (source_dir / "Cargo.lock").open("rb") as lockfile:
+        packages = tomllib.load(lockfile)["package"]
+
+    def locked_version(name: str) -> str:
+        versions = {
+            package["version"] for package in packages if package["name"] == name
+        }
+        if len(versions) != 1:
+            fail(f"expected one {name} version in {source_dir}/Cargo.lock")
+        return versions.pop()
+
+    sha = subprocess.check_output(
+        ["git", "-C", str(source_dir), "rev-parse", "HEAD"], text=True
+    ).strip()
+    # sp1-build's default Docker tag follows its crate version. The runner override
+    # must likewise use the selected source's locked runner, not the action's default.
+    set_outputs(
+        sha=sha,
+        sp1_version=f"v{locked_version('sp1-build')}",
+        sp1_runner_version=locked_version("sp1-core-executor-runner-binary"),
+    )
 
 
 def cmd_fetch() -> None:
@@ -151,7 +179,7 @@ def cmd_summarize() -> None:
         if name != "manifest.json"
     }
 
-    version = f"{env}-{alpen_sha}"
+    version = f"{alpen_sha[:8]}-{runtime_params_sha256[:8]}"
     if not VERSION_RE.fullmatch(version):
         fail(f"artifact version is not S3-key-safe: {version!r}")
 
@@ -235,8 +263,7 @@ def s3_put(src: Path, bucket: str, key: str) -> None:
     except subprocess.CalledProcessError as err:
         fail(
             f"failed to upload {src} to s3://{bucket}/{key} (exit {err.returncode}); "
-            "SP1 artifact publishes are write-once, so retrying the same SHA requires manually "
-            "removing the existing S3 prefix"
+            "SP1 artifact publishes are write-once; existing objects are never overwritten"
         )
 
 
@@ -244,7 +271,7 @@ def cmd_upload() -> None:
     """Env: ARTIFACT_DIR, S3_BUCKET, S3_PREFIX, GITHUB_OUTPUT, GITHUB_STEP_SUMMARY."""
     artifact_dir = Path(os.environ["ARTIFACT_DIR"])
     bucket = os.environ["S3_BUCKET"]
-    prefix = os.environ.get("S3_PREFIX", "sp1-artifacts")
+    prefix = os.environ.get("S3_PREFIX", "elfs/alpen")
 
     if not bucket:
         fail("S3_BUCKET must be set")
@@ -299,6 +326,7 @@ def cmd_upload() -> None:
 
 COMMANDS = {
     "validate": cmd_validate,
+    "resolve-build": cmd_resolve_build,
     "fetch": cmd_fetch,
     "summarize": cmd_summarize,
     "upload": cmd_upload,
