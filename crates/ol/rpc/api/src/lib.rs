@@ -33,10 +33,17 @@ pub trait OLClientRpc {
     ///
     /// A transaction is reported once its block is buried at the node's L1 reorg-safe depth
     /// while the ASM's verified epoch is still below the checkpoint's epoch. Entries stay after
-    /// a later transaction gets the epoch accepted. Ordered by epoch; nodes that do not submit
-    /// checkpoints return an empty list.
+    /// a later transaction gets the epoch accepted. Nodes that do not submit checkpoints return
+    /// an empty list.
+    ///
+    /// Returns entries for `start_epoch` and later, ordered by epoch. A response ends at the
+    /// first epoch boundary after 1,000 entries, so it holds every entry of the epochs it covers;
+    /// to read further, call again with the last returned epoch plus one.
     #[method(name = "getRejectedCheckpoints")]
-    async fn get_rejected_checkpoints(&self) -> RpcResult<Vec<RpcRejectedCheckpoint>>;
+    async fn get_rejected_checkpoints(
+        &self,
+        start_epoch: Epoch,
+    ) -> RpcResult<Vec<RpcRejectedCheckpoint>>;
 
     /// Get the epoch commitment for the epoch in which an account was first created.
     ///
