@@ -283,7 +283,10 @@ pub(crate) fn start_strata_services(
 
     let is_sequencer = nodectx.config().client.is_sequencer;
     if is_sequencer {
-        verify_sequencer_tip_spec(nodectx.storage().as_ref())?;
+        verify_sequencer_tip_spec(
+            nodectx.storage().as_ref(),
+            nodectx.ol_params().genesis_l1_block(),
+        )?;
     }
 
     // Checkpoint sync nodes do not have mempool, so start mempool for sequencer node only.

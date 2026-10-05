@@ -11,7 +11,9 @@ use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
+use strata_ol_stf::select_next_epoch_spec;
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -709,15 +711,45 @@ fn verify_tip_from_history_base(
     verify_previous_epoch_summary_for_tip(storage, &tip_block)
 }
 
+/// Returns the spec of the epoch after `state`, a terminal OL state, reading
+/// the L1 manifest it processed last from `storage`.
+///
+/// Checkpoint promotion and the sequencer's boot check apply the rule and the
+/// manifest source checkpoint sync applies, [`select_next_epoch_spec`].
+pub(crate) fn next_epoch_spec_after(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+    state: &OLStateContainer,
+) -> Result<OLSpecId> {
+    Ok(select_next_epoch_spec(
+        state.spec_versions(),
+        state.chainstate().last_l1_block(),
+        genesis_l1_block,
+        |height| storage.l1().get_block_manifest_at_height(height),
+    )?)
+}
+
 /// Checks that a sequencer can build on the canonical OL tip.
 ///
-/// This release builds only V1 blocks, and V1 rules take over a V0 state only
-/// at the switch from V0 to V1. This check does not detect the switch, so it
-/// refuses every V0 tip, such as the genesis of a fresh datadir on a network
-/// launched on 0.3.0, where V1 blocks would fork the network at slot 1.
+/// This release builds only V1 blocks, so the epoch after the tip must run V1
+/// by the rule checkpoint sync applies, [`next_epoch_spec_after`]. A V1 tip
+/// passes. A V0 tip passes only if it is the last V0 epoch, the one that ends
+/// at the checkpoint predicate enactment, which a promoted checkpoint-sync
+/// datadir anchors on. The genesis of a fresh datadir on a network launched on
+/// 0.3.0 does not: V1 blocks on it would fork the network at slot 1.
+///
+/// A V0 tip is always an epoch's terminal block, as [`next_epoch_spec_after`]
+/// requires. This binary stores V0 states only from V0 genesis and checkpoint
+/// replay, and both store terminal states alone. Block execution runs V1
+/// rules, which wrap a V0 state at the first block of an epoch and reject it
+/// anywhere else with
+/// [`ExecError::ContinuesV0Epoch`](strata_ol_stf::ExecError::ContinuesV0Epoch).
 ///
 /// It runs once genesis exists, before the block producer starts.
-pub(crate) fn verify_sequencer_tip_spec(storage: &NodeStorage) -> Result<()> {
+pub(crate) fn verify_sequencer_tip_spec(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+) -> Result<()> {
     let tip_commitment = resolve_tip_ol_block(storage)?;
     let tip_state = storage
         .ol_state()
@@ -725,9 +757,15 @@ pub(crate) fn verify_sequencer_tip_spec(storage: &NodeStorage) -> Result<()> {
         .context("startup: failed to query OL state for tip block")?
         .ok_or_else(|| anyhow!("startup: missing OL state for tip block {tip_commitment}"))?;
 
-    if tip_state.cur_spec() == OLSpecId::V0 {
+    // TODO(STR-4086): compare with the spec block assembly runs, once it
+    // follows the spec the tip state stages.
+    let next_spec =
+        next_epoch_spec_after(storage, genesis_l1_block, &tip_state).with_context(|| {
+            format!("startup: failed to select the spec of the epoch after tip {tip_commitment}")
+        })?;
+    if next_spec != OLSpecId::V1 {
         bail!(
-            "startup: the sequencer cannot build on the V0 tip {tip_commitment}: this release builds only V1 blocks, and V1 rules can take over a V0 state only at the switch from V0 to V1. Run this node in checkpoint-sync mode instead"
+            "startup: the sequencer cannot build on the V0 tip {tip_commitment}: the epoch after it runs V0, and this release builds only V1 blocks. On a network launched on 0.3.0, run this node in checkpoint-sync mode until the epoch that ends at the checkpoint predicate enactment is finalized, then restart it with --sequencer --bootstrap-from-checkpoint"
         );
     }
     Ok(())
@@ -1362,19 +1400,22 @@ mod tests {
         assert_eq!(commitment, genesis_commitment);
     }
 
-    /// A fresh sequencer datadir on a network launched on 0.3.0 has a V0 tip,
-    /// which the sequencer must not build V1 blocks on; a V1 tip is fine.
+    /// A fresh sequencer datadir on a network launched on 0.3.0 has a V0 tip
+    /// before the switch, which the sequencer must not build V1 blocks on; a
+    /// V1 tip is fine.
     #[test]
     fn test_sequencer_refuses_v0_tip() {
+        let genesis_l1 = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
         let (v0_storage, _) = setup_storage_with_genesis_spec(OLSpecId::V0);
-        let err = verify_sequencer_tip_spec(&v0_storage).expect_err("V0 tip is refused");
+        let err =
+            verify_sequencer_tip_spec(&v0_storage, genesis_l1).expect_err("V0 tip is refused");
         assert!(
-            format!("{err:#}").contains("cannot build on the V0 tip"),
+            format!("{err:#}").contains("the epoch after it runs V0"),
             "{err:#}"
         );
 
         let (v1_storage, _) = setup_storage_with_genesis_spec(OLSpecId::V1);
-        verify_sequencer_tip_spec(&v1_storage).expect("V1 tip is accepted");
+        verify_sequencer_tip_spec(&v1_storage, genesis_l1).expect("V1 tip is accepted");
     }
 
     /// A node on a network launched on 0.3.0 stores a V0 genesis whose state

@@ -4,13 +4,15 @@ use anyhow::{Context, Result, anyhow, bail};
 use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_checkpoint_types::reconstruct_terminal_header;
-use strata_identifiers::EpochCommitment;
+use strata_identifiers::{EpochCommitment, L1BlockCommitment};
 use strata_node_context::NodeContext;
+use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_types::OLSpecId;
 use strata_primitives::l1::compute_confirmation_depth;
 use strata_storage::NodeStorage;
 use tracing::info;
 
-use crate::startup_checks::verify_anchor_summary_and_state;
+use crate::startup_checks::{next_epoch_spec_after, verify_anchor_summary_and_state};
 
 pub(crate) fn validate_bootstrap_role(requested: bool, is_sequencer: bool) -> Result<()> {
     if requested && !is_sequencer {
@@ -24,10 +26,15 @@ pub(crate) fn promote_from_checkpoint(ctx: &NodeContext) -> Result<()> {
     promote_from_checkpoint_storage(
         ctx.storage().as_ref(),
         ctx.config().btcio.l1_reorg_safe_depth,
+        ctx.ol_params().genesis_l1_block(),
     )
 }
 
-fn promote_from_checkpoint_storage(storage: &NodeStorage, l1_reorg_safe_depth: u32) -> Result<()> {
+fn promote_from_checkpoint_storage(
+    storage: &NodeStorage,
+    l1_reorg_safe_depth: u32,
+    genesis_l1_block: L1BlockCommitment,
+) -> Result<()> {
     if let Some(history_base) = storage
         .ol_block()
         .get_history_base_blocking()
@@ -187,6 +194,7 @@ fn promote_from_checkpoint_storage(storage: &NodeStorage, l1_reorg_safe_depth: u
             stored_header.state_root()
         );
     }
+    verify_anchor_successor_runs_v1(storage, genesis_l1_block, anchor, &anchor_state)?;
 
     let anchor_slot = anchor.last_slot();
     let canonical_tip = storage
@@ -237,9 +245,38 @@ fn promote_from_checkpoint_storage(storage: &NodeStorage, l1_reorg_safe_depth: u
     Ok(())
 }
 
+/// Checks that the epoch after `anchor` runs under V1, the only rules this
+/// release builds blocks with.
+///
+/// A V1 anchor is followed by V1. A V0 anchor is followed by V1 only if it is
+/// the last V0 epoch, whose last manifest carries the checkpoint predicate
+/// enactment; promoting an earlier V0 anchor would build V1 blocks where the
+/// network still runs V0. The rule and the manifest it reads are those of
+/// checkpoint sync and the sequencer's boot check, [`next_epoch_spec_after`].
+fn verify_anchor_successor_runs_v1(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+    anchor: EpochCommitment,
+    anchor_state: &OLStateContainer,
+) -> Result<()> {
+    // TODO(STR-4086): compare with the spec block assembly runs, once it
+    // follows the spec the anchor state stages.
+    let next_spec =
+        next_epoch_spec_after(storage, genesis_l1_block, anchor_state).with_context(|| {
+            format!("checkpoint promotion: failed to select the spec of the epoch after {anchor}")
+        })?;
+    if next_spec != OLSpecId::V1 {
+        bail!(
+            "checkpoint promotion: anchor {anchor} is a V0 epoch before the switch to V1, and this release builds only V1 blocks. Keep running in checkpoint-sync mode until the epoch that ends at the checkpoint predicate enactment is finalized, then retry"
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use bitcoin::Network;
+    use strata_acct_types::L1BlockRecord;
     use strata_asm_checkpoint_types::{
         CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
     };
@@ -261,18 +298,43 @@ mod tests {
     use strata_ol_params::{OLParams, OLRuntimeParams};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
+    use strata_ol_state_types_v1::OLStateV1;
+    use strata_ol_stf_v1::test_utils::{
+        make_checkpoint_predicate_enactment_manifest, make_empty_manifest,
+    };
     use strata_predicate::PredicateKey;
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;
-    use crate::{genesis::init_ol_genesis, startup_checks::verify_history_anchor};
+    use crate::{
+        genesis::init_ol_genesis,
+        startup_checks::{verify_history_anchor, verify_sequencer_tip_spec},
+    };
 
     const REORG_SAFE_DEPTH: u32 = 6;
     const CHECKPOINT_L1_HEIGHT: u32 = 100;
     const L1_TIP_HEIGHT: u32 = 105;
 
+    /// The L1 manifest a V0 anchor state processed last.
+    #[derive(Clone, Copy, Debug)]
+    enum V0LastManifest {
+        /// None: the state is still at the genesis L1 anchor.
+        AtGenesisAnchor,
+        /// A manifest without a checkpoint predicate enactment.
+        Plain,
+        /// The manifest carrying the checkpoint predicate enactment.
+        Enactment,
+        /// A stored manifest for another L1 block than the state processed.
+        Reorged,
+        /// No stored manifest at the state's last L1 height.
+        Missing,
+        /// A manifest carrying two checkpoint predicate enactments.
+        DuplicateEnactment,
+    }
+
     struct PromotionFixture {
         storage: NodeStorage,
+        genesis_l1: L1BlockCommitment,
         genesis: OLBlockCommitment,
         anchor: EpochCommitment,
         header: strata_ol_chain_types_v1::OLBlockHeaderV1,
@@ -291,13 +353,39 @@ mod tests {
             store_terminal_header: bool,
             store_anchor_state: bool,
         ) -> Self {
+            Self::build(
+                store_client_state,
+                store_terminal_header,
+                store_anchor_state,
+                None,
+            )
+        }
+
+        /// Builds the fixture on a network launched on 0.3.0, whose anchor is
+        /// a V0 epoch that processed `last_manifest` last.
+        fn with_v0_anchor(last_manifest: V0LastManifest) -> Self {
+            Self::build(true, true, true, Some(last_manifest))
+        }
+
+        fn build(
+            store_client_state: bool,
+            store_terminal_header: bool,
+            store_anchor_state: bool,
+            v0_last_manifest: Option<V0LastManifest>,
+        ) -> Self {
             let storage = create_node_storage(
                 get_test_sled_backend(),
                 strata_storage::test_runtime_handle(),
             )
             .expect("create test storage");
             let genesis_l1 = l1_commitment(0);
+            let genesis_spec = if v0_last_manifest.is_some() {
+                OLSpecId::V0
+            } else {
+                OLSpecId::V1
+            };
             let genesis_params = OLParams::builder(OLRuntimeParams::test_default())
+                .genesis_spec(genesis_spec)
                 .genesis_l1_block(genesis_l1)
                 .build();
             let genesis =
@@ -315,6 +403,9 @@ mod tests {
             let mut anchor_state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
             anchor_state.set_cur_slot(1);
             anchor_state.set_cur_epoch(2);
+            if let Some(last_manifest) = v0_last_manifest {
+                record_v0_last_manifest(&storage, &mut anchor_state, last_manifest);
+            }
             let anchor_state_root = anchor_state
                 .compute_state_root()
                 .expect("compute state root");
@@ -396,6 +487,7 @@ mod tests {
 
             Self {
                 storage,
+                genesis_l1,
                 genesis,
                 anchor,
                 header,
@@ -406,7 +498,7 @@ mod tests {
         }
 
         fn promote(&self) -> Result<()> {
-            promote_from_checkpoint_storage(&self.storage, REORG_SAFE_DEPTH)
+            promote_from_checkpoint_storage(&self.storage, REORG_SAFE_DEPTH, self.genesis_l1)
         }
 
         fn assert_failure(&self, expected: &str) {
@@ -478,6 +570,49 @@ mod tests {
                 )
                 .expect("overwrite anchor state root");
         }
+    }
+
+    /// Makes the anchor state process L1 blocks up to the checkpoint's L1
+    /// height, the last carrying `last_manifest`, and stores that manifest as
+    /// the ASM worker would.
+    fn record_v0_last_manifest(
+        storage: &NodeStorage,
+        anchor_state: &mut MemoryStateBaseLayer<OLStateV1>,
+        last_manifest: V0LastManifest,
+    ) {
+        let height = CHECKPOINT_L1_HEIGHT - 1;
+        let manifest = match last_manifest {
+            V0LastManifest::AtGenesisAnchor => return,
+            V0LastManifest::Plain | V0LastManifest::Reorged | V0LastManifest::Missing => {
+                make_empty_manifest(height, height as u8)
+            }
+            V0LastManifest::Enactment => make_checkpoint_predicate_enactment_manifest(height, 1),
+            V0LastManifest::DuplicateEnactment => {
+                make_checkpoint_predicate_enactment_manifest(height, 2)
+            }
+        };
+        assert_eq!(*manifest.blkid(), l1_blkid(height));
+
+        for record_height in anchor_state.last_l1_height() + 1..=height {
+            let blkid = match last_manifest {
+                V0LastManifest::Reorged if record_height == height => {
+                    L1BlockId::from(Buf32::from([0xee; 32]))
+                }
+                _ => l1_blkid(record_height),
+            };
+            anchor_state
+                .append_l1_block_rec(record_height, L1BlockRecord::new(*blkid.as_ref(), [0; 32]));
+        }
+        if !matches!(last_manifest, V0LastManifest::Missing) {
+            storage
+                .l1()
+                .put_block_data(manifest)
+                .expect("store last manifest");
+        }
+        storage
+            .l1()
+            .extend_canonical_chain(&l1_blkid(height), height)
+            .expect("extend canonical L1 chain");
     }
 
     fn l1_blkid(height: u32) -> L1BlockId {
@@ -591,6 +726,79 @@ mod tests {
                 .expect("read immutable history base"),
             Some(fixture.anchor)
         );
+    }
+
+    /// A network launched on 0.3.0 promotes its last V0 epoch, which ends at
+    /// the enactment, and the startup checks accept the V0 anchor's bare root.
+    #[test]
+    fn v0_anchor_at_enactment_promotes() {
+        let fixture = PromotionFixture::with_v0_anchor(V0LastManifest::Enactment);
+        let anchor_state = fixture
+            .storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(fixture.anchor.to_block_commitment())
+            .expect("read anchor state")
+            .expect("anchor state exists");
+        assert_eq!(anchor_state.cur_spec(), OLSpecId::V0);
+        assert_eq!(
+            *fixture.header.state_root(),
+            anchor_state.chainstate().compute_chainstate_root()
+        );
+
+        fixture.promote().expect("promote the last V0 epoch");
+        assert_eq!(
+            fixture
+                .storage
+                .ol_block()
+                .get_history_base_blocking()
+                .expect("read history base"),
+            Some(fixture.anchor)
+        );
+        verify_history_anchor(&fixture.storage, fixture.anchor)
+            .expect("startup anchor checks accept the V0 anchor");
+    }
+
+    /// A sequencer refuses the V0 genesis tip of a checkpoint-sync datadir and
+    /// starts on the V0 anchor at the switch once the datadir is promoted.
+    #[test]
+    fn sequencer_starts_on_promoted_v0_anchor_at_switch() {
+        let fixture = PromotionFixture::with_v0_anchor(V0LastManifest::Enactment);
+        let err = verify_sequencer_tip_spec(&fixture.storage, fixture.genesis_l1)
+            .expect_err("the V0 genesis tip is refused");
+        assert!(
+            format!("{err:#}").contains("the epoch after it runs V0"),
+            "{err:#}"
+        );
+
+        fixture.promote().expect("promote the last V0 epoch");
+        verify_sequencer_tip_spec(&fixture.storage, fixture.genesis_l1)
+            .expect("the promoted V0 anchor at the switch is accepted");
+    }
+
+    #[test]
+    fn v0_anchor_before_switch_is_refused() {
+        for last_manifest in [V0LastManifest::Plain, V0LastManifest::AtGenesisAnchor] {
+            PromotionFixture::with_v0_anchor(last_manifest)
+                .assert_failure("is a V0 epoch before the switch to V1");
+        }
+    }
+
+    #[test]
+    fn v0_anchor_with_reorged_last_manifest_fails_distinctly() {
+        PromotionFixture::with_v0_anchor(V0LastManifest::Reorged)
+            .assert_failure("but the parent state processed");
+    }
+
+    #[test]
+    fn v0_anchor_with_missing_last_manifest_fails_distinctly() {
+        PromotionFixture::with_v0_anchor(V0LastManifest::Missing)
+            .assert_failure("missing the L1 manifest at height");
+    }
+
+    #[test]
+    fn v0_anchor_with_duplicate_enactment_fails_distinctly() {
+        PromotionFixture::with_v0_anchor(V0LastManifest::DuplicateEnactment)
+            .assert_failure("failed to select the spec of the epoch after");
     }
 
     #[test]
