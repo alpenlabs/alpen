@@ -33,7 +33,9 @@ impl L1Database for L1DBSled {
                 (&self.l1_blk_tree, &self.l1_blks_height_tree),
                 |(bt, bht)| {
                     let mut blocks_at_height = bht.get(&height)?.unwrap_or_default();
-                    blocks_at_height.push(*blockid);
+                    if !blocks_at_height.contains(blockid) {
+                        blocks_at_height.push(*blockid);
+                    }
 
                     bt.insert(blockid, &manifest)?;
                     bht.insert(&height, &blocks_at_height)?;
@@ -125,9 +127,40 @@ impl L1Database for L1DBSled {
 #[cfg(test)]
 mod tests {
     use strata_db_tests::l1_db_tests;
+    use strata_primitives::Buf32;
 
     use super::*;
     use crate::sled_db_test_setup;
 
     sled_db_test_setup!(L1DBSled, l1_db_tests);
+
+    #[test]
+    fn repeated_manifest_writes_preserve_unique_height_entries_and_forks() {
+        let db = setup_db();
+        let height = 100;
+        let block_id = L1BlockId::from(Buf32::from([1; 32]));
+        let fork_id = L1BlockId::from(Buf32::from([2; 32]));
+        let root = Buf32::from([3; 32]).into();
+        let manifest = AsmManifest::new(height, block_id, root, vec![]).unwrap();
+        let fork = AsmManifest::new(height, fork_id, root, vec![]).unwrap();
+
+        db.put_block_data(manifest.clone()).unwrap();
+        db.put_block_data(manifest).unwrap();
+        assert_eq!(
+            db.l1_blks_height_tree.get(&height).unwrap(),
+            Some(vec![block_id])
+        );
+
+        db.put_block_data(fork.clone()).unwrap();
+        let updated =
+            AsmManifest::new(height, block_id, Buf32::from([4; 32]).into(), vec![]).unwrap();
+        db.put_block_data(updated.clone()).unwrap();
+        db.put_block_data(fork.clone()).unwrap();
+        assert_eq!(
+            db.l1_blks_height_tree.get(&height).unwrap(),
+            Some(vec![block_id, fork_id])
+        );
+        assert_eq!(db.get_block_manifest(block_id).unwrap(), Some(updated));
+        assert_eq!(db.get_block_manifest(fork_id).unwrap(), Some(fork));
+    }
 }

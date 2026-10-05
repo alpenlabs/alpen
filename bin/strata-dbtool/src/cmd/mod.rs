@@ -1,3 +1,4 @@
+pub(crate) mod asm;
 pub(crate) mod broadcaster;
 pub(crate) mod checkpoint;
 pub(crate) mod checkpoint_proof;
