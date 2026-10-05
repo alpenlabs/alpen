@@ -29,8 +29,8 @@ use crate::{
     writer::{
         builder::{
             effective_fee_rate, ensure_built_fee_rate_within_max,
-            ensure_initial_fee_rate_within_max, sign_commit_with_fee_guardrail, EnvelopeConfig,
-            EnvelopeError, BITCOIN_DUST_LIMIT,
+            ensure_initial_fee_rate_within_max, is_commit_funding_utxo,
+            sign_commit_with_fee_guardrail, EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT,
         },
         resolve_fee_rate, FeeRateResolutionTimeouts,
     },
@@ -102,12 +102,12 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         let spendable_utxo_count = utxos
             .iter()
-            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
+            .filter(|utxo| is_commit_funding_utxo(utxo))
             .count();
 
         let spendable_value_sats: u64 = utxos
             .iter()
-            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
+            .filter(|utxo| is_commit_funding_utxo(utxo))
             .map(|u| u.amount.to_sat())
             .sum();
 

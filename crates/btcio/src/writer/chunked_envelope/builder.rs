@@ -322,7 +322,7 @@ mod tests {
     use crate::{
         test_utils::test_context::get_writer_context,
         writer::{
-            builder::signed_commit_vsize,
+            builder::{signed_commit_vsize, BITCOIN_DUST_LIMIT},
             chunked_envelope::commit_op_return::COMMIT_OP_RETURN_PAYLOAD_LEN,
         },
     };
@@ -630,6 +630,85 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_chunked_envelope_txs_uses_exact_dust_limit_utxos() {
+        let mut config = get_test_config();
+        config.fee_rate = FeeRate::from_sat_per_vb_u32(1);
+        config.fee_bumping.max_attempts = NonZeroU32::new(1).unwrap();
+        let mut utxos = get_mock_utxos();
+        for utxo in &mut utxos {
+            utxo.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+        }
+        let chunks = [vec![0u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            chunks.iter().map(Vec::as_slice),
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &test_keypair(),
+            utxos,
+        )
+        .unwrap();
+
+        assert_eq!(result.commit_tx.input.len(), 2);
+    }
+
+    #[test]
+    fn build_chunked_envelope_txs_terminates_when_higher_fee_selects_smaller_input() {
+        let mut config = get_test_config();
+        config.fee_rate = FeeRate::from_sat_per_vb_u32(100);
+        let chunks = [vec![0u8; 150]];
+        let magic = MagicBytes::from([0xAA, 0xBB, 0xCC, 0xDD]);
+        let kp = test_keypair();
+        let mut utxos = get_mock_utxos();
+        let p2tr_address =
+            Address::p2tr(SECP256K1, kp.x_only_public_key().0, None, Network::Regtest);
+        utxos[0].script_pubkey = p2tr_address.script_pubkey();
+
+        // Funding from the large P2TR output alone fixes the commit outputs: the OP_RETURN, the
+        // reveal funding output, and change.
+        let reference = build_chunked_envelope_txs(
+            &config,
+            chunks.iter().map(Vec::as_slice),
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &kp,
+            utxos[..1].to_vec(),
+        )
+        .unwrap();
+        let outputs = &reference.commit_tx.output;
+        let fixed_total: u64 = outputs[..outputs.len() - 1]
+            .iter()
+            .map(|output| output.value.to_sat())
+            .sum();
+        let p2tr_fee =
+            fee_sats_for_vsize(signed_commit_vsize(&utxos[..1], outputs), config.fee_rate).unwrap();
+        let p2wpkh_fee =
+            fee_sats_for_vsize(signed_commit_vsize(&utxos[1..], outputs), config.fee_rate).unwrap();
+        // Priced as the P2TR spend, the P2WPKH output funds the commit with change. Priced as the
+        // larger P2WPKH spend, it no longer does, and selection moves to the P2TR output.
+        utxos[1].amount = Amount::from_sat(fixed_total + p2tr_fee + BITCOIN_DUST_LIMIT);
+        assert!(utxos[1].amount.to_sat() < fixed_total + p2wpkh_fee);
+
+        let result = build_chunked_envelope_txs(
+            &config,
+            chunks.iter().map(Vec::as_slice),
+            &magic,
+            TEST_DA_BLOB_VERSION,
+            &kp,
+            utxos.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(result.commit_tx.input.len(), 1);
+        assert_eq!(
+            result.commit_tx.input[0].previous_output.txid,
+            utxos[0].txid
+        );
     }
 
     #[test]
