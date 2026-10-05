@@ -11,10 +11,18 @@ on:
           - dev
           - staging
           - prod
+      checkpoint_runtime_params_url:
+        description: HTTPS download URL for full OL params or bare runtime params (raw URL, not a GitHub /blob/ page).
+        required: true
+        type: string
   workflow_call:
     inputs:
       env:
         description: Deployment environment (dev | staging | prod).
+        required: true
+        type: string
+      checkpoint_runtime_params_url:
+        description: HTTPS download URL for full OL params or bare runtime params.
         required: true
         type: string
 
@@ -26,7 +34,8 @@ env:
   # aws/shared-services/us-east-1/shared/iam/github-actions-alpen-sp1-s3.
   S3_BUCKET: alpen-mosaic-artifacts
   S3_PREFIX: sp1-artifacts
-  SP1_VERSION: v6.1.0
+  # Match the locked sp1-build version, which selects the guest's Docker image tag.
+  SP1_VERSION: v6.4.0
 
 concurrency:
   group: publish-sp1-artifacts-${{ inputs.env }}-${{ github.ref }}
@@ -57,7 +66,14 @@ jobs:
       - name: Validate inputs
         env:
           INPUT_ENV: ${{ inputs.env }}
+          CHECKPOINT_RUNTIME_PARAMS_URL: ${{ inputs.checkpoint_runtime_params_url }}
         run: python3 .github/scripts/sp1_artifact_publish.py validate
+
+      - name: Fetch checkpoint runtime params
+        env:
+          CHECKPOINT_RUNTIME_PARAMS_URL: ${{ inputs.checkpoint_runtime_params_url }}
+          CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ runner.temp }}/checkpoint-runtime-params.json
+        run: python3 .github/scripts/sp1_artifact_publish.py fetch
 
       - name: Free up disk space
         uses: ./.github/actions/cleanup # zizmor: ignore[self-repository]
@@ -94,6 +110,7 @@ jobs:
         env:
           BUILD_ELF: "1"
           BUILD_VKEY: "1"
+          CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ runner.temp }}/checkpoint-runtime-params.json
         run: cargo build --locked -p strata-sp1-guest-builder --features docker-build --release
 
       - name: Verify artifacts and emit traceability summary
@@ -105,6 +122,8 @@ jobs:
           ALPEN_REF: ${{ github.ref }}
           ALPEN_SHA: ${{ steps.resolve-sha.outputs.sha }}
           SP1_VERSION: ${{ env.SP1_VERSION }}
+          CHECKPOINT_RUNTIME_PARAMS_URL: ${{ inputs.checkpoint_runtime_params_url }}
+          CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ runner.temp }}/checkpoint-runtime-params.json
         run: python3 .github/scripts/sp1_artifact_publish.py summarize
 
       - name: Upload artifacts as workflow artifact

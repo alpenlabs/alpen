@@ -52,4 +52,26 @@ whatever was built earlier in place.
 | `<guest>.elf` | The compiled guest program |
 | `<guest>.vk-hash` | The verifying key's `bytes32` program ID |
 | `<guest>.predicate` | `Sp1Groth16:<hex>`, read by `strata-datatool` when building params |
-| `<guest>.artifact-manifest.json` | The program ID and the hash of the runtime params baked into the ELF, checked at node startup |
+| `<guest>.artifact-manifest.json` | Schema version, proved OL spec, program ID, and hash of the runtime params baked into the ELF |
+
+The node checks the manifest's program ID and runtime-params hash at startup. The `spec` field
+records the rules compiled into the guest; it can differ from the network's `genesis.spec`.
+
+## Publishing
+
+The [Publish SP1 Artifacts workflow](../../.github/workflows/publish-sp1-artifacts.yml) requires
+`env` and `checkpoint_runtime_params_url` for manual dispatch and reusable workflow calls.
+Supply a raw HTTPS download URL for either params format described above. GitHub `/blob/`
+URLs serve HTML and are rejected. The workflow downloads and JSON-validates the file in
+`${{ runner.temp }}`, then passes its path to the existing builder through
+`CHECKPOINT_RUNTIME_PARAMS_PATH`.
+
+The bundle includes all four artifacts above, their SHA-256 sidecars, and a separate
+`manifest.json` recording the source commit, SP1 version, params URL, and file checksums.
+The downloaded JSON's checksum records the input bytes; `runtime_params_hash` in the guest
+manifest hashes the SSZ-encoded runtime params.
+
+Only the separate, environment-gated publish job receives AWS publishing credentials. It
+checks every required file and checksum before uploading to
+`s3://alpen-mosaic-artifacts/sp1-artifacts/<env>-<source-sha>/`. This write-once location
+allows one bundle per environment and source commit.

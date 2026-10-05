@@ -9,23 +9,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ENVIRONMENTS = ("dev", "staging", "prod")
 VERSION_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+GITHUB_BLOB_URL_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+/blob/")
 
-GUESTS = (
-    ("guest-checkpoint", "checkpoint"),
-)
+GUESTS = (("guest-checkpoint", "checkpoint"),)
 
+ARTIFACT_SUFFIXES = ("elf", "predicate", "vk-hash", "artifact-manifest.json")
 ARTIFACT_FILES = tuple(
-    name
-    for guest, _ in GUESTS
-    for name in (
-        f"{guest}.elf",
-        f"{guest}.predicate",
-        f"{guest}.vk-hash",
-        f"{guest}.artifact-manifest.json",
-    )
+    f"{guest}.{suffix}" for guest, _ in GUESTS for suffix in ARTIFACT_SUFFIXES
 ) + ("manifest.json",)
 
 
@@ -44,6 +36,21 @@ def validate_env(env: str) -> str:
     if env not in ENVIRONMENTS:
         fail(f"env must be one of {', '.join(ENVIRONMENTS)} (got {env!r})")
     return env
+
+
+def validate_runtime_params_url(url: str) -> str:
+    if any(character.isspace() for character in url):
+        fail("checkpoint runtime params URL must not contain whitespace")
+    if not url.startswith("https://"):
+        fail("checkpoint runtime params URL must start with https://")
+    if len(url) > 2048:
+        fail("checkpoint runtime params URL exceeds 2048 chars")
+    if GITHUB_BLOB_URL_RE.match(url):
+        fail(
+            "checkpoint runtime params URL is a GitHub /blob/ page (returns HTML); "
+            "use the Raw download URL instead"
+        )
+    return url
 
 
 def sha256_hex(path: Path) -> str:
@@ -66,15 +73,53 @@ def require_file(path: Path) -> None:
 
 
 def cmd_validate() -> None:
-    """Env: INPUT_ENV."""
-    env = os.environ["INPUT_ENV"]
+    """Env: INPUT_ENV, CHECKPOINT_RUNTIME_PARAMS_URL."""
+    validate_env(os.environ["INPUT_ENV"])
+    validate_runtime_params_url(os.environ["CHECKPOINT_RUNTIME_PARAMS_URL"])
 
-    validate_env(env)
+
+def cmd_fetch() -> None:
+    """Env: CHECKPOINT_RUNTIME_PARAMS_URL, CHECKPOINT_RUNTIME_PARAMS_PATH."""
+    url = validate_runtime_params_url(os.environ["CHECKPOINT_RUNTIME_PARAMS_URL"])
+    path = Path(os.environ["CHECKPOINT_RUNTIME_PARAMS_PATH"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--max-time",
+                "60",
+                "--output",
+                str(path),
+                "--",
+                url,
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as err:
+        fail(f"failed to fetch checkpoint runtime params (exit {err.returncode})")
+    require_file(path)
+    try:
+        params = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeError) as err:
+        fail(f"checkpoint runtime params must be JSON: {err}")
+    if not isinstance(params, dict):
+        fail("checkpoint runtime params must be a JSON object")
+    # The guest builder parses OLRuntimeParams or OLParams and owns schema validation.
 
 
 def cmd_summarize() -> None:
     """Env: ELF_ROOT, ARTIFACT_DIR, DEPLOY_ENV, ALPEN_REF, ALPEN_SHA,
-    SP1_VERSION, GITHUB_STEP_SUMMARY."""
+    SP1_VERSION, CHECKPOINT_RUNTIME_PARAMS_URL, CHECKPOINT_RUNTIME_PARAMS_PATH,
+    GITHUB_STEP_SUMMARY."""
     elf_root = Path(os.environ["ELF_ROOT"])
     artifact_dir = Path(os.environ["ARTIFACT_DIR"])
     env = validate_env(os.environ["DEPLOY_ENV"])
@@ -82,13 +127,17 @@ def cmd_summarize() -> None:
     alpen_sha = os.environ["ALPEN_SHA"]
     sp1_version = os.environ["SP1_VERSION"]
     run_id = os.environ.get("GITHUB_RUN_ID", "")
+    runtime_params_url = os.environ["CHECKPOINT_RUNTIME_PARAMS_URL"]
+    runtime_params_path = Path(os.environ["CHECKPOINT_RUNTIME_PARAMS_PATH"])
+    require_file(runtime_params_path)
+    runtime_params_sha256 = sha256_hex(runtime_params_path)
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     predicates: dict[str, str] = {}
     vk_hashes: dict[str, str] = {}
     for guest, key in GUESTS:
-        for suffix in ("elf", "predicate", "vk-hash", "artifact-manifest.json"):
+        for suffix in ARTIFACT_SUFFIXES:
             src = elf_root / f"{guest}.{suffix}"
             require_file(src)
             (artifact_dir / src.name).write_bytes(src.read_bytes())
@@ -97,9 +146,9 @@ def cmd_summarize() -> None:
         vk_hashes[key] = (artifact_dir / f"{guest}.vk-hash").read_text().strip()
 
     digests = {
-        path.name: sha256_hex(path)
-        for path in sorted(artifact_dir.iterdir())
-        if path.is_file()
+        name: sha256_hex(artifact_dir / name)
+        for name in ARTIFACT_FILES
+        if name != "manifest.json"
     }
 
     version = f"{env}-{alpen_sha}"
@@ -112,6 +161,10 @@ def cmd_summarize() -> None:
         "version": version,
         "run_id": run_id,
         "sp1_version": sp1_version,
+        "checkpoint_runtime_params": {
+            "url": runtime_params_url,
+            "sha256": runtime_params_sha256,
+        },
         "alpen": {
             "ref": alpen_ref,
             "sha": alpen_sha,
@@ -136,6 +189,8 @@ def cmd_summarize() -> None:
         f"- env: `{env}`",
         f"- alpen ref: `{alpen_ref}` @ `{alpen_sha}`",
         f"- SP1 toolchain: `{sp1_version}`",
+        f"- runtime params source: `{runtime_params_url}`",
+        f"- runtime params file SHA-256: `{runtime_params_sha256}`",
         f"- version: `{version}`",
         "",
         "### Predicates",
@@ -201,6 +256,20 @@ def cmd_upload() -> None:
     if not VERSION_RE.fullmatch(version):
         fail(f"artifact version is not S3-key-safe: {version!r}")
 
+    # Validate the entire downloaded bundle before any write-once S3 upload.
+    for name in ARTIFACT_FILES:
+        path = artifact_dir / name
+        require_file(path)
+        if name == "manifest.json":
+            continue
+        digest = sha256_hex(path)
+        if manifest.get("sha256", {}).get(name) != digest:
+            fail(f"artifact checksum does not match manifest: {name}")
+        sidecar = artifact_dir / f"{name}.sha256"
+        require_file(sidecar)
+        if sidecar.read_text(encoding="utf-8") != f"{digest}  {name}\n":
+            fail(f"artifact checksum sidecar does not match: {name}")
+
     base_key = f"{prefix}/{version}"
     base = f"s3://{bucket}/{base_key}"
     uris: list[str] = []
@@ -230,6 +299,7 @@ def cmd_upload() -> None:
 
 COMMANDS = {
     "validate": cmd_validate,
+    "fetch": cmd_fetch,
     "summarize": cmd_summarize,
     "upload": cmd_upload,
 }
