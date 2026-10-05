@@ -1,5 +1,5 @@
 use core::result::Result::Ok;
-use std::{cmp::Reverse, slice};
+use std::cmp::Reverse;
 
 use bitcoin::{
     absolute::LockTime,
@@ -695,6 +695,17 @@ fn is_supported_commit_utxo(utxo: &ListUnspentItem) -> bool {
     utxo.script_pubkey.is_p2wpkh() || utxo.script_pubkey.is_p2tr()
 }
 
+/// Returns whether a wallet output can fund a commit transaction.
+///
+/// Outputs of exactly [`BITCOIN_DUST_LIMIT`] qualify: every reveal returns that amount to the
+/// sequencer address, so the wallet accumulates outputs of that size.
+pub(crate) fn is_commit_funding_utxo(utxo: &ListUnspentItem) -> bool {
+    utxo.spendable
+        && utxo.solvable
+        && utxo.amount.to_sat() >= BITCOIN_DUST_LIMIT
+        && is_supported_commit_utxo(utxo)
+}
+
 fn commit_inputs(utxos: &[ListUnspentItem]) -> Vec<TxIn> {
     utxos
         .iter()
@@ -814,10 +825,8 @@ fn select_commit_utxos(
     minimum_excess: u64,
     fee_rate: FeeRate,
 ) -> Result<(Vec<ListUnspentItem>, u64, u64), EnvelopeError> {
-    let Some(first_utxo) = utxos.first() else {
-        return Err(EnvelopeError::NotEnoughUtxos(base_output_total, 0));
-    };
-    let mut estimated_size = signed_commit_vsize(slice::from_ref(first_utxo), outputs);
+    // The outputs alone are a lower bound, independent of the wallet's input ordering.
+    let mut estimated_size = signed_commit_vsize(&[], outputs);
 
     loop {
         let estimated_fee = fee_sats_for_vsize(estimated_size, fee_rate)?;
@@ -837,6 +846,8 @@ fn select_commit_utxos(
             return Ok((chosen_utxos, sum, fee));
         }
 
+        // Input selection can switch to a smaller witness as the fee rises. Check each
+        // selection against its own size; failed selections only increase the estimate.
         estimated_size = signed_size;
     }
 }
@@ -854,16 +865,7 @@ pub(crate) fn fund_commit_transaction(
     });
     let base_output_total = base_output_total.ok_or(EnvelopeError::FeeOverflow)?;
 
-    let utxos: Vec<ListUnspentItem> = utxos
-        .iter()
-        .filter(|utxo| {
-            utxo.spendable
-                && utxo.solvable
-                && utxo.amount.to_sat() > BITCOIN_DUST_LIMIT
-                && is_supported_commit_utxo(utxo)
-        })
-        .cloned()
-        .collect();
+    let utxos: Vec<ListUnspentItem> = utxos.into_iter().filter(is_commit_funding_utxo).collect();
 
     // Prefer a standalone change output even when doing so requires another wallet input. The fee
     // bumper can shrink that output without racing another writer for an unlocked input.
@@ -1161,6 +1163,7 @@ pub fn attach_reveal_signature(
 mod tests {
     use std::{
         num::{NonZeroU32, NonZeroU64},
+        slice,
         sync::Arc,
     };
 
@@ -1170,8 +1173,8 @@ mod tests {
         secp256k1::{constants::SCHNORR_SIGNATURE_SIZE, Secp256k1, SecretKey},
         taproot::ControlBlock,
         transaction::Version,
-        Address, Network, OutPoint, PubkeyHash, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-        Witness,
+        Address, Network, OutPoint, PubkeyHash, ScriptBuf, ScriptHash, Sequence, Transaction, TxIn,
+        TxOut, Witness,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{MagicBytes, TagData, TagDataRef};
@@ -1260,6 +1263,14 @@ mod tests {
         let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
         let (pubkey, _) = sk.x_only_public_key(&secp);
         pubkey
+    }
+
+    /// Rewrites a mock UTXO as a P2TR key-path output.
+    fn as_p2tr_utxo(mut utxo: ListUnspentItem) -> ListUnspentItem {
+        let address = Address::p2tr(SECP256K1, test_envelope_pubkey(), None, Network::Regtest);
+        utxo.script_pubkey = address.script_pubkey();
+        utxo.address = address.as_unchecked().clone();
+        utxo
     }
 
     fn test_envelope_config(
@@ -1835,20 +1846,132 @@ mod tests {
     }
 
     #[test]
-    fn test_build_commit_transaction_rejects_insufficient_filtered_utxos() {
+    fn test_build_commit_transaction_uses_exact_dust_limit_utxos() {
+        let (ctx, _, _, mut utxos) = get_mock_data();
+        utxos.truncate(2);
+        for utxo in &mut utxos {
+            utxo.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+        }
+
+        let (tx, consumed) = super::build_commit_transaction(
+            utxos,
+            ctx.sequencer_address.clone(),
+            ctx.sequencer_address.clone(),
+            BITCOIN_DUST_LIMIT,
+            FeeRate::from_sat_per_vb_u32(1),
+        )
+        .unwrap();
+
+        assert_eq!(consumed.len(), 2);
+        assert!(consumed
+            .iter()
+            .all(|utxo| utxo.amount.to_sat() == BITCOIN_DUST_LIMIT));
+        assert_eq!(tx.input.len(), 2);
+    }
+
+    #[test]
+    fn test_build_commit_transaction_skips_sub_dust_and_unsupported_utxos() {
         let (ctx, _, _, utxos) = get_mock_data();
-        let mut dust = utxos[2].clone();
-        dust.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+        let mut sub_dust = utxos[0].clone();
+        sub_dust.amount = Amount::from_sat(BITCOIN_DUST_LIMIT - 1);
+        let mut nested_segwit = utxos[1].clone();
+        nested_segwit.script_pubkey = ScriptBuf::new_p2sh(&ScriptHash::all_zeros());
 
         let res = super::build_commit_transaction(
-            vec![dust],
+            vec![sub_dust, nested_segwit],
             ctx.sequencer_address.clone(),
             ctx.sequencer_address.clone(),
-            500_000_000,
+            BITCOIN_DUST_LIMIT,
             FeeRate::from_sat_per_vb_u32(1),
         );
 
         assert!(matches!(res, Err(EnvelopeError::NotEnoughUtxos(_, 0))));
+    }
+
+    #[test]
+    fn test_build_commit_transaction_terminates_when_higher_fee_selects_smaller_input() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let fee_rate = FeeRate::from_sat_per_vb_u32(100);
+        let output_value = 20_000;
+        let outputs = [
+            TxOut {
+                value: Amount::from_sat(output_value),
+                script_pubkey: ctx.sequencer_address.script_pubkey(),
+            },
+            TxOut {
+                value: Amount::ZERO,
+                script_pubkey: ctx.sequencer_address.script_pubkey(),
+            },
+        ];
+        let p2tr = as_p2tr_utxo(utxos[0].clone());
+        let mut p2wpkh = utxos[1].clone();
+        let p2tr_fee = fee_sats_for_vsize(
+            signed_commit_vsize(slice::from_ref(&p2tr), &outputs),
+            fee_rate,
+        )
+        .unwrap();
+        let p2wpkh_fee = fee_sats_for_vsize(
+            signed_commit_vsize(slice::from_ref(&p2wpkh), &outputs),
+            fee_rate,
+        )
+        .unwrap();
+        // Priced as the P2TR spend, the P2WPKH output funds the commit with change. Priced as the
+        // larger P2WPKH spend, it no longer does, and selection moves to the P2TR output.
+        p2wpkh.amount = Amount::from_sat(output_value + p2tr_fee + BITCOIN_DUST_LIMIT);
+        assert!(p2wpkh.amount.to_sat() < output_value + p2wpkh_fee);
+
+        let (tx, consumed) = super::build_commit_transaction(
+            vec![p2wpkh, p2tr.clone()],
+            ctx.sequencer_address.clone(),
+            ctx.sequencer_address.clone(),
+            output_value,
+            fee_rate,
+        )
+        .unwrap();
+
+        assert_eq!(consumed, vec![p2tr]);
+        let output_total: u64 = tx.output.iter().map(|output| output.value.to_sat()).sum();
+        let paid_fee = consumed[0].amount.to_sat() - output_total;
+        let required_fee =
+            fee_sats_for_vsize(signed_commit_vsize(&consumed, &tx.output), fee_rate).unwrap();
+        assert!(paid_fee >= required_fee);
+    }
+
+    #[test]
+    fn test_build_commit_transaction_funding_is_independent_of_first_input_size() {
+        let (ctx, _, _, utxos) = get_mock_data();
+        let fee_rate = FeeRate::from_sat_per_vb_u32(100);
+        let output = TxOut {
+            value: Amount::from_sat(20_000),
+            script_pubkey: ctx.sequencer_address.script_pubkey(),
+        };
+        let mut p2wpkh = utxos[0].clone();
+        p2wpkh.amount = Amount::from_sat(BITCOIN_DUST_LIMIT);
+        let mut p2tr = as_p2tr_utxo(utxos[1].clone());
+        let fee = fee_sats_for_vsize(
+            signed_commit_vsize(slice::from_ref(&p2tr), slice::from_ref(&output)),
+            fee_rate,
+        )
+        .unwrap();
+        p2tr.amount = output.value + Amount::from_sat(fee);
+
+        for wallet in [
+            vec![p2wpkh.clone(), p2tr.clone()],
+            vec![p2tr.clone(), p2wpkh],
+        ] {
+            let (tx, consumed) = super::build_commit_transaction(
+                wallet,
+                ctx.sequencer_address.clone(),
+                ctx.sequencer_address.clone(),
+                output.value.to_sat(),
+                fee_rate,
+            )
+            .unwrap();
+
+            assert_eq!(consumed, vec![p2tr.clone()]);
+            assert_eq!(tx.output, vec![output.clone()]);
+            assert_eq!(calculate_transaction_fee_from_utxos(&tx, &consumed), fee);
+        }
     }
 
     #[test]
