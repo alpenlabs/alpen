@@ -497,6 +497,11 @@ impl OLCheckpointManager {
     }
 
     /// Gets every recorded rejected checkpoint transaction, ordered by epoch.
+    pub async fn get_rejected_checkpoints_async(&self) -> DbResult<Vec<RejectedCheckpointEntry>> {
+        self.ops.get_rejected_checkpoints_async().await
+    }
+
+    /// Gets every recorded rejected checkpoint transaction, ordered by epoch.
     pub fn get_rejected_checkpoints_blocking(&self) -> DbResult<Vec<RejectedCheckpointEntry>> {
         self.ops.get_rejected_checkpoints_blocking()
     }

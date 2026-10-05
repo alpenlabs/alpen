@@ -28,6 +28,16 @@ pub trait OLClientRpc {
     #[method(name = "getCheckpointInfo")]
     async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>>;
 
+    /// Get checkpoint transactions this node submitted that were mined on L1 but not accepted
+    /// by the ASM.
+    ///
+    /// A transaction is reported once its block is buried at the node's L1 reorg-safe depth
+    /// while the ASM's verified epoch is still below the checkpoint's epoch. Entries stay after
+    /// a later transaction gets the epoch accepted. Ordered by epoch; nodes that do not submit
+    /// checkpoints return an empty list.
+    #[method(name = "getRejectedCheckpoints")]
+    async fn get_rejected_checkpoints(&self) -> RpcResult<Vec<RpcRejectedCheckpoint>>;
+
     /// Get the epoch commitment for the epoch in which an account was first created.
     ///
     /// Resolves the creation epoch and returns the corresponding

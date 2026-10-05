@@ -11,6 +11,7 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult, MmrId,
     ol_block::BlockAvailability,
+    ol_checkpoint::RejectedCheckpointEntry,
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
@@ -136,6 +137,13 @@ impl OLRpcProvider for NodeRpcProvider {
         self.storage
             .ol_checkpoint()
             .get_checkpoint_l1_ref_async(commitment)
+            .await
+    }
+
+    async fn get_rejected_checkpoints(&self) -> DbResult<Vec<RejectedCheckpointEntry>> {
+        self.storage
+            .ol_checkpoint()
+            .get_rejected_checkpoints_async()
             .await
     }
 

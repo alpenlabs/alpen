@@ -22,7 +22,7 @@ use strata_ol_rpc_types::{
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
-    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
+    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcRejectedCheckpoint, RpcSnarkAccountState,
     RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
 use strata_ol_state_container::{OLStateContainer, OLStateSeries};
@@ -950,6 +950,18 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             l2_end,
             confirmation_status,
         }))
+    }
+
+    async fn get_rejected_checkpoints(&self) -> RpcResult<Vec<RpcRejectedCheckpoint>> {
+        let entries = self
+            .provider
+            .get_rejected_checkpoints()
+            .await
+            .map_err(db_error)?;
+        Ok(entries
+            .into_iter()
+            .map(RpcRejectedCheckpoint::from)
+            .collect())
     }
 
     async fn get_account_genesis_epoch_commitment(
