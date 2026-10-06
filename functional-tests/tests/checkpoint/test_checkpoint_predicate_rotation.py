@@ -1,6 +1,7 @@
 """STR-4488: the V0 sequencer seals and halts at an OL predicate enactment."""
 
 import logging
+import time
 from pathlib import Path
 
 import flexitest
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 ADMIN_CONFIRMATION_DEPTH = 2
 HALT_OBSERVATION_L1_BLOCKS = 3
 PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
+RESTART_PAUSE_SECONDS = 2
+RESTART_TIMEOUT_SECONDS = 30
 
 
 @flexitest.register
@@ -126,6 +129,22 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         )
         assert terminal_block["header"]["is_terminal"] is True, terminal_block
         self._assert_halted_at(strata, strata_rpc, terminal)
+
+        logger.info("restarting the sequencer at predicate boundary slot %s", terminal_slot)
+        strata.stop()
+        time.sleep(RESTART_PAUSE_SECONDS)
+        strata.start()
+        strata_rpc = strata.wait_for_rpc_ready(timeout=RESTART_TIMEOUT_SECONDS)
+        restored_tip = wait_until_with_value(
+            lambda: strata.get_sync_status(strata_rpc)["tip"],
+            lambda tip: tip["slot"] == terminal_slot and tip["blkid"] == terminal["blkid"],
+            error_with=f"sequencer did not restore predicate boundary tip {terminal}",
+            timeout=RESTART_TIMEOUT_SECONDS,
+            step=0.5,
+        )
+        assert restored_tip["is_terminal"] is True, restored_tip
+        self._assert_halted_at(strata, strata_rpc, terminal)
+        logger.info("sequencer restart preserved the halt at slot %s", terminal_slot)
 
         mine_until_finalized_epoch(
             bitcoin=bitcoin,
