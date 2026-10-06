@@ -49,8 +49,6 @@ permissions: {}
 jobs:
   prepare-sp1-artifacts:
     name: Check existing SP1 artifacts
-    # Keep the workflow, helpers, and local actions on main; only guest-source varies.
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The S3 role requires the sp1-artifacts environment for OIDC authentication.
