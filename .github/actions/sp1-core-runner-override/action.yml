@@ -11,7 +11,7 @@ inputs:
   version:
     description: sp1-core-executor-runner-binary crate version (must match workspace sp1-sdk).
     required: false
-    default: "6.1.0"
+    default: "6.8.1"
 runs:
   using: composite
   steps:
