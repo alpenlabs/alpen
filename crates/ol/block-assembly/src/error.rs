@@ -4,7 +4,7 @@ use std::error::Error;
 
 use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{AccountId, Epoch, Hash, L1Height, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::StateError;
 use strata_ol_chain_types::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
@@ -66,6 +66,10 @@ pub enum BlockAssemblyError {
         parent: OLBlockId,
         block: OLBlockCommitment,
     },
+
+    /// Block production has reached the checkpoint-predicate handover boundary.
+    #[error("block production halted at checkpoint predicate enactment height {height}")]
+    CheckpointPredicateBoundaryReached { height: L1Height },
 
     /// Invalid signature for block template completion.
     #[error("invalid signature for template: {0}")]

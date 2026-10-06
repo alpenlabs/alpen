@@ -190,6 +190,14 @@ impl SequencerContext for NodeSequencerContext {
                 debug!(tip_blkid = ?tip_blkid, completed_parent = ?parent, completed_block = %block, "template generation skipped: parent already completed");
                 return Ok(None);
             }
+            Err(BlockAssemblyError::CheckpointPredicateBoundaryReached { height }) => {
+                debug!(
+                    tip_blkid = ?tip_blkid,
+                    l1_height = height,
+                    "template generation halted at checkpoint predicate boundary"
+                );
+                return Ok(None);
+            }
             Err(source) => {
                 return Err(SequencerContextError::TemplateGeneration { tip_blkid, source });
             }
