@@ -69,11 +69,10 @@ outside these checks.
 
 If an epoch requires a missing or unsupported artifact, the OL runner reports an
 operator-configuration error and waits at that epoch without submitting a proof or
-consuming retry budgets. Existing records for specs without loaded artifacts remain
-untouched until their service can run after restart. Input resolution checks the
-task's canonical commitment and required spec before assembling a witness, including
-recovery and retry attempts. An artifact first needed after startup follows this
-policy, including after L1 catch-up.
+consuming retry budgets. Input resolution checks the task's canonical commitment
+and required spec before assembling a witness, including recovery and retry
+attempts. An artifact first needed after startup follows this policy, including
+after L1 catch-up.
 
 Each resident spec has its own fixed-host prover service. The spec-scoped task
 store filters both unfinished-task recovery and due retries; a service never
@@ -83,10 +82,20 @@ The prefix is four bytes because OL spec identifiers are u32. Old unprefixed
 tasks are ignored; they are not migrated or resumed. Offline dbtool backfill
 writes V1-prefixed keys; backfill for other specs and decoded task details are deferred.
 
-Remote jobs retain the existing opaque request-ID metadata. Restart recovery
-resumes that same request through the same spec's service, following the EE's
-stable routing model. The remote strategy fetches the receipt and decodes its
-public output without adding local cryptographic proof verification. Each service
+Remote jobs store an opaque request ID in task metadata. The remote strategy can
+resume that request through the same spec's service while its metadata remains available.
+
+With `[prover]` configured and canonical ASM state available, startup reconciliation
+deletes local checkpoint payloads, proofs, and versioned tasks past ASM's verified
+tip before prover services start. Task deletion also removes the saved remote
+request ID, including for specs whose artifacts are not loaded. Re-proving those
+checkpoints requires new remote requests. Operators should not
+expect an in-flight remote job to be resumed across a node restart. The TODO in
+[checkpoint reconciliation](../../../bin/strata/src/checkpoint_reconcile.rs) tracks
+reconsidering this cleanup so existing proof work can be reused safely.
+
+The remote strategy fetches the receipt and decodes its public output without
+adding local cryptographic proof verification. Each service
 checks the task's committed start-state spec before proving. Missing start state
 is retried without a version fallback. Witness resolution handles proof input
 readiness; node routing checks artifact availability before submitting work. The
