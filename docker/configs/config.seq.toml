@@ -1,3 +1,5 @@
+asm_execution = "asm-execution-params.json"
+
 # adjust according to deployment
 
 [client]

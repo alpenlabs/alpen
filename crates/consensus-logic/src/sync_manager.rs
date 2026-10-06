@@ -6,15 +6,15 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
-use strata_asm_spec::StrataAsmSpec;
-use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
+use strata_asm_spec::host::{build_execution_registry, CompiledSpec};
+use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, AsmWorkerStatus};
+use strata_config::AsmExecutionParams;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
-use strata_identifiers::{Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_node_context::NodeContext;
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_status::StatusChannel;
-use strata_storage::{MmrId, MmrIndexHandle, NodeStorage};
+use strata_storage::{MmrId, NodeStorage};
 use strata_tasks::TaskExecutor;
 use tokio::runtime::Handle;
 
@@ -108,6 +108,7 @@ pub fn spawn_asm_worker_with_ctx(nodectx: &NodeContext) -> anyhow::Result<AsmWor
         nodectx.executor().handle().clone(),
         nodectx.storage().clone(),
         nodectx.asm_params().clone(),
+        nodectx.asm_execution(),
         nodectx.bitcoin_client().clone(),
     )
 }
@@ -117,6 +118,7 @@ pub fn spawn_asm_worker(
     handle: Handle,
     storage: Arc<NodeStorage>,
     asm_params: Arc<AsmParams>,
+    execution: &AsmExecutionParams,
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<AsmWorkerHandle> {
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
@@ -124,11 +126,15 @@ pub fn spawn_asm_worker(
     // block manager).
     let mmr_handle = storage.mmr_index().get_handle(MmrId::Asm);
 
-    // Prefill the ASM manifest MMR with dummy-hash leaves up to and including
-    // the genesis L1 height, so that the manifest for height `h` lands at MMR
-    // index `h`. This mirrors the in-memory OL state initialization.
-    let genesis_l1_height = asm_params.anchor.block.height() as u64;
-    prefill_asm_mmr(&mmr_handle, genesis_l1_height + 1)?;
+    let registry = build_execution_registry(
+        execution
+            .targets()
+            .iter()
+            .map(|target| (target.predicate().clone(), target.spec_id())),
+    )?;
+    let genesis_spec =
+        CompiledSpec::resolve(registry.resolve(execution.genesis_predicate())?.spec_id())?;
+    let genesis = genesis_spec.construct_genesis_state(&asm_params);
 
     let context = AsmWorkerCtx::new(
         handle.clone(),
@@ -138,25 +144,12 @@ pub fn spawn_asm_worker(
         mmr_handle,
     );
 
-    let asm_spec = StrataAsmSpec;
-
-    // Use the new builder API to launch the worker and get a handle.
-    let handle = strata_asm_worker::AsmWorkerBuilder::new()
+    // The worker validates the anchor and prefills its manifest MMR.
+    let handle = AsmWorkerBuilder::new()
         .with_context(context)
-        .with_params((*asm_params).clone())
-        .with_asm_spec(asm_spec)
+        .with_genesis(genesis, execution.genesis_predicate().clone())
+        .with_registry(registry)
         .launch(executor)?;
 
     Ok(handle)
-}
-
-/// Prefills the ASM manifest MMR with sentinel leaves until it has at least
-/// `target_count` entries.
-///
-/// This is idempotent: a no-op when the MMR already has at least
-/// `target_count` entries. It is used to align DB-side MMR leaf indices with
-/// L1 block heights, mirroring the in-memory OL state initialization.
-fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result<()> {
-    handle.prefill_repeated_leaves_blocking(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF), target_count)?;
-    Ok(())
 }

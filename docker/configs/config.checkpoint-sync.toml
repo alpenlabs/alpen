@@ -1,3 +1,5 @@
+asm_execution = "asm-execution-params.json"
+
 # Checkpoint-sync OL node config.
 #
 # This node reconstructs OL state from L1-buried checkpoints. It runs no block

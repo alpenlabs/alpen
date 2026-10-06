@@ -307,7 +307,13 @@ fn create_signed_payload(
     seq_no: u64,
     admin_secret_key: &SecretKey,
 ) -> SignedPayload {
-    let signatures = create_signature_set(slice::from_ref(admin_secret_key), &[0], &action, seq_no);
+    let signatures = create_signature_set(
+        slice::from_ref(admin_secret_key),
+        &[0],
+        &action,
+        seq_no,
+        NETWORK,
+    );
     SignedPayload::new(seq_no, action, signatures)
 }
 

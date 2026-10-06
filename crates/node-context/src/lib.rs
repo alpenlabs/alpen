@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
-use strata_config::{BlockAssemblyConfig, Config};
+use strata_config::{AsmExecutionParams, BlockAssemblyConfig, Config};
 use strata_ol_params::OLParams;
 use strata_primitives::l1::L1BlockCommitment;
 use strata_status::StatusChannel;
@@ -30,6 +30,7 @@ pub struct NodeContext {
     executor: Arc<TaskExecutor>,
     config: Config,
     blockasm_config: Option<Arc<BlockAssemblyConfig>>,
+    asm_execution: AsmExecutionParams,
     asm_params: Arc<AsmParams>,
     ol_params: Arc<OLParams>,
     task_manager: TaskManager,
@@ -47,6 +48,7 @@ impl NodeContext {
         handle: Handle,
         config: Config,
         blockasm_config: Option<Arc<BlockAssemblyConfig>>,
+        asm_execution: AsmExecutionParams,
         asm_params: Arc<AsmParams>,
         ol_params: Arc<OLParams>,
         storage: Arc<NodeStorage>,
@@ -59,6 +61,7 @@ impl NodeContext {
             executor: Arc::new(executor),
             config,
             blockasm_config,
+            asm_execution,
             asm_params,
             ol_params,
             task_manager,
@@ -78,6 +81,11 @@ impl NodeContext {
 
     pub fn blockasm_config(&self) -> Option<&Arc<BlockAssemblyConfig>> {
         self.blockasm_config.as_ref()
+    }
+
+    /// Returns the trusted execution parameters loaded at startup.
+    pub fn asm_execution(&self) -> &AsmExecutionParams {
+        &self.asm_execution
     }
 
     pub fn asm_params(&self) -> &Arc<AsmParams> {

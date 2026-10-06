@@ -17,6 +17,7 @@ services:
       STRATA_SUBMIT_RPC_TOKEN: ${STRATA_SUBMIT_RPC_TOKEN:-dev-only-submit-token}
       RUST_BACKTRACE: 1
     volumes:
+      - ./configs/dev/asm-execution-params.json:/app/configs/asm-execution-params.json:ro
       # Explicitly mount only what strata reads — no whole-dir mount.
       # This knowledge will be helpful in k8s deployment.
       # Committed configs:

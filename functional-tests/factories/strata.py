@@ -36,6 +36,7 @@ class StrataNodeParams(NamedTuple):
     """Generated parameter files for a Strata node."""
 
     ol_params: Path
+    asm_execution: Path
     asm_params: Path
 
 
@@ -156,7 +157,21 @@ class StrataFactory(flexitest.Factory):
             if l1_reorg_safe_depth is not None
             else BtcioConfig()
         )
+        execution_params_path = datadir / "asm-execution-params.json"
+        if shared_params is not None:
+            if shared_params.asm_execution.resolve() != execution_params_path.resolve():
+                shutil.copyfile(shared_params.asm_execution, execution_params_path)
+        elif existing_datadir is not None:
+            if not execution_params_path.is_file():
+                raise ValueError(f"existing Strata datadir is missing {execution_params_path}")
+        else:
+            shutil.copyfile(
+                Path(__file__).resolve().parents[2]
+                / "docker/configs/dev/asm-execution-params.json",
+                execution_params_path,
+            )
         config = StrataConfig(
+            asm_execution="asm-execution-params.json",
             bitcoind=bconfig,
             client=client_config,
             logging=logging_config,
@@ -231,6 +246,7 @@ class StrataFactory(flexitest.Factory):
                 seq_key_path = seq_artifacts.sequencer_key_path
 
         node_params = StrataNodeParams(
+            asm_execution=execution_params_path,
             ol_params=ol_params_path,
             asm_params=asm_params_path,
         )

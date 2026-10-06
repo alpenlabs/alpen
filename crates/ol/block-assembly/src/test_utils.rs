@@ -819,6 +819,7 @@ pub(crate) fn put_test_asm_state(storage: &NodeStorage, l1_commitment: L1BlockCo
         history_accumulator,
     };
     let anchor_state = AnchorState {
+        spec_id: 0,
         magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
         chain_view,
         sections: Default::default(),

@@ -7,11 +7,10 @@ use std::{
     str::FromStr,
 };
 
-use bitcoin::{secp256k1::PublicKey, Network, XOnlyPublicKey};
+use bitcoin::{secp256k1::PublicKey, Address, CompressedPublicKey, Network, XOnlyPublicKey};
 use serde::Serialize;
-use strata_asm_admin_threshold_sig::{CompressedPublicKey, ThresholdConfig};
-use strata_asm_admin_types::ConfirmationDepths;
-use strata_asm_bridge_types::SafeHarbourAddress;
+use strata_asm_admin_types::{ConfirmationDepths, UncheckedThresholdConfig};
+use strata_asm_bridge_types::SafeHarborAddress;
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeInitConfig, CheckpointInitConfig,
     SubprotocolInstance,
@@ -92,14 +91,8 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         pubkeys.push(PublicKey::from_str(key.trim())?);
     }
 
-    // Build admin subprotocol params using the operator keys for all three admin roles.
-    let admin_keys: Vec<CompressedPublicKey> = pubkeys
-        .iter()
-        .copied()
-        .map(CompressedPublicKey::from)
-        .collect();
-
-    let threshold = ThresholdConfig::try_new(admin_keys, NonZero::new(1).expect("1 is non-zero"))?;
+    // Derive signer addresses on the anchor's network for all four admin roles.
+    let threshold = admin_threshold_config(&pubkeys, anchor.network)?;
 
     let depth = cmd.confirmation_depth.unwrap_or(DEFAULT_CONFIRMATION_DEPTH);
     let confirmation_depths = ConfirmationDepths {
@@ -113,7 +106,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         asm_stf_vk_update: depth,
         ee_stf_vk_update: depth,
         defcon3: depth,
-        safe_harbour_address_update: depth,
+        safe_harbor_address_update: depth,
     };
 
     let admin = AdministrationInitConfig::new(
@@ -174,7 +167,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         operator_fee: BitcoinAmount::try_from(cmd.operator_fee.unwrap_or(DEFAULT_OPERATOR_FEE))
             .expect("amount must not exceed the Bitcoin money supply"),
         recovery_delay: cmd.recovery_delay.unwrap_or(DEFAULT_RECOVERY_DELAY),
-        safe_harbour_address,
+        safe_harbor_address: safe_harbour_address,
     };
 
     // Assemble ASM params.
@@ -364,6 +357,20 @@ fn write_cli_network_profile(path: &Path, profile: &CliNetworkProfile) -> anyhow
     Ok(())
 }
 
+fn admin_threshold_config(
+    pubkeys: &[PublicKey],
+    network: Network,
+) -> anyhow::Result<UncheckedThresholdConfig> {
+    let signers = pubkeys
+        .iter()
+        .map(|key| Address::p2wpkh(&CompressedPublicKey(*key), network).into_unchecked())
+        .collect();
+    Ok(UncheckedThresholdConfig::try_new(
+        signers,
+        NonZero::new(1).expect("1 is non-zero"),
+    )?)
+}
+
 fn resolve_sequencer_key(seq_pk: Option<&str>) -> anyhow::Result<Buf32> {
     let pk_hex = seq_pk
         .ok_or_else(|| anyhow::anyhow!("--seq-pk is required by ASM checkpoint authentication"))?;
@@ -371,7 +378,7 @@ fn resolve_sequencer_key(seq_pk: Option<&str>) -> anyhow::Result<Buf32> {
     Ok(xonly.serialize().into())
 }
 
-fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourAddress> {
+fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarborAddress> {
     let descriptor = descriptor.trim();
     anyhow::ensure!(
         !descriptor.is_empty(),
@@ -387,7 +394,7 @@ fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarbourA
         descriptor.type_tag()
     );
 
-    SafeHarbourAddress::try_from(descriptor)
+    SafeHarborAddress::try_from(descriptor)
         .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))
 }
 
@@ -401,6 +408,28 @@ mod tests {
     /// `tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7`
     /// via `genseqpubkey`.
     const TEST_SEQ_PK: &str = "14ebfa9a90fee3020686b5334b297b675a9f29282f44b6c3a4ab1f0582021839";
+
+    #[test]
+    fn admin_signers_use_the_anchor_network_and_operator_key() {
+        let key = PublicKey::from_str(
+            "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        )
+        .unwrap();
+        for network in [Network::Bitcoin, Network::Signet, Network::Regtest] {
+            let config = admin_threshold_config(&[key], network).unwrap();
+            let json = serde_json::to_value(&config).unwrap();
+            let address = config.signers()[0]
+                .clone()
+                .require_network(network)
+                .unwrap();
+            assert_eq!(address, Address::p2wpkh(&CompressedPublicKey(key), network));
+            assert_eq!(json["signers"][0], address.to_string());
+            assert_eq!(json["threshold"], 1);
+            let decoded: UncheckedThresholdConfig = serde_json::from_value(json).unwrap();
+            assert_eq!(decoded, config);
+        }
+        assert!(admin_threshold_config(&[], Network::Regtest).is_err());
+    }
 
     #[test]
     fn cli_network_profile_matches_cli_config_schema() {

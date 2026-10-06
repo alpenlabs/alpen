@@ -442,6 +442,7 @@ mod tests {
             network: Network::Bitcoin,
         };
         let anchor_state = AnchorState {
+            spec_id: 0,
             magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
             chain_view: ChainViewState {
                 pow_state: HeaderVerificationState::init(anchor),
