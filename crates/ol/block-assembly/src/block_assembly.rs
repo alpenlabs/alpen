@@ -367,7 +367,7 @@ where
 
     // Phase 4: Ask the sealing policy whether this block should be terminal.
     let sealing_decision =
-        epoch_sealing_policy.should_seal_epoch(block_slot, &sealing_limit_verdict);
+        epoch_sealing_policy.should_seal_epoch(block_slot, None, &sealing_limit_verdict);
     let should_seal = sealing_decision.should_seal();
     debug!(
         %block_slot,
