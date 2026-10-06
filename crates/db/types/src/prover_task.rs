@@ -43,6 +43,21 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// All records whose status is not yet terminal (Pending / Proving).
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
+    /// Lists due retry or blocked records with `prefix` and total key length `key_len`.
+    fn list_retriable_with_prefix(
+        &self,
+        prefix: Vec<u8>,
+        key_len: usize,
+        now_secs: u64,
+    ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
+
+    /// Lists Pending or Proving records with `prefix` and total key length `key_len`.
+    fn list_unfinished_with_prefix(
+        &self,
+        prefix: Vec<u8>,
+        key_len: usize,
+    ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
+
     /// Every record in the store, in implementation-defined order.
     ///
     /// Used by offline admin tooling and startup reconciliation.

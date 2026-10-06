@@ -53,6 +53,39 @@ impl ProverTaskDbManager {
             .map_err(db_err)
     }
 
+    /// Lists due retry or blocked tasks in one namespace.
+    pub(crate) fn list_retriable_with_prefix(
+        &self,
+        prefix: Vec<u8>,
+        key_len: usize,
+        now_secs: u64,
+    ) -> ProverResult<Vec<TaskRecord>> {
+        let items = self
+            .ops
+            .list_retriable_with_prefix_blocking(prefix, key_len, now_secs)
+            .map_err(db_err)?;
+        Ok(items
+            .into_iter()
+            .map(|(key, data)| TaskRecord::from_parts(key, data))
+            .collect())
+    }
+
+    /// Lists Pending or Proving tasks in one namespace.
+    pub(crate) fn list_unfinished_with_prefix(
+        &self,
+        prefix: Vec<u8>,
+        key_len: usize,
+    ) -> ProverResult<Vec<TaskRecord>> {
+        let items = self
+            .ops
+            .list_unfinished_with_prefix_blocking(prefix, key_len)
+            .map_err(db_err)?;
+        Ok(items
+            .into_iter()
+            .map(|(key, data)| TaskRecord::from_parts(key, data))
+            .collect())
+    }
+
     /// Deletes a task record by key.
     pub fn delete_task(&self, key: &[u8]) -> DbResult<bool> {
         self.ops.delete_task_blocking(key.to_vec())

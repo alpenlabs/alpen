@@ -93,18 +93,22 @@ impl TaskStore for VersionedTaskStore {
     }
 
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
+        let prefix = u32::from(self.spec).to_be_bytes();
+        let key_len = prefix.len() + CheckpointProofTask::KEY_LEN;
         Ok(self
             .inner
-            .list_retriable(now_secs)?
+            .list_retriable_with_prefix(prefix.to_vec(), key_len, now_secs)?
             .into_iter()
             .filter_map(|record| self.strip_prefix(record))
             .collect())
     }
 
     fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
+        let prefix = u32::from(self.spec).to_be_bytes();
+        let key_len = prefix.len() + CheckpointProofTask::KEY_LEN;
         Ok(self
             .inner
-            .list_unfinished()?
+            .list_unfinished_with_prefix(prefix.to_vec(), key_len)?
             .into_iter()
             .filter_map(|record| self.strip_prefix(record))
             .collect())
