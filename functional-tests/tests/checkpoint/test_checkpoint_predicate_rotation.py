@@ -1,7 +1,6 @@
-"""STR-3130: OL checkpoint predicate rotation is enforced end to end."""
+"""STR-4488: the V0 sequencer seals and halts at an OL predicate enactment."""
 
 import logging
-import re
 from pathlib import Path
 
 import flexitest
@@ -20,13 +19,13 @@ from tests.checkpoint.helpers import (
 logger = logging.getLogger(__name__)
 
 ADMIN_CONFIRMATION_DEPTH = 2
-PREDICATE_REJECTION_L1_BLOCKS = 8
+HALT_OBSERVATION_L1_BLOCKS = 3
 PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
 
 
 @flexitest.register
 class TestCheckpointPredicateRotation(StrataNodeTest):
-    """Rotating the OL checkpoint predicate changes ASM checkpoint acceptance."""
+    """An OL predicate enactment seals its block and halts V0 sequencing."""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -109,13 +108,24 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             boundary_epoch += 1
             return None
 
-        wait_until_with_value(
+        boundary_checkpoint = wait_until_with_value(
             find_boundary_checkpoint,
             lambda info: info is not None,
             error_with=f"no checkpoint sealed at predicate boundary {boundary}",
             timeout=PREDICATE_SETTLE_TIMEOUT_SECONDS,
             step=1.0,
         )
+
+        terminal = boundary_checkpoint["l2_end"]
+        terminal_slot = terminal["slot"]
+        terminal_block = strata_rpc.strata_getBlockBySlot(terminal_slot)
+        assert terminal_block is not None, f"boundary terminal block {terminal_slot} is missing"
+        assert terminal_block["header"]["blkid"] == terminal["blkid"], (
+            terminal_block,
+            boundary_checkpoint,
+        )
+        assert terminal_block["header"]["is_terminal"] is True, terminal_block
+        self._assert_halted_at(strata, strata_rpc, terminal)
 
         mine_until_finalized_epoch(
             bitcoin=bitcoin,
@@ -126,28 +136,22 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             step=1.0,
         )
         assert self._finalized_epoch(strata, strata_rpc) == boundary_epoch
-        blocked_epoch = boundary_epoch + 1
-        self._wait_for_checkpoint_info(strata_rpc, blocked_epoch)
+        finalized_checkpoint = strata_rpc.strata_getCheckpointInfo(boundary_epoch)
+        assert finalized_checkpoint is not None
+        assert finalized_checkpoint["confirmation_status"]["status"] == "finalized", (
+            finalized_checkpoint
+        )
+        self._assert_halted_at(strata, strata_rpc, terminal)
         logger.info(
-            "boundary checkpoint %s finalized at L1 height %s; expecting epoch %s to be rejected",
+            "boundary checkpoint %s finalized at L1 height %s while OL tip remained at slot %s",
             boundary_epoch,
             boundary,
-            blocked_epoch,
+            terminal_slot,
         )
 
-        # Pending alone could mean the checkpoint has not been posted yet.
-        # Require ASM to reject this epoch with the newly active predicate.
-        log_path = Path(strata.props["datadir"]) / "service.log"
-        rejected = re.compile(rf"checkpoint rejected.*epoch={blocked_epoch}\b.*NeverAccept")
-        bitcoin.mine_until(
-            lambda: rejected.search(re.sub(r"\x1b\[[0-9;]*m", "", log_path.read_text())),
-            lambda match: match is not None,
-            timeout=PREDICATE_SETTLE_TIMEOUT_SECONDS,
-            step=1.0,
-            error_with=f"ASM did not reject checkpoint {blocked_epoch} under NeverAccept",
-        )
-
-        for _ in range(PREDICATE_REJECTION_L1_BLOCKS):
+        # Keep advancing L1 after finalization. The node must continue following
+        # ASM while refusing to construct any OL child of the boundary block.
+        for _ in range(HALT_OBSERVATION_L1_BLOCKS):
             self._mine_l1_and_wait_for_asm(
                 bitcoin=bitcoin,
                 strata=strata,
@@ -157,25 +161,16 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 blocks=1,
                 timeout=30,
             )
-            finalized_epoch = self._finalized_epoch(strata, strata_rpc)
-            if finalized_epoch > boundary_epoch:
-                raise AssertionError(
-                    "checkpoint finalized after rotating predicate to NeverAccept: "
-                    f"before={boundary_epoch}, after={finalized_epoch}"
-                )
+            self._assert_halted_at(strata, strata_rpc, terminal)
 
-        checkpoint_info = strata_rpc.strata_getCheckpointInfo(blocked_epoch)
-        checkpoint_status = self._checkpoint_status(checkpoint_info)
-        if checkpoint_status != "pending":
-            raise AssertionError(
-                f"expected rejected checkpoint epoch {blocked_epoch} to stay pending, "
-                f"got {checkpoint_status!r}"
-            )
+        next_epoch = boundary_epoch + 1
+        assert strata_rpc.strata_getBlockBySlot(terminal_slot + 1) is None
+        assert strata_rpc.strata_getCheckpointInfo(next_epoch) is None
 
         logger.info(
-            "checkpoint epoch %s stayed pending across %s L1 blocks after predicate rotation",
-            blocked_epoch,
-            PREDICATE_REJECTION_L1_BLOCKS,
+            "sequencer stayed halted at slot %s across %s additional L1 blocks",
+            terminal_slot,
+            HALT_OBSERVATION_L1_BLOCKS,
         )
         return True
 
@@ -213,23 +208,8 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         )
 
     @staticmethod
-    def _wait_for_checkpoint_info(strata_rpc, epoch: int) -> dict:
-        return wait_until_with_value(
-            lambda: strata_rpc.strata_getCheckpointInfo(epoch),
-            lambda info: info is not None,
-            error_with=f"checkpoint info for epoch {epoch} was not created",
-            timeout=120,
-            step=1.0,
-        )
-
-    @staticmethod
-    def _checkpoint_status(checkpoint_info: dict | None) -> str | None:
-        if checkpoint_info is None:
-            return None
-
-        status = checkpoint_info.get("confirmation_status")
-        if isinstance(status, str):
-            return status.lower()
-        if isinstance(status, dict):
-            return status.get("status")
-        return None
+    def _assert_halted_at(strata: StrataService, strata_rpc, terminal: dict) -> None:
+        tip = strata.get_sync_status(strata_rpc)["tip"]
+        assert tip["slot"] == terminal["slot"], (tip, terminal)
+        assert tip["blkid"] == terminal["blkid"], (tip, terminal)
+        assert tip["is_terminal"] is True, tip
