@@ -152,7 +152,10 @@ pub fn has_checkpoint_predicate_enactment(manifest: &AsmManifest) -> ExecResult<
 ///
 /// The caller checks terminality separately when the slice belongs to a block.
 /// Whole-epoch replay and direct batch buffering share the same placement rule.
-pub(crate) fn verify_manifest_enactments(manifests: &[AsmManifest]) -> ExecResult<()> {
+/// Returns the final manifest when the validated slice ends at an enactment.
+pub(crate) fn verify_manifest_enactments(
+    manifests: &[AsmManifest],
+) -> ExecResult<Option<&AsmManifest>> {
     for (index, manifest) in manifests.iter().enumerate() {
         if has_checkpoint_predicate_enactment(manifest)? {
             if index + 1 != manifests.len() {
@@ -160,11 +163,11 @@ pub(crate) fn verify_manifest_enactments(manifests: &[AsmManifest]) -> ExecResul
                     height: manifest.height(),
                 });
             }
-            return Ok(());
+            return Ok(Some(manifest));
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 /// Processes the epoch terminal: drains all buffered ASM logs (applying their

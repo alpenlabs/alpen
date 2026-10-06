@@ -15,7 +15,7 @@ use crate::{
     manifest_processing::{self, ManifestProcessingOutcome},
     output::ExecOutputBuffer,
     transaction_processing,
-    verification::{BlockExecInput, verify_block_predrain},
+    verification::{BlockExecInput, verify_block_predrain, verify_checkpoint_predicate_boundaries},
     verify_block,
 };
 
@@ -135,6 +135,13 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     block_exec_input: BlockExecInput<'_>,
     bridge_params: BridgeParams,
 ) -> ExecResult<BlockExecOutputs> {
+    if let Some(manifest_container) = block_exec_input.manifest_container() {
+        verify_checkpoint_predicate_boundaries(
+            manifest_container.manifests(),
+            block_exec_input.is_terminal(),
+        )?;
+    }
+
     // 0. Construct the block exec context for tracking verification state
     // across phases.
     let output = ExecOutputBuffer::new_empty();
