@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use proptest::prelude::*;
 use serde_json::{Value, json};
 use ssz::Encode;
-use strata_acct_types::{MessageEntry, MsgPayload};
+use strata_acct_types::{MAX_MESSAGES, MAX_TRANSFERS, MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
@@ -3863,6 +3863,8 @@ async fn snark_acct_update_manifest_missing_extra_data_returns_null_extra_data()
 
 #[tokio::test]
 async fn submit_transaction_rejects_oversized_outputs_before_mempool() {
+    let message_limit = MAX_MESSAGES as usize;
+    let transfer_limit = MAX_TRANSFERS as usize;
     let account = test_account_id(1);
     let amount = BitcoinAmount::try_from(1).unwrap();
     let message = OutputMessage::new(account, MsgPayload::from_bytes(amount, vec![1]).unwrap());
@@ -3871,14 +3873,16 @@ async fn submit_transaction_rejects_oversized_outputs_before_mempool() {
         panic!("oversized outputs must be rejected before mempool submission")
     }));
 
-    for (resource, outputs) in [
+    for (resource, limit, outputs) in [
         (
             "message_count",
-            UpdateOutputs::new_empty().with_messages(vec![message; 256]),
+            message_limit,
+            UpdateOutputs::new_empty().with_messages(vec![message; message_limit + 1]),
         ),
         (
             "transfer_count",
-            UpdateOutputs::new_empty().with_transfers(vec![transfer; 256]),
+            transfer_limit,
+            UpdateOutputs::new_empty().with_transfers(vec![transfer; transfer_limit + 1]),
         ),
     ] {
         let operation = UpdateOperationData::new(
@@ -3899,7 +3903,7 @@ async fn submit_transaction_rejects_oversized_outputs_before_mempool() {
         let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
         assert_eq!(
             data,
-            json!({"resource": resource, "actual": 256, "limit": 255})
+            json!({"resource": resource, "actual": limit + 1, "limit": limit})
         );
     }
 }

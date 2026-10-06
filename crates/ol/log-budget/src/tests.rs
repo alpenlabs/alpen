@@ -1,4 +1,4 @@
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::{AccountId, BitcoinAmount, MAX_MESSAGES};
 use strata_identifiers::BRIDGE_GATEWAY_ACCT_ID;
 use strata_ol_stf_v1::test_utils::{
     OLStfFixture, SnarkUpdateBuilder, make_gam_tx, make_op_return_bosd_descriptor,
@@ -153,19 +153,21 @@ fn test_generic_message_prediction_matches_execution() {
 
 #[test]
 fn test_maximal_update_exceeds_log_payload_budget() {
+    let withdrawal_count = MAX_MESSAGES as usize;
+    // Update log: 1-byte type + 8-byte inbox index + 1-byte empty extra-data length.
+    // Withdrawal log: 1-byte type + 8-byte amount + 1-byte length + 81-byte BOSD + 4-byte operator.
+    let expected_bytes = 10 + withdrawal_count * 95;
     let error = check_tx_log_budget(
         OLSpecId::V1,
-        &create_test_snark_tx_with_withdrawals(255, 0),
+        &create_test_snark_tx_with_withdrawals(withdrawal_count, 0),
         &BridgeParams::default(),
     )
     .unwrap_err();
-    assert!(matches!(
-        error,
-        TxLogBudgetError::LogPayloadBytes {
-            actual: 24_235,
-            limit: 16_384
-        }
-    ));
+    let TxLogBudgetError::LogPayloadBytes { actual, limit } = error else {
+        panic!("expected payload-byte error, got {error:?}");
+    };
+    assert_eq!(actual, expected_bytes);
+    assert_eq!(limit, MAX_TOTAL_LOG_PAYLOAD_BYTES);
 }
 
 #[test]
