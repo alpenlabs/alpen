@@ -33,8 +33,8 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Removes a task record. Returns `true` if the key existed prior to the
     /// call, `false` otherwise.
     ///
-    /// Intended for offline admin tooling (e.g. `strata-dbtool`) — the
-    /// runtime task lifecycle is driven by status transitions, not deletion.
+    /// Deletes by key without decoding the stored record, including malformed values.
+    /// Used by startup reconciliation and offline admin tooling.
     fn delete_task(&self, key: Vec<u8>) -> DbResult<bool>;
 
     /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
@@ -60,7 +60,7 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
 
     /// Every record in the store, in implementation-defined order.
     ///
-    /// Used by offline admin tooling and startup reconciliation.
+    /// Used by offline admin tooling.
     fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// Counts task keys with `prefix` and total byte length `key_len`.

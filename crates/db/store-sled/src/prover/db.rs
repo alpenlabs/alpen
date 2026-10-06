@@ -4,7 +4,7 @@ use strata_db_types::errors::DbError;
 use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_identifiers::EpochCommitment;
 use strata_paas::TaskRecordData;
-use typed_sled::tree::SledTreeIter;
+use typed_sled::tree::{SledTransactionalTree, SledTreeIter};
 
 use super::schemas::{CheckpointProofSchema, ProverTaskTree};
 use crate::define_sled_database;
@@ -103,12 +103,14 @@ impl ProverTaskDatabase for ProofDBSled {
     }
 
     fn delete_task(&self, key: Vec<u8>) -> DbResult<bool> {
-        let old = self.prover_task_tree.get(&key).map_err(conv_sled_err)?;
-        let existed = old.is_some();
-        self.prover_task_tree
-            .compare_and_swap(key, old, None)
-            .map_err(conv_sled_err)?;
-        Ok(existed)
+        self.config.with_retry(
+            (&self.prover_task_tree,),
+            |(tree,): (SledTransactionalTree<ProverTaskTree>,)| {
+                let existed = tree.contains_key(&key)?;
+                tree.remove(&key)?;
+                Ok(existed)
+            },
+        )
     }
 
     fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
@@ -209,6 +211,27 @@ mod tests {
     use crate::{SledDbConfig, sled_db_test_setup};
 
     sled_db_test_setup!(ProofDBSled, proof_db_tests);
+
+    #[test]
+    fn task_deletion_does_not_decode_records() {
+        let raw = sled::Config::new().temporary(true).open().unwrap();
+        let db = ProofDBSled::new(
+            SledDb::new(raw.clone()).unwrap().into(),
+            SledDbConfig::test(),
+        )
+        .unwrap();
+        let tree = raw.open_tree(ProverTaskTree::TREE_NAME.0).unwrap();
+        let selected = vec![1];
+        let unrelated = vec![2];
+        for key in [&selected, &unrelated] {
+            tree.insert(key.as_slice(), &[0xff]).unwrap();
+        }
+
+        assert!(db.delete_task(selected.clone()).unwrap());
+        assert!(!db.delete_task(selected.clone()).unwrap());
+        assert!(!tree.contains_key(selected).unwrap());
+        assert!(tree.contains_key(unrelated).unwrap());
+    }
 
     #[test]
     fn prefix_scans_filter_status_retry_time_and_key_length() {
