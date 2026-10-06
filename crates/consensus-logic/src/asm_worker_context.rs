@@ -12,7 +12,7 @@ use strata_asm_worker::{
 use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_db_types::DbError;
-use strata_identifiers::Hash;
+use strata_identifiers::{Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_primitives::prelude::*;
 use strata_storage::{AsmStateManager, L1BlockManager, MmrIndexHandle};
 use tokio::runtime::Handle;
@@ -247,6 +247,23 @@ impl ManifestMmrStore for AsmWorkerCtx {
         })?;
 
         Ok(())
+    }
+
+    /// Writes the sentinel leaves for heights `0..=genesis_height` in batches.
+    ///
+    /// The default writes one leaf per height through
+    /// [`put_manifest_hash`](ManifestMmrStore::put_manifest_hash), with one
+    /// transaction each. On mainnet that keeps a fresh node in startup for about
+    /// half an hour. The batched write stores the same leaves in chunks of
+    /// thousands per transaction and, like the default, resumes from the current
+    /// leaf count.
+    fn prefill_manifest_mmr(&self, genesis_height: u64) -> WorkerResult<()> {
+        self.mmr_handle
+            .prefill_repeated_leaves_blocking(
+                Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF),
+                genesis_height + 1,
+            )
+            .map_err(conv_db_err)
     }
 
     fn manifest_mmr_leaf_count(&self) -> WorkerResult<u64> {
