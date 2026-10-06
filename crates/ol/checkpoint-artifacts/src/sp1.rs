@@ -77,7 +77,13 @@ async fn load_artifact(
         });
     }
     let manifest_path = config.bundle_dir().join(MANIFEST_FILE);
-    let manifest = ArtifactManifest::parse(&read(&manifest_path).await?, &manifest_path)?;
+    let manifest: ArtifactManifest =
+        serde_json::from_slice(&read(&manifest_path).await?).map_err(|source| {
+            ArtifactError::ParseManifest {
+                path: manifest_path,
+                source,
+            }
+        })?;
     manifest.validate_metadata(config, runtime_params_hash)?;
     let predicate_path = config.bundle_dir().join(PREDICATE_FILE);
     let predicate_bytes = read(&predicate_path).await?;
@@ -207,7 +213,11 @@ mod tests {
                 panic!("invalid manifest must fail registry initialization");
             };
             if malformed {
-                assert!(matches!(source, ArtifactError::ParseManifest { .. }));
+                assert!(matches!(
+                    source,
+                    ArtifactError::ParseManifest { path, .. }
+                        if path == dir.path().join(MANIFEST_FILE)
+                ));
             } else {
                 assert!(matches!(
                     source,

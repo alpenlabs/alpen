@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
 
@@ -17,13 +15,6 @@ pub(crate) struct ArtifactManifest {
 }
 
 impl ArtifactManifest {
-    pub(crate) fn parse(bytes: &[u8], path: &Path) -> Result<Self, ArtifactError> {
-        serde_json::from_slice(bytes).map_err(|source| ArtifactError::ParseManifest {
-            path: path.to_owned(),
-            source,
-        })
-    }
-
     pub(crate) fn validate_metadata(
         &self,
         config: &CheckpointArtifactConfig,
@@ -72,9 +63,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
-    use serde_json::{Value, json};
+    use serde_json::{Error as JsonError, Value, json};
     use strata_ol_state_types::OLSpecId;
 
     use super::ArtifactManifest;
@@ -89,8 +80,8 @@ mod tests {
         })
     }
 
-    fn parse(value: Value) -> Result<ArtifactManifest, ArtifactError> {
-        ArtifactManifest::parse(value.to_string().as_bytes(), Path::new("manifest.json"))
+    fn parse(value: Value) -> Result<ArtifactManifest, JsonError> {
+        serde_json::from_slice(value.to_string().as_bytes())
     }
 
     fn config() -> CheckpointArtifactConfig {
@@ -125,10 +116,7 @@ mod tests {
     fn rejects_missing_version_unknown_schema_and_invalid_hashes() {
         let mut missing_spec = document();
         missing_spec.as_object_mut().unwrap().remove("spec");
-        assert!(matches!(
-            parse(missing_spec),
-            Err(ArtifactError::ParseManifest { .. })
-        ));
+        assert!(parse(missing_spec).is_err());
 
         let mut unknown_schema = document();
         unknown_schema["schema"] = json!(2);
@@ -142,10 +130,7 @@ mod tests {
         for hash in ["not hex", "aa", &"aa".repeat(33)] {
             let mut invalid_hash = document();
             invalid_hash["program_id"] = json!(hash);
-            assert!(matches!(
-                parse(invalid_hash),
-                Err(ArtifactError::ParseManifest { .. })
-            ));
+            assert!(parse(invalid_hash).is_err());
         }
     }
 }
