@@ -49,7 +49,7 @@ use tokio::runtime::Builder;
 use super::{OLBlockDataAccess, OLRpcServer};
 use crate::rpc::errors::{
     BLOCK_HISTORY_UNAVAILABLE_CODE, INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE,
-    MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE, map_mempool_error_to_rpc,
+    MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE, mempool_error_to_rpc,
 };
 
 // -- Mock provider --
@@ -837,7 +837,7 @@ fn inbox_fetch_error(
     move |_, _, _| Err(DbError::Other(message.into()))
 }
 
-// ── map_mempool_error_to_rpc ──
+// ── mempool_error_to_rpc ──
 
 #[test]
 fn mempool_full_maps_to_capacity_code() {
@@ -846,7 +846,7 @@ fn mempool_full_maps_to_capacity_code() {
         limit: 100,
     };
     assert_eq!(
-        map_mempool_error_to_rpc(err).code(),
+        mempool_error_to_rpc(err).code(),
         MEMPOOL_CAPACITY_ERROR_CODE
     );
 }
@@ -858,7 +858,7 @@ fn byte_limit_exceeded_maps_to_capacity_code() {
         limit: 4096,
     };
     assert_eq!(
-        map_mempool_error_to_rpc(err).code(),
+        mempool_error_to_rpc(err).code(),
         MEMPOOL_CAPACITY_ERROR_CODE
     );
 }
@@ -868,7 +868,7 @@ fn account_does_not_exist_maps_to_invalid_params() {
     let err = OLMempoolError::AccountDoesNotExist {
         account: test_account_id(1),
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
@@ -877,12 +877,12 @@ fn transaction_too_large_maps_to_invalid_params() {
         size: 5000,
         limit: 1000,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
 fn log_count_budget_maps_to_invalid_params_with_data() {
-    let error = map_mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
+    let error = mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
         actual: 4_097,
         limit: 4_096,
     }));
@@ -901,7 +901,7 @@ fn used_sequence_number_maps_to_invalid_params() {
         expected: 5,
         actual: 4,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
@@ -910,31 +910,31 @@ fn sequence_number_gap_maps_to_invalid_params() {
         expected: 1,
         actual: 5,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
 fn database_error_maps_to_internal() {
     let err = OLMempoolError::Database(strata_db_types::DbError::Other("test".into()));
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 #[test]
 fn service_closed_maps_to_internal() {
     let err = OLMempoolError::ServiceClosed("gone".into());
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 #[test]
 fn serialization_error_maps_to_internal() {
     let err = OLMempoolError::Serialization("bad bytes".into());
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 #[test]
 fn state_provider_error_maps_to_internal() {
     let err = OLMempoolError::StateProvider("unavailable".into());
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 // ── chain_status ──

@@ -73,7 +73,7 @@ pub(crate) fn block_history_unavailable_error(history_base_slot: u64) -> ErrorOb
 }
 
 /// Preserves output capacity errors when converting an RPC transaction.
-pub(crate) fn map_tx_conversion_error_to_rpc(err: RpcTxConversionError) -> ErrorObjectOwned {
+pub(crate) fn tx_conversion_error_to_rpc(err: RpcTxConversionError) -> ErrorObjectOwned {
     let message = format!("Invalid transaction: {err}");
     match err {
         RpcTxConversionError::Outputs(OutputsError::TransfersCapacityExceeded {
@@ -88,7 +88,7 @@ pub(crate) fn map_tx_conversion_error_to_rpc(err: RpcTxConversionError) -> Error
 }
 
 /// Maps mempool errors to RPC errors with appropriate error codes.
-pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
+pub(crate) fn mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
     match &err {
         // Capacity-related errors
         OLMempoolError::MempoolFull { .. } | OLMempoolError::MempoolByteLimitExceeded { .. } => {
