@@ -2,7 +2,8 @@
 
 use ssz_types::VariableList;
 use strata_acct_types::{
-    AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
+    AccountId, BitcoinAmount, MAX_MESSAGES as MAX_EFFECT_MESSAGES,
+    MAX_TRANSFERS as MAX_EFFECT_TRANSFERS, MsgPayload, SentMessage, SentTransfer, TxEffects,
 };
 use strata_predicate::PredicateKey;
 
@@ -13,6 +14,10 @@ use crate::{
         UpdateOutputs,
     },
 };
+
+// Transaction submission converts update outputs to transaction effects, and
+// proof verification converts the effects back, so neither may drop an entry.
+const _: () = assert!(MAX_EFFECT_TRANSFERS == MAX_TRANSFERS && MAX_EFFECT_MESSAGES == MAX_MESSAGES);
 
 impl OutputNewPredicate {
     /// Creates an empty declaration (no predicate rotation).
@@ -162,6 +167,8 @@ impl UpdateOutputs {
 
     /// Converts these outputs to [`TxEffects`] for use in transaction
     /// processing.
+    ///
+    /// Both types share their list capacities, so no entry is dropped.
     pub fn to_tx_effects(&self) -> TxEffects {
         let mut effects = TxEffects::default();
         for t in self.transfers() {
