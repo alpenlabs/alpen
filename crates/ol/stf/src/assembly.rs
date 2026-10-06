@@ -12,7 +12,7 @@ use crate::{
     chain_processing,
     context::{BasicExecContext, BlockContext, TxExecContext},
     errors::ExecResult,
-    manifest_processing,
+    manifest_processing::{self, ManifestProcessingOutcome},
     output::ExecOutputBuffer,
     transaction_processing,
     verification::{BlockExecInput, verify_block_predrain},
@@ -105,10 +105,13 @@ pub fn execute_block_tx_segment<S: IStateAccessorMut>(
 }
 
 /// Buffers the ASM logs carried by a block's manifests into intraepoch state.
+///
+/// Returns events observed during successful buffering. Callers must verify the
+/// terminal header flag before executing a complete block.
 pub fn execute_block_manifest_buffering<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
-) -> ExecResult<()> {
+) -> ExecResult<ManifestProcessingOutcome> {
     manifest_processing::process_block_manifests(state, manifests)
 }
 

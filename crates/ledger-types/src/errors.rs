@@ -131,6 +131,15 @@ pub enum ExecError {
         index: usize,
     },
 
+    #[error("checkpoint predicate boundary at L1 height {height} must be the last manifest")]
+    CheckpointPredicateBoundaryNotLast { height: L1Height },
+
+    #[error("multiple checkpoint predicate enactments at L1 height {height}")]
+    DuplicateCheckpointPredicateEnactment { height: L1Height },
+
+    #[error("malformed checkpoint predicate enactment at L1 height {height}")]
+    MalformedCheckpointPredicateEnactment { height: L1Height },
+
     #[error("ASM manifest height overflow")]
     AsmManifestHeightOverflow,
 
