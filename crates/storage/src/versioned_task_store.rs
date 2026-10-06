@@ -286,23 +286,25 @@ mod tests {
         let unprefixed = task(1).to_key_bytes();
         assert!(unprefixed.starts_with(&u32::from(OLSpecId::V1).to_be_bytes()));
         let malformed = u32::from(OLSpecId::V1).to_be_bytes().to_vec();
-        for key in [unknown, vec![1, 2], unprefixed, malformed] {
-            raw.insert(TaskRecord::new(key, TaskStatus::Pending))
+        let mut keys = vec![unknown, vec![1, 2], unprefixed, malformed];
+        for key in &keys {
+            raw.insert(TaskRecord::new(key.clone(), TaskStatus::Pending))
                 .unwrap();
         }
         v1.insert(TaskRecord::new(task(3).to_key_bytes(), TaskStatus::Pending))
             .unwrap();
         assert_eq!(v1.list_unfinished().unwrap().len(), 1);
-        for record in raw.list_all_tasks().unwrap() {
+        keys.push(VersionedTaskStore::encode_key(OLSpecId::V1, task(3)));
+        for key in keys {
             raw.update_status(
-                record.key(),
+                &key,
                 TaskStatus::TransientFailure {
                     counts: AttemptCounts::default(),
                     error: "retry".into(),
                 },
             )
             .unwrap();
-            raw.set_retry_after(record.key(), 10).unwrap();
+            raw.set_retry_after(&key, 10).unwrap();
         }
         let retry = v1.list_retriable(10).unwrap();
         assert_eq!(retry.len(), 1);

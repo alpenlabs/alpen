@@ -163,39 +163,40 @@ fn first_unaccepted_checkpoint_epoch(nodectx: &NodeContext) -> Result<Option<Epo
 #[cfg(test)]
 mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::{backend::DatabaseBackend, prover_task::ProverTaskDatabase};
     use strata_identifiers::{Buf32, OLBlockId};
     use strata_ol_state_types::OLSpecId;
-    use strata_paas::{TaskRecord, TaskStatus, TaskStore};
+    use strata_paas::{TaskRecordData, TaskStatus};
     use strata_storage::{create_node_storage, test_runtime_handle};
 
     use super::*;
 
     #[test]
     fn cleanup_deletes_only_selected_commitments_across_specs() {
-        let storage = create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap();
+        let backend = get_test_sled_backend();
+        let db = backend.prover_task_db();
+        let storage = create_node_storage(backend, test_runtime_handle()).unwrap();
         let tasks = storage.prover_tasks();
         let selected = EpochCommitment::new(2, 20, OLBlockId::from(Buf32::from([1; 32])));
         let retained = EpochCommitment::new(1, 10, OLBlockId::from(Buf32::from([2; 32])));
         for commitment in [selected, retained] {
             for spec in [OLSpecId::V0, OLSpecId::V1] {
                 let key = VersionedTaskStore::encode_key(spec, CheckpointProofTask(commitment));
-                tasks
-                    .insert(TaskRecord::new(key, TaskStatus::Pending))
+                db.insert_task(key, TaskRecordData::new(TaskStatus::Pending))
                     .unwrap();
             }
         }
         let untagged = CheckpointProofTask(selected).to_key_bytes();
-        tasks
-            .insert(TaskRecord::new(untagged.clone(), TaskStatus::Pending))
+        db.insert_task(untagged.clone(), TaskRecordData::new(TaskStatus::Pending))
             .unwrap();
 
         assert_eq!(delete_checkpoint_tasks(tasks, selected).unwrap(), 2);
         assert_eq!(delete_checkpoint_tasks(tasks, selected).unwrap(), 0);
-        assert!(tasks.get(&untagged).unwrap().is_some());
+        assert!(db.get_task(untagged).unwrap().is_some());
         for spec in [OLSpecId::V0, OLSpecId::V1] {
             let key = VersionedTaskStore::encode_key(spec, CheckpointProofTask(retained));
-            assert!(tasks.get(&key).unwrap().is_some());
+            assert!(db.get_task(key).unwrap().is_some());
         }
-        assert_eq!(tasks.count().unwrap(), 3);
+        assert_eq!(db.count_tasks().unwrap(), 3);
     }
 }

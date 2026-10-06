@@ -1,18 +1,14 @@
-//! High-level manager for the prover task store.
+//! Database operations for stored prover task keys.
 //!
-//! Wraps [`ProverTaskDatabase`] with a threadpool + instrumentation, and
-//! implements [`strata_paas::TaskStore`] directly so the integrated prover
-//! service can consume the manager as its persistent task store without
-//! any extra adapter. The DB trait stores [`TaskRecordData`] verbatim, so
-//! this layer is a thin translation between the `(key, data)` split used
-//! by `TaskStore` and the `(key, record)` tuples used by the DB trait.
+//! [`crate::VersionedTaskStore`] adds the spec prefix and implements the service's
+//! task-store interface. This manager handles the stored keys and database errors.
 
 use std::sync::Arc;
 
 use strata_db_types::errors::DbError;
 use strata_db_types::prover_task::ProverTaskDatabase;
 use strata_db_types::DbResult;
-use strata_paas::{ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus, TaskStore};
+use strata_paas::{ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus};
 use tokio::runtime::Handle;
 
 use crate::ops::prover_task::ProverTaskDbOps;
@@ -29,17 +25,6 @@ impl ProverTaskDbManager {
     pub fn new(handle: Handle, db: Arc<impl ProverTaskDatabase + 'static>) -> Self {
         let ops = ProverTaskDbOps::new(handle, db);
         Self { ops }
-    }
-
-    /// Lists every persisted task, including terminal records.
-    ///
-    /// Startup reconciliation uses these records to find tasks whose proofs were deleted.
-    pub fn list_all_tasks(&self) -> ProverResult<Vec<TaskRecord>> {
-        let items = self.ops.list_all_tasks_blocking().map_err(db_err)?;
-        Ok(items
-            .into_iter()
-            .map(|(key, data)| TaskRecord::from_parts(key, data))
-            .collect())
     }
 
     /// Counts keys with the given prefix and encoded length without collecting records.
@@ -99,13 +84,13 @@ fn db_err(e: DbError) -> ProverError {
     }
 }
 
-impl TaskStore for ProverTaskDbManager {
-    fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
+impl ProverTaskDbManager {
+    pub(crate) fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
         let stored = self.ops.get_task_blocking(key.to_vec()).map_err(db_err)?;
         Ok(stored.map(|data| TaskRecord::from_parts(key.to_vec(), data)))
     }
 
-    fn insert(&self, record: TaskRecord) -> ProverResult<()> {
+    pub(crate) fn insert(&self, record: TaskRecord) -> ProverResult<()> {
         let (key, data) = (record.key().to_vec(), record.data().clone());
         self.ops
             .insert_task_blocking(key.clone(), data)
@@ -115,39 +100,24 @@ impl TaskStore for ProverTaskDbManager {
             })
     }
 
-    fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
+    pub(crate) fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
         self.modify(key, |d| d.set_status(status))
     }
 
-    fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
+    pub(crate) fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
         self.modify(key, |d| d.set_retry_after_secs(Some(when_secs)))
     }
 
-    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+    pub(crate) fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
         self.modify(key, |d| d.set_metadata(Some(data)))
     }
 
-    fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+    pub(crate) fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
         self.modify(key, |d| d.set_metadata(None))
     }
 
-    fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
-        let items = self.ops.list_retriable_blocking(now_secs).map_err(db_err)?;
-        Ok(items
-            .into_iter()
-            .map(|(k, d)| TaskRecord::from_parts(k, d))
-            .collect())
-    }
-
-    fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
-        let items = self.ops.list_unfinished_blocking().map_err(db_err)?;
-        Ok(items
-            .into_iter()
-            .map(|(k, d)| TaskRecord::from_parts(k, d))
-            .collect())
-    }
-
-    fn count(&self) -> ProverResult<usize> {
+    #[cfg(test)]
+    pub(crate) fn count(&self) -> ProverResult<usize> {
         self.ops.count_tasks_blocking().map_err(db_err)
     }
 }
