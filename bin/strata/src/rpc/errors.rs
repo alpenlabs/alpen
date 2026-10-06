@@ -83,7 +83,9 @@ pub(crate) fn tx_conversion_error_to_rpc(err: RpcTxConversionError) -> ErrorObje
         RpcTxConversionError::Outputs(OutputsError::MessagesCapacityExceeded { actual, limit }) => {
             resource_limit_error(message, "message_count", actual, limit)
         }
-        _ => invalid_params_error(message),
+        RpcTxConversionError::DecodeOperationData(_)
+        | RpcTxConversionError::TooManyL1BlockRefClaims
+        | RpcTxConversionError::InvalidMessagePayload(_) => invalid_params_error(message),
     }
 }
 
