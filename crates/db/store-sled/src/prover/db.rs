@@ -121,6 +121,24 @@ impl ProverTaskDatabase for ProofDBSled {
         Ok(out)
     }
 
+    fn count_tasks_with_prefix(&self, prefix: Vec<u8>, key_len: usize) -> DbResult<usize> {
+        let mut count = 0;
+        for item in self
+            .prover_task_tree
+            .range(prefix.clone()..)
+            .map_err(conv_sled_err)?
+        {
+            let (key, _) = item.map_err(conv_sled_err)?;
+            if !key.starts_with(&prefix) {
+                break;
+            }
+            if key.len() == key_len {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
     fn count_tasks(&self) -> DbResult<usize> {
         let mut n = 0;
         for item in self.prover_task_tree.iter() {

@@ -19,7 +19,7 @@ use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_state_types::OLSpecId;
 use strata_paas::{ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult};
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
-use strata_storage::CheckpointProofDbManager;
+use strata_storage::{CheckpointProofDbManager, VersionedTaskStore};
 use strata_tasks::TaskExecutor;
 use tokio::{sync::watch, time};
 use tracing::{debug, info, warn};
@@ -91,10 +91,9 @@ pub(crate) fn start_prover_service(
     let spec = CheckpointSpec::new(storage.clone(), runtime_params);
     let hook = CheckpointReceiptHook::new(proof_db.clone(), proof_notify);
 
-    // Task store: the node's `ProverTaskDbManager` implements
-    // `strata_paas::TaskStore` directly, so the manager *is* the persistent
-    // task store — no extra adapter layer.
-    let task_store = runctx.storage().prover_tasks().clone();
+    // The current prover uses V1. Persist its tasks under the V1 namespace so
+    // additional proving services can later use the same database independently.
+    let task_store = VersionedTaskStore::new(storage.prover_tasks().clone(), OLSpecId::V1);
 
     // Pick native vs. remote strategy at build time.
     let prover = match prover_config.backend {

@@ -11,8 +11,8 @@ use crate::DbResult;
 /// Database interface backing [`strata_paas::TaskStore`] for the integrated
 /// prover service.
 ///
-/// Keyed by the serialized `ProofSpec::Task` bytes — same contract as the
-/// in-memory `TaskStore`. All methods are synchronous and expected to be
+/// Keyed by physical task bytes. Service adapters may qualify a logical
+/// `ProofSpec::Task` key with a namespace before storing it. All methods are synchronous and expected to be
 /// called through a blocking threadpool by the `strata_storage` manager.
 #[cfg_attr(
     feature = "proxies",
@@ -45,9 +45,14 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
 
     /// Every record in the store, in implementation-defined order.
     ///
-    /// Intended for offline admin tooling — the runtime path uses the
-    /// filtered iterators above to avoid scanning terminal entries.
+    /// Used by offline admin tooling and startup reconciliation.
     fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
+
+    /// Counts task keys with `prefix` and total byte length `key_len`.
+    ///
+    /// Streams matching records without collecting them, including terminal tasks.
+    /// The length check excludes legacy or malformed keys that share the prefix.
+    fn count_tasks_with_prefix(&self, prefix: Vec<u8>, key_len: usize) -> DbResult<usize>;
 
     /// Number of records in the store.
     fn count_tasks(&self) -> DbResult<usize>;

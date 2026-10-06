@@ -14,7 +14,9 @@ use strata_checkpoint_types::CheckpointProofTask;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{backend::DatabaseBackend, prover_task::ProverTaskDatabase};
 use strata_identifiers::Epoch;
+use strata_ol_state_types::OLSpecId;
 use strata_paas::{TaskRecordData, TaskStatus};
+use strata_storage::VersionedTaskStore;
 
 use crate::{
     cli::OutputFormat,
@@ -359,7 +361,7 @@ pub(crate) fn delete_prover_task(
 /// Queue a fresh `Pending` checkpoint-proof task for an epoch.
 ///
 /// Resolves the canonical commitment at the epoch and constructs the
-/// task key via [`CheckpointProofTask`] so the running node picks it up
+/// V1 task key via [`VersionedTaskStore`] so the running node picks it up
 /// on next startup recovery. Dry-run unless `--force` is passed.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "backfill-checkpoint-proof-task")]
@@ -402,8 +404,11 @@ pub(crate) fn backfill_checkpoint_proof_task(
             Box::new(args.epoch),
         )
     })?;
-    let task = CheckpointProofTask(commitment);
-    let key = task.to_key_bytes();
+    // TODO(STR-4082): Create a follow-up ticket for spec-aware dbtool backfill.
+    // This command currently assigns V1 to every task. Read the epoch's committed start
+    // state and use the node's spec-selection rule to choose the stored task's spec.
+    // If that state or spec cannot be resolved, report an error without inserting a task.
+    let key = VersionedTaskStore::encode_key(OLSpecId::V1, CheckpointProofTask(commitment));
     let key_hex = hex::encode(&key);
 
     if !args.force {

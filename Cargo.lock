@@ -9244,6 +9244,7 @@ dependencies = [
  "strata-ol-params",
  "strata-ol-state-container",
  "strata-ol-state-support-types",
+ "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-paas",
  "strata-primitives",
@@ -10281,6 +10282,7 @@ name = "strata-storage"
 version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "futures",
  "proptest",
  "sled",
@@ -10297,6 +10299,7 @@ dependencies = [
  "strata-merkle-node-store",
  "strata-ol-chain-types-v1",
  "strata-ol-state-container",
+ "strata-ol-state-types",
  "strata-ol-state-types-v1",
  "strata-paas",
  "strata-primitives",
@@ -10306,6 +10309,7 @@ dependencies = [
  "tracing",
  "typed-sled",
  "zkaleido",
+ "zkaleido-native-adapter",
 ]
 
 [[package]]

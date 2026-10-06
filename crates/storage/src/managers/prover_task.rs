@@ -31,6 +31,28 @@ impl ProverTaskDbManager {
         Self { ops }
     }
 
+    /// Lists every persisted task, including terminal records.
+    ///
+    /// Startup reconciliation uses these records to find tasks whose proofs were deleted.
+    pub fn list_all_tasks(&self) -> ProverResult<Vec<TaskRecord>> {
+        let items = self.ops.list_all_tasks_blocking().map_err(db_err)?;
+        Ok(items
+            .into_iter()
+            .map(|(key, data)| TaskRecord::from_parts(key, data))
+            .collect())
+    }
+
+    /// Counts keys with the given prefix and encoded length without collecting records.
+    pub(crate) fn count_tasks_with_prefix(
+        &self,
+        prefix: Vec<u8>,
+        key_len: usize,
+    ) -> ProverResult<usize> {
+        self.ops
+            .count_tasks_with_prefix_blocking(prefix, key_len)
+            .map_err(db_err)
+    }
+
     /// Deletes a task record by key.
     pub fn delete_task(&self, key: &[u8]) -> DbResult<bool> {
         self.ops.delete_task_blocking(key.to_vec())

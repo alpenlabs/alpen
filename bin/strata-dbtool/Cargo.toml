@@ -30,6 +30,7 @@ strata-ol-chain-types-v1.workspace = true
 strata-ol-mmr-index.workspace = true
 strata-ol-state-container.workspace = true
 strata-ol-state-support-types.workspace = true
+strata-ol-state-types.workspace = true
 strata-paas.workspace = true
 strata-primitives.workspace = true
 strata-storage.workspace = true
