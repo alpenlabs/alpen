@@ -12,10 +12,10 @@ use crate::{
     chain_processing,
     context::{BasicExecContext, BlockContext, TxExecContext},
     errors::ExecResult,
-    manifest_processing::{self, ManifestProcessingOutcome},
+    manifest_processing,
     output::ExecOutputBuffer,
     transaction_processing,
-    verification::{BlockExecInput, verify_block_predrain, verify_checkpoint_predicate_boundaries},
+    verification::{BlockExecInput, verify_block_predrain},
     verify_block,
 };
 
@@ -105,13 +105,10 @@ pub fn execute_block_tx_segment<S: IStateAccessorMut>(
 }
 
 /// Buffers the ASM logs carried by a block's manifests into intraepoch state.
-///
-/// Returns events observed during successful buffering. Callers must verify the
-/// terminal header flag before executing a complete block.
 pub fn execute_block_manifest_buffering<S: IStateAccessorMut>(
     state: &mut S,
     manifests: &[AsmManifest],
-) -> ExecResult<ManifestProcessingOutcome> {
+) -> ExecResult<()> {
     manifest_processing::process_block_manifests(state, manifests)
 }
 
@@ -135,13 +132,6 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     block_exec_input: BlockExecInput<'_>,
     bridge_params: BridgeParams,
 ) -> ExecResult<BlockExecOutputs> {
-    if let Some(manifest_container) = block_exec_input.manifest_container() {
-        verify_checkpoint_predicate_boundaries(
-            manifest_container.manifests(),
-            block_exec_input.is_terminal(),
-        )?;
-    }
-
     // 0. Construct the block exec context for tracking verification state
     // across phases.
     let output = ExecOutputBuffer::new_empty();
