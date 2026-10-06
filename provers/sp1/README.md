@@ -85,3 +85,9 @@ the first eight characters of the built commit SHA and downloaded JSON's SHA-256
 write-once location is shared across networks: reuse the existing bundle for the same commit
 and exact params file instead of publishing it again for each network. `env` records the
 network requesting the original publish and does not restrict which networks can use it.
+
+After a failed upload, check the bundle prefix for `manifest.json`, which is uploaded last.
+If it exists, reuse the completed bundle. Otherwise, once no publish for this bundle is
+running, have an operator remove the incomplete prefix, then use **Re-run failed jobs** to
+retry the publish job with the same workflow artifacts. Existing objects prevent retries
+from succeeding until the incomplete prefix is removed.

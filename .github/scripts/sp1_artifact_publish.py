@@ -261,9 +261,13 @@ def s3_put(src: Path, bucket: str, key: str) -> None:
             check=True,
         )
     except subprocess.CalledProcessError as err:
+        bundle_uri = f"s3://{bucket}/{key.rsplit('/', 1)[0]}/"
         fail(
             f"failed to upload {src} to s3://{bucket}/{key} (exit {err.returncode}); "
-            "SP1 artifact publishes are write-once; existing objects are never overwritten"
+            f"SP1 artifact publishes are write-once. Check {bundle_uri}: "
+            "if manifest.json exists, reuse the completed bundle. Otherwise, once no publish "
+            "for this bundle is running, remove the incomplete prefix and re-run the failed "
+            "publish job"
         )
 
 
