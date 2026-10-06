@@ -108,16 +108,7 @@ impl SequencerContext for NodeSequencerContext {
         }
 
         let threshold_ms = late_block_threshold_ms(self.ol_block_time_ms);
-        if time_since_parent > threshold_ms {
-            warn!(
-                time_since_parent,
-                block_time_ms = self.ol_block_time_ms,
-                threshold_ms,
-                parent_ts,
-                target_ts,
-                "block wall-clock interval exceeds block_time by more than {BLOCK_TS_DRIFT_TOLERANCE_PCT}%",
-            );
-        }
+        let is_late = time_since_parent > threshold_ms;
 
         let config = BlockGenerationConfig::new(parent_commitment).with_ts(target_ts);
 
@@ -201,6 +192,17 @@ impl SequencerContext for NodeSequencerContext {
             Err(source) => {
                 return Err(SequencerContextError::TemplateGeneration { tip_blkid, source });
             }
+        }
+
+        if is_late {
+            warn!(
+                time_since_parent,
+                block_time_ms = self.ol_block_time_ms,
+                threshold_ms,
+                parent_ts,
+                target_ts,
+                "block wall-clock interval exceeds block_time by more than {BLOCK_TS_DRIFT_TOLERANCE_PCT}%",
+            );
         }
 
         debug!(tip_blkid = ?tip_blkid, "template generation request completed");
