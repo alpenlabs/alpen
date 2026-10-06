@@ -201,7 +201,9 @@ strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = 
 strata-asm-proto-checkpoint-msgs = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0" }
 strata-asm-proto-checkpoint-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0" }
 strata-asm-proto-txs-test-utils = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0" }
-strata-asm-spec = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0", features = ["host"] }
+strata-asm-spec = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0", features = [
+  "host",
+] }
 strata-asm-stf = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0" }
 strata-asm-worker = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0" }
 strata-btc-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.4.0" }
