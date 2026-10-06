@@ -71,6 +71,14 @@ pub enum BlockAssemblyError {
     #[error("block production halted at checkpoint predicate enactment height {height}")]
     CheckpointPredicateBoundaryReached { height: L1Height },
 
+    /// A checkpoint-predicate enactment log has an invalid payload.
+    #[error("malformed checkpoint predicate enactment at L1 height {height}")]
+    MalformedCheckpointPredicateEnactment { height: L1Height },
+
+    /// An ASM manifest contains more than one checkpoint-predicate enactment.
+    #[error("duplicate checkpoint predicate enactment at L1 height {height}")]
+    DuplicateCheckpointPredicateEnactment { height: L1Height },
+
     /// Invalid signature for block template completion.
     #[error("invalid signature for template: {0}")]
     InvalidSignature(OLBlockId),

@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use strata_asm_logs::constants::AsmLogTypeId;
+use strata_asm_logs::{CheckpointPredicateEnacted, constants::AsmLogTypeId};
 use strata_bridge_params::BridgeParams;
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
@@ -20,7 +20,7 @@ use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::{MAX_PENDING_ASM_LOGS, WriteBatch};
 use strata_ol_stf::*;
 use strata_snark_acct_types as _;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, MempoolProvider,
@@ -68,13 +68,31 @@ struct SelectedAsmManifests {
     sealing_limit_verdict: EpochSealingLimitVerdict,
 }
 
-/// Returns the enactment height when `manifest` carries an OL checkpoint-predicate update.
-fn checkpoint_predicate_enactment_height(manifest: &AsmManifest) -> Option<L1Height> {
-    manifest
-        .logs()
-        .iter()
-        .any(|log| log.ty() == Some(AsmLogTypeId::CheckpointPredicateEnacted.into()))
-        .then_some(manifest.height())
+/// Returns the enactment height when `manifest` carries one valid OL predicate update.
+fn checkpoint_predicate_enactment_height(
+    manifest: &AsmManifest,
+) -> BlockAssemblyResult<Option<L1Height>> {
+    let mut enactment_height = None;
+    for log in manifest.logs() {
+        if log.ty() != Some(AsmLogTypeId::CheckpointPredicateEnacted.into()) {
+            continue;
+        }
+
+        log.try_into_log::<CheckpointPredicateEnacted>()
+            .map_err(
+                |_| BlockAssemblyError::MalformedCheckpointPredicateEnactment {
+                    height: manifest.height(),
+                },
+            )?;
+        if enactment_height.is_some() {
+            return Err(BlockAssemblyError::DuplicateCheckpointPredicateEnactment {
+                height: manifest.height(),
+            });
+        }
+        enactment_height = Some(manifest.height());
+    }
+
+    Ok(enactment_height)
 }
 
 /// Maps an [`ExecError`] to a [`MempoolTxInvalidReason`].
@@ -150,6 +168,8 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::NoPendingTemplateForParent(_)
         | BlockAssemblyError::TemplateAlreadyCompletedForParent { .. }
         | BlockAssemblyError::CheckpointPredicateBoundaryReached { .. }
+        | BlockAssemblyError::MalformedCheckpointPredicateEnactment { .. }
+        | BlockAssemblyError::DuplicateCheckpointPredicateEnactment { .. }
         | BlockAssemblyError::Other(_)
         | BlockAssemblyError::RequestChannelClosed
         | BlockAssemblyError::ResponseChannelClosed
@@ -320,13 +340,12 @@ where
             "Parent block not found for blkid: {parent_blkid}"
         )))
     })?;
-    if let Some(height) = parent_block.body().manifests().and_then(|container| {
-        container
-            .manifests()
-            .iter()
-            .find_map(checkpoint_predicate_enactment_height)
-    }) {
-        return Err(BlockAssemblyError::CheckpointPredicateBoundaryReached { height });
+    if let Some(container) = parent_block.body().manifests() {
+        for manifest in container.manifests() {
+            if let Some(height) = checkpoint_predicate_enactment_height(manifest)? {
+                return Err(BlockAssemblyError::CheckpointPredicateBoundaryReached { height });
+            }
+        }
     }
 
     // Create `BlockInfo` with placeholder timestamp (0) for STF processing.
@@ -393,6 +412,13 @@ where
         &sealing_limit_verdict,
     );
     let should_seal = sealing_decision.should_seal();
+    if let Some(l1_height) = checkpoint_enactment_height {
+        info!(
+            %block_slot,
+            l1_height,
+            "checkpoint predicate enactment admitted; sealing terminal block"
+        );
+    }
     debug!(
         %block_slot,
         ?sealing_limit_verdict,
@@ -485,7 +511,7 @@ where
         fetched_asm_manifests,
         remaining_pending_asm_log_slots,
         epoch_cumulative_manifest_count,
-    );
+    )?;
 
     let selected_asm_manifest_count = selected_asm_manifests.len();
     let selected_asm_log_count: usize = selected_asm_manifests.iter().map(|m| m.logs().len()).sum();
@@ -526,7 +552,7 @@ fn select_asm_manifests<E: EpochSealingPolicy>(
     candidate_asm_manifests: Vec<AsmManifest>,
     remaining_pending_asm_log_slots: usize,
     epoch_cumulative_manifest_count: u32,
-) -> SelectedAsmManifests {
+) -> BlockAssemblyResult<SelectedAsmManifests> {
     let mut checkpoint_enactment_height = None;
     let mut selected_asm_manifests = Vec::new();
     let mut selected_asm_log_count = 0usize;
@@ -562,7 +588,7 @@ fn select_asm_manifests<E: EpochSealingPolicy>(
         }
 
         let candidate_enactment_height =
-            checkpoint_predicate_enactment_height(&candidate_asm_manifest);
+            checkpoint_predicate_enactment_height(&candidate_asm_manifest)?;
         selected_asm_log_count += candidate_asm_log_count;
         selected_asm_manifests.push(candidate_asm_manifest);
         if candidate_enactment_height.is_some() {
@@ -575,11 +601,11 @@ fn select_asm_manifests<E: EpochSealingPolicy>(
         }
     }
 
-    SelectedAsmManifests {
+    Ok(SelectedAsmManifests {
         manifests: selected_asm_manifests,
         checkpoint_enactment_height,
         sealing_limit_verdict,
-    }
+    })
 }
 
 /// Executes block initialization (epoch initial + block start) on a fresh write batch.
@@ -1039,7 +1065,6 @@ mod tests {
     const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
 
     use strata_acct_types::*;
-    use strata_asm_logs::CheckpointPredicateEnacted;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
@@ -1962,7 +1987,8 @@ mod tests {
             ],
             2,
             0,
-        );
+        )
+        .expect("valid manifests should be selected");
 
         assert_eq!(
             selected
@@ -1993,7 +2019,8 @@ mod tests {
             )],
             0,
             0,
-        );
+        )
+        .expect("unadmitted manifest should not be inspected");
 
         assert!(
             selected.manifests.is_empty(),
@@ -2022,7 +2049,8 @@ mod tests {
             ],
             1,
             0,
-        );
+        )
+        .expect("valid enactment should be selected");
 
         assert_eq!(
             selected
@@ -2048,7 +2076,8 @@ mod tests {
             )],
             0,
             0,
-        );
+        )
+        .expect("unadmitted enactment should not be inspected");
 
         assert!(selected.manifests.is_empty());
         assert_eq!(selected.checkpoint_enactment_height, None);
@@ -2071,7 +2100,8 @@ mod tests {
                 )],
                 1,
                 already_admitted,
-            );
+            )
+            .expect("manifest-count admission should remain valid");
 
             if already_admitted == cap {
                 assert!(selected.manifests.is_empty());
@@ -2081,6 +2111,54 @@ mod tests {
                 assert_eq!(selected.checkpoint_enactment_height, Some(boundary_height));
             }
         }
+    }
+
+    #[test]
+    fn test_malformed_predicate_enactment_is_rejected() {
+        let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
+        let height = create_test_genesis_state().last_l1_height() + 1;
+        let malformed =
+            AsmLogEntry::from_msg(AsmLogTypeId::CheckpointPredicateEnacted.into(), vec![])
+                .expect("empty enactment payload still has valid message framing");
+
+        let err = select_asm_manifests(
+            &policy,
+            vec![create_l1_manifest_with_logs(height, vec![malformed])],
+            1,
+            0,
+        )
+        .err()
+        .expect("malformed enactment must be rejected");
+
+        assert!(matches!(
+            err,
+            BlockAssemblyError::MalformedCheckpointPredicateEnactment { height: actual }
+                if actual == height
+        ));
+    }
+
+    #[test]
+    fn test_duplicate_predicate_enactment_is_rejected() {
+        let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
+        let height = create_test_genesis_state().last_l1_height() + 1;
+
+        let err = select_asm_manifests(
+            &policy,
+            vec![create_l1_manifest_with_logs(
+                height,
+                vec![checkpoint_enactment_log(), checkpoint_enactment_log()],
+            )],
+            2,
+            0,
+        )
+        .err()
+        .expect("duplicate enactment must be rejected");
+
+        assert!(matches!(
+            err,
+            BlockAssemblyError::DuplicateCheckpointPredicateEnactment { height: actual }
+                if actual == height
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -1,18 +1,18 @@
 //! Concrete [`SequencerContext`] implementation for the Strata node.
 
 use std::{
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
 use strata_db_types::ol_block::BlockStatus;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_identifiers::{L1Height, OLBlockCommitment, OLBlockId};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_ol_sequencer::{BlockGenerationConfig, SequencerContext, SequencerContextError};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::sequencer::tip::resolve_canonical_tip;
 
@@ -26,6 +26,7 @@ pub(crate) struct NodeSequencerContext {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     ol_block_time_ms: u64,
+    logged_boundary_tip: Mutex<Option<OLBlockId>>,
 }
 
 impl NodeSequencerContext {
@@ -40,7 +41,25 @@ impl NodeSequencerContext {
             storage,
             status_channel,
             ol_block_time_ms,
+            logged_boundary_tip: Mutex::new(None),
         }
+    }
+
+    fn log_boundary_halt_once(&self, tip_blkid: OLBlockId, height: L1Height) {
+        let mut logged_boundary_tip = self
+            .logged_boundary_tip
+            .lock()
+            .expect("boundary log state lock should not be poisoned");
+        if *logged_boundary_tip == Some(tip_blkid) {
+            return;
+        }
+
+        info!(
+            ?tip_blkid,
+            l1_height = height,
+            "block production halted at checkpoint predicate boundary"
+        );
+        *logged_boundary_tip = Some(tip_blkid);
     }
 }
 
@@ -182,11 +201,7 @@ impl SequencerContext for NodeSequencerContext {
                 return Ok(None);
             }
             Err(BlockAssemblyError::CheckpointPredicateBoundaryReached { height }) => {
-                debug!(
-                    tip_blkid = ?tip_blkid,
-                    l1_height = height,
-                    "template generation halted at checkpoint predicate boundary"
-                );
+                self.log_boundary_halt_once(tip_blkid, height);
                 return Ok(None);
             }
             Err(source) => {
