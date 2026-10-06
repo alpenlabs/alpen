@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
 use strata_chain_worker::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
@@ -12,6 +12,7 @@ use strata_consensus_logic::{
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
 use strata_ol_checkpoint::OLCheckpointBuilder;
+use strata_ol_checkpoint_artifacts::startup::check_startup_without_prover_blocking;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_service::ServiceMonitor;
 
@@ -263,6 +264,18 @@ pub(crate) fn start_strata_services(
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
 
+    // ASM initialization makes the local checkpoint state available. Reject missing
+    // prover configuration before the checkpoint worker can produce empty proofs.
+    let is_sequencer = nodectx.config().client.is_sequencer;
+    let prover_enabled = cfg!(feature = "prover") && nodectx.config().prover.is_some();
+    if is_sequencer && !prover_enabled {
+        check_startup_without_prover_blocking(
+            nodectx.storage(),
+            nodectx.ol_params().genesis_l1_block(),
+        )
+        .context("checkpoint prover configuration check failed at startup")?;
+    }
+
     // Start Csm worker
     let csm_monitor = Arc::new(spawn_csm_listener_with_ctx(&nodectx, asm_handle.monitor())?);
 
@@ -281,7 +294,6 @@ pub(crate) fn start_strata_services(
     )?;
     reconcile_unaccepted_checkpoint_artifacts(&nodectx)?;
 
-    let is_sequencer = nodectx.config().client.is_sequencer;
     if is_sequencer {
         verify_sequencer_tip_spec(
             nodectx.storage().as_ref(),

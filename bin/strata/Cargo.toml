@@ -68,6 +68,7 @@ strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-chain-types-v1.workspace = true
 strata-ol-checkpoint.workspace = true
+strata-ol-checkpoint-artifacts = { workspace = true, features = ["node"] }
 strata-ol-genesis.workspace = true
 strata-ol-log-budget.workspace = true
 strata-ol-mempool.workspace = true

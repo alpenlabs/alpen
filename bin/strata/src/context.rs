@@ -218,21 +218,15 @@ fn validate_integrated_prover_compatibility(
     runtime_params: OLRuntimeParams,
     handle: &Handle,
 ) -> Result<(), InitError> {
+    // Sequencers without a prover are checked against local ASM state after
+    // ASM initialization. Followers do not produce checkpoint proofs.
+    let Some(prover_config) = config.prover.as_ref() else {
+        return Ok(());
+    };
+
     let checkpoint_predicate = checkpoint_predicate_from_asm_params(asm_params)?;
     let checkpoint_predicate_type = checkpoint_predicate_type(checkpoint_predicate)?;
     let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
-
-    // When the prover is not configured, validate that the checkpoint predicate
-    // does not require real proofs (e.g. Sp1Groth16 needs a prover to produce them).
-    let Some(prover_config) = config.prover.as_ref() else {
-        if expected_backend.is_some() {
-            return Err(InitError::InvalidProverConfig(format!(
-                "checkpoint_predicate is {checkpoint_predicate_type} which requires a prover, \
-                 but no [prover] section is configured"
-            )));
-        }
-        return Ok(());
-    };
 
     if let Some(expected_backend) = expected_backend
         && prover_config.backend != expected_backend
