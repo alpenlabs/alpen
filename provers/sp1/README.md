@@ -69,8 +69,12 @@ and artifact bundle described above.
 
 Supply a raw HTTPS download URL for either params format described above. GitHub `/blob/`
 URLs serve HTML and are rejected. The workflow downloads and JSON-validates the file in
-`${{ runner.temp }}`, then passes its path to the existing builder through
-`CHECKPOINT_RUNTIME_PARAMS_PATH`.
+`${{ runner.temp }}`. The preflight job resolves the source commit and checks S3 before
+toolchain setup or compilation. If a complete bundle already exists and its manifest matches
+the full commit SHA and params checksum, the workflow reports its location and skips building
+and publishing. Partial bundles, mismatched manifests, and AWS errors stop the workflow early.
+For a new bundle, the build checks out the resolved SHA and receives the same downloaded params
+through a workflow artifact, passing their path through `CHECKPOINT_RUNTIME_PARAMS_PATH`.
 
 The bundle includes all four artifacts above, their SHA-256 sidecars, and a separate
 `manifest.json` recording the built ref and commit, requesting network, SP1 version, params URL,
@@ -78,16 +82,18 @@ and file checksums.
 The downloaded JSON's checksum records the input bytes; `runtime_params_hash` in the guest
 manifest hashes the SSZ-encoded runtime params.
 
-Only the separate, environment-gated publish job receives AWS publishing credentials. It
-checks every required file and checksum before uploading to
-`s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>/`, where `commit8` and `params8` are
+The preflight and publish jobs authenticate through GitHub OIDC using the existing S3 role and
+the `sp1-artifacts` environment. Preflight requires `s3:ListBucket` and `s3:GetObject`; the build
+job receives no AWS credentials. The publish job checks every required file and checksum before
+uploading to `s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>/`, where `commit8` and `params8` are
 the first eight characters of the built commit SHA and downloaded JSON's SHA-256. This
 write-once location is shared across networks: reuse the existing bundle for the same commit
 and exact params file instead of publishing it again for each network. `env` records the
 network requesting the original publish and does not restrict which networks can use it.
 
 After a failed upload, check the bundle prefix for `manifest.json`, which is uploaded last.
-If it exists, reuse the completed bundle. Otherwise, once no publish for this bundle is
-running, have an operator remove the incomplete prefix, then use **Re-run failed jobs** to
-retry the publish job with the same workflow artifacts. Existing objects prevent retries
-from succeeding until the incomplete prefix is removed.
+If it and all bundle files exist and are nonempty, reuse the completed bundle. Otherwise, once
+no publish for this bundle is running, have an operator remove the incomplete prefix. If the
+publish job failed, use **Re-run failed jobs** to retry with the same workflow artifacts;
+if preflight failed, rerun it after cleanup. Existing objects prevent retries from succeeding
+until the incomplete prefix is removed.

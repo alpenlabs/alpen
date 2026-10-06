@@ -47,16 +47,22 @@ env:
 permissions: {}
 
 jobs:
-  build-sp1-artifacts:
-    name: Build SP1 artifacts
+  prepare-sp1-artifacts:
+    name: Check existing SP1 artifacts
     # Keep the workflow, helpers, and local actions on main; only guest-source varies.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
+    # The S3 role requires the sp1-artifacts environment for OIDC authentication.
+    environment: sp1-artifacts
     outputs:
-      version: ${{ steps.summarize.outputs.version }}
+      sha: ${{ steps.resolve-build.outputs.sha }}
+      sp1_version: ${{ steps.resolve-build.outputs.sp1_version }}
+      sp1_runner_version: ${{ steps.resolve-build.outputs.sp1_runner_version }}
+      exists: ${{ steps.preflight.outputs.exists }}
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Checkout publishing scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,6 +95,60 @@ jobs:
           SOURCE_DIR: guest-source
         run: python3 .github/scripts/sp1_artifact_publish.py resolve-build
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::496607027995:role/github-actions-alpen-sp1-s3
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check for a completed artifact bundle
+        id: preflight
+        env:
+          ALPEN_SHA: ${{ steps.resolve-build.outputs.sha }}
+          CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ runner.temp }}/checkpoint-runtime-params.json
+          S3_BUCKET: ${{ env.S3_BUCKET }}
+          S3_PREFIX: ${{ env.S3_PREFIX }}
+        run: python3 .github/scripts/sp1_artifact_publish.py preflight
+
+      - name: Preserve checkpoint runtime params for the build
+        if: steps.preflight.outputs.exists == 'false'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sp1-runtime-params
+          path: ${{ runner.temp }}/checkpoint-runtime-params.json
+          if-no-files-found: error
+          retention-days: 90
+
+  build-sp1-artifacts:
+    name: Build SP1 artifacts
+    needs: prepare-sp1-artifacts
+    if: needs.prepare-sp1-artifacts.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      version: ${{ steps.summarize.outputs.version }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout publishing scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Checkout resolved guest source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare-sp1-artifacts.outputs.sha }}
+          path: guest-source
+          persist-credentials: false
+
+      - name: Download checkpoint runtime params
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sp1-runtime-params
+          path: ${{ runner.temp }}
+
       - name: Free up disk space
         uses: ./.github/actions/cleanup # zizmor: ignore[self-repository]
 
@@ -112,11 +172,11 @@ jobs:
       - name: Install SP1 core runner override
         uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[self-repository,unpinned-uses]
         with:
-          version: ${{ steps.resolve-build.outputs.sp1_runner_version }}
+          version: ${{ needs.prepare-sp1-artifacts.outputs.sp1_runner_version }}
 
       - name: Install SP1 toolchain
         env:
-          SP1_VERSION: ${{ steps.resolve-build.outputs.sp1_version }}
+          SP1_VERSION: ${{ needs.prepare-sp1-artifacts.outputs.sp1_version }}
         run: |
           curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
           ~/.sp1/bin/sp1up -v "$SP1_VERSION" -c
@@ -140,8 +200,8 @@ jobs:
           ELF_ROOT: guest-source/provers/sp1/generated
           DEPLOY_ENV: ${{ inputs.env }}
           ALPEN_REF: ${{ inputs.ref }}
-          ALPEN_SHA: ${{ steps.resolve-build.outputs.sha }}
-          SP1_VERSION: ${{ steps.resolve-build.outputs.sp1_version }}
+          ALPEN_SHA: ${{ needs.prepare-sp1-artifacts.outputs.sha }}
+          SP1_VERSION: ${{ needs.prepare-sp1-artifacts.outputs.sp1_version }}
           CHECKPOINT_RUNTIME_PARAMS_URL: ${{ inputs.checkpoint_runtime_params_url }}
           CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ runner.temp }}/checkpoint-runtime-params.json
         run: python3 .github/scripts/sp1_artifact_publish.py summarize

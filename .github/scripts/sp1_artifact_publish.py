@@ -74,6 +74,13 @@ def require_file(path: Path) -> None:
         fail(f"expected artifact missing or empty: {path}")
 
 
+def artifact_version(alpen_sha: str, runtime_params_sha256: str) -> str:
+    version = f"{alpen_sha[:8]}-{runtime_params_sha256[:8]}"
+    if not VERSION_RE.fullmatch(version):
+        fail(f"artifact version is not S3-key-safe: {version!r}")
+    return version
+
+
 def cmd_validate() -> None:
     """Env: INPUT_ENV, CHECKPOINT_RUNTIME_PARAMS_URL."""
     validate_env(os.environ["INPUT_ENV"])
@@ -144,6 +151,92 @@ def cmd_fetch() -> None:
     # The guest builder parses OLRuntimeParams or OLParams and owns schema validation.
 
 
+def aws_output(*args: str) -> str:
+    try:
+        return subprocess.check_output(["aws", *args], text=True)
+    except subprocess.CalledProcessError as err:
+        fail(f"aws {' '.join(args)} failed (exit {err.returncode})")
+
+
+def cmd_preflight() -> None:
+    """Env: ALPEN_SHA, CHECKPOINT_RUNTIME_PARAMS_PATH, S3_BUCKET, S3_PREFIX,
+    GITHUB_OUTPUT, GITHUB_STEP_SUMMARY."""
+    alpen_sha = os.environ["ALPEN_SHA"]
+    params_path = Path(os.environ["CHECKPOINT_RUNTIME_PARAMS_PATH"])
+    require_file(params_path)
+    params_sha256 = sha256_hex(params_path)
+    version = artifact_version(alpen_sha, params_sha256)
+    bucket = os.environ["S3_BUCKET"]
+    prefix = os.environ.get("S3_PREFIX", "elfs/alpen")
+    base_key = f"{prefix}/{version}/"
+    base = f"s3://{bucket}/{base_key}"
+
+    # Listing distinguishes an empty prefix from a partial upload. AWS failures
+    # must stop the workflow rather than be mistaken for an unpublished bundle.
+    listing = aws_output(
+        "s3api",
+        "list-objects-v2",
+        "--bucket",
+        bucket,
+        "--prefix",
+        base_key,
+        "--output",
+        "json",
+    )
+    objects = {
+        item["Key"]: item["Size"] for item in json.loads(listing).get("Contents", [])
+    }
+
+    if objects:
+        expected_files = (
+            *ARTIFACT_FILES,
+            *(f"{name}.sha256" for name in ARTIFACT_FILES if name != "manifest.json"),
+        )
+        missing = [
+            name for name in expected_files if not objects.get(f"{base_key}{name}")
+        ]
+        if missing:
+            fail(
+                f"incomplete bundle at {base}; missing or empty: {', '.join(missing)}. "
+                "Wait for any active publish of this bundle to finish; otherwise remove "
+                "the incomplete prefix before retrying"
+            )
+
+        try:
+            manifest = json.loads(
+                aws_output(
+                    "s3", "cp", f"{base}manifest.json", "-", "--only-show-errors"
+                )
+            )
+            matches = (
+                manifest["alpen"]["sha"] == alpen_sha
+                and manifest["checkpoint_runtime_params"]["sha256"] == params_sha256
+            )
+        except (ValueError, UnicodeError, KeyError, TypeError) as err:
+            fail(f"invalid published manifest at {base}manifest.json: {err}")
+        if not matches:
+            fail(
+                f"bundle at {base} does not match the full commit SHA and params SHA-256; "
+                "refusing to reuse or overwrite it"
+            )
+
+    exists = bool(objects)
+    set_outputs(exists=str(exists).lower())
+    status = (
+        "Matching bundle already published; skipping build and publication."
+        if exists
+        else "No published bundle; proceeding with the build."
+    )
+    print(f"{status} {base}")
+    with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
+        summary.write(
+            f"## SP1 artifact preflight\n\n{status}\n\n"
+            f"- location: `{base}`\n"
+            f"- source commit: `{alpen_sha}`\n"
+            f"- runtime params file SHA-256: `{params_sha256}`\n\n"
+        )
+
+
 def cmd_summarize() -> None:
     """Env: ELF_ROOT, ARTIFACT_DIR, DEPLOY_ENV, ALPEN_REF, ALPEN_SHA,
     SP1_VERSION, CHECKPOINT_RUNTIME_PARAMS_URL, CHECKPOINT_RUNTIME_PARAMS_PATH,
@@ -179,9 +272,7 @@ def cmd_summarize() -> None:
         if name != "manifest.json"
     }
 
-    version = f"{alpen_sha[:8]}-{runtime_params_sha256[:8]}"
-    if not VERSION_RE.fullmatch(version):
-        fail(f"artifact version is not S3-key-safe: {version!r}")
+    version = artifact_version(alpen_sha, runtime_params_sha256)
 
     manifest = {
         "schema": 1,
@@ -332,6 +423,7 @@ COMMANDS = {
     "validate": cmd_validate,
     "resolve-build": cmd_resolve_build,
     "fetch": cmd_fetch,
+    "preflight": cmd_preflight,
     "summarize": cmd_summarize,
     "upload": cmd_upload,
 }
