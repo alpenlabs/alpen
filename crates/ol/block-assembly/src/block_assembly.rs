@@ -1150,7 +1150,7 @@ mod tests {
     const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
 
     use strata_acct_types::*;
-    use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+    use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
     use strata_asm_logs::CheckpointPredicateEnacted;
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_manifest_types::AsmLogEntry;
@@ -1164,7 +1164,6 @@ mod tests {
     use strata_ol_stf::BlockInfo;
     use strata_ol_stf_v1::test_utils::OLStfFixture;
     use strata_predicate::PredicateKey;
-    use strata_snark_acct_types::OutputMessage;
 
     use super::*;
     use crate::test_utils::*;
@@ -3261,15 +3260,12 @@ mod tests {
                 .await;
             let mut env = TestEnv::from_fixture(fixture, parent_commitment);
             // Each update's inbox writes fit a fresh checkpoint; together they exceed DA capacity.
-            let message = OutputMessage::new(
-                account3,
-                MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![0; 1024]).unwrap(),
-            );
+            let data_bytes = OL_DA_DIFF_MAX_SIZE as usize / 2 + 1;
             let first = MempoolSnarkTxBuilder::new(account1)
-                .with_output_messages(vec![message.clone(); 128])
+                .with_output_messages(create_test_output_messages(account3, data_bytes))
                 .build();
             let deferred = MempoolSnarkTxBuilder::new(account2)
-                .with_output_messages(vec![message; 128])
+                .with_output_messages(create_test_output_messages(account3, data_bytes))
                 .build();
             let deferred_id = deferred.compute_txid();
             let successor = MempoolSnarkTxBuilder::new(account2).with_seq_no(1).build();
@@ -3357,14 +3353,10 @@ mod tests {
             .await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
         let deferred = MempoolSnarkTxBuilder::new(account1)
-            .with_output_messages(vec![
-                OutputMessage::new(
-                    account2,
-                    MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![0; 4096])
-                        .unwrap(),
-                );
-                64
-            ])
+            .with_output_messages(create_test_output_messages(
+                account2,
+                OL_DA_DIFF_MAX_SIZE as usize + 1,
+            ))
             .build();
         let deferred_id = deferred.compute_txid();
         let mut resource_state = EpochResourceState::new_empty();

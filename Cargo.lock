@@ -9422,6 +9422,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-msg-fmt",
  "strata-ol-chain-types-v1",
+ "strata-ol-da-types-v1",
  "strata-ol-log-budget",
  "strata-ol-mempool",
  "strata-ol-msg-types",

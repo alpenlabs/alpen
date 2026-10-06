@@ -47,6 +47,7 @@ use strata_ol_chain_types_v1::{
     LogDecodeError, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType, OLTxSegmentV1,
     SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData, test_utils as ol_test_utils,
 };
+use strata_ol_da_types_v1::MAX_MSG_PAYLOAD_BYTES;
 use strata_ol_log_budget::LogUsage;
 use strata_ol_mempool::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
@@ -441,6 +442,22 @@ impl MempoolGamTxBuilder {
             TxProofsV1::new_empty(),
         )
     }
+}
+
+/// Creates zero-value messages with exactly `total_data_bytes`, split at the DA per-message cap.
+pub(crate) fn create_test_output_messages(
+    destination: AccountId,
+    total_data_bytes: usize,
+) -> Vec<OutputMessage> {
+    (0..total_data_bytes)
+        .step_by(MAX_MSG_PAYLOAD_BYTES)
+        .map(|offset| {
+            let data_bytes = (total_data_bytes - offset).min(MAX_MSG_PAYLOAD_BYTES);
+            let payload = MsgPayload::from_bytes_valueless(vec![0; data_bytes])
+                .expect("test message data fits payload capacity");
+            OutputMessage::new(destination, payload)
+        })
+        .collect()
 }
 
 /// Constructs a bridge-gateway withdrawal output message.
