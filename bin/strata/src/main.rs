@@ -18,6 +18,9 @@ use strata_ol_state_types_v1 as _;
 use strata_predicate as _;
 use tokio::runtime::{self, Handle};
 use tracing::info;
+// Cargo also supplies prover test dependencies when that test suite is disabled.
+#[cfg(all(test, not(feature = "prover")))]
+use {strata_db_tests as _, strata_ol_stf as _, strata_ol_stf_v1 as _};
 
 use crate::{
     args::Args,

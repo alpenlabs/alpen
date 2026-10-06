@@ -2,6 +2,7 @@ use std::{fmt, net::IpAddr, path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
+use strata_ol_checkpoint_artifacts::CheckpointArtifactConfig;
 use zeroize::ZeroizeOnDrop;
 
 use crate::btcio::BtcioConfig;
@@ -375,6 +376,12 @@ pub struct ProverConfig {
     /// The `sp1` feature must be enabled at compile time for `sp1` to work.
     pub backend: ProverBackend,
 
+    /// Resident SP1 artifact bundles indexed by OL spec. Each directory contains
+    /// the ELF, predicate, and manifest from one build. SP1 requires at least one
+    /// explicit entry; native proving requires none and uses its built-in program.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub artifacts: Vec<CheckpointArtifactConfig>,
+
     /// Maximum number of concurrent proof tasks for the selected backend.
     // TODO(STR-3064): the integrated prover submits epochs sequentially so this
     // value is effectively unused. Consider removing it once `paas` supports
@@ -393,6 +400,7 @@ impl Default for ProverConfig {
     fn default() -> Self {
         Self {
             backend: ProverBackend::default(),
+            artifacts: Vec::new(),
             workers: DEFAULT_PROVER_WORKERS,
             sp1_proof_deadline_secs: None,
         }
@@ -535,6 +543,10 @@ mod test {
             [prover]
             backend = "sp1"
             workers = 4
+
+            [[prover.artifacts]]
+            spec = 1
+            bundle_dir = "elfs/sp1/v1"
         "#;
 
         let config = toml::from_str::<Config>(config_string_sequencer);

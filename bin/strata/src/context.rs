@@ -11,37 +11,21 @@ use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
-#[cfg(feature = "prover")]
-use strata_asm_params::SubprotocolInstance;
 use strata_config::{
     AsmExecutionParams, BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig,
     SequencerRuntimeConfig,
 };
-#[cfg(feature = "prover")]
-use strata_config::{ProverBackend, ProverConfig};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_identifiers::{Epoch, L1Height};
 use strata_node_context::NodeContext;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
-#[cfg(feature = "prover")]
-use strata_ol_params::OLRuntimeParams;
-#[cfg(feature = "prover")]
-use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_primitives::{L1BlockCommitment, OLBlockCommitment, OLBlockId};
-#[cfg(feature = "prover")]
-use strata_proofimpl_predicate_keys::Sp1Groth16PredicateKey;
-#[cfg(feature = "prover")]
-use strata_proofimpl_predicate_keys::{NativeCheckpointPredicateKey, validate_predicate_key};
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
-#[cfg(feature = "prover")]
-use crate::prover::artifacts::{
-    CheckpointArtifactError, checkpoint_sp1_program_id, validate_checkpoint_sp1_artifacts,
-};
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
 /// Load config early for logging initialization
@@ -64,8 +48,7 @@ pub(crate) fn init_node_context(
     config: Config,
     handle: Handle,
 ) -> Result<NodeContext, InitError> {
-    // Load ASM params first so integrated prover compatibility checks can use
-    // the same checkpoint predicate source that runtime ASM will enforce.
+    // Load the network genesis parameters before opening node resources.
     let asm_params_path = args
         .asm_params
         .as_ref()
@@ -82,17 +65,8 @@ pub(crate) fn init_node_context(
     // Load OL params
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
     let ol_params = load_ol_params(ol_params_path)?;
-    // When the integrated prover is enabled, validate that its backend matches the
-    // checkpoint predicate the runtime ASM will enforce and, for external SP1
-    // ELFs, that the mounted guest artifact was built with these runtime params.
-    #[cfg(feature = "prover")]
-    validate_integrated_prover_compatibility(
-        &config,
-        &asm_params,
-        ol_params.runtime_params(),
-        &handle,
-    )?;
-
+    // Prover artifacts are validated when the service starts. Live predicate coverage
+    // comes from canonical ASM state, which can differ from these genesis parameters.
     validate_shared_network_params(&asm_params, &ol_params)?;
 
     // Init storage
@@ -209,124 +183,6 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
 fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
     let config_str = fs::read_to_string(path)?;
     toml::from_str(&config_str).map_err(InitError::TomlParse)
-}
-
-#[cfg(feature = "prover")]
-fn validate_integrated_prover_compatibility(
-    config: &Config,
-    asm_params: &AsmParams,
-    runtime_params: OLRuntimeParams,
-    handle: &Handle,
-) -> Result<(), InitError> {
-    // Sequencers without a prover are checked against local ASM state after
-    // ASM initialization. Followers do not produce checkpoint proofs.
-    let Some(prover_config) = config.prover.as_ref() else {
-        return Ok(());
-    };
-
-    let checkpoint_predicate = checkpoint_predicate_from_asm_params(asm_params)?;
-    let checkpoint_predicate_type = checkpoint_predicate_type(checkpoint_predicate)?;
-    let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
-
-    if let Some(expected_backend) = expected_backend
-        && prover_config.backend != expected_backend
-    {
-        return Err(InitError::InvalidProverConfig(format!(
-            "prover backend/predicate mismatch: config.prover.backend={:?}, \
-             checkpoint_predicate={checkpoint_predicate_type} expects {expected_backend:?}",
-            prover_config.backend,
-        )));
-    }
-
-    validate_checkpoint_predicate_key(checkpoint_predicate, prover_config, runtime_params, handle)?;
-
-    Ok(())
-}
-
-#[cfg(feature = "prover")]
-fn checkpoint_predicate_from_asm_params(
-    asm_params: &AsmParams,
-) -> Result<&PredicateKey, InitError> {
-    let checkpoint_subprotocol = asm_params
-        .subprotocols
-        .iter()
-        .find_map(|instance| match instance {
-            SubprotocolInstance::Checkpoint(cfg) => Some(cfg),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            InitError::InvalidProverConfig(
-                "AsmParams missing Checkpoint subprotocol; cannot validate integrated prover config"
-                    .to_string(),
-            )
-        })?;
-
-    Ok(&checkpoint_subprotocol.checkpoint_predicate)
-}
-
-#[cfg(feature = "prover")]
-fn checkpoint_predicate_type(predicate: &PredicateKey) -> Result<PredicateTypeId, InitError> {
-    let checkpoint_predicate_id = predicate.id();
-    PredicateTypeId::try_from(checkpoint_predicate_id).map_err(|e| {
-        InitError::InvalidProverConfig(format!(
-            "invalid AsmParams checkpoint predicate type id {checkpoint_predicate_id}: {e}"
-        ))
-    })
-}
-
-#[cfg(feature = "prover")]
-fn expected_backend_for_checkpoint_predicate(
-    checkpoint_predicate_type: PredicateTypeId,
-) -> Result<Option<ProverBackend>, InitError> {
-    match checkpoint_predicate_type {
-        // SP1 checkpoint predicates require SP1 proofs.
-        PredicateTypeId::Sp1Groth16 => Ok(Some(ProverBackend::Sp1)),
-        // Bip340Schnorr proofs are only produced by the native host's deterministic
-        // signing key (functional-test setup), so require the native backend.
-        PredicateTypeId::Bip340Schnorr => Ok(Some(ProverBackend::Native)),
-        // Other predicate types (including AlwaysAccept/NeverAccept) are not
-        // supported by the integrated prover: AlwaysAccept ignores witness bytes
-        // and so doesn't need a prover at all, while NeverAccept can't be
-        // satisfied by any prover.
-        _ => Err(InitError::InvalidProverConfig(format!(
-            "unsupported checkpoint predicate for integrated prover: {checkpoint_predicate_type}"
-        ))),
-    }
-}
-
-#[cfg(feature = "prover")]
-fn validate_checkpoint_predicate_key(
-    checkpoint_predicate: &PredicateKey,
-    prover_config: &ProverConfig,
-    runtime_params: OLRuntimeParams,
-    handle: &Handle,
-) -> Result<(), InitError> {
-    match prover_config.backend {
-        ProverBackend::Native => {
-            validate_predicate_key(checkpoint_predicate, &NativeCheckpointPredicateKey)
-        }
-        ProverBackend::Sp1 => {
-            let program_id = checkpoint_sp1_program_id(prover_config, handle)
-                .map_err(invalid_checkpoint_artifact_config)?;
-            validate_checkpoint_sp1_artifacts(runtime_params, &program_id)
-                .map_err(invalid_checkpoint_artifact_config)?;
-            let provider = Sp1Groth16PredicateKey::new(program_id);
-            validate_predicate_key(checkpoint_predicate, &provider)
-        }
-    }
-    .map_err(|e| {
-        InitError::InvalidProverConfig(format!(
-            "checkpoint predicate key does not match configured prover backend {:?}: {e}",
-            prover_config.backend
-        ))
-    })
-}
-
-#[cfg(feature = "prover")]
-fn invalid_checkpoint_artifact_config(error: CheckpointArtifactError) -> InitError {
-    InitError::InvalidProverConfig(format!(
-        "invalid checkpoint prover artifact configuration: {error}"
-    ))
 }
 
 fn populate_sequencer_runtime_config(config: &mut Config, args: &Args) -> Result<(), InitError> {
@@ -809,8 +665,6 @@ mod tests {
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
-    #[cfg(feature = "prover")]
-    use strata_config::ProverBackend;
     use strata_config::{Config, SequencerConfig};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, Buf64, OLBlockId};
@@ -819,8 +673,6 @@ mod tests {
         SignedOLBlockHeaderV1,
     };
     use strata_ol_params::OLParams;
-    #[cfg(feature = "prover")]
-    use strata_predicate::PredicateTypeId;
     use strata_storage::{create_node_storage, test_runtime_handle};
 
     use super::{
@@ -1091,67 +943,5 @@ mod tests {
 
         let error = super::validate_config(config).unwrap_err();
         assert!(matches!(error, InitError::MalformedConfig(_)));
-    }
-
-    #[cfg(feature = "prover")]
-    #[test]
-    fn accepts_matching_backend_for_sp1_predicate() {
-        let result =
-            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Sp1Groth16).unwrap();
-        assert_eq!(result, Some(ProverBackend::Sp1));
-    }
-
-    #[cfg(feature = "prover")]
-    #[test]
-    fn requires_native_backend_for_bip340_schnorr_predicate() {
-        let result =
-            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Bip340Schnorr)
-                .unwrap();
-        assert_eq!(result, Some(ProverBackend::Native));
-    }
-
-    #[cfg(feature = "prover")]
-    #[test]
-    fn rejects_always_accept_predicate_for_integrated_prover() {
-        let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::AlwaysAccept)
-            .unwrap_err();
-        assert!(matches!(err, InitError::InvalidProverConfig(_)));
-    }
-
-    #[cfg(feature = "prover")]
-    #[test]
-    fn rejects_unsupported_predicate_for_integrated_prover() {
-        let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::NeverAccept)
-            .unwrap_err();
-        assert!(matches!(err, InitError::InvalidProverConfig(_)));
-    }
-
-    #[cfg(feature = "prover")]
-    #[test]
-    fn accepts_matching_checkpoint_predicate_key_provider() {
-        use strata_proofimpl_predicate_keys::{
-            NativeCheckpointPredicateKey, PredicateKeyProvider, validate_expected_predicate_key,
-        };
-
-        let predicate = NativeCheckpointPredicateKey.predicate_key().unwrap();
-
-        validate_expected_predicate_key(&predicate, &predicate).unwrap();
-    }
-
-    #[cfg(feature = "prover")]
-    #[test]
-    fn rejects_mismatched_checkpoint_predicate_key_provider() {
-        use strata_predicate::PredicateKey;
-        use strata_proofimpl_predicate_keys::{
-            NativeCheckpointPredicateKey, PredicateKeyProvider, validate_expected_predicate_key,
-        };
-
-        let configured = NativeCheckpointPredicateKey.predicate_key().unwrap();
-        let expected = PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, vec![0u8; 32])
-            .expect("predicate condition must fit within the maximum length");
-
-        let err = validate_expected_predicate_key(&configured, &expected).unwrap_err();
-
-        assert!(err.to_string().contains("predicate key mismatch"));
     }
 }
