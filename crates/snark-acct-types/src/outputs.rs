@@ -15,6 +15,8 @@ use crate::{
     },
 };
 
+const _: () = assert!(MAX_EFFECT_TRANSFERS <= MAX_TRANSFERS && MAX_EFFECT_MESSAGES <= MAX_MESSAGES);
+
 impl OutputNewPredicate {
     /// Creates an empty declaration (no predicate rotation).
     pub fn new_empty() -> Self {

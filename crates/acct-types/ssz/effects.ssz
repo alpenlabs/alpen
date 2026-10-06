@@ -6,6 +6,9 @@ MAX_MESSAGES = 255
 ### Direct external effects that a transaction can cause.
 ###
 ### How these are validated is dependent on the kind of transaction.
+###
+### Transfer and message capacities must not exceed those of `UpdateOutputs`,
+### because proof verification reconstructs the update outputs from these effects.
 #~# derive: std::default::Default
 class TxEffects(StableContainer[16]):
     # Emitted transfers.
