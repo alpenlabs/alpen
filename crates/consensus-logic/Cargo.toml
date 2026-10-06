@@ -17,6 +17,7 @@ strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
 strata-checkpoint-types.workspace = true
 strata-codec.workspace = true
+strata-config.workspace = true
 strata-common = { workspace = true, default-features = true }
 strata-csm-types.workspace = true
 strata-csm-worker.workspace = true

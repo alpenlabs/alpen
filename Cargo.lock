@@ -8941,6 +8941,9 @@ dependencies = [
  "bitcoin",
  "proptest",
  "serde",
+ "serde_json",
+ "strata-asm-common",
+ "strata-predicate",
  "toml 0.5.11",
  "zeroize",
 ]
@@ -8968,6 +8971,7 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-codec",
  "strata-common",
+ "strata-config",
  "strata-csm-types",
  "strata-csm-worker",
  "strata-db-store-sled",

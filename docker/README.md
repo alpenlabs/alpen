@@ -50,3 +50,23 @@ For controlled image builds, step-by-step debugging, or running individual servi
 ## With remote Bitcoin
 
 Set `BITCOIND_RPC_URL` in `.env` to the remote endpoint and run `just docker-seq-up` as usual. The init service connects to whatever `BITCOIND_RPC_URL` points to.
+
+## ASM execution parameters
+
+Node TOML requires `asm_execution = "asm-execution-params.json"`. Relative paths
+resolve against the TOML file's directory. The referenced JSON carries the genesis
+ASM predicate and the trusted mapping from predicates to compiled native spec IDs.
+Distribute it with the network parameters and preserve existing mappings across
+restarts. Upstream ASM validates the catalog structure, but does not authenticate
+the mapping. These parameters are independent of checkpoint proving settings.
+
+Compose mounts `configs/dev/asm-execution-params.json` read-only at
+`/app/configs/asm-execution-params.json`. Its `AlwaysAccept`
+predicate and spec 0 are development parameters; deployments must supply their
+network's trusted catalog. The node loads the file before opening its database.
+
+ASM v0.4.0 also changes `asm-params.json`: admin `signers` are P2WPKH
+addresses on the anchor's Bitcoin network. The bridge address is named
+`safe_harbor_address`, and its admin confirmation depth is named
+`safe_harbor_address_update`. Datatool emits the new format; existing parameter
+files must be converted separately.

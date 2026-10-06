@@ -173,6 +173,13 @@ impl AnchorStateStore for AsmWorkerCtx {
 }
 
 impl ManifestMmrStore for AsmWorkerCtx {
+    fn get_manifest(&self, block: &L1BlockCommitment) -> WorkerResult<AsmManifest> {
+        self.l1man
+            .get_block_manifest(block.blkid())
+            .map_err(conv_db_err)?
+            .ok_or(WorkerError::MissingManifest(*block))
+    }
+
     /// Persists the manifest and, alongside it, the block's ASM logs.
     ///
     /// The logs are the manifest's own; storing them here keeps them available

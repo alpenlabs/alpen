@@ -25,6 +25,13 @@ pub(crate) enum InitError {
     #[error("missing ASM params path in arguments")]
     MissingAsmParams,
 
+    #[error("could not read ASM execution parameters at {path}: {source}")]
+    AsmExecutionParamsRead {
+        path: path::PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
     #[error("missing OL params path in arguments")]
     MissingOLParams,
 

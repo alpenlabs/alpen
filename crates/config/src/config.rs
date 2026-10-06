@@ -439,6 +439,9 @@ pub struct Config {
     pub bitcoind: BitcoindConfig,
     pub btcio: BtcioConfig,
 
+    /// Path to trusted ASM execution-parameters JSON, relative to the node TOML file.
+    pub asm_execution: PathBuf,
+
     /// Sequencer configuration (only required if client.is_sequencer = true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequencer: Option<SequencerConfig>,
@@ -466,8 +469,25 @@ mod test {
     };
 
     #[test]
+    fn checked_in_configs_require_standalone_execution_params() {
+        for contents in [
+            include_str!("../../../example_config.toml"),
+            include_str!("../../../docker/configs/config.seq.toml"),
+            include_str!("../../../docker/configs/config.checkpoint-sync.toml"),
+        ] {
+            let mut config: toml::Value = toml::from_str(contents).unwrap();
+            let parsed: Config = config.clone().try_into().unwrap();
+            assert_eq!(parsed.asm_execution.extension().unwrap(), "json");
+            config.as_table_mut().unwrap().remove("asm_execution");
+            assert!(config.try_into::<Config>().is_err());
+        }
+    }
+
+    #[test]
     fn test_config_load() {
         let config_string_sequencer = r#"
+            asm_execution = "asm-execution-params.json"
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"
@@ -561,6 +581,8 @@ mod test {
         assert_eq!(prover.workers, 4);
 
         let config_string_fullnode = r#"
+            asm_execution = "asm-execution-params.json"
+
             [bitcoind]
             rpc_url = "http://localhost:18332"
             rpc_user = "alpen"
