@@ -340,6 +340,10 @@ where
             "Parent block not found for blkid: {parent_blkid}"
         )))
     })?;
+
+    // The enactment block is the last block this binary may produce. Check the parent before
+    // applying any state transition or mempool work; the caller treats this error as the expected
+    // production-halt signal, including when the node restarts with the enactment block at its tip.
     if let Some(container) = parent_block.body().manifests() {
         for manifest in container.manifests() {
             if let Some(height) = checkpoint_predicate_enactment_height(manifest)? {
