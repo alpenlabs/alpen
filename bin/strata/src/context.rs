@@ -511,7 +511,7 @@ mod shared_network_params_tests {
                             "assignment_duration": 0,
                             "operator_fee": 0,
                             "recovery_delay": 0,
-                            "safe_harbour_address": "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+                            "safe_harbor_address": "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
                         }}
                     }}
                 ]
