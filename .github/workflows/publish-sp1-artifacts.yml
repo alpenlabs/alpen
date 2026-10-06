@@ -44,10 +44,6 @@ env:
   S3_BUCKET: alpen-mosaic-artifacts
   S3_PREFIX: elfs/alpen
 
-concurrency:
-  group: publish-sp1-artifacts-${{ inputs.ref }}
-  cancel-in-progress: false
-
 permissions: {}
 
 jobs:
