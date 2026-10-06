@@ -85,6 +85,8 @@ fn build_guest(guest: &str) {
     let build_args = BuildArgs {
         output_directory: Some(GENERATED_DIR.to_owned()),
         elf_name: Some(format!("{guest}.elf")),
+        // The nested guest build doesn't inherit the outer `--locked`.
+        locked: true,
         // In the Docker build, override the guest's own Cargo workspace root with the Alpen
         // workspace root so Docker mounts the whole workspace and the guest can import Alpen
         // crates by relative path.
