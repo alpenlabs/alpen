@@ -320,7 +320,7 @@ async fn handle_new_state_update<C: FcmContext>(
                 ?current_finalized_epoch,
                 "retrying finality status publication"
             );
-            publish_current_sync_status(fcm_state).await?;
+            publish_pending_finality_status(fcm_state).await;
         } else {
             debug!(
                 ?current_finalized_epoch,
@@ -384,10 +384,21 @@ async fn check_finalization_progress<C: FcmContext>(
 
     if finalization_advanced {
         fcm_state.mark_finality_status_publication_pending();
-        publish_current_sync_status(fcm_state).await?;
+        publish_pending_finality_status(fcm_state).await;
     }
 
     Ok(())
+}
+
+/// Publishes a status after finality advances without terminating FCM on a transient failure.
+///
+/// [`publish_current_sync_status`] clears the pending marker only after it has built and
+/// published the status successfully. A failed attempt therefore remains retryable on the next
+/// CSM state update.
+async fn publish_pending_finality_status<C: FcmContext>(fcm_state: &mut FcmServiceState<C>) {
+    if let Err(err) = publish_current_sync_status(fcm_state).await {
+        error!(%err, "failed to publish finalized OL sync status; will retry on next CSM update");
+    }
 }
 
 async fn publish_current_sync_status<C: FcmContext>(
@@ -1574,9 +1585,12 @@ mod tests {
         assert!(fcm_state.record_observed_finalized_epoch(pending_epoch));
         seed_executed_block(ctx.storage(), &chain.x2, BlockStatus::Valid);
 
-        handle_new_state_update(&mut fcm_state)
-            .await
-            .expect_err("missing epoch commitment should prevent status publication");
+        let response = <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm_state,
+            FcmEvent::NewStateUpdate,
+        )
+        .await?;
+        assert_eq!(response, Response::Continue);
 
         assert_eq!(ctx.finalized_epochs(), vec![pending_epoch]);
         assert_eq!(*fcm_state.chain_tracker().finalized_epoch(), pending_epoch);
@@ -1584,7 +1598,12 @@ mod tests {
         assert!(ctx.published_statuses().is_empty());
 
         ctx.storage().put_canonical_epoch_commitment(pending_epoch);
-        handle_new_state_update(&mut fcm_state).await?;
+        let response = <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm_state,
+            FcmEvent::NewStateUpdate,
+        )
+        .await?;
+        assert_eq!(response, Response::Continue);
 
         assert_eq!(ctx.finalized_epochs(), vec![pending_epoch]);
         assert!(!fcm_state.finality_status_publication_pending());
