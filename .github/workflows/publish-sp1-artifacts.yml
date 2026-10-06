@@ -1,5 +1,9 @@
 name: Publish SP1 Artifacts
 
+# TEMP: testing ELF and VK builds only. S3 publish and the protected
+# environment are disabled; artifacts go to GitHub workflow artifacts.
+# Do not merge.
+
 on:
   workflow_dispatch:
     inputs:
