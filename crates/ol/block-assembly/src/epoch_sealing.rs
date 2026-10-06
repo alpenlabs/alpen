@@ -362,7 +362,7 @@ mod fixed_slot_sealing_tests {
             usage.add_payload(&[0; MAX_TOTAL_LOG_PAYLOAD_BYTES / 4]);
         }
         usage.add_payload(&[0]);
-        let stats = EpochSealingResourceStats::new(OL_DA_DIFF_MAX_SIZE as usize, usage, 0);
+        let stats = EpochSealingResourceStats::new(OL_DA_DIFF_MAX_SIZE as usize + 1, usage, 0);
         let verdict = sealing.check_limits(&stats);
 
         assert_eq!(
@@ -384,8 +384,11 @@ mod fixed_slot_sealing_tests {
     #[test]
     fn test_da_failure_does_not_count_as_hard_log_failure() {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
-        let stats =
-            EpochSealingResourceStats::new(OL_DA_DIFF_MAX_SIZE as usize, LogUsage::default(), 0);
+        let stats = EpochSealingResourceStats::new(
+            OL_DA_DIFF_MAX_SIZE as usize + 1,
+            LogUsage::default(),
+            0,
+        );
         let verdict = sealing.check_limits(&stats);
 
         assert_eq!(verdict.da_diff, EpochSealingLimitAction::RejectCandidate);
