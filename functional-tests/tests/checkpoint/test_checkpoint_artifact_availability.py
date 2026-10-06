@@ -75,8 +75,6 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
         strata.stop()
         log_offset = log_path.stat().st_size
         strata.start()
-        # RPC can briefly become available before service startup fails. Wait for
-        # the actual process exit and its specific cause instead of RPC absence.
         strata.wait_for_down(timeout=30)
         assert strata.proc is not None
         assert strata.proc.returncode not in (None, 0), (

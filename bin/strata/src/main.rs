@@ -98,9 +98,6 @@ fn main() -> Result<()> {
     // Start services, and do genesis if necessary.
     let (runctx, proof_notify) = start_strata_services(nodectx)?;
 
-    // Start RPC.
-    start_rpc(&runctx)?;
-
     // Start the integrated prover when the feature is enabled and a [prover]
     // section is present in the config. When absent, checkpoints use empty
     // proofs (requires AlwaysAccept predicate and Timeout publish mode).
@@ -112,6 +109,9 @@ fn main() -> Result<()> {
     // Suppress unused variable warning when prover feature is disabled.
     #[cfg(not(feature = "prover"))]
     let _ = proof_notify;
+
+    // Start RPC only after the configured prover's artifacts pass startup checks.
+    start_rpc(&runctx)?;
 
     // Start block producer if running as sequencer.
     #[cfg(feature = "sequencer")]
