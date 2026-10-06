@@ -49,6 +49,7 @@ use strata_ol_chain_types_v1::{
     LogDecodeError, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType, OLTxSegmentV1,
     SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData, test_utils as ol_test_utils,
 };
+use strata_ol_da_types_v1::MAX_MSG_PAYLOAD_BYTES;
 use strata_ol_log_budget::LogUsage;
 use strata_ol_mempool::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
@@ -445,6 +446,22 @@ impl MempoolGamTxBuilder {
     }
 }
 
+/// Creates zero-value messages with exactly `total_data_bytes`, split at the DA per-message cap.
+pub(crate) fn create_test_output_messages(
+    destination: AccountId,
+    total_data_bytes: usize,
+) -> Vec<OutputMessage> {
+    (0..total_data_bytes)
+        .step_by(MAX_MSG_PAYLOAD_BYTES)
+        .map(|offset| {
+            let data_bytes = (total_data_bytes - offset).min(MAX_MSG_PAYLOAD_BYTES);
+            let payload = MsgPayload::from_bytes_valueless(vec![0; data_bytes])
+                .expect("test message data fits payload capacity");
+            OutputMessage::new(destination, payload)
+        })
+        .collect()
+}
+
 /// Constructs a bridge-gateway withdrawal output message.
 pub(crate) fn withdrawal_output_message(
     amount_sats: u64,
@@ -511,6 +528,12 @@ impl MempoolSnarkTxBuilder {
         self
     }
 
+    /// Sets the outgoing messages, including their payload data.
+    pub(crate) fn with_output_messages(mut self, messages: Vec<OutputMessage>) -> Self {
+        self.output_messages = messages;
+        self
+    }
+
     /// Appends a withdrawal message routed to the bridge-gateway account.
     pub(crate) fn with_withdrawal(mut self, amount_sats: u64, destination_desc: Vec<u8>) -> Self {
         self.output_messages.push(withdrawal_output_message(
@@ -570,7 +593,7 @@ impl MempoolSnarkTxBuilder {
             operation_data,
         ));
 
-        // Build effects: empty by default. `output_messages()` take precedence;
+        // Build effects: empty by default. Explicit messages take precedence;
         // otherwise we synthesize plain value outputs from `with_outputs()`.
         let output_messages = if !self.output_messages.is_empty() {
             self.output_messages

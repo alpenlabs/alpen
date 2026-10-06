@@ -1163,7 +1163,7 @@ mod tests {
     const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
 
     use strata_acct_types::*;
-    use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+    use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
@@ -3338,11 +3338,12 @@ mod tests {
                 .await;
             let mut env = TestEnv::from_fixture(fixture, parent_commitment);
             // Each update's inbox writes fit a fresh checkpoint; together they exceed DA capacity.
+            let data_bytes = OL_DA_DIFF_MAX_SIZE as usize / 2 + 1;
             let first = MempoolSnarkTxBuilder::new(account1)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(create_test_output_messages(account3, data_bytes))
                 .build();
             let deferred = MempoolSnarkTxBuilder::new(account2)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(create_test_output_messages(account3, data_bytes))
                 .build();
             let deferred_id = deferred.compute_txid();
             let successor = MempoolSnarkTxBuilder::new(account2).with_seq_no(1).build();
@@ -3430,7 +3431,10 @@ mod tests {
             .await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
         let deferred = MempoolSnarkTxBuilder::new(account1)
-            .with_outputs(vec![(account2, 0); 6_000])
+            .with_output_messages(create_test_output_messages(
+                account2,
+                OL_DA_DIFF_MAX_SIZE as usize + 1,
+            ))
             .build();
         let deferred_id = deferred.compute_txid();
         let mut resource_state = EpochResourceState::new_empty();
