@@ -2,15 +2,12 @@
 
 use strata_db_types::DbError;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
-use strata_ol_state_types::{OLSpecId, UnknownOLSpecId};
+use strata_ol_state_types::OLSpecId;
 use strata_paas::ProverError as PaasError;
 
 /// Errors that can occur during proof input fetching.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ProverError {
-    #[error("checkpoint requires an unsupported spec: {0}")]
-    UnsupportedSpec(#[from] UnknownOLSpecId),
-
     #[error("checkpoint task {task:?} requires {required:?}, but was routed to {assigned:?}")]
     MisroutedTask {
         task: EpochCommitment,
@@ -20,6 +17,9 @@ pub(crate) enum ProverError {
 
     #[error("checkpoint epoch start state not found at {commitment:?}")]
     EpochStartStateNotFound { commitment: OLBlockCommitment },
+
+    #[error("checkpoint epoch terminal state not found at {commitment:?}")]
+    EpochTerminalStateNotFound { commitment: OLBlockCommitment },
 
     #[error("epoch summary not found for epoch index {0}")]
     EpochSummaryNotFound(u64),
@@ -52,7 +52,7 @@ pub(crate) enum ProverError {
 /// Classifies input-fetch failures as retriable or permanent for the paas
 /// service.
 ///
-/// Missing epoch metadata or its exact starting state is a not-ready-yet wait;
+/// Missing epoch metadata or its exact start or terminal state is a not-ready-yet wait;
 /// the paas layer parks those tasks as `Blocked` and rechecks.
 ///
 /// A *stale* commitment is different: the task was submitted for an epoch
@@ -66,7 +66,8 @@ impl From<ProverError> for PaasError {
         match e {
             ProverError::EpochCommitmentNotFound(_)
             | ProverError::EpochSummaryNotFound(_)
-            | ProverError::EpochStartStateNotFound { .. } => PaasError::transient(e.to_string()),
+            | ProverError::EpochStartStateNotFound { .. }
+            | ProverError::EpochTerminalStateNotFound { .. } => PaasError::transient(e.to_string()),
             ProverError::StaleTaskCommitment { .. } => PaasError::permanent(e.to_string()),
             // Infra: surface as a retryable error, not a domain verdict.
             ProverError::Database(_) => PaasError::Storage(e.to_string()),
@@ -123,9 +124,15 @@ mod tests {
     }
 
     #[test]
-    fn missing_start_state_is_transient_but_chain_traversal_failure_is_not() {
+    fn missing_epoch_states_are_transient_but_chain_traversal_failure_is_not() {
         assert_eq!(
             action_of(ProverError::EpochStartStateNotFound {
+                commitment: OLBlockCommitment::default(),
+            }),
+            FailureAction::RetryResume,
+        );
+        assert_eq!(
+            action_of(ProverError::EpochTerminalStateNotFound {
                 commitment: OLBlockCommitment::default(),
             }),
             FailureAction::RetryResume,

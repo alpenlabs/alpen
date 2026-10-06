@@ -71,7 +71,7 @@ pub(crate) fn checkpoint_sp1_host_config(prover_config: &ProverConfig) -> SP1Hos
 /// Starts the integrated prover service.
 ///
 /// Launches a fixed-host paas service for every resident spec and spawns a
-/// background runner that routes checkpoints by their committed epoch-start spec.
+/// background runner that routes checkpoints by the current spec in their terminal OL state.
 ///
 /// The caller must ensure that `config.prover` is `Some` before calling.
 /// `proof_notify` is shared with the checkpoint worker — the receipt hook
@@ -333,14 +333,12 @@ fn spawn_checkpoint_runner(
                         }) {
                             if matches!(&failure,
                                 CheckpointRoutingError::MissingArtifact { .. }
-                                | CheckpointRoutingError::State(ProverError::UnsupportedSpec(_))
                             ) {
                                 error!(%epoch, %failure, "checkpoint proof awaits operator configuration");
                             } else if matches!(&failure,
                                 CheckpointRoutingError::State(
                                     ProverError::EpochCommitmentNotFound(_)
-                                    | ProverError::EpochSummaryNotFound(_)
-                                    | ProverError::EpochStartStateNotFound { .. }
+                                    | ProverError::EpochTerminalStateNotFound { .. }
                                 )
                             ) {
                                 debug!(%epoch, %failure, "checkpoint routing awaits state, will retry");
@@ -420,7 +418,7 @@ enum CheckpointRoutingError {
     MissingArtifact { spec: OLSpecId },
 }
 
-/// Holds fixed-host services keyed by the spec derived from each checkpoint's start state.
+/// Holds fixed-host services keyed by the spec recorded in each checkpoint's terminal state.
 struct CheckpointProvers {
     handles: BTreeMap<OLSpecId, ProverHandle<CheckpointSpec>>,
 }

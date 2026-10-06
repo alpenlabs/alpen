@@ -1,10 +1,11 @@
 # Checkpoint artifact registry
 
 The integrated checkpoint prover keeps resident programs indexed by `OLSpecId`.
-For each epoch it reads the committed state at that epoch's previous terminal,
-selects the staged spec, and looks up its program. The first V1 epoch starting
-from a V0 state follows the checkpoint guest's V0-to-V1 exception. The same
-selection drives DA computation and routing to the spec's fixed-host prover service.
+For each completed epoch it reads the current spec from that epoch's terminal OL
+state and looks up its program. This records the spec the epoch actually used,
+including V0 epochs and the first V1 epoch after the upgrade. The terminal state's
+staged spec applies to the next epoch. The same selection drives DA computation
+and routing to the spec's fixed-host prover service.
 
 The registry contains no activation heights, epoch ranges, or mutable active
 program. ASM's current active predicate is not a selector for every local proof:
@@ -64,7 +65,7 @@ startup, correct the prover configuration and rerun the same command. Promotion
 is idempotent, so this retry is safe.
 
 The startup check compares VKs only. It does not read OL state or infer a spec for
-any predicate. Each epoch selects its artifact from its committed OL start state.
+any predicate. Each epoch selects its artifact from its terminal OL state's current spec.
 The OL may already use a VK that is still pending in ASM.
 
 The prover does not repeat the ASM check during operation. Existing ASM rotation
@@ -101,9 +102,10 @@ reconsidering this cleanup so existing proof work can be reused safely.
 
 The remote strategy fetches the receipt and decodes its public output without
 adding local cryptographic proof verification. Each service
-checks the task's committed start-state spec before proving. Missing start state
-is retried without a version fallback. Witness resolution handles proof input
-readiness; node routing checks artifact availability before submitting work. The
+checks the task's terminal-state spec before proving. Missing terminal state
+is retried without a version fallback. The witness still starts from the previous
+epoch's terminal state; if that state is missing, witness resolution waits.
+Node routing checks artifact availability before submitting work. The
 shared prover-core needs no changes for this routing. ASM checks run only at startup.
 
 ## Checks

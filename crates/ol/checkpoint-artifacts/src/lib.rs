@@ -1,7 +1,7 @@
 //! Checkpoint proof artifact loading and per-spec lookup.
 //!
 //! Registry entries describe programs, never checkpoint activation boundaries. Node services
-//! choose the epoch's spec from its committed OL start state before looking up an artifact.
+//! read the current spec from the epoch's terminal OL state before looking up an artifact.
 
 mod config;
 mod error;
