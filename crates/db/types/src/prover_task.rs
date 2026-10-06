@@ -43,19 +43,19 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// All records whose status is not yet terminal (Pending / Proving).
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Lists due retry or blocked records with `prefix` and total key length `key_len`.
+    /// Lists due retry or blocked records with `prefix`, a four-byte namespace and `suffix_len` task bytes.
     fn list_retriable_with_prefix(
         &self,
-        prefix: Vec<u8>,
-        key_len: usize,
+        prefix: [u8; 4],
+        suffix_len: usize,
         now_secs: u64,
     ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Lists Pending or Proving records with `prefix` and total key length `key_len`.
+    /// Lists Pending or Proving records with `prefix`, a four-byte namespace and `suffix_len` task bytes.
     fn list_unfinished_with_prefix(
         &self,
-        prefix: Vec<u8>,
-        key_len: usize,
+        prefix: [u8; 4],
+        suffix_len: usize,
     ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// Every record in the store, in implementation-defined order.
@@ -63,11 +63,11 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Used by offline admin tooling.
     fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Counts task keys with `prefix` and total byte length `key_len`.
+    /// Counts task keys with `prefix` and `suffix_len` task bytes after the four-byte namespace.
     ///
     /// Streams matching records without collecting them, including terminal tasks.
     /// The length check excludes legacy or malformed keys that share the prefix.
-    fn count_tasks_with_prefix(&self, prefix: Vec<u8>, key_len: usize) -> DbResult<usize>;
+    fn count_tasks_with_prefix(&self, prefix: [u8; 4], suffix_len: usize) -> DbResult<usize>;
 
     /// Number of records in the store.
     fn count_tasks(&self) -> DbResult<usize>;

@@ -8,6 +8,14 @@ use strata_paas::{ProverError, ProverResult, TaskRecord, TaskStatus, TaskStore};
 
 use crate::ProverTaskDbManager;
 
+// The stored namespace is the raw u32 spec version, encoded big-endian for key ordering.
+const SPEC_PREFIX_LEN: usize = size_of::<u32>();
+const STORED_KEY_LEN: usize = SPEC_PREFIX_LEN + CheckpointProofTask::KEY_LEN;
+
+fn spec_prefix(spec: OLSpecId) -> [u8; SPEC_PREFIX_LEN] {
+    u32::from(spec).to_be_bytes()
+}
+
 /// Limits a prover service to tasks for one OL spec.
 ///
 /// Prefixes stored keys with the spec's four-byte identifier and removes it when
@@ -31,9 +39,9 @@ impl VersionedTaskStore {
 
     /// Prepends the spec to a checkpoint task key for storage or offline backfill.
     pub fn encode_key(spec: OLSpecId, task: CheckpointProofTask) -> Vec<u8> {
-        let prefix = u32::from(spec).to_be_bytes();
+        let prefix = spec_prefix(spec);
         let task_key = task.to_key_bytes();
-        let mut key = Vec::with_capacity(prefix.len() + task_key.len());
+        let mut key = Vec::with_capacity(STORED_KEY_LEN);
         key.extend_from_slice(&prefix);
         key.extend_from_slice(&task_key);
         key
@@ -43,7 +51,7 @@ impl VersionedTaskStore {
     ///
     /// Returns `None` for old unprefixed keys, unknown specs, or malformed tasks.
     pub fn decode_key(key: &[u8]) -> Option<(OLSpecId, CheckpointProofTask)> {
-        let (prefix, task_key) = key.split_first_chunk::<4>()?;
+        let (prefix, task_key) = key.split_first_chunk::<SPEC_PREFIX_LEN>()?;
         let spec = OLSpecId::try_from(u32::from_be_bytes(*prefix)).ok()?;
         let task = CheckpointProofTask::from_key_bytes(task_key).ok()?;
         Some((spec, task))
@@ -93,22 +101,22 @@ impl TaskStore for VersionedTaskStore {
     }
 
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
-        let prefix = u32::from(self.spec).to_be_bytes();
-        let key_len = prefix.len() + CheckpointProofTask::KEY_LEN;
         Ok(self
             .inner
-            .list_retriable_with_prefix(prefix.to_vec(), key_len, now_secs)?
+            .list_retriable_with_prefix(
+                spec_prefix(self.spec),
+                CheckpointProofTask::KEY_LEN,
+                now_secs,
+            )?
             .into_iter()
             .filter_map(|record| self.strip_prefix(record))
             .collect())
     }
 
     fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
-        let prefix = u32::from(self.spec).to_be_bytes();
-        let key_len = prefix.len() + CheckpointProofTask::KEY_LEN;
         Ok(self
             .inner
-            .list_unfinished_with_prefix(prefix.to_vec(), key_len)?
+            .list_unfinished_with_prefix(spec_prefix(self.spec), CheckpointProofTask::KEY_LEN)?
             .into_iter()
             .filter_map(|record| self.strip_prefix(record))
             .collect())
@@ -119,9 +127,8 @@ impl TaskStore for VersionedTaskStore {
     /// Scans this spec's key range without collecting task records. The length check
     /// excludes old unprefixed keys and malformed keys that share the spec prefix.
     fn count(&self) -> ProverResult<usize> {
-        let prefix = u32::from(self.spec).to_be_bytes();
-        let key_len = prefix.len() + CheckpointProofTask::KEY_LEN;
-        self.inner.count_tasks_with_prefix(prefix.to_vec(), key_len)
+        self.inner
+            .count_tasks_with_prefix(spec_prefix(self.spec), CheckpointProofTask::KEY_LEN)
     }
 }
 
@@ -161,9 +168,9 @@ mod tests {
         for spec in [OLSpecId::V0, OLSpecId::V1] {
             let task = task(7);
             let key = VersionedTaskStore::encode_key(spec, task);
-            assert_eq!(key.len(), 48);
-            assert_eq!(&key[..4], u32::from(spec).to_be_bytes());
-            assert_eq!(&key[4..], task.to_key_bytes());
+            assert_eq!(key.len(), STORED_KEY_LEN);
+            assert_eq!(&key[..SPEC_PREFIX_LEN], spec_prefix(spec));
+            assert_eq!(&key[SPEC_PREFIX_LEN..], task.to_key_bytes());
             assert_eq!(VersionedTaskStore::decode_key(&key), Some((spec, task)));
         }
         assert_eq!(
@@ -281,11 +288,11 @@ mod tests {
     fn untagged_unknown_and_malformed_rows_do_not_starve_valid_recovery_or_retry() {
         let (raw, v1, _) = stores();
         let mut unknown = VersionedTaskStore::encode_key(OLSpecId::V0, task(1));
-        unknown[3] = 99;
+        unknown[SPEC_PREFIX_LEN - 1] = 99;
         // Epoch 1's old key starts with the V1 prefix but has no separate spec field.
         let unprefixed = task(1).to_key_bytes();
-        assert!(unprefixed.starts_with(&u32::from(OLSpecId::V1).to_be_bytes()));
-        let malformed = u32::from(OLSpecId::V1).to_be_bytes().to_vec();
+        assert!(unprefixed.starts_with(&spec_prefix(OLSpecId::V1)));
+        let malformed = spec_prefix(OLSpecId::V1).to_vec();
         let mut keys = vec![unknown, vec![1, 2], unprefixed, malformed];
         for key in &keys {
             raw.insert(TaskRecord::new(key.clone(), TaskStatus::Pending))

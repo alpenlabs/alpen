@@ -30,24 +30,24 @@ impl ProverTaskDbManager {
     /// Counts keys with the given prefix and encoded length without collecting records.
     pub(crate) fn count_tasks_with_prefix(
         &self,
-        prefix: Vec<u8>,
-        key_len: usize,
+        prefix: [u8; 4],
+        suffix_len: usize,
     ) -> ProverResult<usize> {
         self.ops
-            .count_tasks_with_prefix_blocking(prefix, key_len)
+            .count_tasks_with_prefix_blocking(prefix, suffix_len)
             .map_err(db_err)
     }
 
     /// Lists due retry or blocked tasks in one namespace.
     pub(crate) fn list_retriable_with_prefix(
         &self,
-        prefix: Vec<u8>,
-        key_len: usize,
+        prefix: [u8; 4],
+        suffix_len: usize,
         now_secs: u64,
     ) -> ProverResult<Vec<TaskRecord>> {
         let items = self
             .ops
-            .list_retriable_with_prefix_blocking(prefix, key_len, now_secs)
+            .list_retriable_with_prefix_blocking(prefix, suffix_len, now_secs)
             .map_err(db_err)?;
         Ok(items
             .into_iter()
@@ -58,12 +58,12 @@ impl ProverTaskDbManager {
     /// Lists Pending or Proving tasks in one namespace.
     pub(crate) fn list_unfinished_with_prefix(
         &self,
-        prefix: Vec<u8>,
-        key_len: usize,
+        prefix: [u8; 4],
+        suffix_len: usize,
     ) -> ProverResult<Vec<TaskRecord>> {
         let items = self
             .ops
-            .list_unfinished_with_prefix_blocking(prefix, key_len)
+            .list_unfinished_with_prefix_blocking(prefix, suffix_len)
             .map_err(db_err)?;
         Ok(items
             .into_iter()
