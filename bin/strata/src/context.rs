@@ -836,13 +836,21 @@ mod tests {
     use crate::errors::InitError;
 
     #[test]
+    fn example_config_execution_params_load() {
+        let config_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../example_config.toml");
+        let config: Config = toml::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        load_asm_execution_params(&config_path, &config.asm_execution)
+            .expect("example config must reference valid checked-in execution parameters");
+    }
+
+    #[test]
     fn execution_params_resolve_relative_to_node_config() {
         let dir = unique_temp_dir().with_extension("execution-path");
         fs::create_dir_all(&dir).unwrap();
         let params_path = dir.join("execution.json");
         fs::write(
             &params_path,
-            include_str!("../../../docker/configs/asm-execution-params.json"),
+            include_str!("../../../docker/configs/dev/asm-execution-params.json"),
         )
         .unwrap();
         let config_path = dir.join("node.toml");
