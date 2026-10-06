@@ -6,7 +6,7 @@ use strata_asm_common::{AnchorState, AsmError, SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_db_types::DbError;
 use strata_identifiers::L1BlockCommitment;
-use strata_predicate::PredicateKey;
+use strata_predicate::PredicateTypeId;
 use strata_storage::NodeStorage;
 
 use crate::LoadedCheckpointPredicates;
@@ -80,12 +80,12 @@ pub fn check_startup_without_prover_blocking(
     genesis_block: L1BlockCommitment,
 ) -> Result<L1BlockCommitment, CheckpointArtifactCheckError> {
     let (block, checkpoint) = read_startup_checkpoint_blocking(storage, genesis_block)?;
-    let always_accept = PredicateKey::always_accept();
-    if checkpoint.checkpoint_predicate() != &always_accept
+    let always_accept_id = PredicateTypeId::AlwaysAccept.as_u8();
+    if checkpoint.checkpoint_predicate().id() != always_accept_id
         || checkpoint
             .pending_transitions()
             .iter()
-            .any(|transition| transition.predicate() != &always_accept)
+            .any(|transition| transition.predicate().id() != always_accept_id)
     {
         return Err(CheckpointArtifactCheckError::ProverRequired);
     }
@@ -186,6 +186,7 @@ mod tests {
     use strata_identifiers::{Buf32, L1BlockId, OLBlockId};
     use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_types::OLSpecId;
+    use strata_predicate::PredicateKey;
     use strata_storage::{create_node_storage, test_runtime_handle};
 
     use super::*;
@@ -255,6 +256,23 @@ mod tests {
         assert_eq!(
             check_startup_without_prover_blocking(&storage, genesis).unwrap(),
             genesis,
+        );
+    }
+
+    #[test]
+    fn startup_without_prover_accepts_always_accept_with_nonempty_conditions() {
+        let storage = storage();
+        let mut checkpoint = checkpoint(&loaded_predicates());
+        checkpoint.checkpoint_predicate =
+            PredicateKey::try_new(PredicateTypeId::AlwaysAccept, vec![1]).unwrap();
+        checkpoint.queue_predicate_transition(PendingPredicateTransition::new(
+            PredicateKey::try_new(PredicateTypeId::AlwaysAccept, vec![2]).unwrap(),
+            10,
+        ));
+        let block = extend_snapshot(&storage, 1, &checkpoint);
+        assert_eq!(
+            check_startup_without_prover_blocking(&storage, block).unwrap(),
+            block,
         );
     }
 
