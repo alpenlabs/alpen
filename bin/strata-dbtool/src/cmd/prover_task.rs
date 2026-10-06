@@ -404,9 +404,9 @@ pub(crate) fn backfill_checkpoint_proof_task(
             Box::new(args.epoch),
         )
     })?;
-    // TODO(STR-4082): Create a follow-up ticket for spec-aware dbtool backfill.
-    // This command currently assigns V1 to every task. Read the epoch's committed start
-    // state and use the node's spec-selection rule to choose the stored task's spec.
+    // TODO(STR-4561): Select the epoch's proving spec when backfilling a task.
+    // This command currently assigns V1 to every task. Read cur_spec from the epoch's
+    // terminal OL state and use it as the stored task's spec.
     // If that state or spec cannot be resolved, report an error without inserting a task.
     let key = VersionedTaskStore::encode_key(OLSpecId::V1, CheckpointProofTask(commitment));
     let key_hex = hex::encode(&key);

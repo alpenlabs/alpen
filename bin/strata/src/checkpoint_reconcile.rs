@@ -13,7 +13,7 @@ use tracing::{debug, info};
 /// Checkpoint payloads, proofs, and prover tasks past the ASM verified tip are
 /// local candidate state. Rebuilding them on startup prevents a rotated OL
 /// image from reusing stale pre-rotation proof artifacts.
-// TODO(STR-4082): Revisit clearing unaccepted checkpoint artifacts on every restart.
+// TODO(STR-4562): Revisit clearing unaccepted checkpoint artifacts on every restart.
 // Determine when existing payloads, proofs, and tasks can be safely reused.
 // Keep proof and task cleanup together so a deleted proof cannot leave a Completed task.
 pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -> Result<()> {
