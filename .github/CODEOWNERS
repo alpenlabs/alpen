@@ -1,10 +1,10 @@
 # Order is important; the last matching pattern takes the most precedence.
 
 # Fallback to leads/PoCs
-/* @storopoli @prajwolrg
 * @storopoli @prajwolrg
 
 # CI, local env, repo tooling
+/.github/ @storopoli @purusang @voidash @alexhui01
 /.github/workflows/ @storopoli @purusang @voidash @alexhui01
 /.github/actions/ @storopoli @purusang @voidash @alexhui01
 /.github/dependabot.yml @storopoli @purusang
@@ -23,58 +23,61 @@
 /docker/ @purusang @voidash @alexhui01
 
 # Rust workspace domains
-/crates/btcio/ @storopoli @irnb @bewakes
+# Core protocol rarely changes this repo but co-owns btcio and the proving infrastructure.
+/crates/btcio/ @storopoli @bewakes @irnb @prajwolrg
 
-/crates/ol/ @delbonis @krsnapaudel @bewakes
-/crates/acct-types/ @delbonis @krsnapaudel @bewakes
-/crates/bridge-types/ @delbonis @krsnapaudel @bewakes
-/crates/snark-*/ @delbonis @krsnapaudel @bewakes
+/crates/ol/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/acct-types/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/bridge-types/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/bridge-params/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/checkpoint-types/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/snark-*/ @storopoli @purusang @bewakes @krsnapaudel
 
-/crates/chain-worker/ @delbonis @krsnapaudel @storopoli
-/crates/consensus-logic/ @delbonis @krsnapaudel @storopoli
-/crates/csm-*/ @krsnapaudel @bewakes @storopoli
-/crates/node-context/ @krsnapaudel @bewakes @storopoli
+/crates/chain-worker/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/consensus-logic/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/csm-*/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/node-context/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/config/ @storopoli @purusang @bewakes
 
-/crates/db/ @krsnapaudel @bewakes @delbonis
-/crates/storage/ @krsnapaudel @bewakes @delbonis
-/crates/storage-common/ @krsnapaudel @bewakes @delbonis
+/crates/db/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/storage/ @storopoli @purusang @bewakes @krsnapaudel
+/crates/storage-common/ @storopoli @purusang @bewakes @krsnapaudel
 
-/crates/rpc/ @krsnapaudel @bewakes
-/crates/proof-impl/ @purusang @prajwolrg @evgenyzdanovich @irnb
-/crates/prover-core/ @prajwolrg @evgenyzdanovich @irnb
-/crates/zkvm/ @prajwolrg @evgenyzdanovich @irnb
-/crates/paas/ @prajwolrg @evgenyzdanovich @irnb
-/provers/ @purusang @prajwolrg @evgenyzdanovich
+/crates/rpc/ @storopoli @bewakes @krsnapaudel
+/crates/proof-impl/ @purusang @storopoli @prajwolrg @irnb
+/crates/prover-core/ @prajwolrg @irnb @evgenyzdanovich @sapinb @storopoli @purusang
+/crates/zkvm/ @prajwolrg @irnb @evgenyzdanovich @sapinb @storopoli @purusang
+/crates/paas/ @prajwolrg @irnb @evgenyzdanovich @sapinb @storopoli @purusang
+/provers/ @purusang @storopoli @prajwolrg @sapinb
 
-/crates/key-derivation/ @storopoli @prajwolrg @delbonis
+/crates/key-derivation/ @storopoli @prajwolrg
 /crates/primitives/ @storopoli @prajwolrg @bewakes
-/crates/da-framework/ @storopoli @prajwolrg @delbonis @evgenyzdanovich @irnb
-/crates/test-utils/ @voidash @delbonis
+/crates/da-framework/ @storopoli @purusang @prajwolrg @evgenyzdanovich @irnb
+/crates/test-utils/ @storopoli @purusang @bewakes @voidash
+/crates/strata-signer/ @purusang @storopoli @krsnapaudel
 
 # Binaries
-/bin/strata/ @storopoli @krsnapaudel @bewakes
-/bin/datatool/ @krsnapaudel @voidash
-/bin/strata-dbtool/ @krsnapaudel @delbonis
-/bin/strata-test-cli/ @krsnapaudel @voidash
+/bin/strata/ @storopoli @purusang @bewakes @krsnapaudel
+/bin/datatool/ @krsnapaudel @voidash @purusang @prajwolrg
+/bin/strata-dbtool/ @krsnapaudel @bewakes @storopoli
+/bin/strata-test-cli/ @krsnapaudel @voidash @storopoli @prajwolrg
 /bin/prover-perf/ @prajwolrg @purusang
-/bin/strata-signer/ @purusang @krsnapaudel
+/bin/strata-signer/ @purusang @storopoli @krsnapaudel
 
 # Tests and benchmarks
-/functional-tests/ @delbonis @voidash @bewakes
+/functional-tests/ @storopoli @purusang @bewakes @voidash
 /benches/ @storopoli @krsnapaudel
 
 # Dependency metadata overrides. Keep these after crate/bin rules.
-**/Cargo.toml @storopoli
-**/Cargo.lock @storopoli
+**/Cargo.toml @storopoli @purusang
+**/Cargo.lock @storopoli @purusang
 
 # Repo policy/admin surfaces
 # keep last to avoid being overridden by other rules
 /.github/CODEOWNERS @pramodkandel @barakshani
-/.github/ @storopoli @purusang @voidash @alexhui01
 /.gitignore @storopoli
 /README.md @storopoli @barakshani @john-light @pramodkandel
 /CONTRIBUTING.md @pramodkandel @barakshani
 /AGENTS.md @storopoli
 /CLAUDE.md @storopoli
 /LICENSE-* @pramodkandel @barakshani
-
