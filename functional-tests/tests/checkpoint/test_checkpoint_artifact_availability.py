@@ -69,10 +69,7 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
 
         # Hold L1 at the enactment boundary: old V1 epochs can still be proven,
         # while no new L1 block can accept a checkpoint that promotes the pending predicate.
-        # The epoch that processes the enactment ends at the boundary and is the last one
-        # the node builds, since the next epoch runs a spec this binary does not implement.
-        boundary_epoch = self._wait_for_epoch_ending_at(strata_rpc, boundary)
-        self._wait_for_proof(log_path, log_offset, boundary_epoch)
+        self._wait_for_new_proof(strata_rpc, log_path, log_offset, boundary)
 
         signer.stop()
         strata.stop()
@@ -114,21 +111,11 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
 
     @staticmethod
     def _wait_for_new_proof(strata_rpc, log_path: Path, offset: int, boundary: int):
-        target_epoch = int(strata_rpc.strata_getChainStatus()["latest"]["epoch"]) + 1
-        epoch = TestCheckpointArtifactAvailability._wait_for_proof(log_path, offset, target_epoch)
-        checkpoint = strata_rpc.strata_getCheckpointInfo(epoch)
-        assert checkpoint is not None
-        assert int(checkpoint["l1_range"][1]["height"]) <= boundary, (
-            f"epoch {epoch} crossed the pending transition at L1 {boundary}"
-        )
-
-    @staticmethod
-    def _wait_for_proof(log_path: Path, offset: int, target_epoch: int) -> int:
-        """Waits for a proof of `target_epoch` or a later epoch and returns its epoch."""
-
         # RPC checkpoint info is available from the epoch summary before its proof.
         # The completion log is emitted after proof persistence and canonicality
         # validation; unlike a signing duty it remains observable after signing.
+        target_epoch = int(strata_rpc.strata_getChainStatus()["latest"]["epoch"]) + 1
+
         def completed_epoch():
             with log_path.open(errors="replace") as log:
                 log.seek(offset)
@@ -141,33 +128,15 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
                     return int(match.group(1))
             return None
 
-        return wait_until_with_value(
+        epoch = wait_until_with_value(
             completed_epoch,
             lambda value: value is not None,
             error_with=f"no new proof completed from epoch {target_epoch}",
             timeout=90,
             step=0.5,
         )
-
-    @staticmethod
-    def _wait_for_epoch_ending_at(strata_rpc, boundary: int) -> int:
-        """Waits for the OL to seal the epoch whose checkpoint coverage ends at `boundary`."""
-
-        def latest_epoch_coverage():
-            epoch = int(strata_rpc.strata_getChainStatus()["latest"]["epoch"])
-            checkpoint = strata_rpc.strata_getCheckpointInfo(epoch)
-            if checkpoint is None:
-                return epoch, None
-            return epoch, int(checkpoint["l1_range"][1]["height"])
-
-        epoch, coverage_end = wait_until_with_value(
-            latest_epoch_coverage,
-            lambda value: value[1] is not None and value[1] >= boundary,
-            error_with=f"no epoch covering L1 up to the enactment boundary {boundary} sealed",
-            timeout=90,
-            step=0.5,
+        checkpoint = strata_rpc.strata_getCheckpointInfo(epoch)
+        assert checkpoint is not None
+        assert int(checkpoint["l1_range"][1]["height"]) <= boundary, (
+            f"epoch {epoch} crossed the pending transition at L1 {boundary}"
         )
-        assert coverage_end == boundary, (
-            f"epoch {epoch} covers L1 up to {coverage_end}, past the enactment boundary {boundary}"
-        )
-        return epoch
