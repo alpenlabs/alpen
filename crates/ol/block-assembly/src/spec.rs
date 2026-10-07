@@ -1,5 +1,6 @@
 //! The spec each assembled block runs under.
 
+use strata_checkpoint_types::prev_epoch_last_l1_async;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_state_types::{IStateAccessor, OLSpecVersions};
@@ -57,21 +58,12 @@ pub(crate) async fn select_spec_after_terminal<C: BlockAssemblyAnchorContext>(
     parent_versions: OLSpecVersions,
     parent_last_l1: L1BlockCommitment,
 ) -> BlockAssemblyResult<OLSpecId> {
-    let prev_last = if parent.epoch() == 0 {
-        ctx.genesis_l1_block()
-    } else {
-        let summary = ctx
-            .fetch_epoch_summary(parent)
+    let prev_last = prev_epoch_last_l1_async(parent, ctx.genesis_l1_block(), |epoch| async move {
+        ctx.fetch_epoch_summary(epoch)
             .await?
-            .ok_or(BlockAssemblyError::EpochSummaryNotFound(parent))?;
-        let prev = summary
-            .get_prev_epoch_commitment()
-            .expect("a summary of an epoch after genesis has a previous epoch");
-        *ctx.fetch_epoch_summary(prev)
-            .await?
-            .ok_or(BlockAssemblyError::EpochSummaryNotFound(prev))?
-            .new_l1()
-    };
+            .ok_or(BlockAssemblyError::EpochSummaryNotFound(epoch))
+    })
+    .await?;
     let parent_l1_range = EpochL1Range::new(prev_last, parent_last_l1)?;
 
     // The lookup is async and selection is not, so fetch the one manifest

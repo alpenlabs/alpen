@@ -3,6 +3,7 @@
 
 use std::convert::Infallible;
 
+use strata_checkpoint_types::prev_epoch_last_l1_async;
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_stf::{
@@ -76,25 +77,15 @@ pub(crate) async fn select_tip_spec(
     let tip_last_l1 =
         L1BlockCommitment::new(tip_state.last_l1_height(), *tip_state.last_l1_blkid());
 
-    let prev_last = if epoch == 0 {
-        genesis_l1_block
-    } else {
-        let tip_epoch = EpochCommitment::from_terminal(epoch, tip.block());
-        let summary = storage
+    let tip_epoch = EpochCommitment::from_terminal(epoch, tip.block());
+    let prev_last = prev_epoch_last_l1_async(tip_epoch, genesis_l1_block, |epoch| async move {
+        storage
             .ol_checkpoint()
-            .get_epoch_summary_async(tip_epoch)
+            .get_epoch_summary_async(epoch)
             .await?
-            .ok_or(OLMempoolError::MissingEpochSummary(tip_epoch))?;
-        let prev = summary
-            .get_prev_epoch_commitment()
-            .expect("a summary of an epoch after genesis has a previous epoch");
-        *storage
-            .ol_checkpoint()
-            .get_epoch_summary_async(prev)
-            .await?
-            .ok_or(OLMempoolError::MissingEpochSummary(prev))?
-            .new_l1()
-    };
+            .ok_or(OLMempoolError::MissingEpochSummary(epoch))
+    })
+    .await?;
     let range = EpochL1Range::new(prev_last, tip_last_l1)?;
     let last_manifest = match range.last_processed() {
         Some(block) => storage.l1().get_block_manifest_async(block.blkid()).await?,

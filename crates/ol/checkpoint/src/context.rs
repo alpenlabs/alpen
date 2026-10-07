@@ -5,7 +5,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types::{EpochSummary, prev_epoch_last_l1};
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
@@ -439,19 +439,10 @@ fn select_spec_after_terminal<C: CheckpointWorkerContext>(
     parent: EpochCommitment,
     parent_state: &OLStateContainer,
 ) -> anyhow::Result<OLSpecId> {
-    let prev_last = if parent.epoch() == 0 {
-        ctx.genesis_l1_block()
-    } else {
-        let summary = ctx
-            .get_epoch_summary(parent)?
-            .ok_or_else(|| anyhow::anyhow!("missing the epoch summary of {parent}"))?;
-        let prev = summary
-            .get_prev_epoch_commitment()
-            .expect("a summary of an epoch after genesis has a previous epoch");
-        *ctx.get_epoch_summary(prev)?
-            .ok_or_else(|| anyhow::anyhow!("missing the epoch summary of {prev}"))?
-            .new_l1()
-    };
+    let prev_last = prev_epoch_last_l1(parent, ctx.genesis_l1_block(), |epoch| {
+        ctx.get_epoch_summary(epoch)?
+            .ok_or_else(|| anyhow::anyhow!("missing the epoch summary of {epoch}"))
+    })?;
     let range = EpochL1Range::new(prev_last, parent_state.chainstate().last_l1_block())?;
     let last_manifest = match range.last_processed() {
         Some(block) => ctx.get_l1_manifest(block)?,
