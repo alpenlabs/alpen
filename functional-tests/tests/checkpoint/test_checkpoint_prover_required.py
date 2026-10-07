@@ -46,7 +46,8 @@ class TestCheckpointProverRequired(StrataNodeTest):
             log.seek(log_offset)
             startup_log = log.read()
         assert "checkpoint prover configuration check failed at startup" in startup_log, startup_log
-        assert "checkpoint predicate requires a prover" in startup_log, startup_log
-        assert "configure [prover]" in startup_log, startup_log
+        assert "Active checkpoint predicate" in startup_log, startup_log
+        assert "does not allow empty proofs" in startup_log, startup_log
+        assert "requires AlwaysAccept checkpoint predicates" in startup_log, startup_log
         assert "health check server started" not in startup_log, startup_log
         return True

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{Error, Result};
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
 use strata_chain_worker::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
@@ -12,8 +12,11 @@ use strata_consensus_logic::{
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
 use strata_ol_checkpoint::OLCheckpointBuilder;
-use strata_ol_checkpoint_artifacts::startup::check_startup_without_prover_blocking;
+use strata_ol_checkpoint_artifacts::startup::{
+    CheckpointProverCheckError, check_startup_without_prover_blocking,
+};
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_predicate::PredicateTypeId;
 use strata_service::ServiceMonitor;
 
 use crate::{
@@ -273,7 +276,24 @@ pub(crate) fn start_strata_services(
             nodectx.storage(),
             nodectx.ol_params().genesis_l1_block(),
         )
-        .context("checkpoint prover configuration check failed at startup")?;
+        .map_err(|error| {
+            let advice = match &error {
+                CheckpointProverCheckError::ProofRequired { predicate, .. }
+                    if predicate.id() == PredicateTypeId::Sp1Groth16.as_u8() =>
+                {
+                    "checkpoint prover configuration check failed at startup; configure [prover] \
+                     with matching SP1 artifacts and build strata with the prover and sp1 features"
+                }
+                CheckpointProverCheckError::ProofRequired { .. } => {
+                    "checkpoint prover configuration check failed at startup; sequencing without \
+                     a prover requires AlwaysAccept checkpoint predicates"
+                }
+                CheckpointProverCheckError::Read(_) => {
+                    "checkpoint prover configuration check failed at startup"
+                }
+            };
+            Error::new(error).context(advice)
+        })?;
     }
 
     // Start Csm worker
