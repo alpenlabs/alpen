@@ -238,8 +238,6 @@ impl OLMempoolRejectReason {
             | OLMempoolError::ServiceClosed(_)
             | OLMempoolError::NotAvailable
             | OLMempoolError::UpgradeRequired(_)
-            | OLMempoolError::MissingEpochSummary(_)
-            | OLMempoolError::InvalidEpochL1Range(_)
             | OLMempoolError::SpecSelection(_) => None,
         }
     }

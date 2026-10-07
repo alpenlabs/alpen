@@ -104,8 +104,6 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
         | OLMempoolError::Serialization(_)
         | OLMempoolError::ServiceClosed(_)
         | OLMempoolError::StateProvider(_)
-        | OLMempoolError::MissingEpochSummary(_)
-        | OLMempoolError::InvalidEpochL1Range(_)
         | OLMempoolError::SpecSelection(_) => {
             error!(?err, "Internal mempool error");
             internal_error(err.to_string())

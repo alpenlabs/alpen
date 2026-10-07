@@ -9,7 +9,7 @@ use strata_ol_state_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut}
 use strata_ol_stf::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 
-use crate::spec::select_spec_after_terminal;
+use crate::spec::select_spec_after_epoch_terminal_block;
 use crate::{BlockAssemblyAnchorContext, BlockAssemblyError, BlockAssemblyStateAccess};
 
 /// An 'append-only' container of state diff and OL logs accumulated DA data for some epoch.
@@ -137,7 +137,7 @@ where
 
     // The epoch's blocks ran under the spec selected after the epoch's parent.
     let epoch_parent = &epoch_blocks.epoch_parent;
-    let spec = select_spec_after_terminal(
+    let spec = select_spec_after_epoch_terminal_block(
         ctx,
         EpochCommitment::from_terminal(
             epoch_parent.epoch(),

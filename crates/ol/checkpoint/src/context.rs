@@ -1,17 +1,16 @@
 //! Context trait for checkpoint worker dependencies.
 
-use std::convert::Infallible;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types::{EpochSummary, select_spec_after_epoch};
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_stf::{EpochL1Range, OLSpecId, select_next_epoch_spec};
+use strata_ol_stf::OLSpecId;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -407,7 +406,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
         .get_ol_state(prev_terminal)?
         .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
     let parent = EpochCommitment::from_terminal(summary.epoch() - 1, *prev_terminal);
-    let spec = select_spec_after_terminal(ctx, parent, &ol_state_raw)?;
+    let spec = select_spec_after_epoch_terminal_block(ctx, parent, &ol_state_raw)?;
     let da_output = compute_epoch_da(
         spec,
         MemoryStateBaseLayer::from_container(ol_state_raw),
@@ -423,7 +422,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 }
 
 /// Selects the spec of the epoch after `parent`, whose terminal state is
-/// `parent_state`, with [`select_next_epoch_spec`], as block assembly built
+/// `parent_state`, with [`select_spec_after_epoch`], as block assembly built
 /// the epoch.
 ///
 /// The parent epoch's L1 range starts at the last L1 block of the epoch its
@@ -434,34 +433,23 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 /// Returns an error, carrying [`UpgradeRequired`](strata_ol_stf::UpgradeRequired)
 /// if the epoch runs a spec this binary does not implement, or if the parent
 /// epoch's summaries or last manifest are missing or inconsistent.
-fn select_spec_after_terminal<C: CheckpointWorkerContext>(
+fn select_spec_after_epoch_terminal_block<C: CheckpointWorkerContext>(
     ctx: &C,
     parent: EpochCommitment,
     parent_state: &OLStateContainer,
 ) -> anyhow::Result<OLSpecId> {
-    let prev_last = if parent.epoch() == 0 {
-        ctx.genesis_l1_block()
-    } else {
-        let summary = ctx
-            .get_epoch_summary(parent)?
-            .ok_or_else(|| anyhow::anyhow!("missing the epoch summary of {parent}"))?;
-        let prev = summary
-            .get_prev_epoch_commitment()
-            .expect("a summary of an epoch after genesis has a previous epoch");
-        *ctx.get_epoch_summary(prev)?
-            .ok_or_else(|| anyhow::anyhow!("missing the epoch summary of {prev}"))?
-            .new_l1()
-    };
-    let range = EpochL1Range::new(prev_last, parent_state.chainstate().last_l1_block())?;
-    let last_manifest = match range.last_processed() {
-        Some(block) => ctx.get_l1_manifest(block)?,
-        None => None,
-    };
-    Ok(select_next_epoch_spec(
+    select_spec_after_epoch(
+        parent,
         parent_state.spec_versions(),
-        range,
-        |_| Ok::<_, Infallible>(last_manifest),
-    )?)
+        parent_state.chainstate().last_l1_block(),
+        ctx.genesis_l1_block(),
+        |epoch| ctx.get_epoch_summary(epoch),
+        |block| ctx.get_l1_manifest(&block),
+    )
+    .map_err(|err| match err.into_lookup_error() {
+        Ok(lookup) => lookup,
+        Err(err) => err.into(),
+    })
 }
 
 /// Collects all blocks in an epoch by walking backwards from the terminal block.
