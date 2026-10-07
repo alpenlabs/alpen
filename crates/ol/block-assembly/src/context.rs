@@ -7,12 +7,15 @@ use async_trait::async_trait;
 use strata_acct_types::tree_hash::{Sha256Hasher, TreeHash};
 use strata_acct_types::{AccountId, AccumulatorClaim, MessageEntry, RawMerkleProof};
 use strata_asm_manifest_types::AsmManifest;
+use strata_checkpoint_types::EpochSummary;
 use strata_db_types::MmrId;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_identifiers::{
+    EpochCommitment, Hash, L1BlockCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
+};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_mempool::{MempoolCandidates, MempoolTxInvalidReason};
-use strata_ol_params::OLRuntimeParams;
+use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_state_provider::StateProvider;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::{IStateAccessor, IStateAccessorMut};
@@ -76,6 +79,24 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
 
     /// Returns the runtime params used for OL STF execution.
     fn runtime_params(&self) -> OLRuntimeParams;
+
+    /// Returns the L1 block OL genesis anchors to, where the genesis epoch's
+    /// L1 range starts.
+    fn genesis_l1_block(&self) -> L1BlockCommitment;
+
+    /// Fetches the summary of the epoch that ends at `epoch`'s terminal block,
+    /// whether or not that block is canonical.
+    async fn fetch_epoch_summary(
+        &self,
+        epoch: EpochCommitment,
+    ) -> BlockAssemblyResult<Option<EpochSummary>>;
+
+    /// Fetches the stored ASM manifest of the L1 block `block`, or `None` if
+    /// none is stored.
+    async fn fetch_l1_manifest(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> BlockAssemblyResult<Option<AsmManifest>>;
 }
 
 /// Generates MMR proofs needed during block assembly.
@@ -118,6 +139,7 @@ pub struct BlockAssemblyContext<M, S> {
     state_provider: S,
     l1_reorg_safe_depth: u32,
     runtime_params: OLRuntimeParams,
+    genesis_l1_block: L1BlockCommitment,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
@@ -126,25 +148,28 @@ impl<M, S> Debug for BlockAssemblyContext<M, S> {
             .field("storage", &"<NodeStorage>")
             .field("l1_reorg_safe_depth", &self.l1_reorg_safe_depth)
             .field("runtime_params", &self.runtime_params)
+            .field("genesis_l1_block", &self.genesis_l1_block)
             .finish_non_exhaustive()
     }
 }
 
 impl<M, S> BlockAssemblyContext<M, S> {
-    /// Create a new block assembly context.
+    /// Create a new block assembly context for the network `ol_params`
+    /// describes.
     pub fn new(
         storage: Arc<NodeStorage>,
         mempool_provider: M,
         state_provider: S,
         l1_reorg_safe_depth: u32,
-        runtime_params: OLRuntimeParams,
+        ol_params: &OLParams,
     ) -> Self {
         Self {
             storage,
             mempool_provider,
             state_provider,
             l1_reorg_safe_depth,
-            runtime_params,
+            runtime_params: ol_params.runtime_params(),
+            genesis_l1_block: ol_params.genesis_l1_block(),
         }
     }
 }
@@ -243,6 +268,34 @@ where
 
     fn runtime_params(&self) -> OLRuntimeParams {
         self.runtime_params
+    }
+
+    fn genesis_l1_block(&self) -> L1BlockCommitment {
+        self.genesis_l1_block
+    }
+
+    async fn fetch_epoch_summary(
+        &self,
+        epoch: EpochCommitment,
+    ) -> BlockAssemblyResult<Option<EpochSummary>> {
+        self.storage
+            .ol_checkpoint()
+            .get_epoch_summary_async(epoch)
+            .await
+            .map_err(BlockAssemblyError::Db)
+    }
+
+    async fn fetch_l1_manifest(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> BlockAssemblyResult<Option<AsmManifest>> {
+        // Manifests are stored by block, so another block's manifest is never
+        // returned for this one.
+        self.storage
+            .l1()
+            .get_block_manifest_async(block.blkid())
+            .await
+            .map_err(BlockAssemblyError::Db)
     }
 }
 

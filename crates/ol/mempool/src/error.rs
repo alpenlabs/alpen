@@ -1,9 +1,12 @@
 //! OL mempool error types.
 
+use std::convert::Infallible;
+
 use strata_acct_types::AccountId;
 use strata_db_types::DbError;
-use strata_identifiers::OLTxId;
+use strata_identifiers::{EpochCommitment, OLTxId};
 use strata_ol_log_budget::TxLogBudgetError;
+use strata_ol_stf::{EpochSpecSelectionError, InvalidEpochL1Range, UpgradeRequired};
 
 /// Errors that can occur during mempool operations.
 #[derive(Debug, thiserror::Error)]
@@ -89,4 +92,22 @@ pub enum OLMempoolError {
     /// Mempool is not running on this node (e.g. checkpoint-sync fullnode).
     #[error("mempool not available on this node")]
     NotAvailable,
+
+    /// The block after the tip runs a spec this binary does not implement, so
+    /// the mempool admits no transaction.
+    #[error(transparent)]
+    UpgradeRequired(#[from] UpgradeRequired),
+
+    /// The tip ends an epoch whose summary, or whose predecessor's summary, is
+    /// not stored.
+    #[error("missing the epoch summary of {0}")]
+    MissingEpochSummary(EpochCommitment),
+
+    /// The tip epoch's last L1 block does not follow the previous epoch's.
+    #[error("epoch L1 range: {0}")]
+    InvalidEpochL1Range(#[from] InvalidEpochL1Range),
+
+    /// Selecting the spec of the block after the tip failed.
+    #[error("select the spec of the block after the tip: {0}")]
+    SpecSelection(#[source] EpochSpecSelectionError<Infallible>),
 }

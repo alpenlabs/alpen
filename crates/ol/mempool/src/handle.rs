@@ -107,13 +107,13 @@ mod tests {
     use tokio::runtime::Handle;
 
     use super::*;
-    use crate::MempoolBuilder;
     use crate::test_utils::{
         create_test_block_commitment, create_test_generic_tx_for_account,
         create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
         create_test_snark_tx_with_seq_no_and_slots,
     };
     use crate::types::OLMempoolConfig;
+    use crate::{MempoolBuilder, MempoolTip};
     use strata_bridge_params::BridgeParams;
 
     /// Helper to set up mempool handle with storage for tests.
@@ -155,7 +155,8 @@ mod tests {
             BridgeParams::default(),
             storage.clone(),
             status_channel.clone(),
-            current_tip,
+            l1_block,
+            MempoolTip::new(current_tip, None),
         )
         .launch(&texec)
         .await
