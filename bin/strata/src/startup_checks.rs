@@ -6,7 +6,7 @@ use bitcoind_async_client::{
 };
 use strata_btc_types::BlockHashExt;
 use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
-use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types::{EpochSummary, prev_epoch_last_l1};
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
@@ -725,22 +725,12 @@ pub(crate) fn spec_after_terminal(
     terminal: EpochCommitment,
     state: &OLStateContainer,
 ) -> Result<OLSpecId> {
-    let prev_last = if terminal.epoch() == 0 {
-        genesis_l1_block
-    } else {
-        let summary = storage
+    let prev_last = prev_epoch_last_l1(terminal, genesis_l1_block, |epoch| {
+        storage
             .ol_checkpoint()
-            .get_epoch_summary_blocking(terminal)?
-            .ok_or_else(|| anyhow!("missing the epoch summary of {terminal}"))?;
-        let prev = summary
-            .get_prev_epoch_commitment()
-            .expect("a summary of an epoch after genesis has a previous epoch");
-        *storage
-            .ol_checkpoint()
-            .get_epoch_summary_blocking(prev)?
-            .ok_or_else(|| anyhow!("missing the epoch summary of {prev}"))?
-            .new_l1()
-    };
+            .get_epoch_summary_blocking(epoch)?
+            .ok_or_else(|| anyhow!("missing the epoch summary of {epoch}"))
+    })?;
     let range = EpochL1Range::new(prev_last, state.chainstate().last_l1_block())?;
     Ok(select_next_epoch_spec(
         state.spec_versions(),

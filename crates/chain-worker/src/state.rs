@@ -15,7 +15,8 @@ use strata_acct_types::AccountSerial;
 use strata_asm_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::{
-    EpochSummary, TerminalHeaderReconstructionError, reconstruct_terminal_header,
+    EpochSummary, TerminalHeaderReconstructionError, prev_epoch_last_l1,
+    reconstruct_terminal_header,
 };
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_CHAIN_WORKER_AFTER_MMR_INDEX, check_bail_trigger};
@@ -751,20 +752,10 @@ fn parent_epoch_l1_range<S: IStateAccessor>(
     parent_state: &S,
 ) -> WorkerResult<EpochL1Range> {
     let last = L1BlockCommitment::new(parent_state.last_l1_height(), *parent_state.last_l1_blkid());
-    let prev_last = if parent.epoch() == 0 {
-        // The genesis epoch starts at the L1 anchor.
-        ctx.genesis_l1_block()
-    } else {
-        let summary = ctx
-            .fetch_epoch_summary(parent)?
-            .ok_or(WorkerError::MissingEpochSummary(parent))?;
-        let prev = summary
-            .get_prev_epoch_commitment()
-            .expect("a summary of an epoch after genesis has a previous epoch");
-        *ctx.fetch_epoch_summary(prev)?
-            .ok_or(WorkerError::MissingEpochSummary(prev))?
-            .new_l1()
-    };
+    let prev_last = prev_epoch_last_l1(parent, ctx.genesis_l1_block(), |epoch| {
+        ctx.fetch_epoch_summary(epoch)?
+            .ok_or(WorkerError::MissingEpochSummary(epoch))
+    })?;
     Ok(EpochL1Range::new(prev_last, last)?)
 }
 
