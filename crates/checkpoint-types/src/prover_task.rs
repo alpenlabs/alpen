@@ -1,13 +1,12 @@
 //! Task-key wrapper used by the integrated checkpoint prover.
 //!
-//! Lives in a shared crate so the running node (`bin/strata`) and offline
-//! admin tooling (`bin/strata-dbtool`) agree on the on-disk byte format
-//! for entries in the [`strata_db_types::prover_task::ProverTaskDatabase`].
+//! Shares the task-key encoding between the running node and offline admin tools.
+//! The versioned task store adds the spec prefix used in the database.
 //!
 //! Wire format is the fixed-width big-endian concatenation
 //! `epoch(4) ‖ last_slot(8) ‖ last_blkid(32)`, 44 bytes total. Fixed-width
 //! big-endian keeps the encoding deterministic and lexicographically ordered
-//! by epoch, which is what the byte-keyed task tree relies on.
+//! by epoch within each spec in the database.
 
 use std::fmt;
 
@@ -23,12 +22,12 @@ const SLOT_LEN: usize = size_of::<Slot>();
 /// Width of the encoded terminal block id.
 const BLKID_LEN: usize = 32;
 
-/// Total width of an encoded [`CheckpointProofTask`].
-const KEY_LEN: usize = EPOCH_LEN + SLOT_LEN + BLKID_LEN;
-
 /// Error decoding a [`CheckpointProofTask`] from its key bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("malformed checkpoint proof task key (expected {KEY_LEN} bytes, got {0})")]
+#[error(
+    "malformed checkpoint proof task key (expected {expected} bytes, got {0})",
+    expected = CheckpointProofTask::KEY_LEN
+)]
 pub struct CheckpointProofTaskKeyError(usize);
 
 /// Task identifier for an integrated checkpoint proof.
@@ -36,25 +35,28 @@ pub struct CheckpointProofTaskKeyError(usize);
 pub struct CheckpointProofTask(pub EpochCommitment);
 
 impl CheckpointProofTask {
+    /// Number of bytes in an encoded checkpoint task key.
+    pub const KEY_LEN: usize = EPOCH_LEN + SLOT_LEN + BLKID_LEN;
+
     /// Returns the underlying epoch commitment.
     pub fn commitment(&self) -> EpochCommitment {
         self.0
     }
 
-    /// Encodes the task as its database key bytes.
+    /// Encodes the task as key bytes.
     ///
     /// See the module docs for the layout.
     pub fn to_key_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(KEY_LEN);
+        let mut out = Vec::with_capacity(Self::KEY_LEN);
         out.extend_from_slice(&self.0.epoch.to_be_bytes());
         out.extend_from_slice(&self.0.last_slot.to_be_bytes());
         out.extend_from_slice(self.0.last_blkid.as_ref());
         out
     }
 
-    /// Decodes a task from its database key bytes.
+    /// Decodes a task from its key bytes.
     pub fn from_key_bytes(bytes: &[u8]) -> Result<Self, CheckpointProofTaskKeyError> {
-        if bytes.len() != KEY_LEN {
+        if bytes.len() != Self::KEY_LEN {
             return Err(CheckpointProofTaskKeyError(bytes.len()));
         }
 
@@ -117,7 +119,7 @@ mod tests {
         .concat();
 
         assert_eq!(task().to_key_bytes(), expected);
-        assert_eq!(expected.len(), KEY_LEN);
+        assert_eq!(expected.len(), CheckpointProofTask::KEY_LEN);
     }
 
     #[test]
@@ -128,8 +130,12 @@ mod tests {
 
     #[test]
     fn key_bytes_reject_wrong_length() {
-        assert!(CheckpointProofTask::from_key_bytes(&[0u8; KEY_LEN - 1]).is_err());
-        assert!(CheckpointProofTask::from_key_bytes(&[0u8; KEY_LEN + 1]).is_err());
+        assert!(
+            CheckpointProofTask::from_key_bytes(&[0u8; CheckpointProofTask::KEY_LEN - 1]).is_err()
+        );
+        assert!(
+            CheckpointProofTask::from_key_bytes(&[0u8; CheckpointProofTask::KEY_LEN + 1]).is_err()
+        );
     }
 
     /// Lexicographic byte order must follow epoch order so the byte-keyed task tree can be

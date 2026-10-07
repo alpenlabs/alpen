@@ -1,11 +1,15 @@
 //! Reconciles local checkpoint artifacts against ASM-accepted state.
 
+use std::iter::successors;
+
 use anyhow::{Context, Result};
 use strata_asm_common::{SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_checkpoint_types::CheckpointProofTask;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_node_context::NodeContext;
+use strata_ol_state_types::OLSpecId;
+use strata_storage::{ProverTaskDbManager, VersionedTaskStore};
 use tracing::{debug, info};
 
 /// Deletes local checkpoint artifacts after ASM's accepted checkpoint tip.
@@ -13,6 +17,9 @@ use tracing::{debug, info};
 /// Checkpoint payloads, proofs, and prover tasks past the ASM verified tip are
 /// local candidate state. Rebuilding them on startup prevents a rotated OL
 /// image from reusing stale pre-rotation proof artifacts.
+// TODO(STR-4562): Revisit clearing unaccepted checkpoint artifacts on every restart.
+// Determine when existing payloads, proofs, and tasks can be safely reused.
+// Keep proof and task cleanup together so a deleted proof cannot leave a Completed task.
 pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -> Result<()> {
     if nodectx.config().prover.is_none() {
         return Ok(());
@@ -34,8 +41,7 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
 
     let mut deleted_proofs = 0usize;
     let mut deleted_tasks = 0usize;
-
-    for commitment in cleanup_commitments {
+    for &commitment in &cleanup_commitments {
         if storage
             .checkpoint_proof()
             .del_proof(commitment)
@@ -43,15 +49,7 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
         {
             deleted_proofs += 1;
         }
-
-        let task_key = CheckpointProofTask(commitment).to_key_bytes();
-        if storage
-            .prover_tasks()
-            .delete_task(&task_key)
-            .with_context(|| format!("delete checkpoint prover task for commitment {commitment}"))?
-        {
-            deleted_tasks += 1;
-        }
+        deleted_tasks += delete_checkpoint_tasks(storage.prover_tasks(), commitment)?;
     }
 
     if !deleted_payloads.is_empty() || deleted_proofs > 0 || deleted_tasks > 0 {
@@ -65,6 +63,24 @@ pub(crate) fn reconcile_unaccepted_checkpoint_artifacts(nodectx: &NodeContext) -
     }
 
     Ok(())
+}
+
+/// Deletes a checkpoint's task for each known proving spec without reading task records.
+fn delete_checkpoint_tasks(
+    tasks: &ProverTaskDbManager,
+    commitment: EpochCommitment,
+) -> Result<usize> {
+    let mut deleted = 0;
+    for spec in successors(Some(OLSpecId::V0), |spec| spec.successor()) {
+        let key = VersionedTaskStore::encode_key(spec, CheckpointProofTask(commitment));
+        if tasks
+            .delete_task(&key)
+            .with_context(|| format!("delete checkpoint prover task for commitment {commitment}"))?
+        {
+            deleted += 1;
+        }
+    }
+    Ok(deleted)
 }
 
 fn checkpoint_commitments_from_epoch(
@@ -142,4 +158,45 @@ fn first_unaccepted_checkpoint_epoch(nodectx: &NodeContext) -> Result<Option<Epo
     );
 
     Ok(Some(first_unaccepted_epoch))
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::{backend::DatabaseBackend, prover_task::ProverTaskDatabase};
+    use strata_identifiers::{Buf32, OLBlockId};
+    use strata_ol_state_types::OLSpecId;
+    use strata_paas::{TaskRecordData, TaskStatus};
+    use strata_storage::{create_node_storage, test_runtime_handle};
+
+    use super::*;
+
+    #[test]
+    fn cleanup_deletes_only_selected_commitments_across_specs() {
+        let backend = get_test_sled_backend();
+        let db = backend.prover_task_db();
+        let storage = create_node_storage(backend, test_runtime_handle()).unwrap();
+        let tasks = storage.prover_tasks();
+        let selected = EpochCommitment::new(2, 20, OLBlockId::from(Buf32::from([1; 32])));
+        let retained = EpochCommitment::new(1, 10, OLBlockId::from(Buf32::from([2; 32])));
+        for commitment in [selected, retained] {
+            for spec in [OLSpecId::V0, OLSpecId::V1] {
+                let key = VersionedTaskStore::encode_key(spec, CheckpointProofTask(commitment));
+                db.insert_task(key, TaskRecordData::new(TaskStatus::Pending))
+                    .unwrap();
+            }
+        }
+        let untagged = CheckpointProofTask(selected).to_key_bytes();
+        db.insert_task(untagged.clone(), TaskRecordData::new(TaskStatus::Pending))
+            .unwrap();
+
+        assert_eq!(delete_checkpoint_tasks(tasks, selected).unwrap(), 2);
+        assert_eq!(delete_checkpoint_tasks(tasks, selected).unwrap(), 0);
+        assert!(db.get_task(untagged).unwrap().is_some());
+        for spec in [OLSpecId::V0, OLSpecId::V1] {
+            let key = VersionedTaskStore::encode_key(spec, CheckpointProofTask(retained));
+            assert!(db.get_task(key).unwrap().is_some());
+        }
+        assert_eq!(db.count_tasks().unwrap(), 3);
+    }
 }

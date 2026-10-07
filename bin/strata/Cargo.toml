@@ -115,6 +115,7 @@ zkaleido = { workspace = true, optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
+strata-paas.workspace = true
 proptest.workspace = true
 strata-asm-checkpoint-types.workspace = true
 strata-btc-verification.workspace = true

@@ -11,8 +11,8 @@ use crate::DbResult;
 /// Database interface backing [`strata_paas::TaskStore`] for the integrated
 /// prover service.
 ///
-/// Keyed by the serialized `ProofSpec::Task` bytes — same contract as the
-/// in-memory `TaskStore`. All methods are synchronous and expected to be
+/// Keyed by physical task bytes. Service adapters may qualify a logical
+/// `ProofSpec::Task` key with a namespace before storing it. All methods are synchronous and expected to be
 /// called through a blocking threadpool by the `strata_storage` manager.
 #[cfg_attr(
     feature = "proxies",
@@ -33,8 +33,8 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Removes a task record. Returns `true` if the key existed prior to the
     /// call, `false` otherwise.
     ///
-    /// Intended for offline admin tooling (e.g. `strata-dbtool`) — the
-    /// runtime task lifecycle is driven by status transitions, not deletion.
+    /// Deletes by key without decoding the stored record, including malformed values.
+    /// Used by startup reconciliation and offline admin tooling.
     fn delete_task(&self, key: Vec<u8>) -> DbResult<bool>;
 
     /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
@@ -43,11 +43,33 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// All records whose status is not yet terminal (Pending / Proving).
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
+    /// Lists due retry or blocked records with `spec_prefix` followed by `task_key_len` task-key bytes.
+    fn list_retriable_with_prefix(
+        &self,
+        spec_prefix: [u8; 4],
+        task_key_len: usize,
+        now_secs: u64,
+    ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
+
+    /// Lists Pending or Proving records with `spec_prefix` followed by `task_key_len` task-key bytes.
+    fn list_unfinished_with_prefix(
+        &self,
+        spec_prefix: [u8; 4],
+        task_key_len: usize,
+    ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
+
     /// Every record in the store, in implementation-defined order.
     ///
-    /// Intended for offline admin tooling — the runtime path uses the
-    /// filtered iterators above to avoid scanning terminal entries.
+    /// Used by offline admin tooling.
     fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
+
+    /// Counts keys with `spec_prefix` followed by `task_key_len` task-key bytes.
+    ///
+    /// The four-byte prefix encodes the OL spec version.
+    /// Streams matching records without collecting them, including terminal tasks.
+    /// The length check excludes legacy or malformed keys that share the spec prefix.
+    fn count_tasks_with_prefix(&self, spec_prefix: [u8; 4], task_key_len: usize)
+        -> DbResult<usize>;
 
     /// Number of records in the store.
     fn count_tasks(&self) -> DbResult<usize>;

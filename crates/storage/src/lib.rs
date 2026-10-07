@@ -4,6 +4,7 @@ mod cache;
 mod instrumentation;
 mod managers;
 mod node_storage;
+mod versioned_task_store;
 
 pub use managers::asm::AsmStateManager;
 pub use managers::checkpoint_proof::CheckpointProofDbManager;
@@ -20,3 +21,4 @@ pub use managers::writer::L1WriterManager;
 pub use node_storage::*;
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 pub use strata_db_types::MmrId;
+pub use versioned_task_store::VersionedTaskStore;
