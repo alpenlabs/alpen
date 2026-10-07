@@ -9772,7 +9772,6 @@ dependencies = [
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-txs",
  "strata-codec",
- "strata-codec-utils",
  "strata-common",
  "strata-crypto",
  "strata-csm-types",
