@@ -43,19 +43,19 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// All records whose status is not yet terminal (Pending / Proving).
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Lists due retry or blocked records with `prefix`, a four-byte namespace and `suffix_len` task bytes.
+    /// Lists due retry or blocked records with `spec_prefix` followed by `task_key_len` task-key bytes.
     fn list_retriable_with_prefix(
         &self,
-        prefix: [u8; 4],
-        suffix_len: usize,
+        spec_prefix: [u8; 4],
+        task_key_len: usize,
         now_secs: u64,
     ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Lists Pending or Proving records with `prefix`, a four-byte namespace and `suffix_len` task bytes.
+    /// Lists Pending or Proving records with `spec_prefix` followed by `task_key_len` task-key bytes.
     fn list_unfinished_with_prefix(
         &self,
-        prefix: [u8; 4],
-        suffix_len: usize,
+        spec_prefix: [u8; 4],
+        task_key_len: usize,
     ) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// Every record in the store, in implementation-defined order.
@@ -63,11 +63,13 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Used by offline admin tooling.
     fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Counts task keys with `prefix` and `suffix_len` task bytes after the four-byte namespace.
+    /// Counts keys with `spec_prefix` followed by `task_key_len` task-key bytes.
     ///
+    /// The four-byte prefix encodes the OL spec version.
     /// Streams matching records without collecting them, including terminal tasks.
-    /// The length check excludes legacy or malformed keys that share the prefix.
-    fn count_tasks_with_prefix(&self, prefix: [u8; 4], suffix_len: usize) -> DbResult<usize>;
+    /// The length check excludes legacy or malformed keys that share the spec prefix.
+    fn count_tasks_with_prefix(&self, spec_prefix: [u8; 4], task_key_len: usize)
+        -> DbResult<usize>;
 
     /// Number of records in the store.
     fn count_tasks(&self) -> DbResult<usize>;
