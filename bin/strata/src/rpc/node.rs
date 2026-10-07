@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
-use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types::{EpochSummary, prev_epoch_last_l1_async};
 use strata_db_types::{ol_block::BlockAvailability, ol_state_index::InboxMessageRecord};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
@@ -159,28 +159,15 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         terminal: EpochCommitment,
         state: &OLStateContainer,
     ) -> RpcResult<Result<OLSpecId, UpgradeRequired>> {
-        let prev_last = if terminal.epoch() == 0 {
-            self.genesis_l1_block
-        } else {
-            let summary = self
-                .provider
-                .get_epoch_summary(terminal)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| {
-                    internal_error(format!("missing the epoch summary of {terminal}"))
-                })?;
-            let prev = summary
-                .get_prev_epoch_commitment()
-                .expect("a summary of an epoch after genesis has a previous epoch");
-            *self
-                .provider
-                .get_epoch_summary(prev)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| internal_error(format!("missing the epoch summary of {prev}")))?
-                .new_l1()
-        };
+        let prev_last =
+            prev_epoch_last_l1_async(terminal, self.genesis_l1_block, |epoch| async move {
+                self.provider
+                    .get_epoch_summary(epoch)
+                    .await
+                    .map_err(db_error)?
+                    .ok_or_else(|| internal_error(format!("missing the epoch summary of {epoch}")))
+            })
+            .await?;
         let range = EpochL1Range::new(prev_last, state.chainstate().last_l1_block())
             .map_err(|err| internal_error(err.to_string()))?;
         let last_manifest = match range.last_processed() {
