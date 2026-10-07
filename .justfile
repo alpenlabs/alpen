@@ -15,7 +15,8 @@ profile := env("PROFILE", "release")
 cargo_install_extra_flags := env("CARGO_INSTALL_EXTRA_FLAGS", "")
 features := env("FEATURES", "")
 docker_image_name := env("DOCKER_IMAGE_NAME", "")
-unit_test_args := "--locked --workspace -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'"
+unit_test_features := "strata/prover,strata-ol-checkpoint-artifacts/node,strata-ol-checkpoint-artifacts/native"
+unit_test_args := "--locked --workspace --features " + unit_test_features + " -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'"
 cov_file := "lcov.info"
 
 # Default recipe - show available commands
@@ -27,7 +28,7 @@ default:
 build:
     cargo build --workspace --all-features --lib --bins --examples --benches --locked
 
-# Run unit tests
+# Run unit tests, including native checkpoint proving and artifact checks
 [group('test')]
 test-unit: ensure-cargo-nextest
     cargo nextest run {{unit_test_args}}
@@ -41,7 +42,7 @@ cov-unit: ensure-cargo-llvm-cov ensure-cargo-nextest
 # Generate an HTML coverage report and open it in the browser
 [group('test')]
 cov-report-html: ensure-cargo-llvm-cov ensure-cargo-nextest
-    cargo llvm-cov --open --workspace --locked nextest
+    cargo llvm-cov --open --workspace --locked --features {{unit_test_features}} nextest
 
 # Run integration tests
 [group('test')]

@@ -89,7 +89,9 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          cargo llvm-cov --workspace --locked nextest --profile ci --lcov --output-path lcov.unit.info --no-cfg-coverage --no-cfg-coverage-nightly
+          cargo llvm-cov --workspace --locked \
+            --features strata/prover,strata-ol-checkpoint-artifacts/node,strata-ol-checkpoint-artifacts/native \
+            nextest --profile ci --lcov --output-path lcov.unit.info --no-cfg-coverage --no-cfg-coverage-nightly
 
       - name: Test Summary
         uses: test-summary/action@37b508cfee6d4d080eedd00b5bb240a6a784a6a5 # v2

@@ -13,6 +13,7 @@ use strata_identifiers::{
     Buf32, Buf64, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
 };
 use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
+use strata_ol_checkpoint::ProofNotify;
 use strata_ol_checkpoint_artifacts::{LoadedCheckpointPredicates, native_checkpoint_registry};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::{OLStateContainer, test_utils::create_test_container_with_staged};
@@ -23,16 +24,14 @@ use strata_ol_stf_v1::test_utils::{
     EPOCH_RUNNER_GENESIS_TIMESTAMP, EPOCH_RUNNER_SLOT_TIMESTAMP_STEP, make_empty_manifest,
     make_genesis_state, tamper_state_root, to_ol_block,
 };
-use strata_paas::{
-    InMemoryReceiptStore, InputResolution, ProofSpec, Prover, ProverBuilder, TaskRecord,
-    TaskStatus, TaskStore,
-};
+use strata_paas::{InputResolution, ProofSpec, Prover, TaskRecord, TaskStatus, TaskStore};
 use strata_predicate::PredicateKey;
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::{NodeStorage, VersionedTaskStore, create_node_storage, test_runtime_handle};
 use tokio::time::timeout;
 
 use super::{
+    build_checkpoint_provers,
     errors::ProverError,
     spec::{CheckpointSpec, CheckpointTask, checkpoint_task_spec},
 };
@@ -499,24 +498,17 @@ fn input_resolution_waits_for_missing_epoch_metadata() {
     assert!(matches!(fixture.resolve(), InputResolution::Blocked { .. }));
 }
 
-fn checkpoint_prover(
-    fixture: &EpochFixture,
-    store: VersionedTaskStore,
-) -> Arc<Prover<CheckpointSpec>> {
+fn checkpoint_prover(fixture: &EpochFixture) -> Arc<Prover<CheckpointSpec>> {
     let runtime_params = OLRuntimeParams::test_default();
-    let registry = native_checkpoint_registry(runtime_params);
-    let (spec, host) = registry.into_hosts().next().unwrap();
-    assert_eq!(spec, OLSpecId::V1);
-    Arc::new(
-        ProverBuilder::new(CheckpointSpec::new(
-            Arc::clone(&fixture.storage),
-            runtime_params,
-            OLSpecId::V1,
-        ))
-        .task_store(store)
-        .receipt_store(InMemoryReceiptStore::new())
-        .native(host),
-    )
+    let (mut provers, _) = build_checkpoint_provers(
+        native_checkpoint_registry(runtime_params),
+        &fixture.storage,
+        runtime_params,
+        &Arc::new(ProofNotify::new()),
+        |builder, host| builder.native(host),
+    );
+    assert_eq!(provers.len(), 1);
+    Arc::new(provers.remove(&OLSpecId::V1).unwrap())
 }
 
 fn assert_persisted_task_proving(recovered: bool) {
@@ -537,7 +529,7 @@ fn assert_persisted_task_proving(recovered: bool) {
             .unwrap();
         own_store.set_metadata(&key, vec![1, 2, 3]).unwrap();
     }
-    let prover = checkpoint_prover(&fixture, own_store.clone());
+    let prover = checkpoint_prover(&fixture);
     let results = test_runtime_handle().block_on(async {
         if recovered {
             prover.tick().await;
@@ -553,6 +545,14 @@ fn assert_persisted_task_proving(recovered: bool) {
         .unwrap()
     });
     assert!(results[0].is_completed());
+    assert!(
+        fixture
+            .storage
+            .checkpoint_proof()
+            .get_proof(&fixture.task.0)
+            .unwrap()
+            .is_some()
+    );
     assert_eq!(
         own_store.get(&key).unwrap().unwrap().status(),
         &TaskStatus::Completed
