@@ -1,29 +1,19 @@
-use argh::FromArgs;
+use clap::Parser;
+use zkaleido_perf_report::GithubReportArgs;
 
 use crate::programs::GuestProgram;
 
 /// Evaluate the performance of SP1 on programs.
-#[derive(Debug, Clone, FromArgs)]
+#[derive(Debug, Clone, Parser)]
 pub struct EvalArgs {
-    /// whether to post on github or run locally and only log the results
-    #[argh(switch)]
-    pub post_to_gh: bool,
+    /// GitHub reporting options. The report is posted to the PR only when at least one of these is
+    /// passed.
+    #[command(flatten)]
+    pub github: Option<GithubReportArgs>,
 
-    /// the GitHub token for authentication
-    #[argh(option, default = "String::new()")]
-    pub github_token: String,
-
-    /// the GitHub PR number
-    #[argh(option, default = "String::new()")]
-    pub pr_number: String,
-
-    /// the commit hash
-    #[argh(option, default = "String::from(\"local_commit\")")]
-    pub commit_hash: String,
-
-    /// programs to run (comma-delimited and/or repeated),
-    /// e.g. `--programs checkpoint`
-    #[argh(option)]
+    /// Programs to run (comma-delimited and/or repeated),
+    /// e.g. `--programs checkpoint`.
+    #[arg(long)]
     pub programs: Vec<String>,
 }
 

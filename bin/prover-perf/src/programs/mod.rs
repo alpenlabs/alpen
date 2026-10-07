@@ -24,6 +24,9 @@ impl FromStr for GuestProgram {
 
 /// Runs SP1 programs and pairs each program's name with its
 /// [`ExecutionSummary`] (cycles, gas, public values).
+///
+/// The report diffs against the last merged PR by program name, so renaming a
+/// program drops its deltas for one run.
 #[cfg(feature = "sp1")]
 pub async fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<(String, ExecutionSummary)> {
     use strata_zkvm_hosts::sp1::checkpoint_host;

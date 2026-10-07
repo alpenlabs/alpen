@@ -88,10 +88,7 @@ jobs:
       - name: Run performance evaluation
         run: |
           RUST_LOG=info SP1_PROVER=light BUILD_ELF=1 cargo run --profile prover-ci -- \
-          --post-to-gh \
           --github-token "${{ secrets.GITHUB_TOKEN }}" \
-          --pr-number "${{ github.event.pull_request.number }}" \
-          --commit-hash "${{ github.sha }}" \
           --programs checkpoint
         working-directory: bin/prover-perf
         env:
