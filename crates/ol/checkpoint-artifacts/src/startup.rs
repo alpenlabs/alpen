@@ -2,10 +2,13 @@
 //!
 //! Reads locally canonical ASM state without waiting for L1 or ASM to catch up.
 
+use std::iter;
+
 use strata_asm_common::{AnchorState, AsmError, SectionStateExt, Subprotocol};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_db_types::DbError;
 use strata_identifiers::L1BlockCommitment;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_storage::NodeStorage;
 
 use crate::LoadedCheckpointPredicates;
@@ -17,6 +20,9 @@ use crate::artifact_checks::{
 /// Reports a failure to read or decode ASM checkpoint state.
 #[derive(Debug, thiserror::Error)]
 pub enum CheckpointStateReadError {
+    /// No locally canonical ASM state is available for the startup check.
+    #[error("canonical ASM checkpoint state is unavailable")]
+    StateUnavailable,
     /// The canonical ASM snapshot could not be read.
     #[error("failed to read canonical ASM checkpoint state")]
     CanonicalAsm(#[source] DbError),
@@ -28,18 +34,29 @@ pub enum CheckpointStateReadError {
     DecodeCheckpoint(#[source] AsmError),
 }
 
-/// Reports unavailable checkpoint state or missing artifacts at startup.
+/// Reports missing checkpoint state or artifacts that prevent startup.
 #[derive(Debug, thiserror::Error)]
 pub enum CheckpointArtifactCheckError {
-    /// No locally canonical ASM state is available for the startup check.
-    #[error("canonical ASM checkpoint state is unavailable")]
-    StateUnavailable,
     /// Required protocol state could not be read or decoded.
     #[error(transparent)]
     Read(#[from] CheckpointStateReadError),
     /// An active or pending checkpoint VK has no matching loaded artifact.
     #[error(transparent)]
     MissingArtifacts(#[from] MissingCheckpointArtifacts),
+}
+
+/// Reports why a sequencer cannot start without a prover.
+#[derive(Debug, thiserror::Error)]
+pub enum CheckpointProverCheckError {
+    /// Required protocol state could not be read or decoded.
+    #[error(transparent)]
+    Read(#[from] CheckpointStateReadError),
+    /// An active or pending predicate does not allow empty checkpoint proofs.
+    #[error("{status:?} checkpoint predicate {predicate:?} does not allow empty proofs")]
+    ProofRequired {
+        status: CheckpointPredicateStatus,
+        predicate: PredicateKey,
+    },
 }
 
 /// Requires artifacts for all active and pending checkpoint VKs and returns the checked L1 block.
@@ -57,22 +74,53 @@ pub fn check_startup_artifacts_blocking(
     predicates: &LoadedCheckpointPredicates,
     genesis_block: L1BlockCommitment,
 ) -> Result<L1BlockCommitment, CheckpointArtifactCheckError> {
-    match check_canonical_artifacts_blocking(storage, predicates)? {
-        Some(block) => Ok(block),
-        None => check_genesis_artifacts_blocking(storage, predicates, genesis_block)?
-            .ok_or(CheckpointArtifactCheckError::StateUnavailable),
+    let (block, checkpoint) = read_startup_checkpoint_blocking(storage, genesis_block)?;
+    check_checkpoint_artifacts(predicates, &checkpoint)?;
+    Ok(block)
+}
+
+/// Allows empty checkpoint proofs only when every active and pending predicate is AlwaysAccept.
+///
+/// The caller must use this check for a sequencer without an enabled prover, after ASM
+/// initialization and before checkpoint production. Uses the same local ASM snapshot as
+/// [`check_startup_artifacts_blocking`], without waiting for L1 or ASM to catch up.
+/// This function performs blocking storage reads and must not run on an async executor.
+pub fn check_startup_without_prover_blocking(
+    storage: &NodeStorage,
+    genesis_block: L1BlockCommitment,
+) -> Result<L1BlockCommitment, CheckpointProverCheckError> {
+    let (block, checkpoint) = read_startup_checkpoint_blocking(storage, genesis_block)?;
+    let always_accept_id = PredicateTypeId::AlwaysAccept.as_u8();
+    if let Some((status, predicate)) =
+        checkpoint_predicates(&checkpoint).find(|(_, predicate)| predicate.id() != always_accept_id)
+    {
+        return Err(CheckpointProverCheckError::ProofRequired {
+            status,
+            predicate: predicate.clone(),
+        });
+    }
+    Ok(block)
+}
+
+fn read_startup_checkpoint_blocking(
+    storage: &NodeStorage,
+    genesis_block: L1BlockCommitment,
+) -> Result<(L1BlockCommitment, CheckpointState), CheckpointStateReadError> {
+    match read_canonical_checkpoint_blocking(storage)? {
+        Some(snapshot) => Ok(snapshot),
+        None => read_genesis_checkpoint_blocking(storage, genesis_block)?
+            .ok_or(CheckpointStateReadError::StateUnavailable),
     }
 }
 
-/// Checks persisted genesis while the canonical L1 index is still absent.
+/// Reads persisted genesis while the canonical L1 index is still absent.
 ///
 /// Genesis must be the latest stored anchor and match the configured commitment.
 /// Otherwise, retries the canonical reader in case the L1 reader has advanced.
-fn check_genesis_artifacts_blocking(
+fn read_genesis_checkpoint_blocking(
     storage: &NodeStorage,
-    predicates: &LoadedCheckpointPredicates,
     genesis_block: L1BlockCommitment,
-) -> Result<Option<L1BlockCommitment>, CheckpointArtifactCheckError> {
+) -> Result<Option<(L1BlockCommitment, CheckpointState)>, CheckpointStateReadError> {
     let latest = storage
         .asm()
         .fetch_most_recent_anchor_state_blocking()
@@ -85,57 +133,52 @@ fn check_genesis_artifacts_blocking(
             .map_err(CheckpointStateReadError::CanonicalAsm)?
             .is_none()
     {
-        let checkpoint = decode_checkpoint_section(&anchor)?;
-        check_checkpoint_artifacts(predicates, &checkpoint)?;
-        return Ok(Some(block));
+        return Ok(Some((block, decode_checkpoint_section(&anchor)?)));
     }
 
-    check_canonical_artifacts_blocking(storage, predicates)
+    read_canonical_checkpoint_blocking(storage)
 }
 
-/// Checks artifacts against canonical ASM checkpoint state and returns its L1 block.
-///
-/// Returns [`None`] if no canonical ASM state is available. Checks the snapshot selected
-/// by the canonical lookup, without waiting for catch-up or rechecking later chain changes.
-/// Checks VK presence without reading OL state or assigning specs to ASM predicates.
-///
-/// This function performs blocking storage reads and must not run on an async executor.
-fn check_canonical_artifacts_blocking(
+/// Reads local canonical ASM checkpoint state without waiting for catch-up.
+fn read_canonical_checkpoint_blocking(
     storage: &NodeStorage,
-    predicates: &LoadedCheckpointPredicates,
-) -> Result<Option<L1BlockCommitment>, CheckpointArtifactCheckError> {
+) -> Result<Option<(L1BlockCommitment, CheckpointState)>, CheckpointStateReadError> {
     let Some((block, anchor)) = storage
         .fetch_canonical_asm_anchor_state_blocking()
         .map_err(CheckpointStateReadError::CanonicalAsm)?
     else {
         return Ok(None);
     };
-    let checkpoint = decode_checkpoint_section(&anchor)?;
-    check_checkpoint_artifacts(predicates, &checkpoint)?;
-    Ok(Some(block))
+    Ok(Some((block, decode_checkpoint_section(&anchor)?)))
 }
 
 fn check_checkpoint_artifacts(
     predicates: &LoadedCheckpointPredicates,
     checkpoint: &CheckpointState,
 ) -> Result<(), MissingCheckpointArtifacts> {
-    let mut missing_artifacts = Vec::new();
-    missing_artifacts.extend(check_predicate_artifact(
-        predicates,
+    let missing_artifacts: Vec<_> = checkpoint_predicates(checkpoint)
+        .filter_map(|(status, predicate)| check_predicate_artifact(predicates, status, predicate))
+        .collect();
+
+    ensure_artifacts_available(&missing_artifacts)
+}
+
+/// Visits the active predicate, then the pending predicates in queue order.
+fn checkpoint_predicates(
+    checkpoint: &CheckpointState,
+) -> impl Iterator<Item = (CheckpointPredicateStatus, &PredicateKey)> {
+    iter::once((
         CheckpointPredicateStatus::Active,
         checkpoint.checkpoint_predicate(),
-    ));
-    for transition in checkpoint.pending_transitions() {
-        missing_artifacts.extend(check_predicate_artifact(
-            predicates,
+    ))
+    .chain(checkpoint.pending_transitions().iter().map(|transition| {
+        (
             CheckpointPredicateStatus::Pending {
                 boundary: transition.boundary(),
             },
             transition.predicate(),
-        ));
-    }
-
-    ensure_artifacts_available(&missing_artifacts)
+        )
+    }))
 }
 
 /// Decodes the checkpoint subprotocol's state from an ASM anchor.
@@ -209,6 +252,103 @@ mod tests {
             .put_state_blocking(block, AsmExecOutput::new(anchor, Vec::new()))
             .unwrap();
         block
+    }
+
+    #[test]
+    fn startup_without_prover_accepts_always_accept_genesis_and_pending_predicates() {
+        let storage = storage();
+        let mut checkpoint = checkpoint(&loaded_predicates());
+        checkpoint.checkpoint_predicate = PredicateKey::always_accept();
+        checkpoint.queue_predicate_transition(PendingPredicateTransition::new(
+            PredicateKey::always_accept(),
+            10,
+        ));
+        let genesis = L1BlockCommitment::new(1, L1BlockId::from(Buf32::from([1; 32])));
+        storage
+            .asm()
+            .put_anchor_state_blocking(genesis, anchor_state(&checkpoint))
+            .unwrap();
+        assert_eq!(storage.l1().get_canonical_chain_tip().unwrap(), None);
+        assert_eq!(
+            check_startup_without_prover_blocking(&storage, genesis).unwrap(),
+            genesis,
+        );
+    }
+
+    #[test]
+    fn startup_without_prover_accepts_always_accept_with_nonempty_conditions() {
+        let storage = storage();
+        let mut checkpoint = checkpoint(&loaded_predicates());
+        checkpoint.checkpoint_predicate =
+            PredicateKey::try_new(PredicateTypeId::AlwaysAccept, vec![1]).unwrap();
+        checkpoint.queue_predicate_transition(PendingPredicateTransition::new(
+            PredicateKey::try_new(PredicateTypeId::AlwaysAccept, vec![2]).unwrap(),
+            10,
+        ));
+        let block = extend_snapshot(&storage, 1, &checkpoint);
+        assert_eq!(
+            check_startup_without_prover_blocking(&storage, block).unwrap(),
+            block,
+        );
+    }
+
+    #[test]
+    fn startup_without_prover_checks_current_active_and_pending_predicates() {
+        let storage = storage();
+        let mut checkpoint = checkpoint(&loaded_predicates());
+        let proof_predicate = checkpoint.checkpoint_predicate().clone();
+        let genesis = extend_snapshot(&storage, 1, &checkpoint);
+        assert!(matches!(
+            check_startup_without_prover_blocking(&storage, genesis),
+            Err(CheckpointProverCheckError::ProofRequired {
+                status: CheckpointPredicateStatus::Active,
+                predicate,
+            }) if predicate == proof_predicate
+        ));
+
+        // A retired genesis key must not restrict the current AlwaysAccept state.
+        checkpoint.checkpoint_predicate = PredicateKey::always_accept();
+        let current = extend_snapshot(&storage, 2, &checkpoint);
+        assert_eq!(
+            check_startup_without_prover_blocking(&storage, genesis).unwrap(),
+            current,
+        );
+
+        // A future key already in the enacted queue must be supported at startup.
+        checkpoint.queue_predicate_transition(PendingPredicateTransition::new(
+            proof_predicate.clone(),
+            10,
+        ));
+        extend_snapshot(&storage, 3, &checkpoint);
+        assert!(matches!(
+            check_startup_without_prover_blocking(&storage, genesis),
+            Err(CheckpointProverCheckError::ProofRequired {
+                status: CheckpointPredicateStatus::Pending { boundary: 10 },
+                predicate,
+            }) if predicate == proof_predicate
+        ));
+
+        storage.l1().revert_canonical_chain(2).unwrap();
+        assert_eq!(
+            check_startup_without_prover_blocking(&storage, genesis).unwrap(),
+            current,
+        );
+    }
+
+    #[test]
+    fn startup_without_prover_reports_never_accept_predicate() {
+        let storage = storage();
+        let mut checkpoint = checkpoint(&loaded_predicates());
+        let predicate = PredicateKey::try_new(PredicateTypeId::NeverAccept, Vec::new()).unwrap();
+        checkpoint.checkpoint_predicate = predicate.clone();
+        let block = extend_snapshot(&storage, 1, &checkpoint);
+        assert!(matches!(
+            check_startup_without_prover_blocking(&storage, block),
+            Err(CheckpointProverCheckError::ProofRequired {
+                status: CheckpointPredicateStatus::Active,
+                predicate: rejected,
+            }) if rejected == predicate
+        ));
     }
 
     #[test]
@@ -323,17 +463,16 @@ mod tests {
         let genesis = L1BlockCommitment::new(1, L1BlockId::from(Buf32::from([1; 32])));
         assert!(matches!(
             check_startup_artifacts_blocking(&storage, &predicates, genesis),
-            Err(CheckpointArtifactCheckError::StateUnavailable)
+            Err(CheckpointArtifactCheckError::Read(
+                CheckpointStateReadError::StateUnavailable
+            ))
         ));
         storage
             .asm()
             .put_anchor_state_blocking(genesis, anchor_state(&checkpoint))
             .unwrap();
         assert_eq!(storage.l1().get_canonical_chain_tip().unwrap(), None);
-        assert_eq!(
-            check_canonical_artifacts_blocking(&storage, &predicates).unwrap(),
-            None
-        );
+        assert_eq!(read_canonical_checkpoint_blocking(&storage).unwrap(), None);
         let checked_block =
             check_startup_artifacts_blocking(&storage, &predicates, genesis).unwrap();
         assert_eq!(checked_block, genesis);
@@ -345,7 +484,9 @@ mod tests {
         let other = L1BlockCommitment::new(1, L1BlockId::from(Buf32::from([2; 32])));
         assert!(matches!(
             check_startup_artifacts_blocking(&storage, &predicates, other),
-            Err(CheckpointArtifactCheckError::StateUnavailable)
+            Err(CheckpointArtifactCheckError::Read(
+                CheckpointStateReadError::StateUnavailable
+            ))
         ));
         let later = L1BlockCommitment::new(2, L1BlockId::from(Buf32::from([2; 32])));
         storage
@@ -354,7 +495,9 @@ mod tests {
             .unwrap();
         assert!(matches!(
             check_startup_artifacts_blocking(&storage, &predicates, genesis),
-            Err(CheckpointArtifactCheckError::StateUnavailable)
+            Err(CheckpointArtifactCheckError::Read(
+                CheckpointStateReadError::StateUnavailable
+            ))
         ));
     }
 
@@ -375,7 +518,9 @@ mod tests {
             .unwrap();
         assert!(matches!(
             check_startup_artifacts_blocking(&storage, &predicates, genesis),
-            Err(CheckpointArtifactCheckError::StateUnavailable)
+            Err(CheckpointArtifactCheckError::Read(
+                CheckpointStateReadError::StateUnavailable
+            ))
         ));
     }
 
@@ -482,10 +627,10 @@ mod tests {
 
         // The startup fallback may discover the L1 index after the original canonical
         // read found none. Resolve its current snapshot instead of using stale genesis.
-        let error = check_genesis_artifacts_blocking(&storage, &predicates, genesis).unwrap_err();
-        let CheckpointArtifactCheckError::MissingArtifacts(error) = error else {
-            panic!("expected the canonical state's missing pending artifact");
-        };
+        let (_, checkpoint) = read_genesis_checkpoint_blocking(&storage, genesis)
+            .unwrap()
+            .unwrap();
+        let error = check_checkpoint_artifacts(&predicates, &checkpoint).unwrap_err();
         let [missing] = error.missing_artifacts() else {
             panic!("expected one missing artifact");
         };

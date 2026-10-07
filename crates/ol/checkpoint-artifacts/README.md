@@ -58,6 +58,11 @@ canonical index exists. Missing required artifacts fail startup.
 Extra validated artifacts are allowed even when checkpoint state does not yet
 reference their predicates; later state updates can use those resident artifacts.
 
+When starting a sequencer with `--bootstrap-from-checkpoint`, the node saves its
+promotion before the ASM-based prover configuration check. If that check rejects
+startup, correct the prover configuration and rerun the same command. Promotion
+is idempotent, so this retry is safe.
+
 The startup check compares VKs only. It does not read OL state or infer a spec for
 any predicate. Each epoch selects its artifact from its committed OL start state.
 The OL may already use a VK that is still pending in ASM.

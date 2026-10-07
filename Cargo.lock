@@ -8262,6 +8262,7 @@ dependencies = [
  "strata-ol-block-assembly",
  "strata-ol-chain-types-v1",
  "strata-ol-checkpoint",
+ "strata-ol-checkpoint-artifacts",
  "strata-ol-genesis",
  "strata-ol-log-budget",
  "strata-ol-mempool",
