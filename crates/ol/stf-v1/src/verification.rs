@@ -417,15 +417,10 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
 /// # Spec versions
 ///
 /// The DA diff does not carry the root state's spec versions; replay derives
-/// them. Starting from the previous terminal state `(cur, staged)`, epoch
-/// initial processing promotes the staged spec, and the terminal drain of an
-/// epoch that processes a checkpoint predicate enactment stages its successor:
-/// `(v, v)` becomes `(v, v + 1)` at that terminal and `(v + 1, v + 1)` at the
-/// first block of the next epoch. A V0 previous terminal state is wrapped the
-/// same way, as `(V1, V1)`, since V0 states commit no staged spec. Replaying
-/// the epoch once from the authenticated previous terminal state therefore
-/// reproduces both versions exactly. Staging and promotion arrive with
-/// STR-4086; until then only the V0 wrap changes the versions.
+/// them. V1 rules never stage a spec, so the only change is at epoch initial
+/// processing, which wraps a V0 previous terminal state as `(V1, V1)` and
+/// leaves a V1 one as it is. Replaying the epoch once from the authenticated
+/// previous terminal state therefore reproduces both versions exactly.
 pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,

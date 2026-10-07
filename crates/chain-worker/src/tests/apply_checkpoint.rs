@@ -105,6 +105,18 @@ impl ChainWorkerContext for MockChainWorkerContext {
             .cloned())
     }
 
+    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>> {
+        Ok(self
+            .epoch_summaries
+            .get(&epoch.epoch())
+            .and_then(|summaries| {
+                summaries
+                    .iter()
+                    .find(|summary| summary.get_epoch_commitment() == epoch)
+                    .copied()
+            }))
+    }
+
     fn fetch_ol_state(
         &self,
         commitment: OLBlockCommitment,
@@ -112,8 +124,8 @@ impl ChainWorkerContext for MockChainWorkerContext {
         Ok(self.ol_states.get(&commitment).cloned())
     }
 
-    fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>> {
-        Ok(self.manifests.get(&height).cloned())
+    fn fetch_l1_manifest(&self, block: &L1BlockCommitment) -> WorkerResult<Option<AsmManifest>> {
+        Ok(self.manifests.get(&block.height()).cloned())
     }
 
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {

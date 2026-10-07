@@ -9490,6 +9490,7 @@ dependencies = [
  "metrics",
  "proptest",
  "serde",
+ "ssz",
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-common",

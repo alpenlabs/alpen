@@ -74,7 +74,7 @@ impl ChainWorkerContext for OrderEnforcingContext {
         unimplemented!("not used by block execution")
     }
 
-    fn fetch_l1_manifest(&self, _height: u32) -> WorkerResult<Option<AsmManifest>> {
+    fn fetch_l1_manifest(&self, _block: &L1BlockCommitment) -> WorkerResult<Option<AsmManifest>> {
         unimplemented!("not used by block execution")
     }
 
@@ -99,6 +99,14 @@ impl ChainWorkerContext for OrderEnforcingContext {
 
     fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>> {
         Ok(self.canonical_summaries.get(&epoch).cloned())
+    }
+
+    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>> {
+        Ok(self
+            .canonical_summaries
+            .get(&epoch.epoch())
+            .filter(|summary| summary.get_epoch_commitment() == epoch)
+            .cloned())
     }
 
     fn store_block_output(

@@ -309,8 +309,8 @@ pub fn process_asm_log<S: IStateAccessorMut>(
 
         Ok(AsmLogTypeId::CheckpointPredicateEnacted) => {
             // The caller enforces the boundary before the terminal drain. The terminal
-            // still executes under the old rules; fork discovery owns activation
-            // from the next epoch (STR-4086).
+            // still executes under the old rules, and V1 stages nothing: nodes select
+            // the next epoch's spec from the manifests.
         }
 
         Ok(ty) => {

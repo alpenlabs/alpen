@@ -24,7 +24,7 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Returns the L1 block OL genesis anchors to.
     ///
     /// Genesis takes it as the state's last L1 block without processing a
-    /// manifest for it.
+    /// manifest for it, so it starts the genesis epoch's L1 range.
     fn genesis_l1_block(&self) -> L1BlockCommitment;
 
     // =========================================================================
@@ -94,6 +94,10 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Fetches canonical epoch summary for an epoch index.
     fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>>;
 
+    /// Fetches the summary of the epoch that ends at `epoch`'s terminal block,
+    /// whether or not that block is canonical.
+    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>>;
+
     /// Merges write batches of the epoch described by `summary` and stores
     /// the merged state at the epoch's terminal commitment.
     ///
@@ -121,9 +125,9 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Used to replay manifest processing during DA-based epoch reconstruction.
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>>;
 
-    /// Fetches the stored ASM manifest at L1 height `height`, or `None` if none
-    /// is stored.
-    fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>>;
+    /// Fetches the stored ASM manifest of the L1 block `block`, or `None` if
+    /// none is stored.
+    fn fetch_l1_manifest(&self, block: &L1BlockCommitment) -> WorkerResult<Option<AsmManifest>>;
 
     /// Applies epoch-granular state index writes for a reconstructed epoch,
     /// derived from the epoch's execution `output`.

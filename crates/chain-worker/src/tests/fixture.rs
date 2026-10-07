@@ -47,12 +47,10 @@ use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 ///
 /// It differs from the genesis version, so a path that rebuilds a state with
 /// genesis versions instead of carrying them commits to a different root and
-/// fails the block-sync and checkpoint-sync comparisons. Block execution and
-/// checkpoint-sync reconstruction do not read the staged version yet. The
-/// checkpoint program does, and rejects this value, so these fixtures cannot
-/// feed it.
-// TODO(STR-4086): stage a real successor spec once an unknown staged spec halts
-// execution.
+/// fails the block-sync and checkpoint-sync comparisons. No rule set stages a
+/// spec, so real V1 states always stage their current spec, and spec
+/// selection never reads the staged version. The checkpoint program does, and
+/// rejects this value, so these fixtures cannot feed it.
 pub const MARKER_STAGED_SPEC_VERSION: u32 = 2;
 
 /// Returns the test genesis state with [`MARKER_STAGED_SPEC_VERSION`] staged.
