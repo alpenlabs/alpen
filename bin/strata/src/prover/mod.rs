@@ -88,7 +88,7 @@ pub(crate) fn start_prover_service(
         .clone()
         .expect("[prover] config section required when prover is enabled");
 
-    validate_backend_config(prover_config.backend)?;
+    validate_prover_config(&prover_config)?;
 
     let storage = runctx.storage().clone();
     let proof_db = storage.checkpoint_proof().clone();
@@ -97,19 +97,13 @@ pub(crate) fn start_prover_service(
 
     // Each resident spec owns a fixed host and sees only its own task records.
     let (provers, predicates) = match prover_config.backend {
-        ProverBackend::Native => {
-            anyhow::ensure!(
-                prover_config.artifacts.is_empty(),
-                "[prover.artifacts] bundles require the SP1 backend"
-            );
-            build_checkpoint_provers(
-                native_checkpoint_registry(runtime_params),
-                &storage,
-                runtime_params,
-                &proof_notify,
-                |builder, host| builder.native(host),
-            )
-        }
+        ProverBackend::Native => build_checkpoint_provers(
+            native_checkpoint_registry(runtime_params),
+            &storage,
+            runtime_params,
+            &proof_notify,
+            |builder, host| builder.native(host),
+        ),
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
             let registry = runctx
@@ -130,7 +124,7 @@ pub(crate) fn start_prover_service(
         }
         #[cfg(not(feature = "sp1"))]
         ProverBackend::Sp1 => {
-            unreachable!("SP1 feature checked by validate_backend_config")
+            unreachable!("SP1 feature checked by validate_prover_config")
         }
     };
 
@@ -195,12 +189,16 @@ pub(crate) fn start_prover_service(
     Ok(())
 }
 
-fn validate_backend_config(backend: ProverBackend) -> Result<()> {
-    #[cfg(feature = "sp1")]
-    let _ = backend;
+fn validate_prover_config(config: &ProverConfig) -> Result<()> {
+    if matches!(config.backend, ProverBackend::Native) {
+        anyhow::ensure!(
+            config.artifacts.is_empty(),
+            "[prover.artifacts] bundles require the SP1 backend"
+        );
+    }
 
     #[cfg(not(feature = "sp1"))]
-    if matches!(backend, ProverBackend::Sp1) {
+    if matches!(config.backend, ProverBackend::Sp1) {
         anyhow::bail!(
             "config.prover.backend=sp1 requires building `strata` with the `sp1` feature"
         );

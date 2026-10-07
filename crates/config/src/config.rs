@@ -378,7 +378,8 @@ pub struct ProverConfig {
 
     /// Resident SP1 artifact bundles indexed by OL spec. Each directory contains
     /// the ELF, predicate, and manifest from one build. SP1 requires at least one
-    /// explicit entry; native proving requires none and uses its built-in program.
+    /// explicit entry. This list must be empty for native proving, which uses its built-in
+    /// program.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub artifacts: Vec<CheckpointArtifactConfig>,
 
