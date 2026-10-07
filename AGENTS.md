@@ -229,7 +229,6 @@ Fundamental types and shared utilities.
 | `primitives` | Core primitive types |
 | `config` | Configuration types |
 | `common` | Shared helpers, traits, and utilities |
-| `codec-utils` | Helpers for `strata-codec` encoding/decoding |
 | `key-derivation` | Key derivation primitives and helpers |
 | `status` | Shared status types for services and APIs |
 | `cli-common` | Shared CLI argument and output helpers |
