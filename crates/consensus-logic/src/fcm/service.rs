@@ -171,10 +171,8 @@ async fn process_fc_message<C: FcmContext>(
 
             let status = if ok {
                 // check if any pending blocks can be finalized
-                match handle_epoch_finalization(fcm_state).await {
-                    Ok(Some(_)) => fcm_state.mark_finality_status_publication_pending(),
-                    Ok(None) => {}
-                    Err(err) => error!(%err, "failed to finalize epoch"),
+                if let Err(err) = handle_epoch_finalization(fcm_state).await {
+                    error!(%err, "failed to finalize epoch");
                 }
 
                 trace!(%blkid, "publishing new ol_state");
@@ -397,7 +395,7 @@ async fn check_finalization_progress<C: FcmContext>(
 /// CSM state update.
 async fn publish_pending_finality_status<C: FcmContext>(fcm_state: &mut FcmServiceState<C>) {
     if let Err(err) = publish_current_sync_status(fcm_state).await {
-        error!(%err, "failed to publish finalized OL sync status; will retry on next CSM update");
+        warn!(%err, "failed to publish finalized OL sync status; will retry on next CSM update");
     }
 }
 
