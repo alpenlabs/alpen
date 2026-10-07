@@ -71,20 +71,19 @@ async fn load_artifact(
     runtime_params_hash: [u8; 32],
     host_config: SP1HostConfig,
 ) -> Result<CheckpointArtifact<SP1Host>, ArtifactError> {
-    if config.spec() == OLSpecId::V0 {
-        return Err(ArtifactError::UnsupportedSpec {
-            spec: config.spec(),
-        });
-    }
-    let manifest_path = config.bundle_dir().join(MANIFEST_FILE);
-    let manifest: ArtifactManifest =
-        serde_json::from_slice(&read(&manifest_path).await?).map_err(|source| {
-            ArtifactError::ParseManifest {
+    let manifest = if config.spec() == OLSpecId::V0 {
+        // Deployed V0 artifacts do not use a manifest.
+        None
+    } else {
+        let manifest_path = config.bundle_dir().join(MANIFEST_FILE);
+        let manifest: ArtifactManifest = serde_json::from_slice(&read(&manifest_path).await?)
+            .map_err(|source| ArtifactError::ParseManifest {
                 path: manifest_path,
                 source,
-            }
-        })?;
-    manifest.validate_metadata(config, runtime_params_hash)?;
+            })?;
+        manifest.validate_metadata(config, runtime_params_hash)?;
+        Some(manifest)
+    };
     let predicate_path = config.bundle_dir().join(PREDICATE_FILE);
     let predicate_bytes = read(&predicate_path).await?;
     let declared_predicate = parse_predicate(&predicate_bytes, &predicate_path)?;
@@ -100,7 +99,9 @@ async fn load_artifact(
     })
     .await
     .map_err(|source| ArtifactError::HostSetup { source })?;
-    manifest.validate_program_id(&program_id.0)?;
+    if let Some(manifest) = manifest {
+        manifest.validate_program_id(&program_id.0)?;
+    }
     let predicate = Sp1Groth16PredicateKey::new(program_id.0).predicate_key()?;
     validate_expected_predicate_key(&declared_predicate, &predicate)?;
     Ok(CheckpointArtifact::new(
@@ -136,7 +137,7 @@ fn parse_predicate(bytes: &[u8], path: &Path) -> Result<PredicateKey, ArtifactEr
 mod tests {
     use std::io::ErrorKind;
     use std::path::{Path, PathBuf};
-    use std::{env, fs};
+    use std::{env, fs, slice};
 
     use serde_json::{Value, json};
     use strata_ol_params::OLRuntimeParams;
@@ -228,6 +229,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_bundle_requires_a_predicate_but_no_manifest() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = CheckpointArtifactConfig::new(OLSpecId::V0, dir.path().to_owned());
+        let load = || {
+            load_checkpoint_registry(
+                slice::from_ref(&config),
+                OLRuntimeParams::test_default(),
+                SP1HostConfig::default(),
+            )
+        };
+        let RegistryError::LoadFailed {
+            source: ArtifactError::Read { path, .. },
+            ..
+        } = load().await.unwrap_err()
+        else {
+            panic!("V0 requires a predicate sidecar without first requiring a manifest");
+        };
+        assert_eq!(path, dir.path().join(PREDICATE_FILE));
+
+        fs::write(dir.path().join(PREDICATE_FILE), "not a predicate").unwrap();
+        assert!(matches!(
+            load().await,
+            Err(RegistryError::LoadFailed {
+                source: ArtifactError::ParsePredicate { .. },
+                ..
+            })
+        ));
+
+        fs::write(dir.path().join(PREDICATE_FILE), "AlwaysAccept").unwrap();
+        let RegistryError::LoadFailed {
+            source: ArtifactError::Read { path, .. },
+            ..
+        } = load().await.unwrap_err()
+        else {
+            panic!("V0 requires an ELF after reading the predicate");
+        };
+        assert_eq!(path, dir.path().join(ELF_FILE));
+    }
+
+    #[tokio::test]
     async fn duplicate_config_is_rejected_before_missing_bundle_reads() {
         let config = CheckpointArtifactConfig::new(OLSpecId::V1, PathBuf::from("absent"));
         let error = load_checkpoint_registry(
@@ -299,6 +340,44 @@ mod tests {
             panic!("tampered predicate must fail registry initialization");
         };
         assert!(matches!(source, ArtifactError::Predicate(_)));
+    }
+
+    /// Checks a deployed V0 ELF against the predicate published for that release.
+    #[tokio::test]
+    #[ignore = "requires a deployed V0 ELF and predicate, and SP1_PROVER=cpu"]
+    async fn validates_deployed_v0_without_enabling_proving() {
+        assert_eq!(env::var("SP1_PROVER").as_deref(), Ok("cpu"));
+        let bundle = PathBuf::from(
+            env::var_os("CHECKPOINT_V0_ARTIFACT_TEST_BUNDLE").expect("V0 bundle path"),
+        );
+        let config = CheckpointArtifactConfig::new(OLSpecId::V0, bundle.clone());
+        let registry = load_checkpoint_registry(
+            &[config],
+            OLRuntimeParams::test_default(),
+            SP1HostConfig::default(),
+        )
+        .await
+        .unwrap();
+        let predicates = registry.to_predicates();
+        assert!(predicates.predicate(OLSpecId::V0).is_some());
+        assert_eq!(registry.into_proving_hosts().count(), 0);
+
+        let tampered = tempfile::tempdir().unwrap();
+        fs::copy(bundle.join(ELF_FILE), tampered.path().join(ELF_FILE)).unwrap();
+        fs::write(tampered.path().join(PREDICATE_FILE), "AlwaysAccept").unwrap();
+        let config = CheckpointArtifactConfig::new(OLSpecId::V0, tampered.path().to_owned());
+        assert!(matches!(
+            load_checkpoint_registry(
+                &[config],
+                OLRuntimeParams::test_default(),
+                SP1HostConfig::default(),
+            )
+            .await,
+            Err(RegistryError::LoadFailed {
+                source: ArtifactError::Predicate(_),
+                ..
+            })
+        ));
     }
 
     #[test]

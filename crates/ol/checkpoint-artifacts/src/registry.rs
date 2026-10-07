@@ -99,10 +99,14 @@ impl<H> CheckpointArtifactRegistry<H> {
         self.artifacts.values()
     }
 
-    /// Transfers each resident host to its fixed-spec prover service.
-    pub fn into_hosts(self) -> impl Iterator<Item = (OLSpecId, H)> {
+    /// Transfers supported hosts to their fixed-spec prover services.
+    ///
+    /// V0 artifacts are only loaded to check ASM's keys at startup. The old sequencer proves
+    /// V0 epochs; this node cannot encode their witnesses or recover their proof tasks.
+    pub fn into_proving_hosts(self) -> impl Iterator<Item = (OLSpecId, H)> {
         self.artifacts
             .into_iter()
+            .filter(|(spec, _)| *spec != OLSpecId::V0)
             .map(|(spec, artifact)| (spec, artifact.host))
     }
 
@@ -206,5 +210,10 @@ mod tests {
         ));
         assert_eq!(*registry.get(OLSpecId::V0).unwrap().host(), 0);
         assert_eq!(*registry.get(OLSpecId::V1).unwrap().host(), 1);
+        assert_eq!(registry.to_predicates().iter().count(), 2);
+        assert_eq!(
+            registry.into_proving_hosts().collect::<Vec<_>>(),
+            vec![(OLSpecId::V1, 1)]
+        );
     }
 }
