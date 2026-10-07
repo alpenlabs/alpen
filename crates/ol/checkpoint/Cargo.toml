@@ -50,3 +50,4 @@ strata-proofimpl-checkpoint.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 
 proptest.workspace = true
+ssz.workspace = true

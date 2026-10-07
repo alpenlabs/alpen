@@ -20,19 +20,21 @@
 //! drain that advances state to the next epoch, runs under the spec of the
 //! epoch it ends. Genesis runs under the network's genesis spec,
 //! [`OLParams::genesis_spec`](strata_ol_params::OLParams::genesis_spec).
-//! Checkpoint sync selects each epoch's spec with [`select_next_epoch_spec`],
-//! which reads the switch from V0 to V1 off the parent epoch's last manifest.
+//! Every later epoch runs the spec [`select_next_epoch_spec`] selects from the
+//! epoch before it: the successor of that epoch's spec if that epoch processed
+//! a checkpoint predicate enactment itself, its spec otherwise. The switch is
+//! read from the L1 manifests every node stores, so no rule set stages or
+//! promotes a spec, and the rule is the same from V0 to V1 and from each later
+//! spec to the next. Checkpoint sync and the sequencer's boot checks select
+//! with it.
 //!
 //! # Unknown and unimplemented specs
 //!
 //! Decoding rejects unknown identifiers, and dispatch matches every variant,
 //! so a node never runs an epoch under older rules because it lacks newer
-//! ones. Halting with upgrade instructions when a predicate enactment
-//! activates a spec this binary does not know belongs to enactment discovery
-//! (STR-4086), which must run before any operation here is called for the new
-//! epoch. Until it lands, the checkpoint predicate enactment that ends V0 is
-//! the only enactment that advances the spec, and an epoch after a V1 epoch
-//! runs V1 whatever spec its parent state stages.
+//! ones. When an enactment activates a spec this binary does not know,
+//! selection returns [`UpgradeRequired`], and a driver that selects with it
+//! runs nothing for the new epoch.
 //!
 //! [`OLSpecId::V0`] names the 0.3.0 rules, which networks launched on that
 //! release run from genesis. This binary implements V0 only for building
@@ -72,7 +74,10 @@ pub use block::{
     construct_block, execute_and_complete_block, execute_block_batch_predrain, verify_block,
 };
 pub use da::{EpochDaReplayError, apply_da_epoch, verify_epoch_with_diff};
-pub use selection::{EpochSpecSelectionError, next_epoch_spec, select_next_epoch_spec};
+pub use selection::{
+    EpochL1Range, EpochSpecSelectionError, InvalidEpochL1Range, UpgradeRequired, next_epoch_spec,
+    select_next_epoch_spec,
+};
 pub use strata_ol_state_types::OLSpecId;
 pub use strata_ol_stf_v1::{
     BasicExecContext, BlockComponents, BlockContext, BlockExecOutputs, BlockInfo, CompletedBlock,

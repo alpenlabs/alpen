@@ -4,6 +4,7 @@
 //! The differential tests in `strata-ol-checkpoint` and
 //! `strata-ol-block-assembly` compare the drivers against each other.
 
+use std::convert::Infallible;
 use std::{iter, slice};
 
 use strata_acct_types::{BitcoinAmount, Hash};
@@ -11,7 +12,7 @@ use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_codec::encode_to_vec;
 use strata_da_framework::{DaCounter, DaLinacc, DaRegister};
-use strata_identifiers::{AccountSerial, OLBlockCommitment, SubjectId};
+use strata_identifiers::{AccountSerial, L1BlockCommitment, OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockV1};
 use strata_ol_da_common::{U16LenBytes, U16LenList};
 use strata_ol_da_types_v1::{
@@ -31,9 +32,10 @@ use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{
     BasicExecContext, BlockComponents, BlockContext, BlockInfo, CompletedBlock, EpochDaReplayError,
-    EpochExecExpectations, EpochInfo, ExecError, ExecOutputBuffer, ExecResult, OLSpecId,
-    TxExecContext, apply_da_epoch, construct_block, execute_and_complete_block,
-    execute_block_batch_predrain, next_epoch_spec, sequencer, verify_block, verify_epoch_with_diff,
+    EpochExecExpectations, EpochInfo, EpochL1Range, EpochSpecSelectionError, ExecError,
+    ExecOutputBuffer, ExecResult, OLSpecId, TxExecContext, apply_da_epoch, construct_block,
+    execute_and_complete_block, execute_block_batch_predrain, next_epoch_spec,
+    select_next_epoch_spec, sequencer, verify_block, verify_epoch_with_diff,
 };
 
 /// An epoch built with the V1 STF, with its pre-genesis and pre-epoch states.
@@ -866,23 +868,173 @@ fn test_v0_replay_rejects_manifest_height_gap() {
     );
 }
 
+/// Returns the commitment of the L1 block `manifest` is for.
+fn manifest_block(manifest: &AsmManifest) -> L1BlockCommitment {
+    L1BlockCommitment::new(manifest.height(), *manifest.blkid())
+}
+
+/// Selects the spec after a parent epoch whose terminal state runs `spec` and
+/// which processed the L1 blocks after `prev_last` up to `last`, the block of
+/// `manifest`.
+fn select_after(
+    spec: OLSpecId,
+    prev_last: L1BlockCommitment,
+    manifest: &AsmManifest,
+) -> Result<OLSpecId, EpochSpecSelectionError<Infallible>> {
+    let range = EpochL1Range::new(prev_last, manifest_block(manifest)).expect("ordered range");
+    select_next_epoch_spec(OLSpecVersions::uniform(spec), range, |block| {
+        assert_eq!(*block, manifest_block(manifest));
+        Ok(Some(manifest.clone()))
+    })
+}
+
 #[test]
-fn test_next_epoch_spec() {
-    let v0 = OLSpecVersions::uniform(OLSpecId::V0);
-    let v1 = OLSpecVersions::uniform(OLSpecId::V1);
-    let plain = make_empty_manifest(10, 0);
+fn test_next_epoch_spec_advances_only_at_an_enactment() {
+    assert_eq!(next_epoch_spec(OLSpecId::V0, None), Ok(OLSpecId::V0));
+    assert_eq!(next_epoch_spec(OLSpecId::V0, Some(10)), Ok(OLSpecId::V1));
+    assert_eq!(next_epoch_spec(OLSpecId::V1, None), Ok(OLSpecId::V1));
+
+    // This binary implements no spec after V1.
+    let err = next_epoch_spec(OLSpecId::V1, Some(10)).expect_err("V1 has no known successor");
+    assert_eq!(err.prev_spec(), OLSpecId::V1);
+    assert_eq!(err.enactment_l1_height(), 10);
+    assert_eq!(err.spec_version(), 2);
+}
+
+#[test]
+fn test_select_switches_at_an_enactment_the_parent_processed() {
+    let prev_last = manifest_block(&make_empty_manifest(9, 0));
     let enactment = make_checkpoint_predicate_enactment_manifest(10, 1);
 
-    assert_eq!(next_epoch_spec(v0, None).unwrap(), OLSpecId::V0);
-    assert_eq!(next_epoch_spec(v0, Some(&plain)).unwrap(), OLSpecId::V0);
-    assert_eq!(next_epoch_spec(v0, Some(&enactment)).unwrap(), OLSpecId::V1);
-    for manifest in [None, Some(&plain), Some(&enactment)] {
-        assert_eq!(next_epoch_spec(v1, manifest).unwrap(), OLSpecId::V1);
+    assert_eq!(
+        select_after(OLSpecId::V0, prev_last, &enactment).expect("V0 has a successor"),
+        OLSpecId::V1
+    );
+
+    // V1 -> V2: the epoch after a V1 epoch that processed an enactment runs
+    // V2, which this binary does not implement.
+    let err = select_after(OLSpecId::V1, prev_last, &enactment).expect_err("upgrade required");
+    let EpochSpecSelectionError::UpgradeRequired(upgrade) = err else {
+        panic!("expected an upgrade-required error, got {err}");
+    };
+    assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+    assert_eq!(upgrade.enactment_l1_height(), 10);
+    assert_eq!(upgrade.spec_version(), 2);
+}
+
+#[test]
+fn test_select_keeps_the_spec_after_a_plain_last_manifest() {
+    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let plain = make_empty_manifest(12, 1);
+    for spec in [OLSpecId::V0, OLSpecId::V1] {
+        assert_eq!(
+            select_after(spec, prev_last, &plain).expect("selects"),
+            spec
+        );
+    }
+}
+
+/// An epoch that processes no manifests keeps the previous epoch's last L1
+/// block. The first V1 epoch can therefore still end on `B`, the block whose
+/// enactment started V1; that enactment must not select V2 for the second
+/// V1 epoch.
+#[test]
+fn test_select_ignores_an_enactment_the_parent_did_not_process() {
+    let b = manifest_block(&make_checkpoint_predicate_enactment_manifest(10, 1));
+    for spec in [OLSpecId::V0, OLSpecId::V1] {
+        let selected = select_next_epoch_spec(
+            OLSpecVersions::uniform(spec),
+            EpochL1Range::empty(b),
+            |_| -> Result<Option<AsmManifest>, Infallible> {
+                panic!("an empty range reads no manifest")
+            },
+        )
+        .expect("selects");
+        assert_eq!(selected, spec);
+    }
+}
+
+#[test]
+fn test_select_never_reads_the_staged_version() {
+    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let plain = make_empty_manifest(10, 1);
+    let range = EpochL1Range::new(prev_last, manifest_block(&plain)).expect("ordered range");
+    let versions = OLSpecVersions::new(OLSpecId::V1, 7).expect("V1 may stage any version");
+    let selected = select_next_epoch_spec(versions, range, |_| {
+        Ok::<_, Infallible>(Some(plain.clone()))
+    })
+    .expect("selects");
+    assert_eq!(selected, OLSpecId::V1);
+}
+
+#[test]
+fn test_select_rejects_a_missing_or_foreign_last_manifest() {
+    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let last = manifest_block(&make_empty_manifest(10, 1));
+    let range = EpochL1Range::new(prev_last, last).expect("ordered range");
+    let v1 = OLSpecVersions::uniform(OLSpecId::V1);
+
+    let err = select_next_epoch_spec(v1, range, |_| Ok::<_, Infallible>(None))
+        .expect_err("missing manifest");
+    assert!(
+        matches!(err, EpochSpecSelectionError::MissingLastManifest { block } if block == last),
+        "{err}"
+    );
+
+    // Another block at the same height, as after an L1 reorg, and the right
+    // block ID at another height.
+    for foreign in [make_empty_manifest(10, 2), make_empty_manifest(11, 1)] {
+        let found = manifest_block(&foreign);
+        let err = select_next_epoch_spec(v1, range, |_| Ok::<_, Infallible>(Some(foreign.clone())))
+            .expect_err("foreign manifest");
+        assert!(
+            matches!(
+                err,
+                EpochSpecSelectionError::LastManifestMismatch { expected, found: got }
+                    if expected == last && got == found
+            ),
+            "{err}"
+        );
     }
 
+    let err = select_next_epoch_spec(v1, range, |_| Err("db down")).expect_err("lookup fails");
+    assert!(
+        matches!(err, EpochSpecSelectionError::ManifestLookup { block, source: "db down" } if block == last),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_select_rejects_a_duplicated_enactment() {
+    let prev_last = manifest_block(&make_empty_manifest(9, 0));
     let duplicate = make_checkpoint_predicate_enactment_manifest(10, 2);
-    assert!(matches!(
-        next_epoch_spec(v0, Some(&duplicate)),
-        Err(ExecError::DuplicateCheckpointPredicateEnactment { height: 10 })
-    ));
+    let err = select_after(OLSpecId::V0, prev_last, &duplicate).expect_err("duplicate");
+    assert!(
+        matches!(
+            err,
+            EpochSpecSelectionError::Exec(ExecError::DuplicateCheckpointPredicateEnactment {
+                height: 10
+            })
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_epoch_l1_range_must_follow_the_previous_epoch() {
+    let at_9 = manifest_block(&make_empty_manifest(9, 0));
+    let at_10 = manifest_block(&make_empty_manifest(10, 0));
+    let other_at_10 = manifest_block(&make_empty_manifest(10, 1));
+
+    assert!(EpochL1Range::new(at_10, at_9).is_err());
+    assert!(EpochL1Range::new(at_10, other_at_10).is_err());
+
+    let empty = EpochL1Range::new(at_10, at_10).expect("an empty range");
+    assert_eq!(empty, EpochL1Range::empty(at_10));
+    assert_eq!(empty.last_processed(), None);
+
+    let range = EpochL1Range::new(at_9, at_10).expect("an ordered range");
+    assert_eq!(range.prev_last(), &at_9);
+    assert_eq!(range.last(), &at_10);
+    assert_eq!(range.last_processed(), Some(&at_10));
 }
