@@ -1,7 +1,7 @@
 //! Checks that ASM's active and pending VKs have matching loaded artifacts.
 //!
 //! These checks compare VKs only. Each proving task selects its artifact separately
-//! from the OL state at the start of its epoch.
+//! from its epoch's terminal OL state.
 
 use strata_identifiers::L1Height;
 use strata_predicate::PredicateKey;

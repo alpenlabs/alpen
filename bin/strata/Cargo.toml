@@ -25,18 +25,15 @@ debug-utils = [
 prover = [
   "dep:strata-paas",
   "dep:strata-proofimpl-checkpoint",
-  "dep:strata-proofimpl-predicate-keys",
+  "strata-ol-checkpoint-artifacts/native",
   "dep:strata-ol-state-support-types",
   "dep:zkaleido",
 ]
 sp1 = [
   "prover",
-  "dep:hex",
-  "strata-proofimpl-predicate-keys/sp1",
+  "strata-ol-checkpoint-artifacts/sp1",
   "strata-paas/remote",
-  "dep:strata-zkvm-hosts",
   "dep:zkaleido-sp1-host",
-  "strata-zkvm-hosts/sp1",
 ]
 
 [dependencies]
@@ -87,14 +84,12 @@ strata-paas = { workspace = true, optional = true }
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-checkpoint = { workspace = true, optional = true }
-strata-proofimpl-predicate-keys = { workspace = true, optional = true }
 strata-rpc-tracing.workspace = true
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-tasks.workspace = true
-strata-zkvm-hosts = { workspace = true, optional = true }
 
 anyhow.workspace = true
 argh.workspace = true
@@ -102,7 +97,6 @@ async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 format_serde_error.workspace = true
-hex = { workspace = true, optional = true }
 http.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 serde_json.workspace = true
@@ -117,6 +111,8 @@ zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
 strata-paas.workspace = true
+strata-db-tests.workspace = true
+strata-ol-stf.workspace = true
 proptest.workspace = true
 strata-asm-checkpoint-types.workspace = true
 strata-btc-verification.workspace = true

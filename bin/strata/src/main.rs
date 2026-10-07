@@ -18,6 +18,9 @@ use strata_ol_state_types_v1 as _;
 use strata_predicate as _;
 use tokio::runtime::{self, Handle};
 use tracing::info;
+// Cargo also supplies prover test dependencies when that test suite is disabled.
+#[cfg(all(test, not(feature = "prover")))]
+use {strata_db_tests as _, strata_ol_stf as _, strata_ol_stf_v1 as _};
 
 use crate::{
     args::Args,
@@ -95,9 +98,6 @@ fn main() -> Result<()> {
     // Start services, and do genesis if necessary.
     let (runctx, proof_notify) = start_strata_services(nodectx)?;
 
-    // Start RPC.
-    start_rpc(&runctx)?;
-
     // Start the integrated prover when the feature is enabled and a [prover]
     // section is present in the config. When absent, checkpoints use empty
     // proofs (requires AlwaysAccept predicate and Timeout publish mode).
@@ -109,6 +109,9 @@ fn main() -> Result<()> {
     // Suppress unused variable warning when prover feature is disabled.
     #[cfg(not(feature = "prover"))]
     let _ = proof_notify;
+
+    // Start RPC only after the configured prover's artifacts pass startup checks.
+    start_rpc(&runctx)?;
 
     // Start block producer if running as sequencer.
     #[cfg(feature = "sequencer")]

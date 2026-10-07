@@ -93,10 +93,11 @@ build_sp1_guest_artifacts() {
     mkdir -p "${ELF_DIR}"
     cp "${REPO_ROOT}"/provers/sp1/generated/*.elf "${ELF_DIR}/"
     cp "${REPO_ROOT}"/provers/sp1/generated/*.artifact-manifest.json "${ELF_DIR}/"
+    cp "${REPO_ROOT}"/provers/sp1/generated/*.predicate "${ELF_DIR}/"
     cp "${REPO_ROOT}"/provers/sp1/generated/*.predicate "${PREDICATE_DIR}/"
     echo "exported SP1 ELFs to ${ELF_DIR}/"
     echo "exported SP1 artifact manifests to ${ELF_DIR}/"
-    echo "exported SP1 predicates to ${PREDICATE_DIR}/"
+    echo "exported SP1 predicates to ${ELF_DIR}/ and ${PREDICATE_DIR}/"
 }
 
 prepare_sp1_checkpoint_predicate() {
