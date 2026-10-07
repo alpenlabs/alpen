@@ -230,23 +230,26 @@ mod tests {
         L1BlockCommitment, L1BlockId, OLBlockCommitment,
     };
     use strata_ol_chain_types_v1::{
-        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog, OLTxSegmentV1,
-        SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData,
+        AsmManifest, BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog,
+        OLTxSegmentV1, SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData,
     };
     use strata_ol_params::OLRuntimeParams;
     use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::{IAccountState, IStateAccessor};
-    use strata_ol_stf_v1::BlockComponents;
-    use strata_ol_stf_v1::test_utils::{
-        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, FixtureAsmManifestBuilder,
-        InboxMmrTracker, OLStfFixture, SnarkUpdateBuilder, TEST_SNARK_ACCOUNT_ID,
-        epoch_runner_run_block as run_block, epoch_runner_run_genesis as run_genesis,
-        epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
-        get_snark_state_expect, make_account_id, make_empty_manifest, make_genesis_state,
-        make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload, snark_inbox_msg,
-        to_ol_block,
+    use strata_ol_state_types::{
+        IAccountState, IStateAccessor, IStateAccessorMut, OLSpecId, OLSpecVersions,
     };
+    use strata_ol_stf_v1::test_utils::{
+        EPOCH_RUNNER_GENESIS_TIMESTAMP, EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT,
+        FixtureAsmManifestBuilder, InboxMmrTracker, OLStfFixture, SnarkUpdateBuilder,
+        TEST_SNARK_ACCOUNT_ID, epoch_runner_run_block as run_block,
+        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
+        epoch_runner_seed_accounts as seed_accounts, execute_block, get_snark_state_expect,
+        make_account_id, make_checkpoint_predicate_enactment_manifest, make_empty_manifest,
+        make_genesis_state, make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload,
+        snark_inbox_msg, tamper_state_root, to_ol_block,
+    };
+    use strata_ol_stf_v1::{BlockComponents, BlockInfo};
     use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
     use strata_predicate::PredicateKey;
     use strata_primitives::epoch::EpochCommitment;
@@ -286,7 +289,11 @@ mod tests {
             stub_ol_logs: Vec<OLLog>,
         ) -> Self {
             Self {
-                inner: CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default()),
+                inner: CheckpointWorkerContextImpl::new(
+                    storage,
+                    OLRuntimeParams::test_default(),
+                    L1BlockCommitment::default(),
+                ),
                 stub_state_diff,
                 stub_ol_logs,
             }
@@ -357,6 +364,17 @@ mod tests {
             self.inner.get_ol_state(commitment)
         }
 
+        fn genesis_l1_block(&self) -> L1BlockCommitment {
+            self.inner.genesis_l1_block()
+        }
+
+        fn get_l1_manifest(
+            &self,
+            block: &L1BlockCommitment,
+        ) -> anyhow::Result<Option<AsmManifest>> {
+            self.inner.get_l1_manifest(block)
+        }
+
         fn fetch_da_for_epoch(
             &self,
             _summary: &EpochSummary,
@@ -376,7 +394,11 @@ mod tests {
     fn initialize_cursor(
         storage: Arc<strata_storage::NodeStorage>,
     ) -> OLCheckpointServiceState<CheckpointWorkerContextImpl> {
-        let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
+        let ctx = CheckpointWorkerContextImpl::new(
+            storage,
+            OLRuntimeParams::test_default(),
+            L1BlockCommitment::default(),
+        );
         let mut state = OLCheckpointServiceState::new(ctx);
         state.initialize();
         state
@@ -556,7 +578,11 @@ mod tests {
                     .expect("put checkpoint");
             }
 
-            let ctx = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
+            let ctx = CheckpointWorkerContextImpl::new(
+                storage,
+                OLRuntimeParams::test_default(),
+                L1BlockCommitment::default(),
+            );
             let mut state = OLCheckpointServiceState::new(ctx);
             state.initialize();
 
@@ -637,9 +663,12 @@ mod tests {
         }
     }
 
-    /// Checks the L1 range produced by OL execution and checkpoint DA replay against ASM.
+    /// Checks the L1 range produced by OL execution and checkpoint DA replay
+    /// against ASM. The checkpoint ends at the predicate boundary `B`, and the
+    /// worker builds no checkpoint for the epoch after it: that epoch runs
+    /// V1's successor, which this binary does not implement.
     #[test]
-    fn checkpoint_payload_ends_at_predicate_boundary_and_successor_starts_after_it() {
+    fn checkpoint_payload_ends_at_predicate_boundary_and_stops_after_it() {
         let boundary = 2;
         let new_predicate = PredicateKey::never_accept();
         let enactment =
@@ -647,6 +676,11 @@ mod tests {
                 .expect("enactment log encodes");
         let mut fixture = OLStfFixture::builder().execute_genesis();
         let storage = create_cursor_test_storage();
+        // Genesis processes no manifests, so it still ends on the L1 anchor.
+        let genesis_l1 = L1BlockCommitment::new(
+            fixture.state().last_l1_height(),
+            *fixture.state().last_l1_blkid(),
+        );
         let genesis = fixture.last_completed_block();
         let genesis_commitment =
             OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid());
@@ -656,14 +690,17 @@ mod tests {
         // checkpoint worker replays each epoch from the preceding terminal state.
         for epoch in 0..=2 {
             if epoch == 1 {
+                let boundary_manifest = FixtureAsmManifestBuilder::new_at_height(boundary)
+                    .with_logs(vec![enactment.clone()])
+                    .build();
+                storage
+                    .l1()
+                    .put_block_data(boundary_manifest.clone())
+                    .unwrap();
                 fixture
                     .child_block()
                     .with_manifest(FixtureAsmManifestBuilder::new_at_height(1).build())
-                    .with_manifest(
-                        FixtureAsmManifestBuilder::new_at_height(boundary)
-                            .with_logs(vec![enactment.clone()])
-                            .build(),
-                    )
+                    .with_manifest(boundary_manifest)
                     .terminal()
                     .execute();
             } else if epoch == 2 {
@@ -713,59 +750,157 @@ mod tests {
             boundary,
         ));
 
-        for epoch in 1..=2 {
-            let ctx = CheckpointWorkerContextImpl::new(
-                Arc::clone(&storage),
-                OLRuntimeParams::test_default(),
-            );
-            let commitment = ctx
-                .get_canonical_epoch_commitment_at(epoch)
+        // The worker builds the checkpoint of the epoch that ends at B, then
+        // refuses to replay the epoch after it and stores nothing for it.
+        let ctx = CheckpointWorkerContextImpl::new(
+            Arc::clone(&storage),
+            OLRuntimeParams::test_default(),
+            genesis_l1,
+        );
+        let ends_at_b = ctx.get_canonical_epoch_commitment_at(1).unwrap().unwrap();
+        let after_b = ctx.get_canonical_epoch_commitment_at(2).unwrap().unwrap();
+        let mut state = OLCheckpointServiceState::new(ctx);
+        state.initialize();
+        let err = state
+            .handle_complete_epoch(after_b)
+            .expect_err("no checkpoint follows the V1 enactment");
+        assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
+        assert_eq!(state.last_processed_epoch(), Some(1));
+        assert!(
+            storage
+                .ol_checkpoint()
+                .get_checkpoint_payload_entry_blocking(after_b)
                 .unwrap()
-                .unwrap();
-            let payload = process_epoch_and_load_payload(&storage, ctx, commitment);
-            let coverage = verify_progression(
+                .is_none()
+        );
+
+        let payload = storage
+            .ol_checkpoint()
+            .get_checkpoint_payload_entry_blocking(ends_at_b)
+            .unwrap()
+            .expect("the checkpoint ending at B is stored");
+        let coverage = verify_progression(
+            asm.verified_tip(),
+            payload.new_tip(),
+            boundary + 2,
+            asm.next_transition(),
+        )
+        .expect("OL-produced checkpoint stays within its predicate territory");
+        assert_eq!(payload.new_tip().l1_height(), boundary);
+        assert_eq!(
+            coverage,
+            CheckpointL1Range::Range {
+                start_height: 1,
+                end_height: boundary,
+            }
+        );
+        // Extending this same checkpoint by one L1 block must fail.
+        let crossing_tip = CheckpointTip::new(1, boundary + 1, *payload.new_tip().l2_commitment());
+        assert!(
+            verify_progression(
                 asm.verified_tip(),
-                payload.new_tip(),
+                &crossing_tip,
                 boundary + 2,
                 asm.next_transition(),
             )
-            .expect("OL-produced checkpoint stays within its predicate territory");
-            if epoch == 1 {
-                assert_eq!(payload.new_tip().l1_height(), boundary);
-                assert_eq!(
-                    coverage,
-                    CheckpointL1Range::Range {
-                        start_height: 1,
-                        end_height: boundary,
-                    }
-                );
-                // Extending this same checkpoint by one L1 block must fail.
-                let crossing_tip =
-                    CheckpointTip::new(epoch, boundary + 1, *payload.new_tip().l2_commitment());
-                assert!(
-                    verify_progression(
-                        asm.verified_tip(),
-                        &crossing_tip,
-                        boundary + 2,
-                        asm.next_transition(),
-                    )
-                    .is_err()
-                );
-                // The old AlwaysAccept key admits the checkpoint ending at B,
-                // then ASM promotes the new key for the following checkpoint.
-                asm.advance(&payload, AsmManifestRangeHash::ZERO).unwrap();
-                assert_eq!(asm.checkpoint_predicate(), &new_predicate);
-                assert!(asm.next_transition().is_none());
-            } else {
-                assert_eq!(
-                    coverage,
-                    CheckpointL1Range::Range {
-                        start_height: boundary + 1,
-                        end_height: boundary + 1,
-                    }
-                );
-            }
+            .is_err()
+        );
+        // The old AlwaysAccept key admits the checkpoint ending at B, then ASM
+        // promotes the new key for the following checkpoint.
+        asm.advance(&payload, AsmManifestRangeHash::ZERO).unwrap();
+        assert_eq!(asm.checkpoint_predicate(), &new_predicate);
+        assert!(asm.next_transition().is_none());
+    }
+
+    /// The checkpoint worker replays the first V1 epoch after the last V0
+    /// terminal, which processed the enactment that ends V0, under V1, as
+    /// block assembly built it. Replaying it under V0 would fail: this binary
+    /// does not execute V0 blocks.
+    #[test]
+    fn builds_the_first_v1_checkpoint_after_the_v0_enactment() {
+        let mut sim_state = make_genesis_state();
+        seed_accounts(&mut sim_state);
+        let genesis_anchor =
+            L1BlockCommitment::new(sim_state.last_l1_height(), *sim_state.last_l1_blkid());
+        let enactment =
+            make_checkpoint_predicate_enactment_manifest(genesis_anchor.height() + 1, 1);
+        let genesis = execute_block(
+            &mut sim_state,
+            &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
+            None,
+            BlockComponents::new_manifests(vec![enactment.clone()]).as_terminal(),
+        )
+        .expect("genesis executes");
+
+        // Relabel genesis as the last V0 terminal, under its bare root.
+        sim_state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+        let v0_root = sim_state.compute_state_root().expect("V0 root");
+        let genesis_header = tamper_state_root(genesis.header(), v0_root);
+        let genesis_commitment = genesis_header.compute_block_commitment();
+        let genesis_l1 =
+            L1BlockCommitment::new(sim_state.last_l1_height(), *sim_state.last_l1_blkid());
+        let pre_epoch_state = sim_state.to_container();
+
+        let mut blocks = Vec::new();
+        let terminal = run_terminal(
+            &mut sim_state,
+            &mut blocks,
+            &genesis_header,
+            make_empty_manifest(genesis_l1.height() + 1, 1),
+        );
+        let terminal_header = terminal.header().clone();
+        let terminal_commitment = terminal_header.compute_block_commitment();
+        let post_epoch_l1 =
+            L1BlockCommitment::new(sim_state.last_l1_height(), *sim_state.last_l1_blkid());
+
+        let storage = create_cursor_test_storage();
+        storage.l1().put_block_data(enactment).unwrap();
+        storage
+            .ol_block()
+            .put_block_data_blocking(OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(genesis_header.clone(), Buf64::zero()),
+                genesis.body().clone(),
+            ))
+            .unwrap();
+        for block in &blocks {
+            storage
+                .ol_block()
+                .put_block_data_blocking(block.clone())
+                .unwrap();
         }
+        storage
+            .ol_state()
+            .put_toplevel_ol_state_blocking(genesis_commitment, pre_epoch_state)
+            .unwrap();
+        let genesis_summary = EpochSummary::new(
+            0,
+            genesis_commitment,
+            OLBlockCommitment::null(),
+            genesis_l1,
+            v0_root,
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(genesis_summary)
+            .unwrap();
+        let summary = genesis_summary.create_next_epoch_summary(
+            terminal_commitment,
+            post_epoch_l1,
+            *terminal_header.state_root(),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .unwrap();
+
+        let ctx = CheckpointWorkerContextImpl::new(
+            Arc::clone(&storage),
+            OLRuntimeParams::test_default(),
+            genesis_anchor,
+        );
+        let payload = process_epoch_and_load_payload(&storage, ctx, summary.get_epoch_commitment());
+        assert_eq!(payload.new_tip().l2_commitment(), &terminal_commitment);
+        assert_eq!(payload.new_tip().l1_height(), post_epoch_l1.height());
     }
 
     /// Exercises the real (non-stubbed) `fetch_da_for_epoch` replay, which the
@@ -779,6 +914,8 @@ mod tests {
         // Build an epoch whose snark update emits a withdrawal, then seal it.
         let mut sim_state = make_genesis_state();
         seed_accounts(&mut sim_state);
+        let genesis_anchor =
+            L1BlockCommitment::new(sim_state.last_l1_height(), *sim_state.last_l1_blkid());
         let genesis = run_genesis(&mut sim_state);
         let pre_epoch_state = sim_state.to_container();
         let genesis_l1 =
@@ -842,6 +979,18 @@ mod tests {
         ol_block_mgr
             .put_block_data_blocking(to_ol_block(&genesis))
             .expect("insert genesis block");
+        // Spec selection reads the manifest the genesis epoch processed last.
+        for manifest in genesis
+            .body()
+            .manifests()
+            .map(|container| container.manifests())
+            .unwrap_or_default()
+        {
+            storage
+                .l1()
+                .put_block_data(manifest.clone())
+                .expect("insert genesis manifest");
+        }
         for block in &blocks {
             ol_block_mgr
                 .put_block_data_blocking(block.clone())
@@ -879,8 +1028,11 @@ mod tests {
             .insert_epoch_summary_blocking(summary)
             .expect("insert summary");
 
-        let ctx =
-            CheckpointWorkerContextImpl::new(Arc::clone(&storage), OLRuntimeParams::test_default());
+        let ctx = CheckpointWorkerContextImpl::new(
+            Arc::clone(&storage),
+            OLRuntimeParams::test_default(),
+            genesis_anchor,
+        );
         let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
 
         // The sidecar must carry the withdrawal-intent log, and it must decode

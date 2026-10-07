@@ -373,7 +373,13 @@ pub(crate) fn create_test_context<P: StateProvider>(
             .expect("Failed to create test NodeStorage"),
     );
 
-    MempoolContext::new(config, BridgeParams::default(), test_storage, provider)
+    MempoolContext::new(
+        config,
+        BridgeParams::default(),
+        test_storage,
+        provider,
+        OLParams::test_default().genesis_l1_block(),
+    )
 }
 
 /// Create an InMemoryStateProvider with initial test state at the given tip.

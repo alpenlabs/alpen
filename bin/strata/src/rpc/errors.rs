@@ -91,8 +91,9 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
         | OLMempoolError::TransactionNotMature { .. }
         | OLMempoolError::UsedSequenceNumber { .. }
         | OLMempoolError::SequenceNumberGap { .. } => invalid_params_error(err.to_string()),
-        // Service unavailable on this node — not an error condition.
-        OLMempoolError::NotAvailable => {
+        // Service unavailable on this node — not an error condition. A node
+        // that needs an upgrade for the next block admits nothing either.
+        OLMempoolError::NotAvailable | OLMempoolError::UpgradeRequired(_) => {
             ErrorObjectOwned::owned(NOT_AVAILABLE_ON_NODE_CODE, err.to_string(), None::<()>)
         }
         // Internal errors
@@ -102,7 +103,10 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
         | OLMempoolError::Database(_)
         | OLMempoolError::Serialization(_)
         | OLMempoolError::ServiceClosed(_)
-        | OLMempoolError::StateProvider(_) => {
+        | OLMempoolError::StateProvider(_)
+        | OLMempoolError::MissingEpochSummary(_)
+        | OLMempoolError::InvalidEpochL1Range(_)
+        | OLMempoolError::SpecSelection(_) => {
             error!(?err, "Internal mempool error");
             internal_error(err.to_string())
         }

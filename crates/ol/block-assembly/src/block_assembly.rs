@@ -36,6 +36,7 @@ use crate::epoch_sealing::{
 };
 use crate::error::BlockAssemblyError;
 use crate::resource_state::{AccumulatedDaData, EpochResourceState};
+use crate::spec::select_block_spec;
 use crate::types::{
     BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate,
 };
@@ -212,7 +213,12 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::InvalidEpochBoundary { .. }
         | BlockAssemblyError::EpochBoundaryStateNotFound(_)
         | BlockAssemblyError::TooManyClaims
-        | BlockAssemblyError::CannotBuildGenesis => MempoolTxInvalidReason::Failed,
+        | BlockAssemblyError::CannotBuildGenesis
+        | BlockAssemblyError::UpgradeRequired(_)
+        | BlockAssemblyError::EpochSummaryNotFound(_)
+        | BlockAssemblyError::InvalidEpochL1Range(_)
+        | BlockAssemblyError::MissingLastManifest { .. }
+        | BlockAssemblyError::LastManifestMismatch { .. } => MempoolTxInvalidReason::Failed,
     }
 }
 
@@ -370,9 +376,16 @@ where
     let block_info = BlockInfo::new(0, block_slot, block_epoch);
     let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
-    // TODO(STR-4086): use the spec scheduled for `block_epoch`. A terminal
-    // block, including its drain, runs under the spec of the epoch it ends.
-    let spec = OLSpecId::V1;
+    // A terminal block, including its drain, runs under the spec of the epoch
+    // it ends. Selection stops here, before any state transition, when the
+    // block would run a spec this binary does not implement.
+    let spec = select_block_spec(
+        ctx,
+        parent_commitment,
+        &parent_header,
+        parent_state.as_ref(),
+    )
+    .await?;
 
     // Create output buffer to collect logs from all transaction executions.
     let output_buffer = ExecOutputBuffer::new_empty();
@@ -1151,7 +1164,6 @@ mod tests {
 
     use strata_acct_types::*;
     use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
-    use strata_asm_logs::CheckpointPredicateEnacted;
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_manifest_types::AsmLogEntry;
     use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
@@ -1163,7 +1175,6 @@ mod tests {
     use strata_ol_state_types_v1::OLStateV1;
     use strata_ol_stf::BlockInfo;
     use strata_ol_stf_v1::test_utils::OLStfFixture;
-    use strata_predicate::PredicateKey;
 
     use super::*;
     use crate::test_utils::*;
@@ -2170,13 +2181,6 @@ mod tests {
         check_block_asm_manifests(&block_template, &[3, 4]);
     }
 
-    fn checkpoint_enactment_log() -> AsmLogEntry {
-        AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(
-            PredicateKey::always_accept(),
-        ))
-        .unwrap()
-    }
-
     #[test]
     fn test_selection_stops_at_first_predicate_boundary_and_seals_off_cadence() {
         let policy = LimitAwareSealing::new(FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH));
@@ -2341,8 +2345,13 @@ mod tests {
         }
     }
 
+    /// The terminal block that processes a checkpoint predicate enactment is
+    /// the last block this binary builds: the next epoch runs V1's successor,
+    /// which it does not implement. Assembly stops before any state
+    /// transition. The stop comes from stored chain data, so a context built
+    /// anew over the same storage, as after a restart, stops too.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_assembly_seals_at_predicate_boundary_and_resumes_in_next_epoch() {
+    async fn test_assembly_seals_at_predicate_boundary_and_stops_after_it() {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
             .with_l1_manifest_height_range(1..=3)
@@ -2355,14 +2364,62 @@ mod tests {
             .put_block_data_async(boundary)
             .await
             .unwrap();
-        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let mut env = TestEnv::from_fixture(Arc::clone(&fixture), parent_commitment);
         let output = env.construct_empty_block().await.unwrap();
         check_block_asm_manifests(&output.template, &[2]);
         check_terminal_header(&output.template);
-        // Persist through the normal test helper so the next block starts from B.
-        env.persist(&output).await;
-        let next = env.construct_empty_block().await.unwrap();
-        check_block_asm_manifests(&next.template, &[3]);
+        let terminal = env.persist(&output).await;
+
+        let restarted = TestEnv::from_fixture(fixture, terminal);
+        for env in [env, restarted] {
+            let Err(BlockAssemblyError::UpgradeRequired(upgrade)) =
+                env.construct_empty_block().await
+            else {
+                panic!("no block may follow the V1 enactment");
+            };
+            assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+            assert_eq!(upgrade.enactment_l1_height(), 2);
+        }
+    }
+
+    /// The first V1 epoch after a V0 terminal at the enactment block `B` may
+    /// process no manifests, so it ends on `B` too. That enactment started V1
+    /// and does not count again: the next epoch still runs V1.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_epoch_after_a_first_v1_epoch_ending_on_the_enactment_runs_v1() {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_v0_genesis_parent()
+            .build_fixture()
+            .await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let enactment_height = env.parent_last_l1_height().await;
+        loop {
+            let output = env
+                .construct_empty_block()
+                .await
+                .expect("the first V1 epoch builds");
+            assert_eq!(
+                output.post_state.last_l1_height(),
+                enactment_height,
+                "the first V1 epoch processes no manifests"
+            );
+            let is_terminal = output.template.header().is_terminal();
+            env.persist(&output).await;
+            if is_terminal {
+                break;
+            }
+        }
+
+        let next = env
+            .construct_empty_block()
+            .await
+            .expect("the second V1 epoch builds");
+        assert_eq!(next.template.header().epoch(), 2);
+        assert_eq!(
+            next.post_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V1)
+        );
     }
 
     #[test]
