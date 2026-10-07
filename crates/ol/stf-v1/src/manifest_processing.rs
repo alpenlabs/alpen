@@ -1,4 +1,5 @@
 //! ASM manifest processing.
+// Throwaway line for the checkpoint VK guard negative test; shifts every line below.
 
 use strata_acct_types::{
     ADMIN_MSG_ACCT_ID, AccountId, BitcoinAmount, L1BlockRecord, MessageEntry, MsgPayload,
