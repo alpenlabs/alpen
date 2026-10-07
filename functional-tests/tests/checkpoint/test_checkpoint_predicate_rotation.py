@@ -3,20 +3,18 @@
 Predicate handovers are range-keyed. Enacting a transition at L1 height B
 does not reject the next checkpoint outright: the outgoing predicate still
 governs every checkpoint whose claimed L1 coverage ends at or below B, and
-only coverage past B is verified against the incoming key. So a rotation to
-`NeverAccept` drains — checkpoints still inside the old range keep
-finalizing — and then stops permanently once coverage crosses B.
+only coverage past B is verified against the incoming key.
 
-This test asserts both halves: that a checkpoint covering <= B is still
-accepted *after* the rotation is enacted, and that the first checkpoint
-covering > B never leaves `pending`.
+The enactment also ends the OL spec the node runs. The OL seals an epoch on
+the enactment's L1 block, so that epoch's coverage ends exactly at B, and the
+epoch after it runs the next spec. This binary implements no spec after V1,
+so the node builds nothing past that epoch's terminal block, while it still
+proves and posts that epoch's checkpoint.
 
-The positive half needs a checkpoint that unambiguously belongs to the
-post-enactment world, so the test manufactures one instead of hoping the
-timing lines up: it mines to B, then holds L1 there while the OL seals
-another epoch. That epoch did not exist when the rotation enacted, and L1
-did not move while it sealed, so it is both freshly post-enactment and
-inside the outgoing predicate's range.
+This test asserts both halves: that the epoch ending at B, sealed after the
+rotation enacted, is still accepted under the outgoing predicate and
+finalizes, and that the node then stays at that epoch's terminal block, with
+nothing finalizing past it, as L1 keeps advancing.
 """
 
 import logging
@@ -46,29 +44,23 @@ PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
 # Budget for pacing L1 from the reveal up to the enactment height.
 ENACTMENT_TIMEOUT_SECONDS = 180
 
-# Budget for the OL to seal one epoch while L1 is held at the boundary. An
-# epoch is `slots_per_epoch` OL blocks, so ~20s at the default 5s block time;
-# this leaves room to have just missed a seal on arrival.
+# Budget for the OL to seal the epoch that processes the enactment while L1 is
+# held at the boundary. The OL seals it on the block that processes the
+# enactment's manifest, without waiting for the slot cadence.
 EPOCH_SEAL_TIMEOUT_SECONDS = 90
 
 # Confirmation delay for the admin update. The transition is enacted at
-# `confirm_height + depth`, which is also the handover boundary, so this sets
-# the width of the window in which the outgoing predicate still governs. It
-# must exceed the L1 span of a single epoch (see `DRAIN_STEP_SLEEP_SECONDS`)
-# so that the drain has in-range checkpoints to work through rather than
-# vaulting from below the boundary straight past it.
+# `confirm_height + depth`, which is also the handover boundary.
 ADMIN_CONFIRMATION_DEPTH = 24
 
-# Budget for draining the checkpoints still governed by the outgoing predicate
-# and reaching the first one whose coverage crosses the boundary.
-DRAIN_TIMEOUT_SECONDS = 240
-DRAIN_L1_BLOCKS_PER_STEP = 1
+# Budget for the epoch ending at the boundary to finalize once L1 moves on.
+FINALIZATION_TIMEOUT_SECONDS = 240
 
-# An epoch's L1 span is however many blocks are mined while it seals, and the
-# OL seals on a wall-clock cadence regardless of L1. Pacing the drain keeps
-# that span well inside `ADMIN_CONFIRMATION_DEPTH`; mining flat out makes each
-# epoch cover tens of blocks and vault straight over the window.
-DRAIN_STEP_SLEEP_SECONDS = 1.5
+PACE_L1_BLOCKS_PER_STEP = 1
+
+# Pacing L1 keeps the OL in step with it, so the epoch that processes the
+# enactment seals soon after L1 reaches the boundary.
+PACE_STEP_SLEEP_SECONDS = 1.5
 
 # Upstream logs this when the transition is enacted, carrying the boundary we
 # derive independently. Used only as a cross-check.
@@ -146,8 +138,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         # Advance L1 to the enactment height. Nothing before it can exercise
         # the handover: while the transition is still pending, `AlwaysAccept`
         # governs every checkpoint, so an epoch finalizing in that window says
-        # nothing about the rotation. The finalized epoch here is the mark that
-        # later finalizations are measured against.
+        # nothing about the rotation.
         finalized_at_enactment = self._pace_l1_to_enactment(
             bitcoin=bitcoin,
             strata=strata,
@@ -162,73 +153,52 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             finalized_at_enactment,
         )
 
-        # Hold L1 at the boundary until the OL seals another epoch. That epoch
-        # is the witness the positive half needs: it did not exist when the
-        # rotation enacted, so nothing about it can have been accepted
-        # beforehand, and L1 did not move while it sealed, so its coverage
-        # cannot reach past the boundary. The enacted handover must accept it.
-        witness_epoch = self._seal_epoch_at_boundary(strata_rpc)
-        witness_info = self._wait_for_checkpoint_info(strata_rpc, witness_epoch)
-        witness_coverage = self._coverage_end(witness_info)
-        witness_status = self._checkpoint_status(witness_info)
+        # Hold L1 at the boundary until the OL seals the epoch that processes
+        # the enactment. Its coverage must end exactly at the boundary: the OL
+        # seals on the enactment's L1 block.
+        last_epoch, last_terminal = self._wait_for_epoch_ending_at(strata_rpc, boundary)
+        last_info = self._wait_for_checkpoint_info(strata_rpc, last_epoch)
+        last_status = self._checkpoint_status(last_info)
 
-        # Both guards cover the construction of the witness, not the protocol:
-        # if its coverage reached past the boundary, or it had already been
-        # accepted, it is not the under-the-boundary post-enactment checkpoint
-        # the positive half needs.
-        if witness_coverage is None or witness_coverage > boundary:
+        # The epoch did not exist when the rotation enacted, and L1 has not
+        # moved since, so it cannot have been accepted yet. Accepting it later
+        # is what shows the enacted handover still applies the outgoing
+        # predicate to coverage <= the boundary.
+        if last_status != "pending":
             raise AssertionError(
-                f"witness epoch {witness_epoch} claims L1 coverage {witness_coverage}, not "
-                f"<= boundary {boundary}, even though L1 was held at the boundary while it sealed"
-            )
-        if witness_status != "pending":
-            raise AssertionError(
-                f"witness epoch {witness_epoch} was already {witness_status!r} at the enactment "
-                "height, so accepting it later would not say anything about the enacted handover"
+                f"epoch {last_epoch}, which ends at the boundary {boundary}, was already "
+                f"{last_status!r} at the enactment height, so accepting it later would not say "
+                "anything about the enacted handover"
             )
         logger.info(
-            "epoch %s sealed with L1 held at boundary %s (coverage ends %s, still pending); "
-            "the enacted handover must accept it",
-            witness_epoch,
+            "epoch %s sealed at the boundary %s with terminal block %s, still pending",
+            last_epoch,
             boundary,
-            witness_coverage,
-        )
-
-        blocked_epoch = self._drain_to_first_epoch_past_boundary(
-            bitcoin=bitcoin,
-            strata=strata,
-            strata_rpc=strata_rpc,
-            btc_rpc=btc_rpc,
-            mine_addr=mine_addr,
-            boundary=boundary,
-        )
-        plateau_epoch = blocked_epoch - 1
-
-        # Positive half of the range-keyed semantics: the witness epoch — sealed
-        # after the rotation had already enacted — must still have been accepted,
-        # because its coverage stayed within the outgoing predicate's range.
-        if plateau_epoch < witness_epoch:
-            raise AssertionError(
-                "no checkpoint sealed after the rotation was enacted finalized under the "
-                f"outgoing predicate: epoch {witness_epoch} sealed with L1 held at boundary "
-                f"{boundary}, but finalization only reached {plateau_epoch} before coverage "
-                "crossed the boundary. The enacted handover should still accept checkpoints "
-                "covering <= the boundary."
-            )
-
-        logger.info(
-            "epochs %s..%s finalized under the outgoing predicate after enactment, "
-            "including witness epoch %s (coverage ends %s <= %s)",
-            finalized_at_enactment + 1,
-            plateau_epoch,
-            witness_epoch,
-            witness_coverage,
-            boundary,
+            last_terminal,
         )
 
         self._assert_enactment_boundary(log_path, log_offset, boundary)
 
-        # Negative half: the first checkpoint past the boundary must never move.
+        # Positive half of the range-keyed semantics: the epoch ending at the
+        # boundary finalizes under the outgoing predicate.
+        finalized = mine_until_finalized_epoch(
+            bitcoin=bitcoin,
+            strata=strata,
+            strata_rpc=strata_rpc,
+            target_epoch=last_epoch,
+            timeout=FINALIZATION_TIMEOUT_SECONDS,
+            step=1.0,
+        )
+        if finalized["epoch"] != last_epoch:
+            raise AssertionError(
+                f"finalized epoch {finalized['epoch']} is past the epoch {last_epoch} that "
+                f"ends at the boundary {boundary}, which this node cannot build past"
+            )
+        logger.info("epoch %s finalized under the outgoing predicate", last_epoch)
+
+        # Negative half: the epoch after the boundary runs a spec this binary
+        # does not implement, so the node builds nothing past the terminal
+        # block and nothing finalizes past it as L1 keeps advancing.
         for _ in range(PREDICATE_REJECTION_L1_BLOCKS):
             self._mine_l1_and_wait_for_asm(
                 bitcoin=bitcoin,
@@ -239,25 +209,19 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 blocks=1,
                 timeout=30,
             )
-            finalized_epoch = self._finalized_epoch(strata, strata_rpc)
-            if finalized_epoch > plateau_epoch:
-                raise AssertionError(
-                    "checkpoint finalized past the handover boundary under NeverAccept: "
-                    f"plateau={plateau_epoch}, after={finalized_epoch}, boundary={boundary}"
-                )
+            time.sleep(PACE_STEP_SLEEP_SECONDS)
+            self._assert_stopped_at(strata, strata_rpc, last_epoch, last_terminal)
 
-        checkpoint_info = strata_rpc.strata_getCheckpointInfo(blocked_epoch)
-        checkpoint_status = self._checkpoint_status(checkpoint_info)
-        if checkpoint_status != "pending":
+        if strata_rpc.strata_getCheckpointInfo(last_epoch + 1) is not None:
             raise AssertionError(
-                f"expected rejected checkpoint epoch {blocked_epoch} "
-                f"(L1 coverage ends {self._coverage_end(checkpoint_info)} > boundary {boundary}) "
-                f"to stay pending, got {checkpoint_status!r}"
+                f"the node built a checkpoint for epoch {last_epoch + 1}, past the epoch that "
+                f"ends at the boundary {boundary}"
             )
 
         logger.info(
-            "checkpoint epoch %s stayed pending across %s L1 blocks after predicate rotation",
-            blocked_epoch,
+            "the node stayed at the terminal block %s of epoch %s across %s L1 blocks",
+            last_terminal,
+            last_epoch,
             PREDICATE_REJECTION_L1_BLOCKS,
         )
         return True
@@ -273,10 +237,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
     ) -> int:
         """Mines up to the enactment height and returns the finalized epoch there.
 
-        Paced like the drain, and for the same reason: the epochs sealing in
-        this window are the ones that must later finalize with coverage still
-        inside the outgoing predicate's range, so their L1 spans have to stay
-        narrow enough to land under `boundary`.
+        Paced so that the OL stays in step with L1 on the way to the boundary.
         """
         deadline = time.time() + ENACTMENT_TIMEOUT_SECONDS
         tip = btc_rpc.proxy.getblockcount()
@@ -293,107 +254,63 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 strata_rpc=strata_rpc,
                 btc_rpc=btc_rpc,
                 mine_addr=mine_addr,
-                blocks=DRAIN_L1_BLOCKS_PER_STEP,
+                blocks=PACE_L1_BLOCKS_PER_STEP,
                 timeout=60,
             )
-            time.sleep(DRAIN_STEP_SLEEP_SECONDS)
+            time.sleep(PACE_STEP_SLEEP_SECONDS)
             tip = btc_rpc.proxy.getblockcount()
 
         # `_mine_l1_and_wait_for_asm` waited for the ASM to commit at the tip,
         # so the block that enacts the transition has been processed.
         return self._finalized_epoch(strata, strata_rpc)
 
-    @staticmethod
-    def _seal_epoch_at_boundary(strata_rpc) -> int:
-        """Waits, without mining, for a fresh epoch to seal. Returns that epoch.
+    def _wait_for_epoch_ending_at(self, strata_rpc, boundary: int) -> tuple[int, str]:
+        """Waits, without mining, for the OL to seal the epoch ending at `boundary`.
 
-        `latest` is the most recently sealed epoch, so anything past the value
-        read here sealed strictly after the rotation enacted — its checkpoint
-        cannot have been posted, let alone accepted, beforehand. The OL seals on
-        a wall-clock cadence regardless of L1, so parking L1 at the boundary
-        also pins that epoch's L1 coverage at or below it.
+        Returns that epoch and its terminal block ID. The epoch is the latest
+        sealed one once its checkpoint coverage reaches the boundary, since
+        the OL seals nothing after it.
         """
-        already_sealed = int(strata_rpc.strata_getChainStatus()["latest"]["epoch"])
-        return int(
-            wait_until_with_value(
-                lambda: int(strata_rpc.strata_getChainStatus()["latest"]["epoch"]),
-                lambda epoch: epoch > already_sealed,
-                error_with=(
-                    f"OL sealed no epoch past {already_sealed} while L1 was held at the boundary"
-                ),
-                timeout=EPOCH_SEAL_TIMEOUT_SECONDS,
-                step=0.5,
-            )
+
+        def latest_epoch_coverage():
+            latest = strata_rpc.strata_getChainStatus()["latest"]
+            info = strata_rpc.strata_getCheckpointInfo(int(latest["epoch"]))
+            return latest, self._coverage_end(info)
+
+        latest, coverage_end = wait_until_with_value(
+            latest_epoch_coverage,
+            lambda value: value[1] is not None and value[1] >= boundary,
+            error_with=(
+                f"OL sealed no epoch covering L1 up to the boundary {boundary} while L1 was "
+                "held there"
+            ),
+            timeout=EPOCH_SEAL_TIMEOUT_SECONDS,
+            step=0.5,
         )
-
-    def _drain_to_first_epoch_past_boundary(
-        self,
-        bitcoin: BitcoinService,
-        strata: StrataService,
-        strata_rpc,
-        btc_rpc,
-        mine_addr: str,
-        boundary: int,
-    ) -> int:
-        """Mines until the first checkpoint whose coverage crosses `boundary`.
-
-        Returns that epoch. Everything below it has finalized under the
-        outgoing predicate, so the plateau is identified structurally — a
-        checkpoint covering past the boundary can never be accepted — rather
-        than by guessing that a run of quiet blocks means rejection.
-        """
-        deadline = time.time() + DRAIN_TIMEOUT_SECONDS
-        last_seen = None
-
-        while time.time() < deadline:
-            self._mine_l1_and_wait_for_asm(
-                bitcoin=bitcoin,
-                strata=strata,
-                strata_rpc=strata_rpc,
-                btc_rpc=btc_rpc,
-                mine_addr=mine_addr,
-                blocks=DRAIN_L1_BLOCKS_PER_STEP,
-                timeout=60,
+        epoch = int(latest["epoch"])
+        if coverage_end != boundary:
+            raise AssertionError(
+                f"epoch {epoch} claims L1 coverage up to {coverage_end}, not the boundary "
+                f"{boundary}: the OL did not seal on the enactment's L1 block"
             )
-            time.sleep(DRAIN_STEP_SLEEP_SECONDS)
+        return epoch, latest["last_blkid"]
 
-            finalized = self._finalized_epoch(strata, strata_rpc)
-            candidate = finalized + 1
-            info = strata_rpc.strata_getCheckpointInfo(candidate)
-            if info is None:
-                continue
-
-            coverage_end = self._coverage_end(info)
-            status = self._checkpoint_status(info)
-            last_seen = (candidate, coverage_end, status)
-
-            if coverage_end <= boundary:
-                # Still governed by the outgoing predicate; let it finalize.
-                continue
-
-            if status != "pending":
-                raise AssertionError(
-                    f"checkpoint epoch {candidate} covers L1 up to {coverage_end}, past the "
-                    f"handover boundary {boundary}, but is already {status!r} — the incoming "
-                    "NeverAccept predicate is not governing its range"
-                )
-
-            logger.info(
-                "epoch %s is the first checkpoint past the boundary "
-                "(coverage ends %s > %s), status %s",
-                candidate,
-                coverage_end,
-                boundary,
-                status,
+    def _assert_stopped_at(
+        self, strata: StrataService, strata_rpc, epoch: int, terminal: str
+    ) -> None:
+        """Asserts that the node is still at `epoch`'s terminal block."""
+        status = strata.get_sync_status(strata_rpc)
+        tip = status["tip"]
+        if tip["blkid"] != terminal or int(status["latest"]["epoch"]) != epoch:
+            raise AssertionError(
+                f"the node built past the terminal block {terminal} of epoch {epoch}, which "
+                f"ends at the enactment: tip={tip}, latest={status['latest']}"
             )
-            return candidate
-
-        raise AssertionError(
-            f"no checkpoint claimed L1 coverage past boundary {boundary} within "
-            f"{DRAIN_TIMEOUT_SECONDS}s; last seen (epoch, coverage_end, status)={last_seen}. "
-            "Either finalization is stuck on a checkpoint covering <= the boundary — which the "
-            "enacted handover should still accept — or the sequencer stalled."
-        )
+        if int(status["finalized"]["epoch"]) != epoch:
+            raise AssertionError(
+                f"finalized epoch moved off {epoch}, the epoch ending at the enactment: "
+                f"finalized={status['finalized']}"
+            )
 
     @staticmethod
     def _tx_block_height(btc_rpc, txid: str) -> int:
