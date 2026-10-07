@@ -4,11 +4,13 @@ use std::error::Error;
 
 use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{
+    AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId,
+};
 use strata_ol_chain_types_v1::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_state_types::StateError;
-use strata_ol_stf::ExecError;
+use strata_ol_stf::{ExecError, InvalidEpochL1Range, UpgradeRequired};
 
 /// Errors that can occur during block assembly operations.
 #[derive(Debug, thiserror::Error)]
@@ -141,6 +143,30 @@ pub enum BlockAssemblyError {
     /// State provider operation failed.
     #[error("state provider: {0}")]
     StateProvider(#[source] Box<dyn Error + Send + Sync>),
+
+    /// The block runs a spec this binary does not implement.
+    #[error(transparent)]
+    UpgradeRequired(#[from] UpgradeRequired),
+
+    /// A terminal block has no stored epoch summary.
+    #[error("missing the epoch summary of {0}")]
+    EpochSummaryNotFound(EpochCommitment),
+
+    /// An epoch's last L1 block does not follow the previous epoch's.
+    #[error("epoch L1 range: {0}")]
+    InvalidEpochL1Range(#[from] InvalidEpochL1Range),
+
+    /// No ASM manifest is stored for the last L1 block an epoch processed.
+    #[error("missing the L1 manifest of {block}, the last L1 block the epoch processed")]
+    MissingLastManifest { block: L1BlockCommitment },
+
+    /// The stored manifest is for another L1 block than the last one an
+    /// epoch processed.
+    #[error("stored L1 manifest is for {found}, but the epoch processed {expected} last")]
+    LastManifestMismatch {
+        expected: L1BlockCommitment,
+        found: L1BlockCommitment,
+    },
 
     /// Block construction/execution failed.
     #[error("block construction: {0}")]

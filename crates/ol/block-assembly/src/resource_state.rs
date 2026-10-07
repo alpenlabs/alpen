@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
-use strata_ol_state_types::{IAccountStateMut, IStateAccessorMut};
-use strata_ol_stf::{OLSpecId, execute_block_batch_predrain};
+use strata_ol_state_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
+use strata_ol_stf::execute_block_batch_predrain;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 
+use crate::spec::select_spec_after_terminal;
 use crate::{BlockAssemblyAnchorContext, BlockAssemblyError, BlockAssemblyStateAccess};
 
 /// An 'append-only' container of state diff and OL logs accumulated DA data for some epoch.
@@ -134,8 +135,21 @@ where
     let epoch_blocks = collect_epoch_blocks_until(blkid.blkid, epoch, ctx).await?;
     let initial_state = fetch_state(&epoch_blocks.epoch_parent, ctx).await?;
 
-    // TODO(STR-4086): use the spec scheduled for `epoch`.
-    let spec = OLSpecId::V1;
+    // The epoch's blocks ran under the spec selected after the epoch's parent.
+    let epoch_parent = &epoch_blocks.epoch_parent;
+    let spec = select_spec_after_terminal(
+        ctx,
+        EpochCommitment::from_terminal(
+            epoch_parent.epoch(),
+            epoch_parent.compute_block_commitment(),
+        ),
+        initial_state.spec_versions(),
+        L1BlockCommitment::new(
+            initial_state.last_l1_height(),
+            *initial_state.last_l1_blkid(),
+        ),
+    )
+    .await?;
     let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
     let batch_logs = execute_block_batch_predrain(
         spec,

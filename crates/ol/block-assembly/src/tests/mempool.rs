@@ -9,10 +9,10 @@ use strata_config::SequencerConfig;
 use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ol_mempool::{
-    MempoolBuilder, MempoolCandidates, MempoolHandle, MempoolTxInvalidReason, OLMempoolConfig,
-    OLMempoolError,
+    MempoolBuilder, MempoolCandidates, MempoolHandle, MempoolTip, MempoolTxInvalidReason,
+    OLMempoolConfig, OLMempoolError,
 };
-use strata_ol_params::{BridgeParams, OLRuntimeParams};
+use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_provider::OLStateManagerProviderImpl;
 use strata_ol_tx_types_v1::OLTransactionV1;
 use strata_status::StatusChannel;
@@ -33,6 +33,19 @@ use crate::{
     BlockAssemblyError, BlockAssemblyResult, FixedSlotSealing, LimitAwareSealing, MempoolProvider,
     MempoolProviderImpl,
 };
+
+/// Returns the mempool tip at the env's parent block.
+async fn parent_tip(env: &TestEnv) -> MempoolTip {
+    let parent = env.parent_commitment();
+    let header = env
+        .storage()
+        .ol_block()
+        .get_ol_header_async(*parent.blkid())
+        .await
+        .expect("read parent header")
+        .expect("parent header stored");
+    MempoolTip::new(parent, header.is_terminal().then_some(header.epoch()))
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_reload_filters_oversized_updates_before_assembly() {
@@ -82,7 +95,8 @@ async fn test_reload_filters_oversized_updates_before_assembly() {
             BridgeParams::default(),
             env.storage().clone(),
             status.clone(),
-            env.parent_commitment(),
+            OLParams::test_default().genesis_l1_block(),
+            parent_tip(&env).await,
         )
         .launch(&task_manager.create_executor())
         .await
@@ -102,7 +116,7 @@ async fn test_reload_filters_oversized_updates_before_assembly() {
         MempoolProviderImpl::new(mempool.clone()),
         OLStateManagerProviderImpl::new(env.storage().ol_state().clone()),
         0,
-        OLRuntimeParams::test_default(),
+        &OLParams::test_default(),
     );
     let result = generate_block_template_inner(
         &context,
@@ -178,7 +192,8 @@ async fn test_deferred_account_backlog_does_not_hide_independent_transaction() {
             BridgeParams::default(),
             env.storage().clone(),
             status.clone(),
-            env.parent_commitment(),
+            OLParams::test_default().genesis_l1_block(),
+            parent_tip(&env).await,
         )
         .launch(&task_manager.create_executor())
         .await
@@ -212,7 +227,7 @@ async fn test_deferred_account_backlog_does_not_hide_independent_transaction() {
         MempoolProviderImpl::new(mempool.clone()),
         OLStateManagerProviderImpl::new(env.storage().ol_state().clone()),
         0,
-        OLRuntimeParams::test_default(),
+        &OLParams::test_default(),
     );
     let config = SequencerConfig {
         max_txs_per_block: 1,
@@ -283,7 +298,8 @@ async fn test_snapshot_replacement_affects_only_later_assembly_attempts() {
             BridgeParams::default(),
             env.storage().clone(),
             status.clone(),
-            env.parent_commitment(),
+            OLParams::test_default().genesis_l1_block(),
+            parent_tip(&env).await,
         )
         .launch(&task_manager.create_executor())
         .await
@@ -313,7 +329,7 @@ async fn test_snapshot_replacement_affects_only_later_assembly_attempts() {
         },
         OLStateManagerProviderImpl::new(env.storage().ol_state().clone()),
         0,
-        OLRuntimeParams::test_default(),
+        &OLParams::test_default(),
     );
     let result = generate_block_template_inner(
         &context,
@@ -387,7 +403,7 @@ async fn test_state_provider_failure_propagates() {
         mempool,
         FailingStateProvider,
         0,
-        OLRuntimeParams::test_default(),
+        &OLParams::test_default(),
     );
     let config = BlockGenerationConfig::new(OLBlockCommitment::new(
         1,

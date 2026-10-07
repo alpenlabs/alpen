@@ -15,7 +15,7 @@ use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_checkpoint_artifacts::startup::{
     CheckpointProverCheckError, check_startup_without_prover_blocking,
 };
-use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_ol_mempool::{MempoolBuilder, MempoolHandle, MempoolTip, OLMempoolConfig};
 use strata_predicate::PredicateTypeId;
 use strata_service::ServiceMonitor;
 
@@ -434,11 +434,12 @@ fn start_sync_services(
 fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     let config = OLMempoolConfig::default();
 
-    let current_tip = nodectx
-        .status_channel()
-        .get_ol_sync_status()
-        .expect("OL sync status must be set before starting mempool")
-        .tip();
+    let current_tip = MempoolTip::from_sync_status(
+        &nodectx
+            .status_channel()
+            .get_ol_sync_status()
+            .expect("OL sync status must be set before starting mempool"),
+    );
 
     let storage = nodectx.storage().clone();
     let status_channel = nodectx.status_channel().as_ref().clone();
@@ -453,6 +454,7 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
             *nodectx.ol_params().bridge_params(),
             storage,
             status_channel,
+            nodectx.ol_params().genesis_l1_block(),
             current_tip,
         )
         .launch(&executor)
