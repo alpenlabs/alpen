@@ -1,7 +1,6 @@
 //! OL RPC server implementation for a strata node.
 use std::{
     collections::{HashMap, HashSet},
-    convert::Infallible,
     ops::Range,
     sync::Arc,
 };
@@ -10,7 +9,9 @@ use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
-use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types::{
+    EpochSummary, SelectSpecAfterEpochError, select_spec_after_epoch_async,
+};
 use strata_db_types::{ol_block::BlockAvailability, ol_state_index::InboxMessageRecord};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
@@ -28,9 +29,7 @@ use strata_ol_rpc_types::{
 };
 use strata_ol_state_container::{OLStateContainer, OLStateSeries};
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, OLSpecId};
-use strata_ol_stf::{
-    EpochL1Range, EpochSpecSelectionError, UpgradeRequired, select_next_epoch_spec,
-};
+use strata_ol_stf::{EpochSpecSelectionError, UpgradeRequired};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
@@ -149,54 +148,35 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     }
 
     /// Selects the spec of the epoch after `terminal`, an epoch's terminal
-    /// block whose state is `state`, as the node's drivers select it.
+    /// block whose state is `state`, with [`select_spec_after_epoch_async`],
+    /// as the node's drivers select it.
     ///
     /// Returns [`UpgradeRequired`] as a value when this binary does not
     /// implement that spec, and an error only when stored chain data is
     /// missing or inconsistent.
-    async fn spec_after_terminal(
+    async fn select_spec_after_epoch_terminal_block(
         &self,
         terminal: EpochCommitment,
         state: &OLStateContainer,
     ) -> RpcResult<Result<OLSpecId, UpgradeRequired>> {
-        let prev_last = if terminal.epoch() == 0 {
-            self.genesis_l1_block
-        } else {
-            let summary = self
-                .provider
-                .get_epoch_summary(terminal)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| {
-                    internal_error(format!("missing the epoch summary of {terminal}"))
-                })?;
-            let prev = summary
-                .get_prev_epoch_commitment()
-                .expect("a summary of an epoch after genesis has a previous epoch");
-            *self
-                .provider
-                .get_epoch_summary(prev)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| internal_error(format!("missing the epoch summary of {prev}")))?
-                .new_l1()
-        };
-        let range = EpochL1Range::new(prev_last, state.chainstate().last_l1_block())
-            .map_err(|err| internal_error(err.to_string()))?;
-        let last_manifest = match range.last_processed() {
-            Some(block) => self
-                .provider
-                .get_block_manifest(*block.blkid())
-                .await
-                .map_err(db_error)?,
-            None => None,
-        };
-        match select_next_epoch_spec(state.spec_versions(), range, |_| {
-            Ok::<_, Infallible>(last_manifest)
-        }) {
+        let selected = select_spec_after_epoch_async(
+            terminal,
+            state.spec_versions(),
+            state.chainstate().last_l1_block(),
+            self.genesis_l1_block,
+            |epoch| self.provider.get_epoch_summary(epoch),
+            |block| self.provider.get_block_manifest(*block.blkid()),
+        )
+        .await;
+        match selected {
             Ok(spec) => Ok(Ok(spec)),
-            Err(EpochSpecSelectionError::UpgradeRequired(upgrade)) => Ok(Err(upgrade)),
-            Err(err) => Err(internal_error(err.to_string())),
+            Err(err) => match err.into_lookup_error() {
+                Ok(lookup) => Err(db_error(lookup)),
+                Err(SelectSpecAfterEpochError::Selection(
+                    EpochSpecSelectionError::UpgradeRequired(upgrade),
+                )) => Ok(Err(upgrade)),
+                Err(err) => Err(internal_error(err.to_string())),
+            },
         }
     }
 
@@ -895,18 +875,25 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         }
 
         let tip_epoch = EpochCommitment::from_terminal(sync_status.tip_epoch(), tip);
-        Ok(match self.spec_after_terminal(tip_epoch, &state).await? {
-            Ok(spec) => RpcOLSpecStatus::new(tip_info, cur_spec_version, Some(spec.into()), None),
-            Err(upgrade) => RpcOLSpecStatus::new(
-                tip_info,
-                cur_spec_version,
-                Some(upgrade.spec_version()),
-                Some(RpcUpgradeRequired::new(
-                    upgrade.enactment_l1_height(),
-                    upgrade.spec_version(),
-                )),
-            ),
-        })
+        Ok(
+            match self
+                .select_spec_after_epoch_terminal_block(tip_epoch, &state)
+                .await?
+            {
+                Ok(spec) => {
+                    RpcOLSpecStatus::new(tip_info, cur_spec_version, Some(spec.into()), None)
+                }
+                Err(upgrade) => RpcOLSpecStatus::new(
+                    tip_info,
+                    cur_spec_version,
+                    Some(upgrade.spec_version()),
+                    Some(RpcUpgradeRequired::new(
+                        upgrade.enactment_l1_height(),
+                        upgrade.spec_version(),
+                    )),
+                ),
+            },
+        )
     }
 
     async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>> {
