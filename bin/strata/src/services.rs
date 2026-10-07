@@ -323,11 +323,10 @@ pub(crate) fn start_strata_services(
             .with_node_context(&nodectx)
             .with_epoch_summary_receiver(epoch_summary_rx);
 
-        #[cfg(feature = "prover")]
         let (checkpoint_builder, proof_notify): (
             OLCheckpointBuilder,
             Option<Arc<strata_ol_checkpoint::ProofNotify>>,
-        ) = if nodectx.config().prover.is_some() {
+        ) = if prover_enabled {
             let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
             let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
                 notify: notify.clone(),
@@ -336,9 +335,6 @@ pub(crate) fn start_strata_services(
         } else {
             (checkpoint_builder, None)
         };
-
-        #[cfg(not(feature = "prover"))]
-        let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = None;
 
         let handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
         (Some(handle), proof_notify)
