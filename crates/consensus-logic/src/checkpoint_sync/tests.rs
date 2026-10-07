@@ -11,6 +11,7 @@ use strata_csm_types::{CheckpointL1Ref, CheckpointState};
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
 use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_ol_stf::{next_epoch_spec, OLSpecId};
 use strata_primitives::{EpochCommitment, L1Height};
 use strata_service::{AsyncService, Response};
 use strata_status::OLSyncStatus;
@@ -73,6 +74,9 @@ struct MockCtx {
     applied_epochs: Mutex<Vec<EpochCommitment>>,
     /// One synthetic reconstruction failure, consumed by `apply_checkpoint`.
     apply_failure: Mutex<Option<WorkerError>>,
+    /// First epoch whose reconstruction needs a spec this binary does not
+    /// implement; it and every later epoch fail to apply.
+    upgrade_required_from: Option<Epoch>,
     /// Tips passed to `update_safe_tip`, in call order.
     safe_tips: Mutex<Vec<OLBlockCommitment>>,
     /// Epochs passed to `finalize_epoch`, in call order.
@@ -97,6 +101,7 @@ impl MockCtx {
             epoch_summaries: Mutex::new(HashMap::new()),
             applied_epochs: Mutex::new(Vec::new()),
             apply_failure: Mutex::new(None),
+            upgrade_required_from: None,
             safe_tips: Mutex::new(Vec::new()),
             finalized_epochs: Mutex::new(Vec::new()),
             published_statuses: Mutex::new(Vec::new()),
@@ -142,6 +147,11 @@ impl MockCtx {
 
     fn fail_apply_once(mut self, error: WorkerError) -> Self {
         *self.apply_failure.get_mut().unwrap() = Some(error);
+        self
+    }
+
+    fn require_upgrade_from(mut self, epoch: Epoch) -> Self {
+        self.upgrade_required_from = Some(epoch);
         self
     }
 
@@ -194,6 +204,18 @@ impl CheckpointSyncCtx for MockCtx {
     }
 
     async fn apply_checkpoint(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
+        if self
+            .upgrade_required_from
+            .is_some_and(|from| epoch.epoch() >= from)
+        {
+            let upgrade = next_epoch_spec(OLSpecId::V1, Some(7))
+                .expect_err("this binary implements no spec after V1");
+            return Err(CheckpointSyncError::EpochOp {
+                epoch,
+                op: "apply_checkpoint",
+                cause: WorkerError::UpgradeRequired(upgrade),
+            });
+        }
         if let Some(cause) = self.apply_failure.lock().unwrap().take() {
             return Err(CheckpointSyncError::EpochOp {
                 epoch,
@@ -562,7 +584,8 @@ async fn initialization_recovers_after_reconstruction_failure() {
     // A fresh CSS initialization sees the now-valid checkpoint and finishes
     // reconstruction plus the idempotent finalize/publish recovery tail.
     let recovered = initialize_css_inner_state(ctx.as_ref()).await.unwrap();
-    assert_eq!(recovered, Some(epoch1));
+    assert_eq!(recovered.last_applied, Some(epoch1));
+    assert_eq!(recovered.stopped_before, None);
     assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1]);
     assert!(!ctx.finalized_epochs.lock().unwrap().is_empty());
     assert!(!ctx.published_statuses.lock().unwrap().is_empty());
@@ -638,4 +661,70 @@ async fn rerun_after_partial_drain_applies_nothing() {
         ctx.applied_epochs.lock().unwrap().len(),
         applied_after_first
     );
+}
+
+/// Checkpoint sync applies the epochs before one that runs a spec this binary
+/// does not implement, then stops there without failing, on every update.
+#[tokio::test]
+async fn handle_stops_before_an_epoch_that_needs_an_upgrade() {
+    let epoch0 = make_epoch(0, 0, 0x00);
+    let epoch1 = make_epoch(1, 10, 0x01);
+    let epoch2 = make_epoch(2, 20, 0x02);
+    let ctx = Arc::new(
+        MockCtx::new(3, 200)
+            .add_genesis(epoch0)
+            .add_epoch(epoch1, make_l1_ref(110), None)
+            .add_epoch(epoch2, make_l1_ref(120), None)
+            .with_csm_finalized(Some(epoch2))
+            .require_upgrade_from(2),
+    );
+    let mut state = CheckpointSyncState::new(ctx.clone(), Some(epoch0));
+
+    for _ in 0..2 {
+        state
+            .handle_new_client_state()
+            .await
+            .expect("stopping is not a failure");
+        assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
+        assert_eq!(state.stopped_before(), Some(epoch2));
+    }
+    assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1]);
+    assert_eq!(*ctx.finalized_epochs.lock().unwrap(), vec![epoch1]);
+    // The node's view of the chain ends at the last epoch it applied.
+    assert_eq!(
+        *ctx.safe_tips.lock().unwrap(),
+        vec![epoch1.to_block_commitment()]
+    );
+    let published = ctx.published_statuses.lock().unwrap();
+    assert_eq!(published.len(), 1);
+    assert_eq!(published[0].tip(), epoch1.to_block_commitment());
+}
+
+/// After a restart, initialization applies what it can and resumes from the
+/// last applied epoch instead of failing startup.
+#[tokio::test]
+async fn initialization_stops_before_an_epoch_that_needs_an_upgrade() {
+    let epoch0 = make_epoch(0, 0, 0x00);
+    let epoch1 = make_epoch(1, 10, 0x01);
+    let epoch2 = make_epoch(2, 20, 0x02);
+    let ctx = Arc::new(
+        MockCtx::new(3, 200)
+            .add_genesis(epoch0)
+            .add_epoch(epoch1, make_l1_ref(110), None)
+            .add_epoch(epoch2, make_l1_ref(120), None)
+            .with_csm_finalized(Some(epoch2))
+            .require_upgrade_from(2),
+    );
+
+    let resume = initialize_css_inner_state(ctx.as_ref())
+        .await
+        .expect("stopping is not a startup failure");
+    assert_eq!(resume.last_applied, Some(epoch1));
+    assert_eq!(resume.stopped_before, Some(epoch2));
+
+    // A second start resumes at the same place.
+    let resume = initialize_css_inner_state(ctx.as_ref()).await.unwrap();
+    assert_eq!(resume.last_applied, Some(epoch1));
+    assert_eq!(resume.stopped_before, Some(epoch2));
+    assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1]);
 }

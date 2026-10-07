@@ -24,6 +24,12 @@ pub trait OLClientRpc {
     #[method(name = "getChainStatus")]
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus>;
 
+    /// Get the OL spec the canonical tip runs under and, once the tip ends
+    /// its epoch, the spec of the next epoch, including whether this node
+    /// needs an upgrade to run it.
+    #[method(name = "getSpecStatus")]
+    async fn get_spec_status(&self) -> RpcResult<RpcOLSpecStatus>;
+
     /// Get checkpoint info for the given epoch.
     #[method(name = "getCheckpointInfo")]
     async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>>;

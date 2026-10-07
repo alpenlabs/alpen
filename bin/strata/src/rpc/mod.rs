@@ -20,7 +20,7 @@ use strata_common::{BAIL_SENDER, KNOWN_BAIL_TAGS};
 use strata_config::SecretString;
 #[cfg(feature = "sequencer")]
 use strata_consensus_logic::FcmServiceHandle;
-use strata_identifiers::L1Height;
+use strata_identifiers::L1BlockCommitment;
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
 #[cfg(feature = "debug-utils")]
@@ -56,7 +56,7 @@ struct RpcDeps {
     submit_rpc_host: String,
     submit_rpc_port: u16,
     submit_rpc_bearer_token: Option<SecretString>,
-    genesis_l1_height: L1Height,
+    genesis_l1_block: L1BlockCommitment,
     max_headers_range: usize,
     node_role: NodeRole,
     storage: Arc<NodeStorage>,
@@ -177,7 +177,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         submit_rpc_host: runctx.config().client.submit_rpc_host.clone(),
         submit_rpc_port: runctx.config().client.submit_rpc_port,
         submit_rpc_bearer_token: runctx.config().client.submit_rpc_bearer_token.clone(),
-        genesis_l1_height: runctx.asm_params().anchor.block.height(),
+        genesis_l1_block: runctx.asm_params().anchor.block,
         max_headers_range: runctx.config().client.max_headers_range,
         node_role: runctx.node_role(),
         storage: runctx.storage().clone(),
@@ -229,7 +229,7 @@ fn register_client_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()>
     );
     let ol_rpc_server = OLRpcServer::new(
         client_provider,
-        deps.genesis_l1_height,
+        deps.genesis_l1_block,
         deps.max_headers_range,
         ol_block_data_access(deps.node_role),
     );
@@ -247,7 +247,7 @@ fn register_fullnode_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<(
     );
     let ol_fullnode_listener = OLRpcServer::new(
         fullnode_provider,
-        deps.genesis_l1_height,
+        deps.genesis_l1_block,
         deps.max_headers_range,
         ol_block_data_access(deps.node_role),
     );
@@ -322,7 +322,7 @@ fn build_submit_rpc_module(deps: &RpcDeps) -> Result<RpcModule<OLRpcServer<NodeR
     );
     let submit_listener = OLRpcServer::new(
         submit_provider,
-        deps.genesis_l1_height,
+        deps.genesis_l1_block,
         deps.max_headers_range,
         ol_block_data_access(deps.node_role),
     );
