@@ -98,6 +98,9 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     async fn get_block_manifest_at_height(&self, height: L1Height)
         -> DbResult<Option<AsmManifest>>;
 
+    /// Get the stored manifest of the L1 block `blkid`, canonical or not.
+    async fn get_block_manifest(&self, blkid: L1BlockId) -> DbResult<Option<AsmManifest>>;
+
     /// Returns the canonical L1 block ID at a given height.
     async fn get_canonical_l1_blockid_at_height(
         &self,

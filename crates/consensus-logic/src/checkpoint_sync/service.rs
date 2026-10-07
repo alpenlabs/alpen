@@ -16,8 +16,8 @@ use crate::checkpoint_sync::{
     context::CheckpointSyncCtx,
     errors::{CheckpointSyncError, CheckpointSyncResult},
     state::{
-        build_ol_sync_status, find_and_apply_unapplied_epochs, refinalize_applied_epoch,
-        CheckpointSyncState,
+        build_ol_sync_status, find_and_apply_unapplied_epochs, log_upgrade_required,
+        refinalize_applied_epoch, CheckpointSyncState,
     },
 };
 
@@ -102,7 +102,8 @@ pub async fn start_css<C: CheckpointSyncCtx>(
     info!("initializing checkpoint sync service");
     ctx.reconcile_ol_mmr_index().await?;
 
-    let last_finalized_and_applied = initialize_css_inner_state(ctx.as_ref()).await?;
+    let resume = initialize_css_inner_state(ctx.as_ref()).await?;
+    let last_finalized_and_applied = resume.last_applied;
 
     // Publish initial OL sync status so the RPC is populated from startup.
     match last_finalized_and_applied {
@@ -116,7 +117,8 @@ pub async fn start_css<C: CheckpointSyncCtx>(
         }
     }
 
-    let state = CheckpointSyncState::new(ctx, last_finalized_and_applied);
+    let state = CheckpointSyncState::new(ctx, last_finalized_and_applied)
+        .with_stopped_before(resume.stopped_before);
     let input = TokioWatchInput::from_receiver(checkpoint_state_rx);
 
     let service_monitor =
@@ -129,22 +131,37 @@ pub async fn start_css<C: CheckpointSyncCtx>(
     Ok(service_monitor)
 }
 
+/// Where checkpoint sync resumes after initialization.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct CssResume {
+    /// Last epoch applied and finalized, if any.
+    pub(super) last_applied: Option<EpochCommitment>,
+    /// First epoch this binary cannot apply because it runs a spec this
+    /// binary does not implement, if checkpoint sync stopped there.
+    pub(super) stopped_before: Option<EpochCommitment>,
+}
+
 /// Initializes css state by catching up on any unapplied finalized epochs at startup and returns
-/// the resulting last-applied epoch.
+/// where checkpoint sync resumes: the resulting last-applied epoch, and the epoch it stopped
+/// before if that epoch needs an upgrade.
 ///
 /// Also re-runs finalization on the last already-applied epoch found by the
 /// scan: if a previous run crashed between writing the summary and finalizing,
 /// the chain worker's `last_finalized_epoch` would otherwise stay behind
 /// silently. The re-finalize is idempotent.
+///
+/// An epoch that runs a spec this binary does not implement stops the catch-up
+/// without failing startup. Every epoch before it stays applied and finalized.
 #[expect(clippy::result_large_err, reason = "No need to box the error")]
 pub(super) async fn initialize_css_inner_state(
     ctx: &impl CheckpointSyncCtx,
-) -> CheckpointSyncResult<Option<EpochCommitment>> {
+) -> CheckpointSyncResult<CssResume> {
     let Some(cur_finalized) = ctx.fetch_csm_status().await?.last_finalized_epoch else {
         debug!("no finalized checkpoint in client state, nothing to catch up on");
-        return Ok(None);
+        return Ok(CssResume::default());
     };
 
+    let mut stopped_before = None;
     let last_applied_epoch = match find_and_apply_unapplied_epochs(ctx, cur_finalized).await {
         Ok(v) => v,
         Err(CheckpointSyncError::NotReorgSafe {
@@ -156,11 +173,21 @@ pub(super) async fn initialize_css_inner_state(
                 %epoch, depth, required,
                 "finalized checkpoint not reorg-safe at startup, deferring to next CSM update"
             );
-            return Ok(None);
+            return Ok(CssResume::default());
         }
         Err(CheckpointSyncError::L1TipNotReady) => {
             warn!("L1 tip not yet ready at startup, deferring to next CSM update");
-            return Ok(None);
+            return Ok(CssResume::default());
+        }
+        // A stop, not a startup failure: resume from the last applied epoch.
+        Err(CheckpointSyncError::UpgradeRequired {
+            epoch,
+            last_applied,
+            cause,
+        }) => {
+            log_upgrade_required(epoch, &cause);
+            stopped_before = Some(epoch);
+            last_applied
         }
         Err(e) => return Err(e),
     };
@@ -170,5 +197,8 @@ pub(super) async fn initialize_css_inner_state(
             refinalize_applied_epoch(ctx, epoch).await?;
         }
     }
-    Ok(last_applied_epoch)
+    Ok(CssResume {
+        last_applied: last_applied_epoch,
+        stopped_before,
+    })
 }

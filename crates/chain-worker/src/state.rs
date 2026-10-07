@@ -225,10 +225,21 @@ impl ChainWorkerServiceState {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(epoch = epoch.epoch(), slot = epoch.last_slot(), blkid = %epoch.last_blkid()),
-        err
+        fields(epoch = epoch.epoch(), slot = epoch.last_slot(), blkid = %epoch.last_blkid())
     )]
     pub(crate) fn apply_checkpoint(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
+        let result = self.apply_and_store_checkpoint(epoch);
+        // Checkpoint sync reports the upgrade-required stop once; it is not a
+        // failure to log on every retry.
+        if let Err(err) = &result
+            && !matches!(err, WorkerError::UpgradeRequired(_))
+        {
+            error!(%err, "failed to apply checkpoint");
+        }
+        result
+    }
+
+    fn apply_and_store_checkpoint(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
         let artifacts = apply_checkpoint_epoch(&self.ctx, epoch)?;
         let terminal = artifacts.terminal();
 
@@ -264,12 +275,23 @@ pub(crate) fn exec_block(
     // Fetch block and parent context
     let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
 
+    // Fetch the parent state and select the block's spec before executing
+    // anything. A block that runs a spec this binary does not implement
+    // returns here, before any state transition or storage write.
+    let parent_state_raw = ctx
+        .fetch_ol_state(parent_commitment)?
+        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    let parent_state = MemoryStateBaseLayer::from_container(parent_state_raw);
+    let parent_header = parent_header.ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    let spec = select_block_spec(ctx, parent_commitment, &parent_header, &parent_state)?;
+
     // Execute STF and get output and new state
     let (output, new_state) = execute_stf(
-        ctx,
+        spec,
+        parent_state,
         runtime_params,
         &block,
-        parent_header.as_ref(),
+        &parent_header,
         parent_commitment,
     )?;
 
@@ -328,14 +350,15 @@ fn fetch_block_with_parent(
     Ok((block, parent_header, parent_commitment))
 }
 
-/// Executes the STF on a block and returns the execution output.
+/// Executes the STF on a block under `spec`, from `parent_state`, the state
+/// of the block's parent, and returns the execution output.
 ///
-/// This fetches parent state, selects the block's spec, builds the state
-/// stack, runs verification, and extracts the resulting write batch and
-/// indexer writes. It stores nothing.
+/// This builds the state stack, runs verification, and extracts the resulting
+/// write batch and indexer writes. It stores nothing.
 #[instrument(
     skip_all,
     fields(
+        ?spec,
         slot = block.header().slot(),
         epoch = block.header().epoch(),
         is_terminal = block.header().is_terminal(),
@@ -344,22 +367,13 @@ fn fetch_block_with_parent(
     err,
 )]
 fn execute_stf(
-    ctx: &impl ChainWorkerContext,
+    spec: OLSpecId,
+    parent_state: MemoryStateBaseLayer<OLStateV1>,
     runtime_params: OLRuntimeParams,
     block: &OLBlockV1,
-    parent_header: Option<&OLBlockHeaderV1>,
+    parent_header: &OLBlockHeaderV1,
     parent_commitment: OLBlockCommitment,
 ) -> WorkerResult<(OLBlockExecutionOutput, OLStateContainer)> {
-    // Fetch parent state and build its state accessor, keeping its spec
-    // versions.
-    let parent_state_raw = ctx
-        .fetch_ol_state(parent_commitment)?
-        .ok_or(WorkerError::MissingPreState(parent_commitment))?;
-    let parent_state = MemoryStateBaseLayer::from_container(parent_state_raw);
-    let parent_header = parent_header.ok_or(WorkerError::MissingPreState(parent_commitment))?;
-    let spec = select_block_spec(ctx, parent_commitment, parent_header, &parent_state)?;
-    debug!(?spec, "selected the block's spec");
-
     // Execute and extract outputs
     let (write_batch, indexer_writes, logs) = run_stf_verification(
         spec,

@@ -1294,6 +1294,7 @@ pub struct TestStorageFixtureBuilder {
     expected_inbox_message_indices: Vec<(AccountId, Vec<u64>)>,
     accounts: Vec<TestAccount>,
     v0_genesis_parent: bool,
+    genesis_enactment: bool,
 }
 
 impl TestStorageFixtureBuilder {
@@ -1314,6 +1315,14 @@ impl TestStorageFixtureBuilder {
     /// The next block then runs as the first V1 block and wraps it.
     pub(crate) fn with_v0_genesis_parent(mut self) -> Self {
         self.v0_genesis_parent = true;
+        self
+    }
+
+    /// Puts a checkpoint predicate enactment in the slot-0 genesis's manifest
+    /// and keeps genesis a V1 terminal, so genesis ends V1 and the next block
+    /// would run V1's successor.
+    pub fn with_v1_genesis_enactment(mut self) -> Self {
+        self.genesis_enactment = true;
         self
     }
 
@@ -1496,7 +1505,7 @@ impl TestStorageFixtureBuilder {
                 // Create genesis manifest when last_l1_height is 0. A genesis
                 // relabelled as the last V0 terminal processes the checkpoint
                 // predicate enactment that ends V0, so the next epoch runs V1.
-                let genesis_logs = if self.v0_genesis_parent {
+                let genesis_logs = if self.v0_genesis_parent || self.genesis_enactment {
                     vec![checkpoint_enactment_log()]
                 } else {
                     Vec::new()
