@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use proptest::prelude::*;
 use serde_json::{Value, json};
 use ssz::Encode;
-use strata_acct_types::{MessageEntry, MsgPayload};
+use strata_acct_types::{L1BlockRecord, MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
@@ -33,7 +33,10 @@ use strata_ol_state_container::{OLStateContainer, test_utils::genesis_container}
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::*;
 use strata_ol_state_types_v1::{OLAccountStateV1, OLAccountTypeStateV1, OLStateV1, WriteBatch};
-use strata_ol_stf_v1::test_utils::{make_op_return_bosd_descriptor, make_withdrawal_payload};
+use strata_ol_stf_v1::test_utils::{
+    make_checkpoint_predicate_enactment_manifest, make_empty_manifest,
+    make_op_return_bosd_descriptor, make_withdrawal_payload,
+};
 use strata_ol_tx_types_v1::*;
 use strata_predicate::PredicateKey;
 use strata_primitives::{
@@ -476,6 +479,14 @@ impl OLRpcProvider for MockProvider {
         Ok(self.manifests.get(&height).cloned())
     }
 
+    async fn get_block_manifest(&self, blkid: L1BlockId) -> DbResult<Option<AsmManifest>> {
+        Ok(self
+            .manifests
+            .values()
+            .find(|manifest| *manifest.blkid() == blkid)
+            .cloned())
+    }
+
     async fn get_canonical_l1_blockid_at_height(
         &self,
         height: L1Height,
@@ -703,7 +714,7 @@ const DEFAULT_NEXT_INBOX_MSG_IDX: u64 = 0;
 fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
     OLRpcServer::new(
         provider,
-        TEST_GENESIS_L1_HEIGHT,
+        L1BlockCommitment::new(TEST_GENESIS_L1_HEIGHT, L1BlockId::default()),
         TEST_MAX_HEADERS_RANGE,
         OLBlockDataAccess::Available,
     )
@@ -713,7 +724,7 @@ fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
 fn make_rpc_checkpoint_sync(provider: MockProvider) -> OLRpcServer<MockProvider> {
     OLRpcServer::new(
         provider,
-        TEST_GENESIS_L1_HEIGHT,
+        L1BlockCommitment::new(TEST_GENESIS_L1_HEIGHT, L1BlockId::default()),
         TEST_MAX_HEADERS_RANGE,
         OLBlockDataAccess::Unavailable,
     )
@@ -935,6 +946,117 @@ fn serialization_error_maps_to_internal() {
 fn state_provider_error_maps_to_internal() {
     let err = OLMempoolError::StateProvider("unavailable".into());
     assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+}
+
+// ── get_spec_status ──
+
+/// Builds a provider whose tip, at slot 20 in epoch 1, has a state under
+/// `spec` whose last L1 block is that of `manifest`, if any. With
+/// `terminal`, the tip ends epoch 1 and its summaries are stored.
+fn spec_status_provider(
+    spec: OLSpecId,
+    manifest: Option<AsmManifest>,
+    terminal: bool,
+) -> (MockProvider, OLBlockCommitment) {
+    let tip = OLBlockCommitment::new(20, OLBlockId::from(Buf32::from([9u8; 32])));
+    let genesis = OLBlockCommitment::new(0, OLBlockId::from(Buf32::from([8u8; 32])));
+    let mut state = MemoryStateBaseLayer::from_container(genesis_ol_state());
+    state.set_spec_versions(OLSpecVersions::uniform(spec));
+    let anchor = test_l1_commitment();
+    let mut provider = MockProvider::new();
+    if let Some(manifest) = manifest {
+        state.append_l1_block_rec(
+            manifest.height(),
+            L1BlockRecord::new(*manifest.blkid().as_ref(), [0; 32]),
+        );
+        provider = provider.with_manifest(manifest);
+    }
+    let last_l1 = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
+    let null = EpochCommitment::null();
+    provider = provider
+        .with_sync_status(make_sync_status(tip, 1, terminal, null, null, null))
+        .with_state_at(tip, state.into_container());
+    if terminal {
+        provider = provider
+            .with_epoch_summary(EpochSummary::new(
+                0,
+                genesis,
+                OLBlockCommitment::null(),
+                anchor,
+                Buf32::zero(),
+            ))
+            .with_epoch_summary(EpochSummary::new(1, tip, genesis, last_l1, Buf32::zero()));
+    }
+    (provider, tip)
+}
+
+#[tokio::test]
+async fn spec_status_leaves_the_next_epoch_open_on_a_nonterminal_tip() {
+    let enactment = make_checkpoint_predicate_enactment_manifest(1, 1);
+    let (provider, tip) = spec_status_provider(OLSpecId::V1, Some(enactment), false);
+    let status = make_rpc(provider)
+        .get_spec_status()
+        .await
+        .expect("spec status");
+    assert_eq!(status.tip().blkid(), *tip.blkid());
+    assert_eq!(status.cur_spec_version(), 1);
+    assert_eq!(status.next_epoch_spec_version(), None);
+    assert!(status.upgrade_required().is_none());
+}
+
+#[tokio::test]
+async fn spec_status_keeps_the_spec_after_a_plain_epoch() {
+    let (provider, _) = spec_status_provider(OLSpecId::V1, Some(make_empty_manifest(1, 0)), true);
+    let status = make_rpc(provider)
+        .get_spec_status()
+        .await
+        .expect("spec status");
+    assert_eq!(status.cur_spec_version(), 1);
+    assert_eq!(status.next_epoch_spec_version(), Some(1));
+    assert!(status.upgrade_required().is_none());
+}
+
+#[tokio::test]
+async fn spec_status_reports_the_upgrade_after_a_v1_enactment() {
+    let enactment = make_checkpoint_predicate_enactment_manifest(1, 1);
+    let (provider, _) = spec_status_provider(OLSpecId::V1, Some(enactment), true);
+    let status = make_rpc(provider)
+        .get_spec_status()
+        .await
+        .expect("spec status");
+    assert_eq!(status.cur_spec_version(), 1);
+    assert_eq!(status.next_epoch_spec_version(), Some(2));
+    assert_eq!(
+        status.upgrade_required(),
+        Some(&RpcUpgradeRequired::new(1, 2))
+    );
+}
+
+#[tokio::test]
+async fn spec_status_reports_v1_after_the_v0_enactment() {
+    let enactment = make_checkpoint_predicate_enactment_manifest(1, 1);
+    let (provider, _) = spec_status_provider(OLSpecId::V0, Some(enactment), true);
+    let status = make_rpc(provider)
+        .get_spec_status()
+        .await
+        .expect("spec status");
+    assert_eq!(status.cur_spec_version(), 0);
+    assert_eq!(status.next_epoch_spec_version(), Some(1));
+    assert!(status.upgrade_required().is_none());
+}
+
+/// Missing chain data is an error, never reported as "no upgrade".
+#[tokio::test]
+async fn spec_status_errors_without_the_tip_epoch_summary() {
+    let enactment = make_checkpoint_predicate_enactment_manifest(1, 1);
+    let (provider, tip) = spec_status_provider(OLSpecId::V1, Some(enactment), false);
+    let null = EpochCommitment::null();
+    let provider = provider.with_sync_status(make_sync_status(tip, 1, true, null, null, null));
+    let err = make_rpc(provider)
+        .get_spec_status()
+        .await
+        .expect_err("no summary is stored for the tip");
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
 }
 
 // ── chain_status ──

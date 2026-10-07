@@ -12,6 +12,7 @@ mod checkpoint;
 mod duty;
 mod provider;
 mod snark_acct_update;
+mod spec_status;
 mod tx;
 
 pub use account_state::{
@@ -31,6 +32,7 @@ pub use checkpoint::{RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1
 pub use duty::*;
 pub use provider::OLRpcProvider;
 pub use snark_acct_update::RpcSnarkAccountUpdate;
+pub use spec_status::{RpcOLSpecStatus, RpcUpgradeRequired};
 pub use tx::{
     RpcGenericAccountMessage, RpcOLTransaction, RpcOLTxDetail, RpcOLTxTypeData, RpcSauTxSummary,
     RpcSentMessageEffect, RpcSentTransfer, RpcTransactionPayload, RpcTxConstraints,

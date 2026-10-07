@@ -54,6 +54,7 @@ strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-state-container = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types-v1.workspace = true
+strata-ol-stf.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-storage = { workspace = true, features = ["test-utils"] }
 
