@@ -25,6 +25,7 @@ pub(crate) struct FcmServiceState<C: FcmContext> {
     ctx: Arc<C>,
     sequencer_predicate: PredicateKey,
     inner_state: FcmInnerState,
+    finality_status_publication_pending: bool,
 }
 
 impl<C: FcmContext> FcmServiceState<C> {
@@ -99,6 +100,18 @@ impl<C: FcmContext> FcmServiceState<C> {
 
     pub(crate) fn chain_tracker(&self) -> &UnfinalizedBlockTracker {
         &self.inner_state.chain_tracker
+    }
+
+    pub(crate) fn finality_status_publication_pending(&self) -> bool {
+        self.finality_status_publication_pending
+    }
+
+    pub(crate) fn mark_finality_status_publication_pending(&mut self) {
+        self.finality_status_publication_pending = true;
+    }
+
+    pub(crate) fn clear_finality_status_publication_pending(&mut self) {
+        self.finality_status_publication_pending = false;
     }
 
     pub(crate) fn cur_best_block(&self) -> OLBlockCommitment {
@@ -218,6 +231,7 @@ impl<C: FcmContext> FcmServiceState<C> {
             ctx,
             sequencer_predicate,
             inner_state,
+            finality_status_publication_pending: false,
         }
     }
 

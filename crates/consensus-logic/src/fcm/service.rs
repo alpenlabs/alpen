@@ -175,48 +175,8 @@ async fn process_fc_message<C: FcmContext>(
                     error!(%err, "failed to finalize epoch");
                 }
 
-                // Update status.
-                let last_l1_blk = L1BlockCommitment::new(
-                    fcm_state.cur_ol_state().epoch_state().last_l1_height(),
-                    *fcm_state.cur_ol_state().epoch_state().last_l1_blkid(),
-                );
-
-                let cur_state = fcm_state.cur_ol_state();
-                // Get prev epoch summary
-                let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
-                let prev_epoch = fcm_state
-                    .ctx()
-                    .get_canonical_epoch_commitment_at(prev_epoch_num)
-                    .await?
-                    .ok_or(anyhow!(
-                        "expected epoch commitment for previous epoch {} not in db",
-                        prev_epoch_num
-                    ))?;
-                let finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
-                let confirmed_epoch = fcm_state
-                    .ctx()
-                    .last_confirmed_epoch()
-                    .unwrap_or(finalized_epoch);
-
-                let canonical_tip = fcm_state.cur_best_block();
-                let tip_block_data = fcm_state
-                    .ctx()
-                    .get_ol_block(*canonical_tip.blkid())
-                    .await?
-                    .ok_or(Error::MissingOLBlock(*canonical_tip.blkid()))?;
-                let status = OLSyncStatus::new(
-                    canonical_tip,
-                    tip_block_data.header().epoch(),
-                    tip_block_data.header().is_terminal(),
-                    prev_epoch,
-                    confirmed_epoch,
-                    finalized_epoch,
-                    // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
-                    last_l1_blk,
-                );
-
                 trace!(%blkid, "publishing new ol_state");
-                fcm_state.ctx().publish_sync_status(status);
+                publish_current_sync_status(fcm_state).await?;
 
                 BlockStatus::Valid
             } else {
@@ -353,11 +313,19 @@ async fn handle_new_state_update<C: FcmContext>(
 
     let current_finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
     if observed_finalized_epoch == current_finalized_epoch {
-        debug!(
-            ?current_finalized_epoch,
-            ?observed_finalized_epoch,
-            "no new finalized epoch in CSM update"
-        );
+        if fcm_state.finality_status_publication_pending() {
+            debug!(
+                ?current_finalized_epoch,
+                "retrying finality status publication"
+            );
+            publish_pending_finality_status(fcm_state).await;
+        } else {
+            debug!(
+                ?current_finalized_epoch,
+                ?observed_finalized_epoch,
+                "no new finalized epoch in CSM update"
+            );
+        }
         return Ok(());
     }
 
@@ -385,15 +353,17 @@ async fn check_finalization_progress<C: FcmContext>(
     fcm_state: &mut FcmServiceState<C>,
     observed_finalized_epoch: EpochCommitment,
 ) -> anyhow::Result<()> {
-    match handle_epoch_finalization(fcm_state).await {
+    let finalization_advanced = match handle_epoch_finalization(fcm_state).await {
         Err(err) => {
             error!(%err, "failed to finalize epoch");
+            false
         }
         Ok(Some(finalized_epoch)) if finalized_epoch == observed_finalized_epoch => {
             debug!(
                 ?finalized_epoch,
                 "FCM caught up to observed finalized epoch"
             );
+            true
         }
         Ok(Some(finalized_epoch)) => {
             debug!(
@@ -401,13 +371,77 @@ async fn check_finalization_progress<C: FcmContext>(
                 ?observed_finalized_epoch,
                 "FCM finalized earlier recorded epoch; still behind observed finalized epoch"
             );
+            true
         }
         Ok(None) => {
             // there were no epochs that could be finalized
             debug!(?observed_finalized_epoch, "no finalization progress");
+            false
         }
     };
 
+    if finalization_advanced {
+        fcm_state.mark_finality_status_publication_pending();
+        publish_pending_finality_status(fcm_state).await;
+    }
+
+    Ok(())
+}
+
+/// Publishes a status after finality advances without terminating FCM on a transient failure.
+///
+/// [`publish_current_sync_status`] clears the pending marker only after it has built and
+/// published the status successfully. A failed attempt therefore remains retryable on the next
+/// CSM state update.
+async fn publish_pending_finality_status<C: FcmContext>(fcm_state: &mut FcmServiceState<C>) {
+    if let Err(err) = publish_current_sync_status(fcm_state).await {
+        warn!(%err, "failed to publish finalized OL sync status; will retry on next CSM update");
+    }
+}
+
+async fn publish_current_sync_status<C: FcmContext>(
+    fcm_state: &mut FcmServiceState<C>,
+) -> anyhow::Result<()> {
+    let cur_state = fcm_state.cur_ol_state();
+    let last_l1_blk = L1BlockCommitment::new(
+        cur_state.epoch_state().last_l1_height(),
+        *cur_state.epoch_state().last_l1_blkid(),
+    );
+
+    let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
+    let prev_epoch = fcm_state
+        .ctx()
+        .get_canonical_epoch_commitment_at(prev_epoch_num)
+        .await?
+        .ok_or(anyhow!(
+            "expected epoch commitment for previous epoch {} not in db",
+            prev_epoch_num
+        ))?;
+    let finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
+    let confirmed_epoch = fcm_state
+        .ctx()
+        .last_confirmed_epoch()
+        .unwrap_or(finalized_epoch);
+
+    let canonical_tip = fcm_state.cur_best_block();
+    let tip_block_data = fcm_state
+        .ctx()
+        .get_ol_block(*canonical_tip.blkid())
+        .await?
+        .ok_or(Error::MissingOLBlock(*canonical_tip.blkid()))?;
+    let status = OLSyncStatus::new(
+        canonical_tip,
+        tip_block_data.header().epoch(),
+        tip_block_data.header().is_terminal(),
+        prev_epoch,
+        confirmed_epoch,
+        finalized_epoch,
+        // FIXME(STR-3673): this is a bit convoluted, could this be simpler?
+        last_l1_blk,
+    );
+
+    fcm_state.ctx().publish_sync_status(status);
+    fcm_state.clear_finality_status_publication_pending();
     Ok(())
 }
 
@@ -1522,7 +1556,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_new_state_update_retries_pending_finalized_epoch() -> anyhow::Result<()> {
+    async fn handle_new_state_update_retries_status_publication_after_finalization(
+    ) -> anyhow::Result<()> {
         let chain = LinearChain::new();
         let pending_epoch = EpochCommitment::new(1, chain.x1.commitment().slot(), chain.x1.blkid());
         let ctx = Arc::new(
@@ -1546,11 +1581,34 @@ mod tests {
         );
         let mut fcm_state = FcmServiceState::new(ctx.clone(), PredicateKey::always_accept(), inner);
         assert!(fcm_state.record_observed_finalized_epoch(pending_epoch));
+        seed_executed_block(ctx.storage(), &chain.x2, BlockStatus::Valid);
 
-        handle_new_state_update(&mut fcm_state).await?;
+        let response = <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm_state,
+            FcmEvent::NewStateUpdate,
+        )
+        .await?;
+        assert_eq!(response, Response::Continue);
 
         assert_eq!(ctx.finalized_epochs(), vec![pending_epoch]);
         assert_eq!(*fcm_state.chain_tracker().finalized_epoch(), pending_epoch);
+        assert!(fcm_state.finality_status_publication_pending());
+        assert!(ctx.published_statuses().is_empty());
+
+        ctx.storage().put_canonical_epoch_commitment(pending_epoch);
+        let response = <FcmService<StubFcmContext> as AsyncService>::process_input(
+            &mut fcm_state,
+            FcmEvent::NewStateUpdate,
+        )
+        .await?;
+        assert_eq!(response, Response::Continue);
+
+        assert_eq!(ctx.finalized_epochs(), vec![pending_epoch]);
+        assert!(!fcm_state.finality_status_publication_pending());
+        let statuses = ctx.published_statuses();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].tip(), chain.x2.commitment());
+        assert_eq!(statuses[0].finalized_epoch(), pending_epoch);
 
         Ok(())
     }

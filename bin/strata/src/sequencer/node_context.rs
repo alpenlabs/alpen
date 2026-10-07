@@ -1,18 +1,18 @@
 //! Concrete [`SequencerContext`] implementation for the Strata node.
 
 use std::{
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use async_trait::async_trait;
 use strata_db_types::ol_block::BlockStatus;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_identifiers::{L1Height, OLBlockCommitment, OLBlockId};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_ol_sequencer::{BlockGenerationConfig, SequencerContext, SequencerContextError};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::sequencer::tip::resolve_canonical_tip;
 
@@ -26,6 +26,7 @@ pub(crate) struct NodeSequencerContext {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     ol_block_time_ms: u64,
+    logged_boundary_tip: Mutex<Option<OLBlockId>>,
 }
 
 impl NodeSequencerContext {
@@ -40,7 +41,25 @@ impl NodeSequencerContext {
             storage,
             status_channel,
             ol_block_time_ms,
+            logged_boundary_tip: Mutex::new(None),
         }
+    }
+
+    fn log_boundary_halt_once(&self, tip_blkid: OLBlockId, height: L1Height) {
+        let mut logged_boundary_tip = self
+            .logged_boundary_tip
+            .lock()
+            .expect("boundary log state lock should not be poisoned");
+        if *logged_boundary_tip == Some(tip_blkid) {
+            return;
+        }
+
+        info!(
+            ?tip_blkid,
+            l1_height = height,
+            "block production halted at checkpoint predicate boundary"
+        );
+        *logged_boundary_tip = Some(tip_blkid);
     }
 }
 
@@ -108,16 +127,7 @@ impl SequencerContext for NodeSequencerContext {
         }
 
         let threshold_ms = late_block_threshold_ms(self.ol_block_time_ms);
-        if time_since_parent > threshold_ms {
-            warn!(
-                time_since_parent,
-                block_time_ms = self.ol_block_time_ms,
-                threshold_ms,
-                parent_ts,
-                target_ts,
-                "block wall-clock interval exceeds block_time by more than {BLOCK_TS_DRIFT_TOLERANCE_PCT}%",
-            );
-        }
+        let is_late = time_since_parent > threshold_ms;
 
         let config = BlockGenerationConfig::new(parent_commitment).with_ts(target_ts);
 
@@ -190,9 +200,24 @@ impl SequencerContext for NodeSequencerContext {
                 debug!(tip_blkid = ?tip_blkid, completed_parent = ?parent, completed_block = %block, "template generation skipped: parent already completed");
                 return Ok(None);
             }
+            Err(BlockAssemblyError::CheckpointPredicateBoundaryReached { height }) => {
+                self.log_boundary_halt_once(tip_blkid, height);
+                return Ok(None);
+            }
             Err(source) => {
                 return Err(SequencerContextError::TemplateGeneration { tip_blkid, source });
             }
+        }
+
+        if is_late {
+            warn!(
+                time_since_parent,
+                block_time_ms = self.ol_block_time_ms,
+                threshold_ms,
+                parent_ts,
+                target_ts,
+                "block wall-clock interval exceeds block_time by more than {BLOCK_TS_DRIFT_TOLERANCE_PCT}%",
+            );
         }
 
         debug!(tip_blkid = ?tip_blkid, "template generation request completed");

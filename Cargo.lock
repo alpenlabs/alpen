@@ -15997,6 +15997,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
+ "strata-asm-logs",
  "strata-asm-manifest-types",
  "strata-bridge-params",
  "strata-btc-verification",
