@@ -184,6 +184,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
         tip: MempoolTip,
     ) -> OLMempoolResult<Self> {
         let (state_accessor, tip_spec) = load_tip(&ctx, tip).await?;
+        log_upgrade_required(tip.block(), None, &tip_spec);
 
         let state = Self {
             ctx,
@@ -211,7 +212,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             // Admission cannot run, so keep the stored transactions instead of
             // dropping them, and load them once a tip's next block runs a spec
             // this binary implements.
-            warn!(
+            debug!(
                 %total_in_db,
                 %upgrade,
                 "not loading mempool transactions until this node is upgraded"
@@ -851,6 +852,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Load the new tip's state and the spec of the block after it, and
         // install them together so admission never mixes two tips.
         let (new_state, tip_spec) = load_tip(&self.ctx, new_tip).await?;
+        log_upgrade_required(new_tip.block(), self.tip_spec.as_ref().err(), &tip_spec);
         self.state_accessor = new_state;
         self.tip_spec = tip_spec;
         if self.deferred_load && self.tip_spec.is_ok() {
@@ -895,10 +897,31 @@ async fn load_tip<P: StateProvider>(
             OLMempoolError::StateProvider(format!("State not found for tip {block:?}"))
         })?;
     let tip_spec = select_tip_spec(&ctx.storage, ctx.genesis_l1_block, tip, &state).await?;
-    if let Err(upgrade) = &tip_spec {
-        warn!(%block, %upgrade, "the mempool admits no transactions until this node is upgraded");
-    }
     Ok((state, tip_spec))
+}
+
+/// Warns that admission stops when the block after `block` runs a spec this
+/// binary does not implement, unless `prev`, the upgrade the previous tip ran
+/// into, is the same one.
+///
+/// A stopped node keeps receiving chain updates for the same tip while its
+/// last checkpoints finalize, so warning on every update would repeat one
+/// condition.
+fn log_upgrade_required(
+    block: OLBlockCommitment,
+    prev: Option<&UpgradeRequired>,
+    tip_spec: &Result<OLSpecId, UpgradeRequired>,
+) {
+    if let Err(upgrade) = tip_spec
+        && prev != Some(upgrade)
+    {
+        warn!(
+            %block,
+            enactment_l1_height = upgrade.enactment_l1_height(),
+            spec_version = upgrade.spec_version(),
+            "the mempool admits no transactions until this node is upgraded"
+        );
+    }
 }
 
 impl<P: StateProvider> ServiceState for MempoolServiceState<P> {

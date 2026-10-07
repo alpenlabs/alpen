@@ -9,7 +9,7 @@
 //! The checkpoint guest does not compile this crate, so changing it leaves the
 //! checkpoint verifying key unchanged.
 
-use std::future::Future;
+use std::{convert::Infallible, future::Future};
 
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment};
@@ -44,6 +44,38 @@ pub enum SelectSpecAfterEpochError<E> {
     /// epoch runs a spec this binary does not implement.
     #[error(transparent)]
     Selection(#[from] EpochSpecSelectionError<E>),
+}
+
+impl<E> SelectSpecAfterEpochError<E> {
+    /// Separates a failed lookup from an error in the stored data.
+    ///
+    /// Returns the lookup's own error as `Ok`, and any other error as `Err`
+    /// with the lookup error type made [`Infallible`]. The `Err` side is a
+    /// [`std::error::Error`] even when `E` is not, as with `anyhow::Error`.
+    pub fn into_lookup_error(self) -> Result<E, SelectSpecAfterEpochError<Infallible>> {
+        match self {
+            Self::SummaryLookup { source, .. } => Ok(source),
+            Self::MissingEpochSummary(epoch) => {
+                Err(SelectSpecAfterEpochError::MissingEpochSummary(epoch))
+            }
+            Self::InvalidL1Range(err) => Err(SelectSpecAfterEpochError::InvalidL1Range(err)),
+            Self::Selection(err) => match err {
+                EpochSpecSelectionError::ManifestLookup { source, .. } => Ok(source),
+                EpochSpecSelectionError::MissingLastManifest { block } => {
+                    Err(EpochSpecSelectionError::MissingLastManifest { block }.into())
+                }
+                EpochSpecSelectionError::LastManifestMismatch { expected, found } => {
+                    Err(EpochSpecSelectionError::LastManifestMismatch { expected, found }.into())
+                }
+                EpochSpecSelectionError::Exec(err) => {
+                    Err(EpochSpecSelectionError::Exec(err).into())
+                }
+                EpochSpecSelectionError::UpgradeRequired(upgrade) => {
+                    Err(EpochSpecSelectionError::UpgradeRequired(upgrade).into())
+                }
+            },
+        }
+    }
 }
 
 /// Selects the spec of the epoch after `terminal`, the last block of an epoch,
@@ -372,6 +404,44 @@ mod tests {
         assert!(
             matches!(start, Err(SelectSpecAfterEpochError::SummaryLookup { epoch, .. }) if epoch == fork.epoch_2),
             "{start:?}"
+        );
+    }
+
+    #[test]
+    fn test_into_lookup_error_separates_lookups_from_data_errors() {
+        let fork = Fork::new();
+        let last = l1_block(9, 3);
+        let manifest_lookup = select_spec_after_epoch(
+            fork.epoch_2,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            last,
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch).map_err(|()| "unreachable"),
+            |_| Err("lookup failed"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            manifest_lookup.into_lookup_error().unwrap(),
+            "lookup failed"
+        );
+
+        let missing = select_spec_after_epoch(
+            fork.epoch_2,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            last,
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch).map_err(|()| "unreachable"),
+            |_| Ok(None),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                missing.into_lookup_error(),
+                Err(SelectSpecAfterEpochError::Selection(
+                    EpochSpecSelectionError::MissingLastManifest { block }
+                )) if block == last
+            ),
+            "missing manifest is a data error"
         );
     }
 

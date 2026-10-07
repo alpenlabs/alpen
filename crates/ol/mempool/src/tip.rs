@@ -1,13 +1,10 @@
 //! The chain tip the mempool admits transactions for, and the spec of the
 //! block after it.
 
-use std::convert::Infallible;
-
+use strata_checkpoint_types::{SelectSpecAfterEpochError, select_spec_after_epoch_async};
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_state_types::IStateAccessor;
-use strata_ol_stf::{
-    EpochL1Range, EpochSpecSelectionError, OLSpecId, UpgradeRequired, select_next_epoch_spec,
-};
+use strata_ol_stf::{EpochSpecSelectionError, OLSpecId, UpgradeRequired};
 use strata_status::OLSyncStatus;
 use strata_storage::NodeStorage;
 
@@ -51,7 +48,7 @@ impl MempoolTip {
 /// block assembly selects it.
 ///
 /// A block after a terminal tip starts the next epoch, whose spec
-/// [`select_next_epoch_spec`] selects from the tip's epoch: its L1 range
+/// [`select_spec_after_epoch_async`] selects from the tip's epoch: its L1 range
 /// starts at the last L1 block of the epoch its own summary links to, and the
 /// genesis epoch starts at `genesis_l1_block`. Any other block continues the
 /// tip's epoch under the spec the tip state was produced under.
@@ -76,33 +73,24 @@ pub(crate) async fn select_tip_spec(
     let tip_last_l1 =
         L1BlockCommitment::new(tip_state.last_l1_height(), *tip_state.last_l1_blkid());
 
-    let prev_last = if epoch == 0 {
-        genesis_l1_block
-    } else {
-        let tip_epoch = EpochCommitment::from_terminal(epoch, tip.block());
-        let summary = storage
-            .ol_checkpoint()
-            .get_epoch_summary_async(tip_epoch)
-            .await?
-            .ok_or(OLMempoolError::MissingEpochSummary(tip_epoch))?;
-        let prev = summary
-            .get_prev_epoch_commitment()
-            .expect("a summary of an epoch after genesis has a previous epoch");
-        *storage
-            .ol_checkpoint()
-            .get_epoch_summary_async(prev)
-            .await?
-            .ok_or(OLMempoolError::MissingEpochSummary(prev))?
-            .new_l1()
-    };
-    let range = EpochL1Range::new(prev_last, tip_last_l1)?;
-    let last_manifest = match range.last_processed() {
-        Some(block) => storage.l1().get_block_manifest_async(block.blkid()).await?,
-        None => None,
-    };
-    match select_next_epoch_spec(tip_versions, range, |_| Ok::<_, Infallible>(last_manifest)) {
+    let tip_epoch = EpochCommitment::from_terminal(epoch, tip.block());
+    let selected = select_spec_after_epoch_async(
+        tip_epoch,
+        tip_versions,
+        tip_last_l1,
+        genesis_l1_block,
+        |epoch| async move { storage.ol_checkpoint().get_epoch_summary_async(epoch).await },
+        |block| async move { storage.l1().get_block_manifest_async(block.blkid()).await },
+    )
+    .await;
+    match selected {
         Ok(spec) => Ok(Ok(spec)),
-        Err(EpochSpecSelectionError::UpgradeRequired(upgrade)) => Ok(Err(upgrade)),
-        Err(err) => Err(OLMempoolError::SpecSelection(err)),
+        Err(err) => match err.into_lookup_error() {
+            Ok(lookup) => Err(lookup.into()),
+            Err(SelectSpecAfterEpochError::Selection(
+                EpochSpecSelectionError::UpgradeRequired(upgrade),
+            )) => Ok(Err(upgrade)),
+            Err(err) => Err(OLMempoolError::SpecSelection(err)),
+        },
     }
 }

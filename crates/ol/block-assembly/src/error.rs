@@ -3,6 +3,7 @@
 use std::error::Error;
 
 use strata_acct_types::AcctError;
+use strata_checkpoint_types::SelectSpecAfterEpochError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId,
@@ -10,7 +11,7 @@ use strata_identifiers::{
 use strata_ol_chain_types_v1::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_state_types::StateError;
-use strata_ol_stf::{ExecError, InvalidEpochL1Range, UpgradeRequired};
+use strata_ol_stf::{EpochSpecSelectionError, ExecError, InvalidEpochL1Range, UpgradeRequired};
 
 /// Errors that can occur during block assembly operations.
 #[derive(Debug, thiserror::Error)]
@@ -182,4 +183,27 @@ pub enum BlockAssemblyError {
     /// Other unexpected error.
     #[error("other: {0}")]
     Other(String),
+}
+
+impl From<SelectSpecAfterEpochError<BlockAssemblyError>> for BlockAssemblyError {
+    fn from(err: SelectSpecAfterEpochError<BlockAssemblyError>) -> Self {
+        match err {
+            SelectSpecAfterEpochError::SummaryLookup { source, .. } => source,
+            SelectSpecAfterEpochError::MissingEpochSummary(epoch) => {
+                Self::EpochSummaryNotFound(epoch)
+            }
+            SelectSpecAfterEpochError::InvalidL1Range(err) => Self::InvalidEpochL1Range(err),
+            SelectSpecAfterEpochError::Selection(err) => match err {
+                EpochSpecSelectionError::ManifestLookup { source, .. } => source,
+                EpochSpecSelectionError::MissingLastManifest { block } => {
+                    Self::MissingLastManifest { block }
+                }
+                EpochSpecSelectionError::LastManifestMismatch { expected, found } => {
+                    Self::LastManifestMismatch { expected, found }
+                }
+                EpochSpecSelectionError::Exec(source) => Self::BlockConstruction(source),
+                EpochSpecSelectionError::UpgradeRequired(upgrade) => Self::UpgradeRequired(upgrade),
+            },
+        }
+    }
 }
