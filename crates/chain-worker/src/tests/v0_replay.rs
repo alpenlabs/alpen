@@ -292,8 +292,9 @@ impl Node {
         let mut ctx = MockChainWorkerContext::new();
         ctx.runtime_params = self.ctx.runtime_params;
         ctx.genesis_l1_block = self.ctx.genesis_l1_block;
+        // Every stored summary survives the restart.
+        ctx.epoch_summaries = self.ctx.epoch_summaries.clone();
         let summary = self.ctx.epoch_summaries[&epoch][0];
-        ctx.epoch_summaries.insert(epoch, vec![summary]);
         ctx.ol_states.insert(
             *summary.terminal(),
             self.ctx.ol_states[summary.terminal()].clone(),
@@ -596,6 +597,69 @@ fn test_empty_epochs_after_enactment_run_v1() {
     }
 }
 
+/// A V1 epoch that processes a checkpoint predicate enactment ends V1. This
+/// binary implements no later spec, so checkpoint sync applies nothing past
+/// that epoch, before and after a restart, and stores nothing for the epoch
+/// it refuses.
+#[test]
+fn test_epoch_after_a_v1_enactment_requires_an_upgrade() {
+    let fixture = Fixture::load();
+    let mut node = Node::new(&fixture.params, &fixture.epochs);
+    let last_v0 = node.replay_v0(&fixture.epochs);
+    let first_v1 = build_first_v1_epoch(&fixture, &last_v0);
+    node.add_epoch(&first_v1);
+    let first_v1 = node
+        .apply(first_v1.epoch_commitment)
+        .expect("first V1 epoch applies");
+
+    let enactment_height = first_v1.new_state.chainstate().last_l1_block().height() + 1;
+    let last_v1 = build_v1_epoch(
+        &fixture.params,
+        &first_v1.new_state,
+        &first_v1.terminal_header,
+        vec![make_checkpoint_predicate_enactment_manifest(
+            enactment_height,
+            1,
+        )],
+    );
+    node.add_epoch(&last_v1);
+    let last_v1 = node
+        .apply(last_v1.epoch_commitment)
+        .expect("the epoch that processes the enactment still runs V1");
+    assert_eq!(
+        last_v1.new_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V1)
+    );
+
+    let next = build_v1_epoch(
+        &fixture.params,
+        &last_v1.new_state,
+        &last_v1.terminal_header,
+        Vec::new(),
+    );
+    node.add_epoch(&next);
+    let last_v1_epoch = last_v1.terminal_header.epoch();
+    for mut node in [node.restarted_at(last_v1_epoch), node] {
+        let err = match node.apply(next.epoch_commitment) {
+            Ok(_) => panic!("the epoch after the V1 enactment must not apply"),
+            Err(err) => err,
+        };
+        let WorkerError::UpgradeRequired(upgrade) = err else {
+            panic!("expected an upgrade-required error, got {err}");
+        };
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        assert_eq!(upgrade.enactment_l1_height(), enactment_height);
+        assert_eq!(upgrade.spec_version(), 2);
+        assert!(
+            !node
+                .ctx
+                .epoch_summaries
+                .contains_key(&next.epoch_commitment.epoch()),
+            "a refused epoch stores no summary"
+        );
+    }
+}
+
 /// A node restarted at the last V0 epoch selects V1 for the next epoch from
 /// what it stored, as a node that kept running does.
 #[test]
@@ -672,7 +736,7 @@ fn test_missing_last_manifest_is_an_error() {
     let enactment_height = fixture.last_v0_epoch().l1_height;
     let err = apply_first_v1_epoch_with_enactment_manifest(|_| None);
     assert!(
-        matches!(err, WorkerError::MissingLastManifest { height } if height == enactment_height),
+        matches!(err, WorkerError::MissingLastManifest { block } if block.height() == enactment_height),
         "{err}"
     );
 }

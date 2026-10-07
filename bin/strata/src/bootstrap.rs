@@ -12,7 +12,7 @@ use strata_primitives::l1::compute_confirmation_depth;
 use strata_storage::NodeStorage;
 use tracing::info;
 
-use crate::startup_checks::{next_epoch_spec_after, verify_anchor_summary_and_state};
+use crate::startup_checks::{spec_after_terminal, verify_anchor_summary_and_state};
 
 pub(crate) fn validate_bootstrap_role(requested: bool, is_sequencer: bool) -> Result<()> {
     if requested && !is_sequencer {
@@ -248,21 +248,21 @@ fn promote_from_checkpoint_storage(
 /// Checks that the epoch after `anchor` runs under V1, the only rules this
 /// release builds blocks with.
 ///
-/// A V1 anchor is followed by V1. A V0 anchor is followed by V1 only if it is
-/// the last V0 epoch, whose last manifest carries the checkpoint predicate
-/// enactment; promoting an earlier V0 anchor would build V1 blocks where the
-/// network still runs V0. The rule and the manifest it reads are those of
-/// checkpoint sync and the sequencer's boot check, [`next_epoch_spec_after`].
+/// A V1 anchor is followed by V1 unless its epoch processed a checkpoint
+/// predicate enactment. A V0 anchor is followed by V1 only if it is the last
+/// V0 epoch, which processed the checkpoint predicate enactment; promoting an
+/// earlier V0 anchor would build V1 blocks where the network still runs V0.
+/// The rule and the data it reads are those of checkpoint sync and the
+/// sequencer's boot check, [`spec_after_terminal`].
 fn verify_anchor_successor_runs_v1(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
     anchor: EpochCommitment,
     anchor_state: &OLStateContainer,
 ) -> Result<()> {
-    // TODO(STR-4086): compare with the spec block assembly runs, once it
-    // follows the spec the anchor state stages.
-    let next_spec =
-        next_epoch_spec_after(storage, genesis_l1_block, anchor_state).with_context(|| {
+    // TODO(STR-4086): accept any spec this binary builds blocks under.
+    let next_spec = spec_after_terminal(storage, genesis_l1_block, anchor, anchor_state)
+        .with_context(|| {
             format!("checkpoint promotion: failed to select the spec of the epoch after {anchor}")
         })?;
     if next_spec != OLSpecId::V1 {
@@ -786,14 +786,17 @@ mod tests {
 
     #[test]
     fn v0_anchor_with_reorged_last_manifest_fails_distinctly() {
+        // Manifests are read by L1 block, so the manifest of the block the
+        // anchor processed is missing even though another block's is stored
+        // at its height.
         PromotionFixture::with_v0_anchor(V0LastManifest::Reorged)
-            .assert_failure("but the parent state processed");
+            .assert_failure("missing the L1 manifest of 99@eeeeee");
     }
 
     #[test]
     fn v0_anchor_with_missing_last_manifest_fails_distinctly() {
         PromotionFixture::with_v0_anchor(V0LastManifest::Missing)
-            .assert_failure("missing the L1 manifest at height");
+            .assert_failure("missing the L1 manifest of 99@636363");
     }
 
     #[test]
