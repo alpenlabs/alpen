@@ -44,10 +44,16 @@ PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
 # Budget for pacing L1 from the reveal up to the enactment height.
 ENACTMENT_TIMEOUT_SECONDS = 180
 
-# Budget for the OL to seal the epoch that processes the enactment while L1 is
-# held at the boundary. The OL seals it on the block that processes the
+# Budget for the OL to seal the epoch that processes the enactment once the
+# boundary is buried. The OL seals it on the block that processes the
 # enactment's manifest, without waiting for the slot cadence.
 EPOCH_SEAL_TIMEOUT_SECONDS = 90
+
+# Block assembly only reads ASM manifests this many blocks deep, so the
+# enactment's manifest at the boundary is processed once L1 is
+# `L1_REORG_SAFE_DEPTH - 1` blocks past it. Set explicitly because the test
+# mines exactly that far.
+L1_REORG_SAFE_DEPTH = 6
 
 # Confirmation delay for the admin update. The transition is enacted at
 # `confirm_height + depth`, which is also the handover boundary.
@@ -80,6 +86,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
                 fund_test_cli_wallet=True,
                 admin_confirmation_depth=ADMIN_CONFIRMATION_DEPTH,
+                l1_reorg_safe_depth=L1_REORG_SAFE_DEPTH,
             )
         )
 
@@ -153,17 +160,27 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             finalized_at_enactment,
         )
 
-        # Hold L1 at the boundary until the OL seals the epoch that processes
-        # the enactment. Its coverage must end exactly at the boundary: the OL
-        # seals on the enactment's L1 block.
+        # Bury the boundary so block assembly reads the enactment's manifest,
+        # then wait, without mining, for the OL to seal the epoch that
+        # processes it. Its coverage must end exactly at the boundary even
+        # though L1 is past it: the OL seals on the enactment's L1 block.
+        self._pace_l1_to(
+            bitcoin=bitcoin,
+            strata=strata,
+            strata_rpc=strata_rpc,
+            btc_rpc=btc_rpc,
+            mine_addr=mine_addr,
+            height=boundary + L1_REORG_SAFE_DEPTH - 1,
+        )
         last_epoch, last_terminal = self._wait_for_epoch_ending_at(strata_rpc, boundary)
         last_info = self._wait_for_checkpoint_info(strata_rpc, last_epoch)
         last_status = self._checkpoint_status(last_info)
 
-        # The epoch did not exist when the rotation enacted, and L1 has not
-        # moved since, so it cannot have been accepted yet. Accepting it later
-        # is what shows the enacted handover still applies the outgoing
-        # predicate to coverage <= the boundary.
+        # The epoch did not exist when the rotation enacted. It sealed only
+        # after the last burying block, and nothing has been mined since, so
+        # its checkpoint cannot have been accepted yet. Accepting it later is
+        # what shows the enacted handover still applies the outgoing predicate
+        # to coverage <= the boundary.
         if last_status != "pending":
             raise AssertionError(
                 f"epoch {last_epoch}, which ends at the boundary {boundary}, was already "
@@ -239,14 +256,37 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
 
         Paced so that the OL stays in step with L1 on the way to the boundary.
         """
+        self._pace_l1_to(
+            bitcoin=bitcoin,
+            strata=strata,
+            strata_rpc=strata_rpc,
+            btc_rpc=btc_rpc,
+            mine_addr=mine_addr,
+            height=boundary,
+        )
+
+        # `_mine_l1_and_wait_for_asm` waited for the ASM to commit at the tip,
+        # so the block that enacts the transition has been processed.
+        return self._finalized_epoch(strata, strata_rpc)
+
+    def _pace_l1_to(
+        self,
+        bitcoin: BitcoinService,
+        strata: StrataService,
+        strata_rpc,
+        btc_rpc,
+        mine_addr: str,
+        height: int,
+    ) -> None:
+        """Mines up to L1 `height`, one block at a time, waiting for the ASM after each."""
         deadline = time.time() + ENACTMENT_TIMEOUT_SECONDS
         tip = btc_rpc.proxy.getblockcount()
 
-        while tip < boundary:
+        while tip < height:
             if time.time() >= deadline:
                 raise AssertionError(
-                    f"L1 did not reach the enactment height {boundary} within "
-                    f"{ENACTMENT_TIMEOUT_SECONDS}s (tip {tip})"
+                    f"L1 did not reach height {height} within {ENACTMENT_TIMEOUT_SECONDS}s "
+                    f"(tip {tip})"
                 )
             self._mine_l1_and_wait_for_asm(
                 bitcoin=bitcoin,
@@ -259,10 +299,6 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             )
             time.sleep(PACE_STEP_SLEEP_SECONDS)
             tip = btc_rpc.proxy.getblockcount()
-
-        # `_mine_l1_and_wait_for_asm` waited for the ASM to commit at the tip,
-        # so the block that enacts the transition has been processed.
-        return self._finalized_epoch(strata, strata_rpc)
 
     def _wait_for_epoch_ending_at(self, strata_rpc, boundary: int) -> tuple[int, str]:
         """Waits, without mining, for the OL to seal the epoch ending at `boundary`.
@@ -281,8 +317,8 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             latest_epoch_coverage,
             lambda value: value[1] is not None and value[1] >= boundary,
             error_with=(
-                f"OL sealed no epoch covering L1 up to the boundary {boundary} while L1 was "
-                "held there"
+                f"OL sealed no epoch covering L1 up to the boundary {boundary} once the "
+                "boundary was buried"
             ),
             timeout=EPOCH_SEAL_TIMEOUT_SECONDS,
             step=0.5,
