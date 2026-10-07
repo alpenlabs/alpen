@@ -418,9 +418,14 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
 ///
 /// The DA diff does not carry the root state's spec versions; replay derives
 /// them. V1 rules never stage a spec, so the only change is at epoch initial
-/// processing, which wraps a V0 previous terminal state as `(V1, V1)` and
-/// leaves a V1 one as it is. Replaying the epoch once from the authenticated
-/// previous terminal state therefore reproduces both versions exactly.
+/// processing: a V0 previous terminal state commits no staged spec and is
+/// wrapped as `(V1, V1)`, and a V1 one is left as it is, with its staged
+/// version equal to its current one. Nodes select the spec of each epoch from
+/// the L1 manifests instead, outside these rules: the epoch after one that
+/// processed a checkpoint predicate enactment runs the successor spec, whose
+/// own rules take over the state. Replaying the epoch once from the
+/// authenticated previous terminal state therefore reproduces both versions
+/// exactly.
 pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,
