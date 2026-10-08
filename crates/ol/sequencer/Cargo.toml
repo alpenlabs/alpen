@@ -8,6 +8,7 @@ strata-asm-checkpoint-types.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
 strata-codec.workspace = true
+strata-codec-utils.workspace = true
 strata-common.workspace = true
 strata-crypto.workspace = true
 strata-csm-types.workspace = true

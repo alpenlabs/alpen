@@ -7,6 +7,7 @@ members = [
   "crates/chain-worker",
   "crates/checkpoint-types",
   "crates/cli-common",
+  "crates/codec-utils",
   "crates/common",
   "crates/config",
   "crates/consensus-logic",
@@ -103,6 +104,7 @@ strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
 strata-cli-common = { path = "crates/cli-common" }
+strata-codec-utils = { path = "crates/codec-utils" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
@@ -163,7 +165,6 @@ strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = 
   "derive",
 ], tag = "v0.4.0" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
-strata-codec-utils = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
 strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
 strata-db-macros = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
 strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
