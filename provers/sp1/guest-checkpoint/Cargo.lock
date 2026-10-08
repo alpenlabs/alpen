@@ -1634,7 +1634,7 @@ dependencies = [
  "strata-asm-checkpoint-types",
  "strata-asm-common",
  "strata-codec",
- "strata-codec-utils",
+ "strata-codec-utils 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.4.0)",
  "strata-identifiers",
  "strata-msg-fmt",
  "strata-predicate",
@@ -1669,7 +1669,7 @@ dependencies = [
  "strata-asm-checkpoint-types",
  "strata-asm-common",
  "strata-codec",
- "strata-codec-utils",
+ "strata-codec-utils 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.4.0)",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "thiserror",
@@ -1764,6 +1764,15 @@ source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0#fc71f121d899
 dependencies = [
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "strata-codec-utils"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_derive",
+ "strata-codec",
 ]
 
 [[package]]
@@ -2047,7 +2056,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
  "strata-codec",
- "strata-codec-utils",
+ "strata-codec-utils 0.1.0",
  "strata-identifiers",
  "strata-merkle",
  "strata-ol-params",
