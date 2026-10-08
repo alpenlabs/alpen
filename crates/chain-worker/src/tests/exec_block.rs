@@ -49,6 +49,8 @@ struct OrderEnforcingContext {
     headers: HashMap<OLBlockId, OLBlockHeaderV1>,
     /// States served to [`ChainWorkerContext::fetch_ol_state`].
     states: HashMap<OLBlockCommitment, OLStateContainer>,
+    /// Canonical manifests served to [`ChainWorkerContext::fetch_l1_manifest`].
+    manifests: HashMap<u32, AsmManifest>,
     /// Canonical summaries served per epoch index.
     canonical_summaries: HashMap<Epoch, EpochSummary>,
     /// Epochs with at least one block's indexing writes applied.
@@ -74,8 +76,8 @@ impl ChainWorkerContext for OrderEnforcingContext {
         unimplemented!("not used by block execution")
     }
 
-    fn fetch_l1_manifest(&self, _height: u32) -> WorkerResult<Option<AsmManifest>> {
-        unimplemented!("not used by block execution")
+    fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>> {
+        Ok(self.manifests.get(&height).cloned())
     }
 
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
@@ -238,7 +240,7 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
         BitcoinAmount::try_from(150_000_000)
             .expect("amount must not exceed the Bitcoin money supply"),
     );
-    run_terminal(&mut state, &mut blocks, &genesis_header, manifest);
+    run_terminal(&mut state, &mut blocks, &genesis_header, manifest.clone());
     let terminal_block = blocks.pop().expect("terminal block built");
     let terminal_header = terminal_block.header().clone();
     let terminal_commitment =
@@ -261,6 +263,7 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
         blocks: HashMap::from([(*terminal_commitment.blkid(), terminal_block)]),
         headers: HashMap::from([(*genesis_commitment.blkid(), genesis_header)]),
         states: HashMap::from([(genesis_commitment, pre_epoch_state)]),
+        manifests: HashMap::from([(TERMINAL_L1_HEIGHT, manifest)]),
         canonical_summaries: HashMap::from([(0, genesis_summary)]),
         indexed_epochs: Mutex::new(Vec::new()),
         stored_summaries: Mutex::new(Vec::new()),
