@@ -1,0 +1,86 @@
+{
+  "magic": "ALPN",
+  "anchor": {
+    "block": {
+      "height": 20919,
+      "blkid": "0000000005f6ea88454b25aa8c8823e34267ed6631cde82e1614d49f5ad4e0a3"
+    },
+    "next_target": 487289475,
+    "epoch_start_timestamp": 1783763984,
+    "network": "signet"
+  },
+  "subprotocols": [
+    {
+      "Admin": {
+        "strata_administrator": {
+          "signers": [
+            "tb1qfelfap4lxscwyjyl0w4yx7npxvgnfrylg7xfjd",
+            "tb1qh60s4paa9jr8cmtcrr2v267hzaq86pfznfc6wu",
+            "tb1qwrpseyvhue8zfpmv5m5u95tm4l4yhwalsv705l"
+          ],
+          "threshold": 2
+        },
+        "strata_sequencer_manager": {
+          "signers": [
+            "tb1qfelfap4lxscwyjyl0w4yx7npxvgnfrylg7xfjd",
+            "tb1qh60s4paa9jr8cmtcrr2v267hzaq86pfznfc6wu",
+            "tb1qwrpseyvhue8zfpmv5m5u95tm4l4yhwalsv705l"
+          ],
+          "threshold": 2
+        },
+        "alpen_administrator": {
+          "signers": [
+            "tb1qfelfap4lxscwyjyl0w4yx7npxvgnfrylg7xfjd",
+            "tb1qh60s4paa9jr8cmtcrr2v267hzaq86pfznfc6wu",
+            "tb1qwrpseyvhue8zfpmv5m5u95tm4l4yhwalsv705l"
+          ],
+          "threshold": 2
+        },
+        "strata_security_council": {
+          "signers": [
+            "tb1qfelfap4lxscwyjyl0w4yx7npxvgnfrylg7xfjd",
+            "tb1qh60s4paa9jr8cmtcrr2v267hzaq86pfznfc6wu",
+            "tb1qwrpseyvhue8zfpmv5m5u95tm4l4yhwalsv705l"
+          ],
+          "threshold": 2
+        },
+        "confirmation_depths": {
+          "strata_admin_multisig_update": 12,
+          "strata_seq_manager_multisig_update": 12,
+          "alpen_admin_multisig_update": 12,
+          "strata_security_council_multisig_update": 12,
+          "operator_update": 12,
+          "sequencer_update": 12,
+          "ol_stf_vk_update": 12,
+          "asm_stf_vk_update": 12,
+          "ee_stf_vk_update": 12,
+          "defcon3": 12,
+          "safe_harbor_address_update": 12
+        },
+        "max_seqno_gap": 10
+      }
+    },
+    {
+      "Checkpoint": {
+        "sequencer_key": "9ee1eae0362787220373ed726ed592be9b8d73660f12a76bdd9fee421e4e443e",
+        "checkpoint_predicate": "Sp1Groth16:4388a21c002f850ee998974d6cc00e50cd0814b098c05bfade466d28573240d057f253520121c7d728a5fd961fc179ec5eab938f564deba5b271e1c90c2c29a79648418fc12317bd9b644830ef5ffec1c2d46b5442aa8029d41eb58fb8fc939fb03365e00e1c3c9339849225980c7d3f824f80d19e2a9c2554b6ab2160fa9635528f693fc00d964538da2653f2e62499571e6c78afb8909d3ea8107f306bd6928253680a3a2c8e3c3c5153ef35c01baddac0d2e24dfee9dd922d819aae54fa90e175f9625e2677b02e199903c8131b8e9fafaa7d5b0eeda406cf3d190e01cfdce881ab30ca198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c21800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa11b7e9276171bb0efd647fc63e38bbfba3076f20daca8cd52bcc7284d9b1c6eb1723616533dd6ae53502c9c506a81f23f543d68750b5133ebfbe1f4746b3b0110c4684810202d51d39e2b093a0a9187afacb75e203000170f23687b2cc786b2605865c701a782e7a81549613e8f8832f6a6d86a809ca794fd7e99b54e626080c000000052d3e326f46575c5366121c3c69accde8070894991a876c26b9e18f452b679b810cf7899f06a4124034eb0cdd4d0b1ebb0c2ae50794ebf06d6132ab33d48cffde0b0ae6e491bc04c544da9e8cd4857d201b4cfa0222dbe96aac97f044fdf1c922123e064d2ffdb7f8094b727cde1c0beea6d4d551e5743a336804f8effb7f07ac097c875a6ebd0999b06e7267ff3d8a6bf859bb9635abae07cb6b3534ba409a832d84b73fb0f397e356b524f2d0e9ddc9d0f6ac75e566041147ee8554879183ec1807204ddcd27506ba72e17b55227b0bf310136ecb40c74acd52f3ccfbcba9f7011078b5c7767fe73bb54241dcd143ee805ea4383d48d46bced129482c8c2021008c7b7c98d78c07a2c4be5f6be7082ba41021611f9a2dfc016f8bbb37d36bee09ce6d246baeac24b5a404ca175c2cc4a974e217176fe2ec2a6c22eb60fd65c1",
+        "genesis_l1_height": 20919,
+        "genesis_ol_blkid": "0d949ed7308980e121fc1f98846d1bd055d1fd205e536a511c589aa070c414ab"
+      }
+    },
+    {
+      "Bridge": {
+        "operators": [
+          "025f9bfac3b160a0b9129d558ce29ab2df66ebbdd85dec1f5a2faf2e9de07acdfd",
+          "027098a1e38159f586536fabcb5537cdbb1454b1464c5c4a1bfd48de6c794d28c4",
+          "0288610184701307eef5dbb81ce1d974bc6940d21601a9656b565dab485321a03f"
+        ],
+        "denomination": 200000000,
+        "assignment_duration": 64,
+        "operator_fee": 300000,
+        "recovery_delay": 6,
+        "safe_harbor_address": "045f9bfac3b160a0b9129d558ce29ab2df66ebbdd85dec1f5a2faf2e9de07acdfd"
+      }
+    }
+  ]
+}

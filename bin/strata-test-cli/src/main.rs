@@ -9,6 +9,7 @@
 
 use std::process;
 
+mod admin;
 mod bridge;
 pub mod cmd;
 mod constants;
@@ -24,7 +25,9 @@ use cmd::{
     compute_drt_output::compute_drt_output,
     convert_to_xonly_pk::convert_to_xonly_pk,
     create_deposit_tx::create_deposit_tx,
-    create_ee_predicate_update::{create_checkpoint_predicate_update, create_ee_predicate_update},
+    create_ee_predicate_update::{
+        create_checkpoint_predicate_update, create_ee_predicate_update, print_signing_message,
+    },
     create_withdrawal_fulfillment::create_withdrawal_fulfillment,
     extract_p2tr_pubkey::extract_p2tr_pubkey,
     get_address::get_address,
@@ -43,6 +46,7 @@ fn main() {
         Commands::CreateWithdrawalFulfillment(args) => create_withdrawal_fulfillment(args),
         Commands::CreateEePredicateUpdate(args) => create_ee_predicate_update(args),
         Commands::CreateCheckpointPredicateUpdate(args) => create_checkpoint_predicate_update(args),
+        Commands::PrintSigningMessage(args) => print_signing_message(args),
         Commands::ComputeDrtOutput(args) => compute_drt_output(args),
         Commands::BuildSnarkWithdrawal(args) => build_snark_withdrawal(args),
         Commands::GetAddress(args) => get_address(args),

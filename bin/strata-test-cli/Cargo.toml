@@ -13,6 +13,10 @@ path = "src/main.rs"
 [dependencies]
 shrex.workspace = true
 strata-acct-types.workspace = true
+strata-asm-admin-threshold-sig.workspace = true
+strata-asm-admin-types.workspace = true
+strata-asm-common.workspace = true
+strata-asm-params.workspace = true
 strata-asm-proto-admin-txs = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-bridge-txs = { workspace = true, features = ["test-utils"] }
 strata-btcio.workspace = true
@@ -30,12 +34,14 @@ strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
 anyhow.workspace = true
+base64.workspace = true
 bdk_bitcoind_rpc.workspace = true
 bdk_wallet.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 k256.workspace = true
 musig2.workspace = true
+rand.workspace = true
 secp256k1.workspace = true
 ssz.workspace = true
 
