@@ -327,6 +327,31 @@ fn test_exec_first_v1_block_on_v0_terminal_persists_wrapped_state() {
     assert_eq!(summaries[0].final_state(), terminal_header.state_root());
 }
 
+/// A block carrying a deposit log that the canonical manifest at its L1 height
+/// lacks is rejected before execution.
+#[test]
+fn test_exec_block_rejects_noncanonical_manifest() {
+    let (mut ctx, terminal_header) = exec_single_block_epoch(false);
+    let carried = &ctx.manifests[&TERMINAL_L1_HEIGHT];
+    let canonical = AsmManifest::new(
+        TERMINAL_L1_HEIGHT,
+        *carried.blkid(),
+        *carried.wtxids_root(),
+        Vec::new(),
+    )
+    .expect("manifest without logs");
+    ctx.manifests.insert(TERMINAL_L1_HEIGHT, canonical);
+
+    let terminal_commitment =
+        OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
+    let err = exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
+        .expect_err("forged manifest must be rejected");
+    assert!(matches!(
+        err,
+        WorkerError::NoncanonicalManifest { height } if height == TERMINAL_L1_HEIGHT
+    ));
+}
+
 /// An epoch merge whose result does not hash to the summary's final state root
 /// fails instead of producing a terminal state to store.
 #[test]
