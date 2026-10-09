@@ -262,6 +262,7 @@ pub(crate) fn exec_block(
 
     // Fetch block and parent context
     let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
+    check_canonical_manifests(ctx, &block)?;
 
     // TODO(STR-4086): use the spec scheduled for the block's header epoch.
     let spec = OLSpecId::V1;
@@ -329,6 +330,27 @@ fn fetch_block_with_parent(
     };
 
     Ok((block, parent_header, parent_commitment))
+}
+
+/// Checks that each manifest the block carries equals the canonical manifest
+/// stored for its L1 height.
+///
+/// The STF only checks that manifest heights are sequential, so without this
+/// check a signed block could carry forged L1 block data and deposit logs.
+fn check_canonical_manifests(ctx: &impl ChainWorkerContext, block: &OLBlockV1) -> WorkerResult<()> {
+    let Some(container) = block.body().manifests() else {
+        return Ok(());
+    };
+    for manifest in container.manifests() {
+        let height = manifest.height();
+        let canonical = ctx
+            .fetch_l1_manifest(height)?
+            .ok_or(WorkerError::MissingDependency("l1 manifest"))?;
+        if canonical != *manifest {
+            return Err(WorkerError::NoncanonicalManifest { height });
+        }
+    }
+    Ok(())
 }
 
 /// Executes the STF on a block and returns the execution output.

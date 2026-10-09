@@ -134,6 +134,11 @@ pub enum WorkerError {
         found: L1BlockId,
     },
 
+    /// A block carries an ASM manifest that differs from the canonical one
+    /// stored for its L1 height.
+    #[error("block manifest at L1 height {height} is not canonical")]
+    NoncanonicalManifest { height: L1Height },
+
     /// A checkpoint log references an account serial unknown to the post-state.
     #[error("snark log references unknown account serial {0:?}")]
     UnknownAccountSerial(AccountSerial),
