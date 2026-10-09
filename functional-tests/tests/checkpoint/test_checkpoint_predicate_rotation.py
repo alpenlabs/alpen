@@ -195,6 +195,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         )
 
         self._assert_enactment_boundary(log_path, log_offset, boundary)
+        self._assert_upgrade_required(strata_rpc, last_terminal, boundary)
 
         # Positive half of the range-keyed semantics: the epoch ending at the
         # boundary finalizes under the outgoing predicate.
@@ -229,6 +230,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             time.sleep(PACE_STEP_SLEEP_SECONDS)
             self._assert_stopped_at(strata, strata_rpc, last_epoch, last_terminal)
 
+        self._assert_upgrade_required(strata_rpc, last_terminal, boundary)
         if strata_rpc.strata_getCheckpointInfo(last_epoch + 1) is not None:
             raise AssertionError(
                 f"the node built a checkpoint for epoch {last_epoch + 1}, past the epoch that "
@@ -346,6 +348,31 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             raise AssertionError(
                 f"finalized epoch moved off {epoch}, the epoch ending at the enactment: "
                 f"finalized={status['finalized']}"
+            )
+
+    @staticmethod
+    def _assert_upgrade_required(strata_rpc, terminal: str, boundary: int) -> None:
+        """Asserts that the spec status reports the stop at `terminal`.
+
+        The tip's epoch runs V1 and processed the enactment at `boundary`, so
+        the next epoch runs V2, which this binary does not implement.
+        """
+        status = strata_rpc.strata_getSpecStatus()
+        expected = {
+            "tip": terminal,
+            "cur_spec_version": 1,
+            "next_epoch_spec_version": 2,
+            "upgrade_required": {"enactment_l1_height": boundary, "spec_version": 2},
+        }
+        actual = {
+            "tip": status["tip"]["blkid"],
+            "cur_spec_version": status["cur_spec_version"],
+            "next_epoch_spec_version": status["next_epoch_spec_version"],
+            "upgrade_required": status["upgrade_required"],
+        }
+        if actual != expected:
+            raise AssertionError(
+                f"spec status does not report the upgrade the next epoch needs: {status}"
             )
 
     @staticmethod

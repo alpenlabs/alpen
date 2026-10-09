@@ -8987,6 +8987,7 @@ dependencies = [
  "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types-v1",
+ "strata-ol-stf",
  "strata-ol-stf-v1",
  "strata-predicate",
  "strata-primitives",

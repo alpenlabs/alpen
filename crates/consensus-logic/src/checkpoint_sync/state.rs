@@ -2,13 +2,14 @@
 
 use std::sync::Arc;
 
+use strata_chain_worker::WorkerError;
 use strata_primitives::{
     l1::{compute_confirmation_depth, is_l1_reorg_safe},
     EpochCommitment,
 };
 use strata_service::ServiceState;
 use strata_status::OLSyncStatus;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::checkpoint_sync::{
     context::CheckpointSyncCtx,
@@ -22,6 +23,9 @@ pub struct CheckpointSyncState<C: CheckpointSyncCtx> {
     ctx: Arc<C>,
     /// Last epoch that has been both finalized and applied to OL state.
     last_finalized_and_applied: Option<EpochCommitment>,
+    /// First epoch this binary cannot apply because it runs an unimplemented
+    /// spec, once checkpoint sync has stopped there.
+    stopped_before: Option<EpochCommitment>,
 }
 
 impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
@@ -29,7 +33,21 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
         Self {
             ctx,
             last_finalized_and_applied,
+            stopped_before: None,
         }
+    }
+
+    /// Records that checkpoint sync already stopped before `epoch`, so the
+    /// stop is not logged again.
+    pub(crate) fn with_stopped_before(mut self, epoch: Option<EpochCommitment>) -> Self {
+        self.stopped_before = epoch;
+        self
+    }
+
+    /// Returns the first epoch checkpoint sync stopped before, if it stopped.
+    #[cfg(test)]
+    pub(crate) fn stopped_before(&self) -> Option<EpochCommitment> {
+        self.stopped_before
     }
 
     /// Returns the last epoch finalized and applied so far.
@@ -79,7 +97,24 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
         );
 
         let last_applied =
-            find_and_apply_unapplied_epochs(self.ctx.as_ref(), new_finalized).await?;
+            match find_and_apply_unapplied_epochs(self.ctx.as_ref(), new_finalized).await {
+                Ok(last_applied) => last_applied,
+                Err(CheckpointSyncError::UpgradeRequired {
+                    epoch,
+                    last_applied,
+                    cause,
+                }) => {
+                    // A stop, not a failure: the service keeps running and
+                    // checks again on each CSM update, from stored data.
+                    if self.stopped_before != Some(epoch) {
+                        log_upgrade_required(epoch, &cause);
+                        self.stopped_before = Some(epoch);
+                    }
+                    self.last_finalized_and_applied = last_applied;
+                    return Ok(());
+                }
+                Err(err) => return Err(err),
+            };
 
         self.last_finalized_and_applied = last_applied;
         info!(?last_applied, "checkpoint sync advanced");
@@ -209,10 +244,32 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
             total = num_unapplied,
             "applying epoch during init"
         );
-        apply_and_finalize_epoch(ctx, epoch).await?;
-        last_applied_epoch = Some(epoch);
+        match apply_and_finalize_epoch(ctx, epoch).await {
+            Ok(()) => last_applied_epoch = Some(epoch),
+            Err(CheckpointSyncError::EpochOp {
+                cause: cause @ WorkerError::UpgradeRequired(_),
+                ..
+            }) => {
+                return Err(CheckpointSyncError::UpgradeRequired {
+                    epoch,
+                    last_applied: last_applied_epoch,
+                    cause,
+                });
+            }
+            Err(err) => return Err(err),
+        }
     }
     Ok(last_applied_epoch)
+}
+
+/// Logs that checkpoint sync stops before `epoch`, which runs a spec this
+/// binary does not implement.
+pub(crate) fn log_upgrade_required(epoch: EpochCommitment, cause: &WorkerError) {
+    warn!(
+        %epoch,
+        %cause,
+        "checkpoint sync stopped: the epoch runs an OL spec this binary does not implement; upgrade the node"
+    );
 }
 
 /// Walks backwards from `start_finalized`, collecting reorg-safe epochs that have

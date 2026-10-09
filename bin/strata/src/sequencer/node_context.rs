@@ -1,7 +1,8 @@
 //! Concrete [`SequencerContext`] implementation for the Strata node.
 
 use std::{
-    sync::Arc,
+    collections::HashSet,
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,6 +11,7 @@ use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_ol_sequencer::{BlockGenerationConfig, SequencerContext, SequencerContextError};
+use strata_ol_stf::UpgradeRequired;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -26,6 +28,12 @@ pub(crate) struct NodeSequencerContext {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     ol_block_time_ms: u64,
+    /// Tips whose upgrade-required stop was logged, so each stop is logged
+    /// once rather than on every generation tick.
+    ///
+    /// Only tips that no block of this binary extends enter the set, so it
+    /// stays as small as the number of such tips the node sees.
+    logged_upgrade_tips: Mutex<HashSet<OLBlockId>>,
 }
 
 impl NodeSequencerContext {
@@ -40,7 +48,28 @@ impl NodeSequencerContext {
             storage,
             status_channel,
             ol_block_time_ms,
+            logged_upgrade_tips: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Logs that block production stopped at `tip_blkid` because the next
+    /// block runs a spec this binary does not implement, once per tip.
+    fn log_upgrade_required_once(&self, tip_blkid: OLBlockId, upgrade: &UpgradeRequired) {
+        let newly_stopped = self
+            .logged_upgrade_tips
+            .lock()
+            .expect("upgrade log state lock is not poisoned")
+            .insert(tip_blkid);
+        if !newly_stopped {
+            return;
+        }
+        warn!(
+            ?tip_blkid,
+            enactment_l1_height = upgrade.enactment_l1_height(),
+            cur_spec = ?upgrade.prev_spec(),
+            next_spec_version = upgrade.spec_version(),
+            "block production stopped: the next epoch runs an OL spec this binary does not implement; upgrade the node"
+        );
     }
 }
 
@@ -107,16 +136,7 @@ impl SequencerContext for NodeSequencerContext {
         }
 
         let threshold_ms = late_block_threshold_ms(self.ol_block_time_ms);
-        if time_since_parent > threshold_ms {
-            warn!(
-                time_since_parent,
-                block_time_ms = self.ol_block_time_ms,
-                threshold_ms,
-                parent_ts,
-                target_ts,
-                "block wall-clock interval exceeds block_time by more than {BLOCK_TS_DRIFT_TOLERANCE_PCT}%",
-            );
-        }
+        let is_late = time_since_parent > threshold_ms;
 
         let config = BlockGenerationConfig::new(parent_commitment).with_ts(target_ts);
 
@@ -189,9 +209,28 @@ impl SequencerContext for NodeSequencerContext {
                 debug!(tip_blkid = ?tip_blkid, completed_parent = ?parent, completed_block = %block, "template generation skipped: parent already completed");
                 return Ok(None);
             }
+            // The tip ends the last epoch this binary can run. Block assembly
+            // derives this from stored chain data, so it holds across
+            // restarts, and the node keeps running to prove and post the
+            // checkpoint of that epoch.
+            Err(BlockAssemblyError::UpgradeRequired(upgrade)) => {
+                self.log_upgrade_required_once(tip_blkid, &upgrade);
+                return Ok(None);
+            }
             Err(source) => {
                 return Err(SequencerContextError::TemplateGeneration { tip_blkid, source });
             }
+        }
+
+        if is_late {
+            warn!(
+                time_since_parent,
+                block_time_ms = self.ol_block_time_ms,
+                threshold_ms,
+                parent_ts,
+                target_ts,
+                "block wall-clock interval exceeds block_time by more than {BLOCK_TS_DRIFT_TOLERANCE_PCT}%",
+            );
         }
 
         debug!(tip_blkid = ?tip_blkid, "template generation request completed");
@@ -602,6 +641,55 @@ mod tests {
             .await
             .expect("test: pending template");
         assert_eq!(template.header().parent_blkid(), parent_commitment.blkid());
+    }
+
+    /// A tip that ends a V1 epoch which processed a checkpoint predicate
+    /// enactment is the last block this binary builds on: generation stops
+    /// without an error and leaves no template, on every tick.
+    #[tokio::test]
+    async fn generation_stops_after_a_v1_enactment() {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(0)
+            .with_v1_genesis_enactment()
+            .build_fixture()
+            .await;
+        let storage = fixture.storage().clone();
+        let parent_header = storage
+            .ol_block()
+            .get_ol_header_async(*parent_commitment.blkid())
+            .await
+            .expect("test: fetch parent header")
+            .expect("test: parent header exists");
+        let (_task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
+        let status_channel =
+            test_status_channel(test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32]))));
+        let safe_l1 = status_channel.get_cur_checkpoint_state().block;
+        status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(OLSyncStatus::new(
+            parent_commitment,
+            parent_header.epoch(),
+            parent_header.is_terminal(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            safe_l1,
+        )));
+        let sequencer_context =
+            NodeSequencerContext::new(blockasm_handle.clone(), storage, status_channel, 1);
+
+        for _ in 0..2 {
+            assert_eq!(
+                sequencer_context
+                    .generate_template_for_tip()
+                    .await
+                    .expect("test: stopping is not an error"),
+                None
+            );
+        }
+        assert_eq!(
+            *sequencer_context.logged_upgrade_tips.lock().unwrap(),
+            HashSet::from([*parent_commitment.blkid()])
+        );
+        assert_no_pending_template(&blockasm_handle, parent_commitment).await;
     }
 
     #[tokio::test]
