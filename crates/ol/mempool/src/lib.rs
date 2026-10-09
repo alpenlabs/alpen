@@ -12,6 +12,7 @@ mod service;
 mod state;
 #[cfg(test)]
 mod test_utils;
+mod tip;
 mod types;
 mod validation;
 
@@ -21,6 +22,7 @@ pub use command::MempoolCommand;
 pub use error::OLMempoolError;
 pub use handle::MempoolHandle;
 pub use service::MempoolServiceStatus;
+pub use tip::MempoolTip;
 pub use types::*;
 
 pub type OLMempoolResult<T> = Result<T, OLMempoolError>;

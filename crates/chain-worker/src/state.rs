@@ -264,13 +264,9 @@ pub(crate) fn exec_block(
     // Fetch block and parent context
     let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
 
-    // TODO(STR-4086): use the spec scheduled for the block's header epoch.
-    let spec = OLSpecId::V1;
-
     // Execute STF and get output and new state
     let (output, new_state) = execute_stf(
         ctx,
-        spec,
         runtime_params,
         &block,
         parent_header.as_ref(),
@@ -334,12 +330,12 @@ fn fetch_block_with_parent(
 
 /// Executes the STF on a block and returns the execution output.
 ///
-/// This fetches parent state, builds the state stack, runs verification,
-/// and extracts the resulting write batch and indexer writes.
+/// This fetches parent state, selects the block's spec, builds the state
+/// stack, runs verification, and extracts the resulting write batch and
+/// indexer writes. It stores nothing.
 #[instrument(
     skip_all,
     fields(
-        ?spec,
         slot = block.header().slot(),
         epoch = block.header().epoch(),
         is_terminal = block.header().is_terminal(),
@@ -349,7 +345,6 @@ fn fetch_block_with_parent(
 )]
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
-    spec: OLSpecId,
     runtime_params: OLRuntimeParams,
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
@@ -361,10 +356,18 @@ fn execute_stf(
         .fetch_ol_state(parent_commitment)?
         .ok_or(WorkerError::MissingPreState(parent_commitment))?;
     let parent_state = MemoryStateBaseLayer::from_container(parent_state_raw);
+    let parent_header = parent_header.ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    let spec = select_block_spec(ctx, parent_commitment, parent_header, &parent_state)?;
+    debug!(?spec, "selected the block's spec");
 
     // Execute and extract outputs
-    let (write_batch, indexer_writes, logs) =
-        run_stf_verification(spec, &parent_state, block, parent_header, &runtime_params)?;
+    let (write_batch, indexer_writes, logs) = run_stf_verification(
+        spec,
+        &parent_state,
+        block,
+        Some(parent_header),
+        &runtime_params,
+    )?;
 
     // Apply write batch to parent state to get new state
     let mut new_state = parent_state;
@@ -707,6 +710,28 @@ fn select_checkpoint_epoch_spec(
         );
     }
     Ok(spec)
+}
+
+/// Returns the spec of the block after `parent`, whose header is
+/// `parent_header` and whose state is `parent_state`.
+///
+/// A block after an epoch's terminal block starts the next epoch, whose spec
+/// [`select_spec_after`] selects. Any other block continues its parent's epoch
+/// and runs the spec the parent state was produced under: every rule set
+/// leaves the state's current spec at its own identifier from the first block
+/// of its epoch on. So a terminal block, drain included, runs under the spec
+/// of the epoch it ends, as block assembly builds it.
+pub(crate) fn select_block_spec<S: IStateAccessor>(
+    ctx: &impl ChainWorkerContext,
+    parent: OLBlockCommitment,
+    parent_header: &OLBlockHeaderV1,
+    parent_state: &S,
+) -> WorkerResult<OLSpecId> {
+    if !parent_header.is_terminal() {
+        return Ok(parent_state.spec_versions().cur_spec());
+    }
+    let parent_epoch = EpochCommitment::from_terminal(parent_header.epoch(), parent);
+    select_spec_after(ctx, parent_epoch, parent_state)
 }
 
 /// Selects the spec of the epoch after `parent`, whose terminal state is

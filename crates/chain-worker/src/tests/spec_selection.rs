@@ -111,3 +111,49 @@ fn test_selection_counts_an_enactment_the_parent_processed() {
     assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
     assert_eq!(upgrade.enactment_l1_height(), B);
 }
+
+/// A reorg replaces the terminal block of epoch 2 with a sibling. Selection
+/// reads each terminal's own state and summary, so building on either
+/// selects again from that block: the terminal that processed `B` ends V1,
+/// the sibling that stopped before it does not.
+#[test]
+fn test_selection_follows_each_terminal_of_a_fork() {
+    let manifests: Vec<AsmManifest> = (1..B)
+        .map(|height| make_empty_manifest(height, 0))
+        .chain([make_checkpoint_predicate_enactment_manifest(B, 1)])
+        .collect();
+    let before_b = commitment(&manifests[manifests.len() - 2]);
+    let b = commitment(manifests.last().expect("B's manifest"));
+
+    let prev = terminal(10, 1);
+    let with_b = EpochCommitment::from_terminal(2, terminal(20, 3));
+    let without_b = EpochCommitment::from_terminal(2, terminal(20, 4));
+    let summary = |epoch, terminal, prev_terminal, new_l1| {
+        EpochSummary::new(epoch, terminal, prev_terminal, new_l1, Buf32::zero())
+    };
+
+    let mut ctx = MockChainWorkerContext::new();
+    ctx.epoch_summaries
+        .insert(1, vec![summary(1, prev, terminal(0, 0), before_b)]);
+    ctx.epoch_summaries.insert(
+        2,
+        vec![
+            summary(2, with_b.to_block_commitment(), prev, b),
+            summary(2, without_b.to_block_commitment(), prev, before_b),
+        ],
+    );
+    ctx.manifests = manifests
+        .iter()
+        .cloned()
+        .map(|manifest| (manifest.height(), manifest))
+        .collect();
+    let state_with_b = state_ending_on(&manifests);
+    let state_without_b = state_ending_on(&manifests[..manifests.len() - 1]);
+
+    for _ in 0..2 {
+        let err = select_spec_after(&ctx, with_b, &state_with_b).expect_err("V1 ends at B");
+        assert!(matches!(err, WorkerError::UpgradeRequired(_)), "{err}");
+        let spec = select_spec_after(&ctx, without_b, &state_without_b).expect("selects");
+        assert_eq!(spec, OLSpecId::V1);
+    }
+}

@@ -3,15 +3,14 @@
 use std::marker::PhantomData;
 
 use serde::Serialize;
-use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_provider::StateProvider;
 use strata_service::{AsyncService, Response, Service};
 use tracing::{debug, info};
 
-use crate::MempoolCommand;
 use crate::builder::MempoolInputMessage;
 use crate::state::MempoolServiceState;
 use crate::types::OLMempoolStats;
+use crate::{MempoolCommand, MempoolTip};
 
 /// Service status for mempool.
 #[derive(Debug, Clone, Serialize)]
@@ -70,9 +69,8 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
             },
 
             MempoolInputMessage::ChainUpdate(update) => {
-                let new_tip = update.new_status().tip();
-                let ol_tip = OLBlockCommitment::new(new_tip.slot(), *new_tip.blkid());
-                state.handle_chain_update(ol_tip).await?;
+                let new_tip = MempoolTip::from_sync_status(&update.new_status());
+                state.handle_chain_update(new_tip).await?;
             }
         }
 
@@ -105,7 +103,7 @@ mod tests {
             provider.clone(),
         ));
 
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -134,7 +132,7 @@ mod tests {
         let tip = create_test_block_commitment(100);
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -172,9 +170,10 @@ mod tests {
             provider.clone(),
         ));
 
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::new_with_context(context.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
 
         // Account 1: tx1 (seq 0), tx2 (seq 1) - tx2 cascades when tx1 removed
         // Account 2: tx3 (seq 0) - independent
@@ -224,9 +223,10 @@ mod tests {
             OLMempoolConfig::default(),
             provider.clone(),
         ));
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::new_with_context(context.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
 
         // Add a transaction via handle_submit_transaction
         let tx = create_test_snark_tx_with_seq_no(1, 0);

@@ -23,10 +23,16 @@ use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLSpecId, OLSpecVersions};
 use strata_ol_state_types_v1::WriteBatch;
-use strata_ol_stf_v1::test_utils::{
-    EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT, epoch_runner_run_genesis as run_genesis,
-    epoch_runner_run_terminal as run_terminal, epoch_runner_seed_accounts as seed_accounts,
-    make_deposit_manifest_for_account, tamper_state_root,
+use strata_ol_stf_v1::{
+    BlockComponents, BlockInfo,
+    test_utils::{
+        EPOCH_RUNNER_GENESIS_TIMESTAMP, EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+        EPOCH_RUNNER_TERMINAL_L1_HEIGHT as TERMINAL_L1_HEIGHT,
+        epoch_runner_run_genesis as run_genesis, epoch_runner_run_terminal as run_terminal,
+        epoch_runner_seed_accounts as seed_accounts, execute_block,
+        make_checkpoint_predicate_enactment_manifest, make_deposit_manifest_for_account,
+        tamper_state_root, to_ol_block,
+    },
 };
 
 use super::fixture::make_marked_genesis_state;
@@ -51,6 +57,10 @@ struct OrderEnforcingContext {
     states: HashMap<OLBlockCommitment, OLStateContainer>,
     /// Canonical summaries served per epoch index.
     canonical_summaries: HashMap<Epoch, EpochSummary>,
+    /// L1 block genesis anchors to.
+    genesis_l1: L1BlockCommitment,
+    /// L1 manifests served per height.
+    manifests: HashMap<u32, AsmManifest>,
     /// Epochs with at least one block's indexing writes applied.
     indexed_epochs: Mutex<Vec<Epoch>>,
     /// Summaries accepted by [`ChainWorkerContext::store_summary`].
@@ -65,17 +75,44 @@ struct OrderEnforcingContext {
     write_batches: Mutex<HashMap<OLBlockCommitment, Vec<u8>>>,
 }
 
+impl OrderEnforcingContext {
+    /// Creates a context that serves the given chain data and has stored
+    /// nothing yet.
+    fn new(
+        blocks: HashMap<OLBlockId, OLBlockV1>,
+        headers: HashMap<OLBlockId, OLBlockHeaderV1>,
+        states: HashMap<OLBlockCommitment, OLStateContainer>,
+        canonical_summaries: HashMap<Epoch, EpochSummary>,
+        genesis_l1: L1BlockCommitment,
+        manifests: HashMap<u32, AsmManifest>,
+    ) -> Self {
+        Self {
+            blocks,
+            headers,
+            states,
+            canonical_summaries,
+            genesis_l1,
+            manifests,
+            indexed_epochs: Mutex::new(Vec::new()),
+            stored_summaries: Mutex::new(Vec::new()),
+            merged_epochs: Mutex::new(Vec::new()),
+            stored_states: Mutex::new(Vec::new()),
+            write_batches: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
 impl ChainWorkerContext for OrderEnforcingContext {
     fn runtime_params(&self) -> OLRuntimeParams {
         OLRuntimeParams::test_default()
     }
 
     fn genesis_l1_block(&self) -> L1BlockCommitment {
-        unimplemented!("not used by block execution")
+        self.genesis_l1
     }
 
-    fn fetch_l1_manifest(&self, _block: &L1BlockCommitment) -> WorkerResult<Option<AsmManifest>> {
-        unimplemented!("not used by block execution")
+    fn fetch_l1_manifest(&self, block: &L1BlockCommitment) -> WorkerResult<Option<AsmManifest>> {
+        Ok(self.manifests.get(&block.height()).cloned())
     }
 
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
@@ -220,13 +257,34 @@ impl ChainWorkerContext for OrderEnforcingContext {
 /// Builds epoch 1 as a single terminal block on genesis and executes it
 /// through [`exec_block`], returning the context and the terminal header.
 ///
-/// With `v0_parent`, genesis's result is first relabelled as the last V0
-/// terminal: the same chainstate as a V0 state, under a header committing to
-/// its bare root. The block then runs as the first V1 block and wraps it.
+/// With `v0_parent`, genesis processes the checkpoint predicate enactment
+/// that ends V0, and its result is relabelled as the last V0 terminal: the
+/// same chainstate as a V0 state, under a header committing to its bare root.
+/// The block then runs as the first V1 block and wraps it.
 fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHeaderV1) {
     let mut state = make_marked_genesis_state();
     let snark_serial = seed_accounts(&mut state);
-    let genesis = run_genesis(&mut state);
+    let genesis_l1_anchor = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
+    let (genesis, genesis_manifest) = if v0_parent {
+        let manifest = make_checkpoint_predicate_enactment_manifest(1, 1);
+        let genesis = execute_block(
+            &mut state,
+            &BlockInfo::new_genesis(EPOCH_RUNNER_GENESIS_TIMESTAMP),
+            None,
+            BlockComponents::new_manifests(vec![manifest.clone()]).as_terminal(),
+        )
+        .expect("genesis block");
+        (genesis, manifest)
+    } else {
+        let genesis = run_genesis(&mut state);
+        let manifest = genesis
+            .body()
+            .manifests()
+            .and_then(|container| container.manifests().first())
+            .expect("genesis carries a manifest")
+            .clone();
+        (genesis, manifest)
+    };
     let mut genesis_header = genesis.header().clone();
     if v0_parent {
         state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
@@ -265,17 +323,14 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
         *genesis_header.state_root(),
     );
 
-    let ctx = OrderEnforcingContext {
-        blocks: HashMap::from([(*terminal_commitment.blkid(), terminal_block)]),
-        headers: HashMap::from([(*genesis_commitment.blkid(), genesis_header)]),
-        states: HashMap::from([(genesis_commitment, pre_epoch_state)]),
-        canonical_summaries: HashMap::from([(0, genesis_summary)]),
-        indexed_epochs: Mutex::new(Vec::new()),
-        stored_summaries: Mutex::new(Vec::new()),
-        merged_epochs: Mutex::new(Vec::new()),
-        stored_states: Mutex::new(Vec::new()),
-        write_batches: Mutex::new(HashMap::new()),
-    };
+    let ctx = OrderEnforcingContext::new(
+        HashMap::from([(*terminal_commitment.blkid(), terminal_block)]),
+        HashMap::from([(*genesis_commitment.blkid(), genesis_header)]),
+        HashMap::from([(genesis_commitment, pre_epoch_state)]),
+        HashMap::from([(0, genesis_summary)]),
+        genesis_l1_anchor,
+        HashMap::from([(genesis_manifest.height(), genesis_manifest)]),
+    );
 
     exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
         .expect("single-block epoch executes");
@@ -351,4 +406,81 @@ fn test_merge_epoch_state_rejects_root_mismatch() {
         err,
         WorkerError::MergedStateRootMismatch { merged, .. } if merged == *summary.final_state()
     ));
+}
+
+/// Block execution refuses the first block after a terminal block whose epoch
+/// processed a checkpoint predicate enactment: that block would run V1's
+/// successor, which this binary does not implement. Nothing is stored for it.
+#[test]
+fn test_exec_refuses_the_block_after_a_v1_enactment() {
+    let mut state = make_marked_genesis_state();
+    seed_accounts(&mut state);
+    let genesis_l1_anchor = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
+    let genesis = run_genesis(&mut state);
+    let genesis_header = genesis.header().clone();
+    let genesis_manifest = genesis
+        .body()
+        .manifests()
+        .and_then(|container| container.manifests().first())
+        .expect("genesis carries a manifest")
+        .clone();
+    let genesis_commitment = genesis_header.compute_block_commitment();
+    let genesis_summary = EpochSummary::new(
+        0,
+        genesis_commitment,
+        OLBlockCommitment::null(),
+        L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid()),
+        *genesis_header.state_root(),
+    );
+
+    // Epoch 1: one terminal block that processes the enactment.
+    let enactment = make_checkpoint_predicate_enactment_manifest(TERMINAL_L1_HEIGHT, 1);
+    let mut blocks = Vec::new();
+    run_terminal(&mut state, &mut blocks, &genesis_header, enactment.clone());
+    let terminal_header = blocks.pop().expect("terminal block built").header().clone();
+    let terminal_commitment = terminal_header.compute_block_commitment();
+    let terminal_state = state.to_container();
+    let terminal_summary = genesis_summary.create_next_epoch_summary(
+        terminal_commitment,
+        L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid()),
+        *terminal_header.state_root(),
+    );
+
+    // Epoch 2: the block V1 rules would build next.
+    let slot = terminal_header.slot() + 1;
+    let next = execute_block(
+        &mut state,
+        &BlockInfo::new(
+            EPOCH_RUNNER_GENESIS_TIMESTAMP + slot * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+            slot,
+            2,
+        ),
+        Some(&terminal_header),
+        BlockComponents::new_empty(),
+    )
+    .expect("V1 rules build the block");
+    let next_commitment = next.header().compute_block_commitment();
+
+    let ctx = OrderEnforcingContext::new(
+        HashMap::from([(*next_commitment.blkid(), to_ol_block(&next))]),
+        HashMap::from([(*terminal_commitment.blkid(), terminal_header)]),
+        HashMap::from([(terminal_commitment, terminal_state)]),
+        HashMap::from([(0, genesis_summary), (1, terminal_summary)]),
+        genesis_l1_anchor,
+        HashMap::from([
+            (genesis_manifest.height(), genesis_manifest),
+            (enactment.height(), enactment),
+        ]),
+    );
+
+    let err = exec_block(&ctx, OLRuntimeParams::test_default(), &next_commitment)
+        .expect_err("no block executes after the V1 enactment");
+    let WorkerError::UpgradeRequired(upgrade) = err else {
+        panic!("expected an upgrade-required error, got {err}");
+    };
+    assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+    assert_eq!(upgrade.enactment_l1_height(), TERMINAL_L1_HEIGHT);
+    assert!(ctx.stored_states.lock().unwrap().is_empty());
+    assert!(ctx.write_batches.lock().unwrap().is_empty());
+    assert!(ctx.indexed_epochs.lock().unwrap().is_empty());
 }

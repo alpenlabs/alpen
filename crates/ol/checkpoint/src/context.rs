@@ -1,16 +1,17 @@
 //! Context trait for checkpoint worker dependencies.
 
+use std::convert::Infallible;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
-use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
+use strata_checkpoint_types::{EpochSummary, prev_epoch_last_l1};
+use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
+use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_stf::OLSpecId;
+use strata_ol_stf::{EpochL1Range, OLSpecId, select_next_epoch_spec};
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -75,6 +76,13 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
         &self,
         commitment: &OLBlockCommitment,
     ) -> anyhow::Result<Option<OLStateContainer>>;
+
+    /// Returns the L1 block OL genesis anchors to, where the genesis epoch's
+    /// L1 range starts.
+    fn genesis_l1_block(&self) -> L1BlockCommitment;
+
+    /// Gets the stored ASM manifest of the L1 block `block`, if present.
+    fn get_l1_manifest(&self, block: &L1BlockCommitment) -> anyhow::Result<Option<AsmManifest>>;
 
     /// Fetches da data for epoch. Returns state diff and OL logs.
     fn fetch_da_for_epoch(
@@ -153,6 +161,7 @@ pub struct ProverConfig {
 pub(crate) struct CheckpointWorkerContextImpl {
     storage: Arc<NodeStorage>,
     runtime_params: OLRuntimeParams,
+    genesis_l1_block: L1BlockCommitment,
     /// When present, a prover is running and `get_proof` waits for proofs.
     /// When absent, `get_proof` returns empty immediately.
     prover: Option<ProverConfig>,
@@ -162,10 +171,15 @@ impl CheckpointWorkerContextImpl {
     /// Creates a new context without a prover.
     ///
     /// `get_proof` always returns empty bytes.
-    pub(crate) fn new(storage: Arc<NodeStorage>, runtime_params: OLRuntimeParams) -> Self {
+    pub(crate) fn new(
+        storage: Arc<NodeStorage>,
+        runtime_params: OLRuntimeParams,
+        genesis_l1_block: L1BlockCommitment,
+    ) -> Self {
         Self {
             storage,
             runtime_params,
+            genesis_l1_block,
             prover: None,
         }
     }
@@ -174,11 +188,13 @@ impl CheckpointWorkerContextImpl {
     pub(crate) fn with_prover(
         storage: Arc<NodeStorage>,
         runtime_params: OLRuntimeParams,
+        genesis_l1_block: L1BlockCommitment,
         prover: ProverConfig,
     ) -> Self {
         Self {
             storage,
             runtime_params,
+            genesis_l1_block,
             prover: Some(prover),
         }
     }
@@ -327,6 +343,16 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         Ok(state.map(|arc| (*arc).clone()))
     }
 
+    fn genesis_l1_block(&self) -> L1BlockCommitment {
+        self.genesis_l1_block
+    }
+
+    fn get_l1_manifest(&self, block: &L1BlockCommitment) -> anyhow::Result<Option<AsmManifest>> {
+        // Manifests are stored by block, so another block's manifest is never
+        // returned for this one.
+        Ok(self.storage.l1().get_block_manifest(block.blkid())?)
+    }
+
     fn fetch_da_for_epoch(
         &self,
         summary: &EpochSummary,
@@ -380,8 +406,8 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     let ol_state_raw = ctx
         .get_ol_state(prev_terminal)?
         .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
-    // TODO(STR-4086): use the spec scheduled for the summary's epoch.
-    let spec = OLSpecId::V1;
+    let parent = EpochCommitment::from_terminal(summary.epoch() - 1, *prev_terminal);
+    let spec = select_spec_after_terminal(ctx, parent, &ol_state_raw)?;
     let da_output = compute_epoch_da(
         spec,
         MemoryStateBaseLayer::from_container(ol_state_raw),
@@ -394,6 +420,39 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     let terminal_header = epoch_blocks.ensured_last().header().clone();
 
     Ok((da_bytes, logs, terminal_header))
+}
+
+/// Selects the spec of the epoch after `parent`, whose terminal state is
+/// `parent_state`, with [`select_next_epoch_spec`], as block assembly built
+/// the epoch.
+///
+/// The parent epoch's L1 range starts at the last L1 block of the epoch its
+/// own summary links to; the genesis epoch starts at the L1 anchor.
+///
+/// # Errors
+///
+/// Returns an error, carrying [`UpgradeRequired`](strata_ol_stf::UpgradeRequired)
+/// if the epoch runs a spec this binary does not implement, or if the parent
+/// epoch's summaries or last manifest are missing or inconsistent.
+fn select_spec_after_terminal<C: CheckpointWorkerContext>(
+    ctx: &C,
+    parent: EpochCommitment,
+    parent_state: &OLStateContainer,
+) -> anyhow::Result<OLSpecId> {
+    let prev_last = prev_epoch_last_l1(parent, ctx.genesis_l1_block(), |epoch| {
+        ctx.get_epoch_summary(epoch)?
+            .ok_or_else(|| anyhow::anyhow!("missing the epoch summary of {epoch}"))
+    })?;
+    let range = EpochL1Range::new(prev_last, parent_state.chainstate().last_l1_block())?;
+    let last_manifest = match range.last_processed() {
+        Some(block) => ctx.get_l1_manifest(block)?,
+        None => None,
+    };
+    Ok(select_next_epoch_spec(
+        parent_state.spec_versions(),
+        range,
+        |_| Ok::<_, Infallible>(last_manifest),
+    )?)
 }
 
 /// Collects all blocks in an epoch by walking backwards from the terminal block.
@@ -452,7 +511,7 @@ mod tests {
     use std::sync::Arc;
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_identifiers::{Buf32, OLBlockId};
+    use strata_identifiers::{Buf32, L1BlockCommitment, OLBlockId};
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
     use strata_ol_params::OLRuntimeParams;
     use strata_storage::create_node_storage;
@@ -486,7 +545,11 @@ mod tests {
             .put_terminal_header_blocking(*commitment.blkid(), header.clone())
             .expect("store terminal header");
 
-        let context = CheckpointWorkerContextImpl::new(storage, OLRuntimeParams::test_default());
+        let context = CheckpointWorkerContextImpl::new(
+            storage,
+            OLRuntimeParams::test_default(),
+            L1BlockCommitment::default(),
+        );
         assert_eq!(
             context
                 .get_block_header(&commitment)

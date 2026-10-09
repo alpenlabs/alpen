@@ -11,6 +11,7 @@ mod handle;
 mod mempool_provider;
 mod resource_state;
 mod service;
+mod spec;
 mod state;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
