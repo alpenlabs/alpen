@@ -122,14 +122,35 @@ writes V1-prefixed keys; backfill for other specs and decoded task details are d
 Remote jobs store an opaque request ID in task metadata. The remote strategy can
 resume that request through the same spec's service while its metadata remains available.
 
-With `[prover]` configured and canonical ASM state available, startup reconciliation
-deletes local checkpoint payloads, proofs, and versioned tasks past ASM's verified
-tip before prover services start. Task deletion also removes the saved remote
-request ID, including for specs whose artifacts are not loaded. Re-proving those
-checkpoints requires new remote requests. Operators should not
-expect an in-flight remote job to be resumed across a node restart. The TODO in
-[checkpoint reconciliation](../../../bin/strata/src/checkpoint_reconcile.rs) tracks
-reconsidering this cleanup so existing proof work can be reused safely.
+### Checkpoint work across restarts
+
+Startup preserves local checkpoint payloads, signing records, proofs, and prover
+tasks, including work beyond ASM's verified tip. An epoch can be proven before
+its checkpoint is published or accepted on L1. A lagging local ASM tip therefore
+does not invalidate that work. Completed proofs are reused, and unfinished tasks
+retain their remote request IDs and retry state for the existing recovery path.
+
+Protocol upgrades assign rules to epochs through their committed spec; they do
+not retroactively change the rules for completed epochs. Restart with the same
+protocol artifact for each spec whose work must resume. A missing or invalid
+artifact is a configuration problem, handled by the startup checks and per-epoch
+routing described above, rather than by deleting stored work. Replacing an
+artifact under an existing spec or changing a network's runtime parameters is
+not a protocol upgrade or a supported way to migrate persisted proof tasks.
+
+The sequencer only incorporates ASM manifests after the configured L1 burial
+depth. Supported shallow L1 reorgs can remove a checkpoint's publication without
+invalidating the OL execution it proves. Reorgs crossing that safety boundary
+require recovery beyond the supported shallow-reorg path; startup does not try
+to repair them by clearing checkpoints. A task whose epoch commitment no longer
+matches the canonical summary is rejected by input resolution before proving.
+
+There is no automatic checkpoint deletion on restart, including when artifact
+validation fails. Offline repair remains an explicit operator action. If repair
+removes a proof that must be regenerated, its completed task and any dependent
+local payload/signing state must also be reconciled; deleting only the receipt
+does not reset the prover's completed status. L1 writer-intent cancellation is a
+separate concern tracked by STR-4290.
 
 The remote strategy fetches the receipt and decodes its public output without
 adding local cryptographic proof verification. Each service
