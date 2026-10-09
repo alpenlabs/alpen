@@ -27,7 +27,9 @@ pub use block::{
 };
 pub use blocktag::OLBlockTag;
 pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
-pub use checkpoint::{RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
+pub use checkpoint::{
+    RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref, RpcRejectedCheckpoint,
+};
 pub use duty::*;
 pub use provider::OLRpcProvider;
 pub use snark_acct_update::RpcSnarkAccountUpdate;
