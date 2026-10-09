@@ -57,6 +57,21 @@ whatever was built earlier in place.
 The node checks the manifest's program ID and runtime-params hash at startup. The `spec` field
 records the rules compiled into the guest; it can differ from the network's `genesis.spec`.
 
+## Verifying key changes
+
+The checkpoint verifying key changes with any change to what the guest compiles: non-test code in
+its local crates (panic messages embed file and line, so moving a line counts), the guest's
+`Cargo.lock`, the pinned git dependencies, and the SP1 version. A deployed key changes only with a
+new OL spec.
+
+The [Checkpoint VK guard workflow](../../.github/workflows/checkpoint-vk-guard.yml) runs on PRs
+into `main` that touch a guest input. It builds the guest at the PR base and at the merge commit
+with the Docker build and `.github/fixtures/checkpoint-runtime-params.json`, and fails when the
+keys differ. The job summary shows both keys and the guest inputs the PR changes. The check is
+advisory: it is not required and stays red for an intended change. When the guest gains a local
+crate, add the crate's directory to the workflow's `paths` filter; the check fails until it is
+there.
+
 ## Publishing
 
 The [Publish SP1 Artifacts workflow](../../.github/workflows/publish-sp1-artifacts.yml) requires
