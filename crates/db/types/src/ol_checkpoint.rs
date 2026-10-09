@@ -2,17 +2,77 @@
 
 // TODO(STR-4220): replace EpochCommitment and CheckpointPayload with a versionable wrapper
 
+use serde::{Deserialize, Serialize};
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
-use strata_identifiers::{Epoch, EpochCommitment};
+use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment};
 
-use crate::common::L1PayloadIntentIndex;
+use crate::common::{L1PayloadIntentIndex, L1TxId};
+use crate::l1_writer::BundleIdx;
 #[cfg(feature = "proxies")]
 use crate::DbError;
 use crate::DbResult;
+
+/// A checkpoint transaction this node submitted that was mined on L1 but not accepted by the
+/// ASM.
+///
+/// The submission tracker records one entry per transaction once its inclusion block is buried
+/// at the reorg-safe depth while the ASM's verified epoch is still below the checkpoint's epoch.
+/// Persisting it lets the node keep reporting the rejection across restarts without alerting
+/// again.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectedCheckpointEntry {
+    commitment: EpochCommitment,
+    txid: L1TxId,
+    l1_block: L1BlockCommitment,
+    asm_verified_tip: Option<EpochCommitment>,
+}
+
+impl RejectedCheckpointEntry {
+    /// Creates an entry for the checkpoint `commitment` carried by `txid`, mined in `l1_block`
+    /// while the ASM's verified tip was `asm_verified_tip`.
+    pub fn new(
+        commitment: EpochCommitment,
+        txid: L1TxId,
+        l1_block: L1BlockCommitment,
+        asm_verified_tip: Option<EpochCommitment>,
+    ) -> Self {
+        Self {
+            commitment,
+            txid,
+            l1_block,
+            asm_verified_tip,
+        }
+    }
+
+    /// Epoch commitment the checkpoint declared.
+    pub fn commitment(&self) -> EpochCommitment {
+        self.commitment
+    }
+
+    /// Epoch the checkpoint declared.
+    pub fn epoch(&self) -> Epoch {
+        self.commitment.epoch()
+    }
+
+    /// Transaction that carried the checkpoint envelope.
+    pub fn txid(&self) -> L1TxId {
+        self.txid
+    }
+
+    /// L1 block the transaction was mined in.
+    pub fn l1_block(&self) -> L1BlockCommitment {
+        self.l1_block
+    }
+
+    /// ASM verified tip when the rejection was recorded, `None` before any accepted checkpoint.
+    pub fn asm_verified_tip(&self) -> Option<EpochCommitment> {
+        self.asm_verified_tip
+    }
+}
 
 /// Database for OL checkpoint data.
 #[cfg_attr(
@@ -187,4 +247,21 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
         &self,
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;
+
+    /// Gets the submission tracker's scan cursor: the first L1 writer bundle index it has not
+    /// yet settled. `None` until the tracker first commits a scan.
+    fn get_checkpoint_submission_cursor(&self) -> DbResult<Option<BundleIdx>>;
+
+    /// Atomically stores the submission tracker's scan cursor and records newly rejected
+    /// checkpoint transactions.
+    ///
+    /// Rejections are keyed by txid, so recording the same transaction again overwrites it.
+    fn put_checkpoint_submission_scan(
+        &self,
+        cursor: BundleIdx,
+        rejected: Vec<RejectedCheckpointEntry>,
+    ) -> DbResult<()>;
+
+    /// Gets every recorded rejected checkpoint transaction, ordered by epoch, then txid.
+    fn get_rejected_checkpoints(&self) -> DbResult<Vec<RejectedCheckpointEntry>>;
 }

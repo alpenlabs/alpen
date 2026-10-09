@@ -6,7 +6,8 @@ use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::common::L1PayloadIntentIndex;
-use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
+use strata_db_types::l1_writer::BundleIdx;
+use strata_db_types::ol_checkpoint::{OLCheckpointDatabase, RejectedCheckpointEntry};
 use strata_db_types::DbResult;
 use strata_identifiers::{Epoch, EpochCommitment};
 use tokio::runtime::Handle;
@@ -485,6 +486,26 @@ impl OLCheckpointManager {
     /// Gets the next unsigned checkpoint epoch.
     pub fn get_next_unsigned_checkpoint_epoch_blocking(&self) -> DbResult<Option<Epoch>> {
         self.ops.get_next_unsigned_checkpoint_epoch_blocking()
+    }
+
+    /// Gets the submission tracker's scan cursor over L1 writer bundles.
+    pub fn get_checkpoint_submission_cursor_blocking(&self) -> DbResult<Option<BundleIdx>> {
+        self.ops.get_checkpoint_submission_cursor_blocking()
+    }
+
+    /// Atomically stores the submission tracker's scan cursor and newly rejected checkpoints.
+    pub fn put_checkpoint_submission_scan_blocking(
+        &self,
+        cursor: BundleIdx,
+        rejected: Vec<RejectedCheckpointEntry>,
+    ) -> DbResult<()> {
+        self.ops
+            .put_checkpoint_submission_scan_blocking(cursor, rejected)
+    }
+
+    /// Gets every recorded rejected checkpoint transaction, ordered by epoch.
+    pub fn get_rejected_checkpoints_blocking(&self) -> DbResult<Vec<RejectedCheckpointEntry>> {
+        self.ops.get_rejected_checkpoints_blocking()
     }
 }
 

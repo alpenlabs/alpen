@@ -10,8 +10,14 @@ anyhow.workspace = true
 metrics.workspace = true
 serde.workspace = true
 strata-asm-checkpoint-types.workspace = true
+strata-asm-proto-checkpoint-txs.workspace = true
 strata-bridge-params.workspace = true
+strata-btcio.workspace = true
 strata-checkpoint-types.workspace = true
+strata-codec.workspace = true
+strata-codec-utils.workspace = true
+strata-csm-types.workspace = true
+strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types-v1.workspace = true
@@ -50,3 +56,4 @@ strata-proofimpl-checkpoint.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 
 proptest.workspace = true
+tracing-subscriber.workspace = true

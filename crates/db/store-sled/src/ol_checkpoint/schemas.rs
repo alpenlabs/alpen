@@ -1,7 +1,9 @@
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::common::L1PayloadIntentIndex;
+use strata_db_types::common::{L1PayloadIntentIndex, L1TxId};
+use strata_db_types::l1_writer::BundleIdx;
+use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
 use strata_identifiers::{Epoch, EpochCommitment};
 
 use crate::{
@@ -61,6 +63,19 @@ define_table_without_codec!(
     (OLCheckpointEpochIndexSchema) Epoch => Vec<EpochCommitment>
 );
 impl_cbor_value_codec!(OLCheckpointEpochIndexSchema, Vec<EpochCommitment>);
+
+define_table_without_codec!(
+    /// Checkpoint transactions mined on L1 but not accepted by the ASM, keyed by txid.
+    (OLRejectedCheckpointSchema) L1TxId => RejectedCheckpointEntry
+);
+impl_codec_key_codec!(OLRejectedCheckpointSchema, L1TxId);
+impl_cbor_value_codec!(OLRejectedCheckpointSchema, RejectedCheckpointEntry);
+
+define_table_without_codec!(
+    /// Single-row table holding the submission tracker's scan cursor over L1 writer bundles.
+    (OLCheckpointSubmissionCursorSchema) u8 => BundleIdx
+);
+impl_cbor_value_codec!(OLCheckpointSubmissionCursorSchema, BundleIdx);
 
 #[cfg(test)]
 mod tests {
