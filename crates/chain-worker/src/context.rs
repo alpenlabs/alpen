@@ -265,6 +265,10 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         }
     }
 
+    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>> {
+        Ok(self.ol_checkpoint_mgr.get_epoch_summary_blocking(epoch)?)
+    }
+
     fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
         let merged = merge_epoch_state(self, summary)?;
 
@@ -292,8 +296,10 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .get_checkpoint_l1_observed_payload_blocking(*epoch)?)
     }
 
-    fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>> {
-        Ok(self.l1_block_mgr.get_block_manifest_at_height(height)?)
+    fn fetch_l1_manifest(&self, block: &L1BlockCommitment) -> WorkerResult<Option<AsmManifest>> {
+        // Manifests are stored by block, so a reorged block's manifest stays
+        // reachable and another block's is never returned for it.
+        Ok(self.l1_block_mgr.get_block_manifest(block.blkid())?)
     }
 
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {

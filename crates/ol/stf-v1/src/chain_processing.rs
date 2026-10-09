@@ -43,10 +43,10 @@ pub fn process_epoch_initial<S: IStateAccessorMut>(
         state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V1));
     }
 
-    // 5. Promote the staged spec to the current spec. The epoch runs under the
-    // spec its predecessor's terminal state staged, and DA replay reproduces
-    // the promotion by calling this function.
-    // TODO(STR-4086): set `cur_spec_version = staged_spec_version` here.
+    // 5. V1 rules never stage a spec, so a V1 state's staged version always
+    // equals its current one. Nodes select the next epoch's spec from the L1
+    // manifests, outside these rules, and the ASM decides which checkpoint
+    // predicate verifies which range.
 
     Ok(())
 }

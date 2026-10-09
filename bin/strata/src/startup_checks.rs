@@ -6,14 +6,14 @@ use bitcoind_async_client::{
 };
 use strata_btc_types::BlockHashExt;
 use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
-use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types::{EpochSummary, prev_epoch_last_l1};
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
-use strata_ol_stf::select_next_epoch_spec;
+use strata_ol_stf::{EpochL1Range, select_next_epoch_spec};
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -711,38 +711,72 @@ fn verify_tip_from_history_base(
     verify_previous_epoch_summary_for_tip(storage, &tip_block)
 }
 
-/// Returns the spec of the epoch after `state`, a terminal OL state, reading
-/// the L1 manifest it processed last from `storage`.
+/// Returns the spec of the epoch after `terminal`, an epoch's terminal block
+/// whose state is `state`, by the rule checkpoint sync applies,
+/// [`select_next_epoch_spec`].
 ///
-/// Checkpoint promotion and the sequencer's boot check apply the rule and the
-/// manifest source checkpoint sync applies, [`select_next_epoch_spec`].
-pub(crate) fn next_epoch_spec_after(
+/// The epoch's L1 range starts at the last L1 block of the epoch before it,
+/// read from the summary that `terminal`'s own summary links to; the genesis
+/// epoch starts at the L1 anchor. The manifest is read by L1 block, so a
+/// reorged block's manifest is never read as the epoch's.
+pub(crate) fn spec_after_terminal(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
+    terminal: EpochCommitment,
     state: &OLStateContainer,
 ) -> Result<OLSpecId> {
+    let prev_last = prev_epoch_last_l1(terminal, genesis_l1_block, |epoch| {
+        storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(epoch)?
+            .ok_or_else(|| anyhow!("missing the epoch summary of {epoch}"))
+    })?;
+    let range = EpochL1Range::new(prev_last, state.chainstate().last_l1_block())?;
     Ok(select_next_epoch_spec(
         state.spec_versions(),
-        state.chainstate().last_l1_block(),
-        genesis_l1_block,
-        |height| storage.l1().get_block_manifest_at_height(height),
+        range,
+        |block| storage.l1().get_block_manifest(block.blkid()),
     )?)
+}
+
+/// Returns the spec of the block after `block`, whose state is `state`.
+///
+/// A block that ends its epoch is followed by the next epoch, whose spec
+/// [`spec_after_terminal`] selects. Any other block is followed by a block of
+/// its own epoch, which runs the spec the block's state was produced under.
+fn spec_after_block(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+    block: OLBlockCommitment,
+    state: &OLStateContainer,
+) -> Result<OLSpecId> {
+    let header = storage
+        .ol_block()
+        .get_ol_header_blocking(*block.blkid())
+        .context("failed to query the OL header")?
+        .ok_or_else(|| anyhow!("missing the OL header of {block}"))?;
+    if header.is_terminal() {
+        let terminal = EpochCommitment::from_terminal(header.epoch(), block);
+        spec_after_terminal(storage, genesis_l1_block, terminal, state)
+    } else {
+        Ok(state.cur_spec())
+    }
 }
 
 /// Checks that a sequencer can build on the canonical OL tip.
 ///
-/// This release builds only V1 blocks, so the epoch after the tip must run V1
-/// by the rule checkpoint sync applies, [`next_epoch_spec_after`]. A V1 tip
-/// passes. A V0 tip passes only if it is the last V0 epoch, the one that ends
-/// at the checkpoint predicate enactment, which a promoted checkpoint-sync
-/// datadir anchors on. The genesis of a fresh datadir on a network launched on
-/// 0.3.0 does not: V1 blocks on it would fork the network at slot 1.
+/// This release builds only V1 blocks, so the block after the tip must run V1
+/// by the rule checkpoint sync applies, [`spec_after_block`]. A V1 tip passes
+/// unless it ends an epoch that processed a checkpoint predicate enactment. A
+/// V0 tip passes only if it is the last V0 epoch, the one that ends at the
+/// checkpoint predicate enactment, which a promoted checkpoint-sync datadir
+/// anchors on. The genesis of a fresh datadir on a network launched on 0.3.0
+/// does not: V1 blocks on it would fork the network at slot 1.
 ///
-/// A V0 tip is always an epoch's terminal block, as [`next_epoch_spec_after`]
-/// requires. This binary stores V0 states only from V0 genesis and checkpoint
-/// replay, and both store terminal states alone. Block execution runs V1
-/// rules, which wrap a V0 state at the first block of an epoch and reject it
-/// anywhere else with
+/// This binary stores V0 states only from V0 genesis and checkpoint replay,
+/// and both store terminal states alone. Block execution runs V1 rules, which
+/// wrap a V0 state at the first block of an epoch and reject it anywhere else
+/// with
 /// [`ExecError::ContinuesV0Epoch`](strata_ol_stf::ExecError::ContinuesV0Epoch).
 ///
 /// It runs once genesis exists, before the block producer starts.
@@ -757,11 +791,11 @@ pub(crate) fn verify_sequencer_tip_spec(
         .context("startup: failed to query OL state for tip block")?
         .ok_or_else(|| anyhow!("startup: missing OL state for tip block {tip_commitment}"))?;
 
-    // TODO(STR-4086): compare with the spec block assembly runs, once it
-    // follows the spec the tip state stages.
-    let next_spec =
-        next_epoch_spec_after(storage, genesis_l1_block, &tip_state).with_context(|| {
-            format!("startup: failed to select the spec of the epoch after tip {tip_commitment}")
+    // TODO(STR-4086): accept any spec this binary builds blocks under, and
+    // let the sequencer start and halt when the next spec needs an upgrade.
+    let next_spec = spec_after_block(storage, genesis_l1_block, tip_commitment, &tip_state)
+        .with_context(|| {
+            format!("startup: failed to select the spec of the block after tip {tip_commitment}")
         })?;
     if next_spec != OLSpecId::V1 {
         bail!(
@@ -854,12 +888,14 @@ mod tests {
 
     use bitcoin::{BlockHash, Network, Work, hashes::Hash};
     use bitcoind_async_client::corepc_types::model::GetBlockchainInfo;
+    use strata_acct_types::L1BlockRecord;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, Hash as StrataHash, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockId};
     use strata_ol_params::{OLParams, OLRuntimeParams};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
+    use strata_ol_stf_v1::test_utils::make_checkpoint_predicate_enactment_manifest;
     use strata_storage::{NodeStorage, create_node_storage};
 
     use super::*;
@@ -1416,6 +1452,115 @@ mod tests {
 
         let (v1_storage, _) = setup_storage_with_genesis_spec(OLSpecId::V1);
         verify_sequencer_tip_spec(&v1_storage, genesis_l1).expect("V1 tip is accepted");
+    }
+
+    /// Stores a V1 tip at slot 1 whose state's last L1 block is the block
+    /// whose manifest carries a checkpoint predicate enactment, and returns the
+    /// storage with the genesis L1 anchor.
+    ///
+    /// A terminal tip ends epoch 1, which processed the enactment, and the
+    /// summary of epoch 1 is stored. A nonterminal tip leaves epoch 1 open, so
+    /// no summary exists for it.
+    fn setup_v1_tip_on_enactment(is_terminal: bool) -> (NodeStorage, L1BlockCommitment) {
+        let (storage, genesis_commitment) = setup_storage_with_genesis();
+        let genesis_l1 = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
+        let genesis_block = storage
+            .ol_block()
+            .get_block_data_blocking(*genesis_commitment.blkid())
+            .expect("test: query genesis block")
+            .expect("test: genesis block exists");
+        let genesis_state = storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(genesis_commitment)
+            .expect("test: query genesis state")
+            .expect("test: genesis state exists");
+
+        let enactment = make_checkpoint_predicate_enactment_manifest(1, 1);
+        let enactment_block = L1BlockCommitment::new(1, *enactment.blkid());
+        storage
+            .l1()
+            .put_block_data(enactment.clone())
+            .expect("test: store enactment manifest");
+
+        let mut state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
+        state.append_l1_block_rec(1, L1BlockRecord::new(*enactment.blkid().as_ref(), [0; 32]));
+        state.set_cur_slot(1);
+        if is_terminal {
+            state.set_cur_epoch(2);
+        }
+        let state = state.into_container();
+        let state_root = state.compute_state_root();
+
+        let mut tip_block = genesis_block;
+        tip_block.signed_header.header.slot = 1;
+        tip_block.signed_header.header.epoch = 1;
+        tip_block.signed_header.header.parent_blkid = *genesis_commitment.blkid();
+        tip_block.signed_header.header.state_root = state_root;
+        tip_block
+            .signed_header
+            .header
+            .flags
+            .set_is_terminal(is_terminal);
+        let tip_commitment = OLBlockCommitment::new(1, tip_block.header().compute_blkid());
+        storage
+            .ol_block()
+            .put_block_data_blocking(tip_block)
+            .expect("test: insert tip block");
+        storage
+            .ol_block()
+            .set_block_status_blocking(*tip_commitment.blkid(), BlockStatus::Valid)
+            .expect("test: set tip block status");
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                0,
+                vec![*genesis_commitment.blkid(), *tip_commitment.blkid()],
+            )
+            .expect("test: make the tip canonical");
+        storage
+            .ol_state()
+            .put_toplevel_ol_state_blocking(tip_commitment, state)
+            .expect("test: insert tip state");
+
+        if is_terminal {
+            let genesis_summary = storage
+                .ol_checkpoint()
+                .get_epoch_summary_blocking(EpochCommitment::from_terminal(0, genesis_commitment))
+                .expect("test: query genesis summary")
+                .expect("test: genesis summary exists");
+            storage
+                .ol_checkpoint()
+                .insert_epoch_summary_blocking(genesis_summary.create_next_epoch_summary(
+                    tip_commitment,
+                    enactment_block,
+                    state_root,
+                ))
+                .expect("test: insert tip summary");
+        }
+        assert_eq!(
+            resolve_tip_ol_block(&storage).expect("test: resolve tip"),
+            tip_commitment
+        );
+        (storage, genesis_l1)
+    }
+
+    /// A tip in the middle of an epoch is followed by a block of the same
+    /// epoch. The enactment its last L1 block carries started V1 and does not
+    /// count again, and no summary is read for the open epoch.
+    #[test]
+    fn test_sequencer_builds_after_a_nonterminal_tip_on_an_enactment() {
+        let (storage, genesis_l1) = setup_v1_tip_on_enactment(false);
+        verify_sequencer_tip_spec(&storage, genesis_l1).expect("the next block runs V1");
+    }
+
+    /// A V1 tip that ends an epoch which processed a checkpoint predicate
+    /// enactment is followed by V2, which this binary does not implement.
+    #[test]
+    fn test_sequencer_refuses_the_tip_after_a_v1_enactment() {
+        let (storage, genesis_l1) = setup_v1_tip_on_enactment(true);
+        let err =
+            verify_sequencer_tip_spec(&storage, genesis_l1).expect_err("the next epoch runs V2");
+        assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
     }
 
     /// A node on a network launched on 0.3.0 stores a V0 genesis whose state

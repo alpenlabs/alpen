@@ -8844,6 +8844,7 @@ name = "strata-checkpoint-types"
 version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
+ "futures",
  "serde",
  "ssz",
  "ssz_derive",
@@ -9490,6 +9491,7 @@ dependencies = [
  "metrics",
  "proptest",
  "serde",
+ "ssz",
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-common",

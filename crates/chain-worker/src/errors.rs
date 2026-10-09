@@ -4,10 +4,10 @@ use strata_acct_types::AccountSerial;
 use strata_codec::CodecError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
-    AccountId, Buf32, Epoch, L1BlockId, L1Height, OLBlockCommitment, OLBlockId,
+    AccountId, Buf32, Epoch, L1BlockCommitment, OLBlockCommitment, OLBlockId,
 };
 use strata_ol_state_types::StateError;
-use strata_ol_stf::ExecError;
+use strata_ol_stf::{ExecError, InvalidEpochL1Range, UpgradeRequired};
 use strata_primitives::epoch::EpochCommitment;
 use strata_snark_acct_types::Seqno;
 use thiserror::Error;
@@ -119,20 +119,25 @@ pub enum WorkerError {
         reconstructed: OLBlockId,
     },
 
-    /// No ASM manifest is stored at the L1 height a state processed last.
-    #[error("missing the L1 manifest at height {height} the state processed last")]
-    MissingLastManifest { height: L1Height },
+    /// No ASM manifest is stored for the last L1 block an epoch processed.
+    #[error("missing the L1 manifest of {block}, the last L1 block the epoch processed")]
+    MissingLastManifest { block: L1BlockCommitment },
 
-    /// The stored manifest at a state's last L1 height is for another L1
-    /// block than the one the state processed.
-    #[error(
-        "stored L1 manifest at height {height} is for block {found}, but the state processed {expected}"
-    )]
+    /// The stored manifest is for another L1 block than the last one an
+    /// epoch processed.
+    #[error("stored L1 manifest is for {found}, but the epoch processed {expected} last")]
     LastManifestMismatch {
-        height: L1Height,
-        expected: L1BlockId,
-        found: L1BlockId,
+        expected: L1BlockCommitment,
+        found: L1BlockCommitment,
     },
+
+    /// An epoch's last L1 block does not follow the previous epoch's.
+    #[error("epoch L1 range: {0}")]
+    InvalidEpochL1Range(#[from] InvalidEpochL1Range),
+
+    /// The epoch runs a spec this binary does not implement.
+    #[error(transparent)]
+    UpgradeRequired(#[from] UpgradeRequired),
 
     /// A checkpoint log references an account serial unknown to the post-state.
     #[error("snark log references unknown account serial {0:?}")]
