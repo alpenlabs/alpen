@@ -11,6 +11,7 @@ from common.test_cli import create_checkpoint_predicate_update
 from common.wait import wait_until, wait_until_with_value
 from envconfigs.strata import StrataEnvConfig
 from tests.checkpoint.helpers import mine_until_finalized_epoch
+from tests.dbtool.helpers import run_dbtool_json
 
 ADMIN_CONFIRMATION_DEPTH = 24
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -69,10 +70,13 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
 
         # Hold L1 at the enactment boundary: old V1 epochs can still be proven,
         # while no new L1 block can accept a checkpoint that promotes the pending predicate.
-        self._wait_for_new_proof(strata_rpc, log_path, log_offset, boundary)
+        unaccepted_epoch = self._wait_for_new_proof(strata_rpc, log_path, log_offset, boundary)
 
         signer.stop()
         strata.stop()
+        datadir = strata.props["datadir"]
+        proof = run_dbtool_json(datadir, "get-checkpoint-proof", str(unaccepted_epoch))
+        tasks = run_dbtool_json(datadir, "get-prover-tasks-summary", "--limit", "100")
         log_offset = log_path.stat().st_size
         strata.start()
         strata.wait_for_down(timeout=30)
@@ -87,6 +91,10 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
         assert "required checkpoint artifacts are missing:" in startup_log, startup_log
         assert "MissingCheckpointArtifact" in startup_log and "Pending" in startup_log, startup_log
         assert "checkpoint prover services started" not in startup_log, startup_log
+        # A configuration error must not destroy work while the operator fixes
+        # the missing artifact, even when its epoch is ahead of ASM acceptance.
+        assert run_dbtool_json(datadir, "get-checkpoint-proof", str(unaccepted_epoch)) == proof
+        assert run_dbtool_json(datadir, "get-prover-tasks-summary", "--limit", "100") == tasks
         assert btc_rpc.proxy.getblockcount() == boundary
         return True
 
@@ -140,3 +148,4 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
         assert int(checkpoint["l1_range"][1]["height"]) <= boundary, (
             f"epoch {epoch} crossed the pending transition at L1 {boundary}"
         )
+        return epoch

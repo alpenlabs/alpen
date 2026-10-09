@@ -135,8 +135,10 @@ impl TaskStore for VersionedTaskStore {
 #[cfg(test)]
 mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_store_sled::{open_sled_backend, SledDbConfig};
     use strata_identifiers::{Buf32, EpochCommitment, OLBlockId};
     use strata_paas::AttemptCounts;
+    use tempfile::tempdir;
 
     use super::*;
     use crate::{create_node_storage, test_runtime_handle};
@@ -181,7 +183,14 @@ mod tests {
 
     #[test]
     fn recovery_and_retry_preserve_metadata_counters_and_timestamps() {
-        let (raw, v1, other) = stores();
+        let datadir = tempdir().unwrap();
+        let open_tasks = || {
+            let backend = open_sled_backend(datadir.path(), "tasks", SledDbConfig::test()).unwrap();
+            let storage = create_node_storage(backend, test_runtime_handle()).unwrap();
+            Arc::clone(storage.prover_tasks())
+        };
+        let raw = open_tasks();
+        let v1 = VersionedTaskStore::new(Arc::clone(&raw), OLSpecId::V1);
         let key = task(3).to_key_bytes();
         let counts = AttemptCounts {
             retry: 4,
@@ -196,6 +205,14 @@ mod tests {
         let physical_key = VersionedTaskStore::encode_key(OLSpecId::V1, task(3));
         assert!(raw.get(&key).unwrap().is_none());
         assert!(raw.get(&physical_key).unwrap().is_some());
+
+        // Reopen the database, as on restart, before scanning interrupted work.
+        // Remote request metadata must survive with its original retry budgets.
+        drop(v1);
+        drop(raw);
+        let raw = open_tasks();
+        let v1 = VersionedTaskStore::new(Arc::clone(&raw), OLSpecId::V1);
+        let other = VersionedTaskStore::new(Arc::clone(&raw), OLSpecId::V0);
         let recovered = v1.list_unfinished().unwrap();
         assert_eq!(recovered.len(), 1);
         assert_eq!(recovered[0].key(), key);
