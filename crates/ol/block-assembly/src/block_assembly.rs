@@ -1150,7 +1150,7 @@ mod tests {
     const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
 
     use strata_acct_types::*;
-    use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
+    use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
     use strata_asm_logs::CheckpointPredicateEnacted;
     use strata_asm_logs::constants::AsmLogTypeId;
     use strata_asm_manifest_types::AsmLogEntry;
@@ -3192,7 +3192,7 @@ mod tests {
         let independent = MempoolSnarkTxBuilder::new(account2).build();
         let independent_id = independent.compute_txid();
 
-        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 2);
+        let checkpoint_logs = seeded_da(MAX_OL_LOGS_PER_CHECKPOINT as usize - 1);
         let control = env
             .construct_block_with_da(
                 [(independent_id, independent.clone())],
@@ -3260,11 +3260,12 @@ mod tests {
                 .await;
             let mut env = TestEnv::from_fixture(fixture, parent_commitment);
             // Each update's inbox writes fit a fresh checkpoint; together they exceed DA capacity.
+            let data_bytes = OL_DA_DIFF_MAX_SIZE as usize / 2 + 1;
             let first = MempoolSnarkTxBuilder::new(account1)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(create_test_output_messages(account3, data_bytes))
                 .build();
             let deferred = MempoolSnarkTxBuilder::new(account2)
-                .with_outputs(vec![(account3, 0); 3_000])
+                .with_output_messages(create_test_output_messages(account3, data_bytes))
                 .build();
             let deferred_id = deferred.compute_txid();
             let successor = MempoolSnarkTxBuilder::new(account2).with_seq_no(1).build();
@@ -3352,7 +3353,10 @@ mod tests {
             .await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
         let deferred = MempoolSnarkTxBuilder::new(account1)
-            .with_outputs(vec![(account2, 0); 6_000])
+            .with_output_messages(create_test_output_messages(
+                account2,
+                OL_DA_DIFF_MAX_SIZE as usize + 1,
+            ))
             .build();
         let deferred_id = deferred.compute_txid();
         let mut resource_state = EpochResourceState::new_empty();
@@ -3451,12 +3455,6 @@ mod tests {
     /// Tests that a tx producing logs which would overflow the remaining block
     /// budget triggers a soft-break: the tx is not included, not marked invalid,
     /// and remains available for future blocks.
-    ///
-    /// Note: `TxEffects::MAX_MESSAGES` and `MAX_LOGS_PER_BLOCK` are both 65,536,
-    /// and a tx emits one log of its own on top of its message logs, so a single
-    /// maximal tx now sits one log over the cap. Pre-filling the block output
-    /// buffer keeps this test cheap either way: a small tx triggers the same
-    /// soft-break without having to build a 65k-message tx.
     async fn build_process_transactions_preamble(
         env: &TestEnv,
         timestamp: u64,
@@ -3848,7 +3846,7 @@ mod tests {
 
         let out = run_process_transactions_with_seeded_checkpoint_logs(
             account_id,
-            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 1,
             vec![(tx1_id, tx1), (tx2_id, tx2)],
         )
         .await;

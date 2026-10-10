@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use proptest::prelude::*;
 use serde_json::{Value, json};
 use ssz::Encode;
-use strata_acct_types::{MessageEntry, MsgPayload};
+use strata_acct_types::{MAX_MESSAGES, MAX_TRANSFERS, MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
@@ -40,8 +40,8 @@ use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
 };
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, ProofState, Seqno, UpdateInputData, UpdateOperationData,
-    UpdateOutputs, UpdateStateData,
+    LedgerRefs, OutputMessage, OutputTransfer, ProofState, Seqno, UpdateInputData,
+    UpdateOperationData, UpdateOutputs, UpdateStateData,
 };
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
@@ -49,7 +49,7 @@ use tokio::runtime::Builder;
 use super::{OLBlockDataAccess, OLRpcServer};
 use crate::rpc::errors::{
     BLOCK_HISTORY_UNAVAILABLE_CODE, INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE,
-    MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE, map_mempool_error_to_rpc,
+    MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE, mempool_error_to_rpc,
 };
 
 // -- Mock provider --
@@ -837,7 +837,7 @@ fn inbox_fetch_error(
     move |_, _, _| Err(DbError::Other(message.into()))
 }
 
-// ── map_mempool_error_to_rpc ──
+// ── mempool_error_to_rpc ──
 
 #[test]
 fn mempool_full_maps_to_capacity_code() {
@@ -846,7 +846,7 @@ fn mempool_full_maps_to_capacity_code() {
         limit: 100,
     };
     assert_eq!(
-        map_mempool_error_to_rpc(err).code(),
+        mempool_error_to_rpc(err).code(),
         MEMPOOL_CAPACITY_ERROR_CODE
     );
 }
@@ -858,7 +858,7 @@ fn byte_limit_exceeded_maps_to_capacity_code() {
         limit: 4096,
     };
     assert_eq!(
-        map_mempool_error_to_rpc(err).code(),
+        mempool_error_to_rpc(err).code(),
         MEMPOOL_CAPACITY_ERROR_CODE
     );
 }
@@ -868,7 +868,7 @@ fn account_does_not_exist_maps_to_invalid_params() {
     let err = OLMempoolError::AccountDoesNotExist {
         account: test_account_id(1),
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
@@ -877,20 +877,20 @@ fn transaction_too_large_maps_to_invalid_params() {
         size: 5000,
         limit: 1000,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
 fn log_count_budget_maps_to_invalid_params_with_data() {
-    let error = map_mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
-        actual: 65_537,
-        limit: 16_383,
+    let error = mempool_error_to_rpc(OLMempoolError::LogBudget(TxLogBudgetError::LogCount {
+        actual: 4_097,
+        limit: 4_096,
     }));
     assert_eq!(error.code(), INVALID_PARAMS_CODE);
     let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
     assert_eq!(
         data,
-        json!({"resource": "log_count", "actual": 65537, "limit": 16383})
+        json!({"resource": "log_count", "actual": 4097, "limit": 4096})
     );
 }
 
@@ -901,7 +901,7 @@ fn used_sequence_number_maps_to_invalid_params() {
         expected: 5,
         actual: 4,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
@@ -910,31 +910,31 @@ fn sequence_number_gap_maps_to_invalid_params() {
         expected: 1,
         actual: 5,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INVALID_PARAMS_CODE);
 }
 
 #[test]
 fn database_error_maps_to_internal() {
     let err = OLMempoolError::Database(strata_db_types::DbError::Other("test".into()));
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 #[test]
 fn service_closed_maps_to_internal() {
     let err = OLMempoolError::ServiceClosed("gone".into());
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 #[test]
 fn serialization_error_maps_to_internal() {
     let err = OLMempoolError::Serialization("bad bytes".into());
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 #[test]
 fn state_provider_error_maps_to_internal() {
     let err = OLMempoolError::StateProvider("unavailable".into());
-    assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
+    assert_eq!(mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
 // ── chain_status ──
@@ -3860,6 +3860,53 @@ async fn snark_acct_update_manifest_missing_extra_data_returns_null_extra_data()
 }
 
 // ── submit_transaction ──
+
+#[tokio::test]
+async fn submit_transaction_rejects_oversized_outputs_before_mempool() {
+    let message_limit = MAX_MESSAGES as usize;
+    let transfer_limit = MAX_TRANSFERS as usize;
+    let account = test_account_id(1);
+    let amount = BitcoinAmount::try_from(1).unwrap();
+    let message = OutputMessage::new(account, MsgPayload::from_bytes(amount, vec![1]).unwrap());
+    let transfer = OutputTransfer::new(account, amount);
+    let rpc = make_rpc(MockProvider::new().with_submit_fn(|_| {
+        panic!("oversized outputs must be rejected before mempool submission")
+    }));
+
+    for (resource, limit, outputs) in [
+        (
+            "message_count",
+            message_limit,
+            UpdateOutputs::new_empty().with_messages(vec![message; message_limit + 1]),
+        ),
+        (
+            "transfer_count",
+            transfer_limit,
+            UpdateOutputs::new_empty().with_transfers(vec![transfer; transfer_limit + 1]),
+        ),
+    ] {
+        let operation = UpdateOperationData::new(
+            0,
+            ProofState::new(Buf32::zero(), 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            outputs,
+            vec![],
+        );
+        let tx = RpcOLTransaction::new_snark_acct_update(RpcSnarkAccountUpdate::new(
+            HexBytes32::from(*account.inner()),
+            HexBytes(operation.as_ssz_bytes()),
+            HexBytes(vec![]),
+        ));
+        let error = rpc.submit_transaction(tx).await.unwrap_err();
+        assert_eq!(error.code(), INVALID_PARAMS_CODE);
+        let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
+        assert_eq!(
+            data,
+            json!({"resource": resource, "actual": limit + 1, "limit": limit})
+        );
+    }
+}
 
 #[tokio::test]
 async fn submit_transaction_preserves_log_budget_error_data() {

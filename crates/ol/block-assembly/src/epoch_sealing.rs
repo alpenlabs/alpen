@@ -311,7 +311,7 @@ mod fixed_slot_sealing_tests {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
         let stats = EpochSealingResourceStats::new(
             0,
-            make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize, 0),
+            make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize + 1, 0),
             0,
         );
         let verdict = sealing.check_limits(&stats);
@@ -333,7 +333,7 @@ mod fixed_slot_sealing_tests {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
         let stats = EpochSealingResourceStats::new(
             0,
-            make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize, 0),
+            make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize + 1, 0),
             MAX_SEALING_MANIFEST_COUNT as u32,
         );
         let verdict = sealing.check_limits(&stats);
@@ -357,11 +357,12 @@ mod fixed_slot_sealing_tests {
     #[test]
     fn test_checkpoint_resources_preserve_hard_and_soft_actions() {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
-        let mut usage = make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10 - 4, 0);
+        let mut usage = make_log_usage(MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10 - 5, 0);
         for _ in 0..4 {
             usage.add_payload(&[0; MAX_TOTAL_LOG_PAYLOAD_BYTES / 4]);
         }
-        let stats = EpochSealingResourceStats::new(OL_DA_DIFF_MAX_SIZE as usize, usage, 0);
+        usage.add_payload(&[0]);
+        let stats = EpochSealingResourceStats::new(OL_DA_DIFF_MAX_SIZE as usize + 1, usage, 0);
         let verdict = sealing.check_limits(&stats);
 
         assert_eq!(
@@ -383,8 +384,11 @@ mod fixed_slot_sealing_tests {
     #[test]
     fn test_da_failure_does_not_count_as_hard_log_failure() {
         let sealing = LimitAwareSealing::new(FixedSlotSealing::new(10));
-        let stats =
-            EpochSealingResourceStats::new(OL_DA_DIFF_MAX_SIZE as usize, LogUsage::default(), 0);
+        let stats = EpochSealingResourceStats::new(
+            OL_DA_DIFF_MAX_SIZE as usize + 1,
+            LogUsage::default(),
+            0,
+        );
         let verdict = sealing.check_limits(&stats);
 
         assert_eq!(verdict.da_diff, EpochSealingLimitAction::RejectCandidate);
