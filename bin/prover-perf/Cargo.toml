@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 zkaleido.workspace = true
+zkaleido-perf-report.workspace = true
 
 # proof programs
 strata-proofimpl-checkpoint.workspace = true
@@ -26,10 +27,12 @@ sp1-sdk.workspace = true
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 anyhow.workspace = true
-argh.workspace = true
-num-format = "0.4.4"
-reqwest.workspace = true
-serde_json.workspace = true
+clap = { workspace = true, features = [
+  "std",
+  "help",
+  "usage",
+  "error-context",
+] }
 tokio.workspace = true
 tracing.workspace = true
 

@@ -222,6 +222,7 @@ zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [
   "ssz",
 ], tag = "v0.4.0" }
 zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0" }
+zkaleido-perf-report = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0" }
 zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0" }
 zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.4.0" }
 
