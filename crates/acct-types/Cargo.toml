@@ -21,7 +21,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-strata-test-utils-ssz.workspace = true
+strata-ssz-tests.workspace = true
 
 [build-dependencies]
 ssz_codegen.workspace = true

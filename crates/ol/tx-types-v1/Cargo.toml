@@ -21,7 +21,7 @@ proptest = { optional = true, workspace = true }
 [dev-dependencies]
 proptest.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-test-utils-ssz.workspace = true
+strata-ssz-tests.workspace = true
 
 [build-dependencies]
 ssz_codegen.workspace = true
