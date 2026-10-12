@@ -315,7 +315,6 @@ Worker patterns and service infrastructure.
 | Crate | Description |
 |-------|-------------|
 | `test-utils/test-utils` | Shared test helpers |
-| `test-utils/btcio` | Bitcoin I/O test utilities |
 | `test-utils/l2` | OL component test utilities |
 | `test-utils/ssz` | SSZ test utilities |
 | `db/tests` | Database-focused test fixtures and helpers |

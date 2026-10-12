@@ -8709,7 +8709,7 @@ dependencies = [
  "strata-codec",
  "strata-crypto",
  "strata-l1-txfmt",
- "strata-test-utils-btcio 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.5.0-rc.1)",
+ "strata-test-utils-btcio",
  "thiserror 2.0.20",
 ]
 
@@ -10542,20 +10542,6 @@ source = "git+https://github.com/alpenlabs/asm?tag=v0.5.0-rc.1#7ada090580ac12af9
 dependencies = [
  "bitcoin",
  "strata-identifiers",
-]
-
-[[package]]
-name = "strata-test-utils-btcio"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitcoin",
- "bitcoind-async-client 0.15.0",
- "corepc-node",
- "musig2",
- "rand 0.8.7",
- "strata-crypto",
- "tokio",
 ]
 
 [[package]]
