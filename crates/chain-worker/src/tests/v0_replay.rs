@@ -29,8 +29,8 @@ use strata_asm_checkpoint_types::{
 };
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_identifiers::{
-    AccountSerial, Buf32, EpochCommitment, L1BlockId, OLBlockCommitment, OLBlockId, SubjectId,
-    WtxidsRoot,
+    AccountSerial, Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment,
+    OLBlockId, SubjectId, WtxidsRoot,
 };
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_genesis::build_genesis_artifacts;
@@ -216,7 +216,7 @@ impl Node {
         ctx.ol_states.insert(genesis.commitment, genesis.ol_state);
         for epoch in epochs {
             for manifest in epoch.manifests() {
-                ctx.manifests.insert(manifest.height(), manifest);
+                ctx.manifests.insert_canonical(manifest);
             }
             ctx.checkpoint_payloads
                 .insert(epoch.epoch_commitment(), epoch.checkpoint_payload());
@@ -277,9 +277,7 @@ impl Node {
     /// Adds an epoch built after the fixture's, with its manifests.
     fn add_epoch(&mut self, built: &BuiltV1Epoch) {
         for manifest in &built.manifests {
-            self.ctx
-                .manifests
-                .insert(manifest.height(), manifest.clone());
+            self.ctx.manifests.insert_canonical(manifest.clone());
         }
         self.ctx
             .checkpoint_payloads
@@ -687,9 +685,13 @@ fn test_spec_selection_survives_restart_at_enactment() {
 
 /// Replaces the stored manifest at the enactment height and returns the error
 /// the first V1 epoch then fails with.
+/// Applies the first V1 epoch after removing the stored manifest of the last
+/// V0 epoch's last L1 block, the enactment, and storing `replacement`'s
+/// result as the canonical manifest at its height. Returns the error and the
+/// enactment's block.
 fn apply_first_v1_epoch_with_enactment_manifest(
     replacement: impl FnOnce(&AsmManifest) -> Option<AsmManifest>,
-) -> WorkerError {
+) -> (WorkerError, L1BlockCommitment) {
     let fixture = Fixture::load();
     let mut node = Node::new(&fixture.params, &fixture.epochs);
     let last_v0 = node.replay_v0(&fixture.epochs);
@@ -700,20 +702,24 @@ fn apply_first_v1_epoch_with_enactment_manifest(
     let enactment = node
         .ctx
         .manifests
-        .remove(&height)
+        .remove_canonical_at(height)
         .expect("enactment manifest");
+    let enactment_block = L1BlockCommitment::new(height, *enactment.blkid());
     if let Some(replacement) = replacement(&enactment) {
-        node.ctx.manifests.insert(height, replacement);
+        node.ctx.manifests.insert_canonical(replacement);
     }
-    match node.apply(first_v1.epoch_commitment) {
+    let err = match node.apply(first_v1.epoch_commitment) {
         Ok(_) => panic!("first V1 epoch must not apply"),
         Err(err) => err,
-    }
+    };
+    (err, enactment_block)
 }
 
+/// Another block's manifest at the enactment's height is not read in its
+/// place: manifests are read by block, so the enactment's is missing.
 #[test]
 fn test_reorged_last_manifest_is_rejected() {
-    let err = apply_first_v1_epoch_with_enactment_manifest(|enactment| {
+    let (err, enactment) = apply_first_v1_epoch_with_enactment_manifest(|enactment| {
         Some(
             AsmManifest::new(
                 enactment.height(),
@@ -725,18 +731,16 @@ fn test_reorged_last_manifest_is_rejected() {
         )
     });
     assert!(
-        matches!(err, WorkerError::LastManifestMismatch { .. }),
+        matches!(err, WorkerError::MissingLastManifest { block } if block == enactment),
         "{err}"
     );
 }
 
 #[test]
 fn test_missing_last_manifest_is_an_error() {
-    let fixture = Fixture::load();
-    let enactment_height = fixture.last_v0_epoch().l1_height;
-    let err = apply_first_v1_epoch_with_enactment_manifest(|_| None);
+    let (err, enactment) = apply_first_v1_epoch_with_enactment_manifest(|_| None);
     assert!(
-        matches!(err, WorkerError::MissingLastManifest { block } if block.height() == enactment_height),
+        matches!(err, WorkerError::MissingLastManifest { block } if block == enactment),
         "{err}"
     );
 }
@@ -759,7 +763,12 @@ fn test_enactment_before_the_switch_fails_the_replay() {
     node.replay_v0(&fixture.epochs[..=parent]);
 
     let height = fixture.epochs[parent].l1_height;
-    let last_manifest = node.ctx.manifests[&height].clone();
+    let last_manifest = node
+        .ctx
+        .manifests
+        .canonical_at(height)
+        .cloned()
+        .expect("parent's last manifest");
     let mut logs = last_manifest.logs().to_vec();
     logs.extend(
         make_checkpoint_predicate_enactment_manifest(height, 1)
@@ -774,7 +783,7 @@ fn test_enactment_before_the_switch_fails_the_replay() {
         logs,
     )
     .expect("manifest");
-    node.ctx.manifests.insert(height, with_enactment);
+    node.ctx.manifests.insert_canonical(with_enactment);
 
     let next = &fixture.epochs[parent + 1];
     let err = match node.apply(next.epoch_commitment()) {
@@ -792,7 +801,7 @@ fn test_enactment_before_the_switch_fails_the_replay() {
 /// accepting a diverging state.
 #[test]
 fn test_wrong_spec_selection_fails_instead_of_diverging() {
-    let err = apply_first_v1_epoch_with_enactment_manifest(|enactment| {
+    let (err, _) = apply_first_v1_epoch_with_enactment_manifest(|enactment| {
         Some(
             AsmManifest::new(
                 enactment.height(),

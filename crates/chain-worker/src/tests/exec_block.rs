@@ -16,7 +16,8 @@ use strata_checkpoint_types::EpochSummary;
 use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
-    Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId, SubjectId,
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+    SubjectId,
 };
 use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
@@ -29,7 +30,7 @@ use strata_ol_stf_v1::test_utils::{
     make_deposit_manifest_for_account, tamper_state_root,
 };
 
-use super::fixture::make_marked_genesis_state;
+use super::{fixture::make_marked_genesis_state, manifests::MockManifests};
 use crate::{
     WorkerError, WorkerResult,
     output::OLBlockExecutionOutput,
@@ -49,8 +50,10 @@ struct OrderEnforcingContext {
     headers: HashMap<OLBlockId, OLBlockHeaderV1>,
     /// States served to [`ChainWorkerContext::fetch_ol_state`].
     states: HashMap<OLBlockCommitment, OLStateContainer>,
-    /// Canonical manifests served to [`ChainWorkerContext::fetch_l1_manifest`].
-    manifests: HashMap<u32, AsmManifest>,
+    /// Stored manifests, served by height to
+    /// [`ChainWorkerContext::fetch_l1_manifest`] and by block to
+    /// [`ChainWorkerContext::fetch_l1_block_manifest`].
+    manifests: MockManifests,
     /// Canonical summaries served per epoch index.
     canonical_summaries: HashMap<Epoch, EpochSummary>,
     /// Epochs with at least one block's indexing writes applied.
@@ -79,14 +82,14 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 
     fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>> {
-        Ok(self.manifests.get(&height).cloned())
+        Ok(self.manifests.canonical_at(height).cloned())
     }
 
     fn fetch_l1_block_manifest(
         &self,
-        _block: &L1BlockCommitment,
+        block: &L1BlockCommitment,
     ) -> WorkerResult<Option<AsmManifest>> {
-        unimplemented!("not used by block execution")
+        Ok(self.manifests.of_block(block).cloned())
     }
 
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
@@ -306,7 +309,7 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
         blocks: HashMap::from([(*terminal_commitment.blkid(), terminal_block)]),
         headers: HashMap::from([(*genesis_commitment.blkid(), genesis_header)]),
         states: HashMap::from([(genesis_commitment, pre_epoch_state)]),
-        manifests: HashMap::from([(TERMINAL_L1_HEIGHT, manifest)]),
+        manifests: MockManifests::from_iter([manifest]),
         canonical_summaries: HashMap::from([(0, genesis_summary)]),
         indexed_epochs: Mutex::new(Vec::new()),
         stored_summaries: Mutex::new(Vec::new()),
@@ -383,7 +386,10 @@ fn test_exec_first_v1_block_on_v0_terminal_persists_wrapped_state() {
 #[test]
 fn test_exec_block_rejects_noncanonical_manifest() {
     let (mut ctx, terminal_header) = exec_single_block_epoch(false);
-    let carried = &ctx.manifests[&TERMINAL_L1_HEIGHT];
+    let carried = ctx
+        .manifests
+        .canonical_at(TERMINAL_L1_HEIGHT)
+        .expect("carried manifest");
     let canonical = AsmManifest::new(
         TERMINAL_L1_HEIGHT,
         *carried.blkid(),
@@ -391,7 +397,7 @@ fn test_exec_block_rejects_noncanonical_manifest() {
         Vec::new(),
     )
     .expect("manifest without logs");
-    ctx.manifests.insert(TERMINAL_L1_HEIGHT, canonical);
+    ctx.manifests.insert_canonical(canonical);
 
     let terminal_commitment =
         OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
@@ -401,6 +407,44 @@ fn test_exec_block_rejects_noncanonical_manifest() {
         err,
         WorkerError::NoncanonicalManifest { height } if height == TERMINAL_L1_HEIGHT
     ));
+}
+
+/// A block carrying the manifest of an L1 block that a reorg replaced is
+/// rejected, although that manifest stays stored by its block: the check
+/// compares with the canonical manifest at the height, not with the stored
+/// manifest of the carried block.
+#[test]
+fn test_exec_block_rejects_manifest_of_a_reorged_block() {
+    let (mut ctx, terminal_header) = exec_single_block_epoch(false);
+    let carried = ctx
+        .manifests
+        .canonical_at(TERMINAL_L1_HEIGHT)
+        .cloned()
+        .expect("carried manifest");
+    let replacing = AsmManifest::new(
+        TERMINAL_L1_HEIGHT,
+        L1BlockId::from(Buf32::from([0xee; 32])),
+        *carried.wtxids_root(),
+        carried.logs().to_vec(),
+    )
+    .expect("manifest of the replacing block");
+    ctx.manifests.insert_canonical(replacing);
+    let carried_block = L1BlockCommitment::new(TERMINAL_L1_HEIGHT, *carried.blkid());
+    assert_eq!(
+        ctx.fetch_l1_block_manifest(&carried_block)
+            .expect("lookup by block"),
+        Some(carried),
+        "the reorged block's manifest stays stored"
+    );
+
+    let terminal_commitment =
+        OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
+    let err = exec_block(&ctx, OLRuntimeParams::test_default(), &terminal_commitment)
+        .expect_err("a reorged block's manifest must be rejected");
+    assert!(
+        matches!(err, WorkerError::NoncanonicalManifest { height } if height == TERMINAL_L1_HEIGHT),
+        "{err}"
+    );
 }
 
 /// An epoch merge whose result does not hash to the summary's final state root

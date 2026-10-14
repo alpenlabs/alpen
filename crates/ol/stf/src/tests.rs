@@ -874,14 +874,15 @@ fn manifest_block(manifest: &AsmManifest) -> L1BlockCommitment {
 }
 
 /// Selects the spec after a parent epoch whose terminal state runs `spec` and
-/// which processed the L1 blocks after `prev_last` up to `last`, the block of
+/// which processed the L1 blocks after `prev_epoch_last_l1_block` up to `last`, the block of
 /// `manifest`.
 fn select_after(
     spec: OLSpecId,
-    prev_last: L1BlockCommitment,
+    prev_epoch_last_l1_block: L1BlockCommitment,
     manifest: &AsmManifest,
 ) -> Result<OLSpecId, EpochSpecSelectionError<Infallible>> {
-    let range = EpochL1Range::new(prev_last, manifest_block(manifest)).expect("ordered range");
+    let range = EpochL1Range::new(prev_epoch_last_l1_block, manifest_block(manifest))
+        .expect("ordered range");
     select_next_epoch_spec(OLSpecVersions::uniform(spec), range, |block| {
         assert_eq!(*block, manifest_block(manifest));
         Ok(Some(manifest.clone()))
@@ -903,17 +904,19 @@ fn test_next_epoch_spec_advances_only_at_an_enactment() {
 
 #[test]
 fn test_select_switches_at_an_enactment_the_parent_processed() {
-    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let enactment = make_checkpoint_predicate_enactment_manifest(10, 1);
 
     assert_eq!(
-        select_after(OLSpecId::V0, prev_last, &enactment).expect("V0 has a successor"),
+        select_after(OLSpecId::V0, prev_epoch_last_l1_block, &enactment)
+            .expect("V0 has a successor"),
         OLSpecId::V1
     );
 
     // V1 -> V2: the epoch after a V1 epoch that processed an enactment runs
     // V2, which this binary does not implement.
-    let err = select_after(OLSpecId::V1, prev_last, &enactment).expect_err("upgrade required");
+    let err = select_after(OLSpecId::V1, prev_epoch_last_l1_block, &enactment)
+        .expect_err("upgrade required");
     let EpochSpecSelectionError::UpgradeRequired(upgrade) = err else {
         panic!("expected an upgrade-required error, got {err}");
     };
@@ -924,11 +927,11 @@ fn test_select_switches_at_an_enactment_the_parent_processed() {
 
 #[test]
 fn test_select_keeps_the_spec_after_a_plain_last_manifest() {
-    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let plain = make_empty_manifest(12, 1);
     for spec in [OLSpecId::V0, OLSpecId::V1] {
         assert_eq!(
-            select_after(spec, prev_last, &plain).expect("selects"),
+            select_after(spec, prev_epoch_last_l1_block, &plain).expect("selects"),
             spec
         );
     }
@@ -956,9 +959,10 @@ fn test_select_ignores_an_enactment_the_parent_did_not_process() {
 
 #[test]
 fn test_select_never_reads_the_staged_version() {
-    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let plain = make_empty_manifest(10, 1);
-    let range = EpochL1Range::new(prev_last, manifest_block(&plain)).expect("ordered range");
+    let range =
+        EpochL1Range::new(prev_epoch_last_l1_block, manifest_block(&plain)).expect("ordered range");
     let versions = OLSpecVersions::new(OLSpecId::V1, 7).expect("V1 may stage any version");
     let selected = select_next_epoch_spec(versions, range, |_| {
         Ok::<_, Infallible>(Some(plain.clone()))
@@ -969,9 +973,9 @@ fn test_select_never_reads_the_staged_version() {
 
 #[test]
 fn test_select_rejects_a_missing_or_foreign_last_manifest() {
-    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let last = manifest_block(&make_empty_manifest(10, 1));
-    let range = EpochL1Range::new(prev_last, last).expect("ordered range");
+    let range = EpochL1Range::new(prev_epoch_last_l1_block, last).expect("ordered range");
     let v1 = OLSpecVersions::uniform(OLSpecId::V1);
 
     let err = select_next_epoch_spec(v1, range, |_| Ok::<_, Infallible>(None))
@@ -1006,9 +1010,10 @@ fn test_select_rejects_a_missing_or_foreign_last_manifest() {
 
 #[test]
 fn test_select_rejects_a_duplicated_enactment() {
-    let prev_last = manifest_block(&make_empty_manifest(9, 0));
+    let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let duplicate = make_checkpoint_predicate_enactment_manifest(10, 2);
-    let err = select_after(OLSpecId::V0, prev_last, &duplicate).expect_err("duplicate");
+    let err =
+        select_after(OLSpecId::V0, prev_epoch_last_l1_block, &duplicate).expect_err("duplicate");
     assert!(
         matches!(
             err,

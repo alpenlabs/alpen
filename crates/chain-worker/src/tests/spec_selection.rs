@@ -45,13 +45,18 @@ fn state_ending_on(manifests: &[AsmManifest]) -> MemoryStateBaseLayer<OLStateV1>
     state
 }
 
-/// Selects the spec after epoch 2, which ends on `B`, when the summary of
-/// epoch 2 links to a predecessor ending on `linked_prev_last` and the
-/// canonical predecessor, listed first, ends on `canonical_prev_last`.
-fn select_after_fork(
+/// Returns a context and epoch 2, which ends on `B` with terminal state
+/// `parent_state`, when the summary of epoch 2 links to a predecessor ending
+/// on `linked_prev_last` and the canonical predecessor, listed first, ends on
+/// `canonical_prev_last`.
+fn fork_context(
     linked_prev_last: L1BlockCommitment,
     canonical_prev_last: L1BlockCommitment,
-) -> Result<OLSpecId, WorkerError> {
+) -> (
+    MockChainWorkerContext,
+    EpochCommitment,
+    MemoryStateBaseLayer<OLStateV1>,
+) {
     let manifests: Vec<AsmManifest> = (1..B)
         .map(|height| make_empty_manifest(height, 0))
         .chain([make_checkpoint_predicate_enactment_manifest(B, 1)])
@@ -78,11 +83,17 @@ fn select_after_fork(
         2,
         vec![summary(2, parent.to_block_commitment(), linked_prev, b)],
     );
-    ctx.manifests = manifests
-        .into_iter()
-        .map(|manifest| (manifest.height(), manifest))
-        .collect();
+    ctx.manifests = manifests.into_iter().collect();
 
+    (ctx, parent, parent_state)
+}
+
+/// Selects the spec after epoch 2 of [`fork_context`].
+fn select_after_fork(
+    linked_prev_last: L1BlockCommitment,
+    canonical_prev_last: L1BlockCommitment,
+) -> Result<OLSpecId, WorkerError> {
+    let (ctx, parent, parent_state) = fork_context(linked_prev_last, canonical_prev_last);
     select_spec_after(&ctx, parent, &parent_state)
 }
 
@@ -109,5 +120,24 @@ fn test_selection_counts_an_enactment_the_parent_processed() {
         panic!("expected an upgrade-required error, got {err}");
     };
     assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+    assert_eq!(upgrade.enactment_l1_height(), B);
+}
+
+/// After a reorg replaced `B`, the parent epoch's last L1 block, selection
+/// still reads the manifest stored for `B`, not the replacing block's
+/// manifest that is now canonical at `B`'s height.
+#[test]
+fn test_selection_reads_the_parents_block_after_a_reorg() {
+    let b = commitment(&make_checkpoint_predicate_enactment_manifest(B, 1));
+    let before_b = commitment(&make_empty_manifest(B - 1, 0));
+    let (mut ctx, parent, parent_state) = fork_context(before_b, b);
+    let replacing = make_empty_manifest(B, 0xee);
+    assert_ne!(commitment(&replacing), b, "the replacing block differs");
+    ctx.manifests.insert_canonical(replacing);
+
+    let err = select_spec_after(&ctx, parent, &parent_state).expect_err("V1 ends at B");
+    let WorkerError::UpgradeRequired(upgrade) = err else {
+        panic!("expected an upgrade-required error, got {err}");
+    };
     assert_eq!(upgrade.enactment_l1_height(), B);
 }
