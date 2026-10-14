@@ -192,6 +192,9 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
     }
 
     fn get_canonical_l1_blockid_at(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>> {
+        // TODO(STR-4601): reverting the L1 chain purges this cache before deleting the rows, so
+        // during a reorg this can briefly return a reverted block. It can't produce a false
+        // rejection record short of a reorg as deep as the reorg-safe depth.
         Ok(self.storage.l1().get_canonical_blockid_at_height(height)?)
     }
 }
