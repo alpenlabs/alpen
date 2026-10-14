@@ -1,12 +1,13 @@
 //! Detects checkpoints this sequencer submitted that were mined on L1 but not accepted by the
 //! ASM.
 //!
-//! The ASM emits nothing when it rejects a checkpoint, so a rejection only shows up as a mined
-//! transaction whose epoch the CSM never sees accepted. The tracker follows the CSM's published
-//! checkpoint state, walks the L1 writer's checkpoint bundles, resolves each reveal through the
-//! broadcaster, and records a checkpoint as confirmed-but-rejected once its inclusion block is
-//! buried at the reorg-safe depth while the ASM's verified epoch is still below the
-//! checkpoint's epoch. Detection only: it changes no writer, broadcaster, or prover state.
+//! The ASM only logs a tracing warning when it rejects a checkpoint and emits no ASM log, so the
+//! node keeps no record of it: the rejection only shows up as a mined transaction whose epoch the
+//! CSM never sees accepted. The tracker follows the CSM's published checkpoint state, walks the L1
+//! writer's checkpoint bundles, resolves each reveal through the broadcaster, and records a
+//! checkpoint as confirmed-but-rejected once its inclusion block is buried at the reorg-safe depth
+//! while the ASM's verified epoch is still below the checkpoint's epoch. Detection only: it changes
+//! no writer, broadcaster, or prover state.
 
 mod classify;
 mod context;
