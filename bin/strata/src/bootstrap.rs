@@ -318,9 +318,11 @@ mod tests {
 
     const REORG_SAFE_DEPTH: u32 = 6;
     const CHECKPOINT_L1_HEIGHT: u32 = 100;
+    /// The last L1 height a V0 anchor state processed.
+    const LAST_L1_HEIGHT: u32 = CHECKPOINT_L1_HEIGHT - 1;
     const L1_TIP_HEIGHT: u32 = 105;
 
-    /// The L1 manifest a V0 anchor state processed last.
+    /// The L1 manifest a V0 anchor state processed last, at [`LAST_L1_HEIGHT`].
     #[derive(Clone, Copy, Debug)]
     enum V0LastManifest {
         /// None: the state is still at the genesis L1 anchor.
@@ -329,9 +331,10 @@ mod tests {
         Plain,
         /// The manifest carrying the checkpoint predicate enactment.
         Enactment,
-        /// A stored manifest for another L1 block than the state processed.
-        Reorged,
-        /// No stored manifest at the state's last L1 height.
+        /// The state processed this block last, but a reorg replaced it: the
+        /// manifest stored at its height is the replacing block's.
+        Reorged(L1BlockCommitment),
+        /// No manifest is stored for the state's last L1 block.
         Missing,
         /// A manifest carrying two checkpoint predicate enactments.
         DuplicateEnactment,
@@ -408,9 +411,11 @@ mod tests {
             let mut anchor_state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
             anchor_state.set_cur_slot(1);
             anchor_state.set_cur_epoch(2);
-            if let Some(last_manifest) = v0_last_manifest {
-                record_v0_last_manifest(&storage, &mut anchor_state, last_manifest);
-            }
+            let anchor_last_l1 = v0_last_manifest
+                .and_then(|last_manifest| {
+                    record_v0_last_manifest(&storage, &mut anchor_state, last_manifest)
+                })
+                .unwrap_or(l1_commitment(LAST_L1_HEIGHT));
             let anchor_state_root = anchor_state
                 .compute_state_root()
                 .expect("compute state root");
@@ -432,7 +437,7 @@ mod tests {
                 .expect("genesis summary exists");
             let summary = genesis_summary.create_next_epoch_summary(
                 anchor_block,
-                l1_commitment(CHECKPOINT_L1_HEIGHT - 1),
+                anchor_last_l1,
                 anchor_state_root,
             );
             storage
@@ -461,7 +466,7 @@ mod tests {
             );
             let sidecar =
                 CheckpointSidecar::new(Vec::new(), Vec::new(), complement).expect("build sidecar");
-            let tip = CheckpointTip::new(1, CHECKPOINT_L1_HEIGHT - 1, anchor_block);
+            let tip = CheckpointTip::new(1, LAST_L1_HEIGHT, anchor_block);
             let payload = CheckpointPayload::new(tip, sidecar, Vec::new()).expect("build payload");
             let l1_ref = CheckpointL1Ref::new(
                 l1_commitment(CHECKPOINT_L1_HEIGHT),
@@ -577,18 +582,21 @@ mod tests {
         }
     }
 
-    /// Makes the anchor state process L1 blocks up to the checkpoint's L1
-    /// height, the last carrying `last_manifest`, and stores that manifest as
-    /// the ASM worker would.
+    /// Makes the anchor state process L1 blocks up to [`LAST_L1_HEIGHT`], the
+    /// last carrying `last_manifest`, and stores that manifest as the ASM
+    /// worker would.
+    ///
+    /// Returns the last L1 block the state processed, or `None` if it is still
+    /// at the genesis L1 anchor.
     fn record_v0_last_manifest(
         storage: &NodeStorage,
         anchor_state: &mut MemoryStateBaseLayer<OLStateV1>,
         last_manifest: V0LastManifest,
-    ) {
-        let height = CHECKPOINT_L1_HEIGHT - 1;
+    ) -> Option<L1BlockCommitment> {
+        let height = LAST_L1_HEIGHT;
         let manifest = match last_manifest {
-            V0LastManifest::AtGenesisAnchor => return,
-            V0LastManifest::Plain | V0LastManifest::Reorged | V0LastManifest::Missing => {
+            V0LastManifest::AtGenesisAnchor => return None,
+            V0LastManifest::Plain | V0LastManifest::Reorged(_) | V0LastManifest::Missing => {
                 make_empty_manifest(height, height as u8)
             }
             V0LastManifest::Enactment => make_checkpoint_predicate_enactment_manifest(height, 1),
@@ -598,12 +606,23 @@ mod tests {
         };
         assert_eq!(*manifest.blkid(), l1_blkid(height));
 
+        let last_l1 = match last_manifest {
+            V0LastManifest::Reorged(block) => {
+                assert_eq!(block.height(), height, "the reorged block is the last one");
+                assert_ne!(
+                    *block.blkid(),
+                    *manifest.blkid(),
+                    "a reorg replaced the block"
+                );
+                block
+            }
+            _ => l1_commitment(height),
+        };
         for record_height in anchor_state.last_l1_height() + 1..=height {
-            let blkid = match last_manifest {
-                V0LastManifest::Reorged if record_height == height => {
-                    L1BlockId::from(Buf32::from([0xee; 32]))
-                }
-                _ => l1_blkid(record_height),
+            let blkid = if record_height == height {
+                *last_l1.blkid()
+            } else {
+                l1_blkid(record_height)
             };
             anchor_state
                 .append_l1_block_rec(record_height, L1BlockRecord::new(*blkid.as_ref(), [0; 32]));
@@ -618,6 +637,7 @@ mod tests {
             .l1()
             .extend_canonical_chain(&l1_blkid(height), height)
             .expect("extend canonical L1 chain");
+        Some(last_l1)
     }
 
     fn l1_blkid(height: u32) -> L1BlockId {
@@ -790,18 +810,22 @@ mod tests {
     }
 
     #[test]
-    fn v0_anchor_with_reorged_last_manifest_fails_distinctly() {
-        // Manifests are read by L1 block, so the manifest of the block the
-        // anchor processed is missing even though another block's is stored
-        // at its height.
-        PromotionFixture::with_v0_anchor(V0LastManifest::Reorged)
-            .assert_failure("missing the L1 manifest of 99@eeeeee");
+    fn v0_anchor_with_reorged_last_l1_block_fails_as_missing_manifest() {
+        // Manifests are read by L1 block, so the manifest of the block that
+        // replaced the anchor's last L1 block is not read in its place: the
+        // promotion fails as if no manifest were stored, like the test below.
+        let reorged =
+            L1BlockCommitment::new(LAST_L1_HEIGHT, L1BlockId::from(Buf32::from([0xee; 32])));
+        PromotionFixture::with_v0_anchor(V0LastManifest::Reorged(reorged))
+            .assert_failure(&format!("missing the L1 manifest of {reorged}"));
     }
 
     #[test]
-    fn v0_anchor_with_missing_last_manifest_fails_distinctly() {
-        PromotionFixture::with_v0_anchor(V0LastManifest::Missing)
-            .assert_failure("missing the L1 manifest of 99@636363");
+    fn v0_anchor_with_missing_last_manifest_fails() {
+        PromotionFixture::with_v0_anchor(V0LastManifest::Missing).assert_failure(&format!(
+            "missing the L1 manifest of {}",
+            l1_commitment(LAST_L1_HEIGHT)
+        ));
     }
 
     #[test]
