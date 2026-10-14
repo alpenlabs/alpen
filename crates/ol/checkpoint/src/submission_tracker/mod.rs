@@ -64,7 +64,7 @@ pub fn launch_submission_tracker(
     let runtime = executor.handle().clone();
     let ctx = SubmissionTrackerContextImpl::new(storage, broadcast_handle, runtime.clone());
     let latest = checkpoint_state_rx.borrow().clone();
-    let state = SubmissionTrackerState::new(ctx, l1_reorg_safe_depth, latest)?;
+    let state = SubmissionTrackerState::load(ctx, l1_reorg_safe_depth, latest)?;
 
     ServiceBuilder::<SubmissionTrackerService<SubmissionTrackerContextImpl>, _>::new()
         .with_state(state)
