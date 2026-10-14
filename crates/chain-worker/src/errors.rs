@@ -1,13 +1,14 @@
 //! Error types for the chain worker.
 
 use strata_acct_types::AccountSerial;
+use strata_checkpoint_types::SelectSpecAfterEpochError;
 use strata_codec::CodecError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
     AccountId, Buf32, Epoch, L1BlockCommitment, L1Height, OLBlockCommitment, OLBlockId,
 };
 use strata_ol_state_types::StateError;
-use strata_ol_stf::{ExecError, InvalidEpochL1Range, UpgradeRequired};
+use strata_ol_stf::{EpochSpecSelectionError, ExecError, InvalidEpochL1Range, UpgradeRequired};
 use strata_primitives::epoch::EpochCommitment;
 use strata_snark_acct_types::Seqno;
 use thiserror::Error;
@@ -235,4 +236,27 @@ pub enum WorkerError {
     /// Functionality not yet implemented.
     #[error("not yet implemented")]
     Unimplemented,
+}
+
+impl From<SelectSpecAfterEpochError<WorkerError>> for WorkerError {
+    fn from(err: SelectSpecAfterEpochError<WorkerError>) -> Self {
+        match err {
+            SelectSpecAfterEpochError::SummaryLookup { source, .. } => source,
+            SelectSpecAfterEpochError::MissingEpochSummary(epoch) => {
+                Self::MissingEpochSummary(epoch)
+            }
+            SelectSpecAfterEpochError::InvalidL1Range(err) => Self::InvalidEpochL1Range(err),
+            SelectSpecAfterEpochError::Selection(err) => match err {
+                EpochSpecSelectionError::ManifestLookup { source, .. } => source,
+                EpochSpecSelectionError::MissingLastManifest { block } => {
+                    Self::MissingLastManifest { block }
+                }
+                EpochSpecSelectionError::LastManifestMismatch { expected, found } => {
+                    Self::LastManifestMismatch { expected, found }
+                }
+                EpochSpecSelectionError::Exec(source) => Self::StfExecution(source),
+                EpochSpecSelectionError::UpgradeRequired(upgrade) => Self::UpgradeRequired(upgrade),
+            },
+        }
+    }
 }

@@ -15,8 +15,8 @@ use strata_acct_types::AccountSerial;
 use strata_asm_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::{
-    EpochSummary, TerminalHeaderReconstructionError, prev_epoch_last_l1,
-    reconstruct_terminal_header,
+    EpochSummary, TerminalHeaderReconstructionError, reconstruct_terminal_header,
+    select_spec_after_epoch,
 };
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_CHAIN_WORKER_AFTER_MMR_INDEX, check_bail_trigger};
@@ -37,8 +37,7 @@ use strata_ol_state_types::{
 };
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf::{
-    BlockInfo, EpochDaReplayError, EpochInfo, EpochL1Range, EpochSpecSelectionError, OLSpecId,
-    apply_da_epoch, select_next_epoch_spec, verify_block,
+    BlockInfo, EpochDaReplayError, EpochInfo, OLSpecId, apply_da_epoch, verify_block,
 };
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
@@ -732,7 +731,13 @@ fn select_checkpoint_epoch_spec(
 }
 
 /// Selects the spec of the epoch after `parent`, whose terminal state is
-/// `parent_state`, with [`select_next_epoch_spec`].
+/// `parent_state`, with [`select_spec_after_epoch`].
+///
+/// The epoch's L1 range starts at the epoch `parent`'s own summary links to.
+/// A stored summary's link is checked when the summary is stored: block sync
+/// merges the epoch's blocks from that terminal, and checkpoint sync applies
+/// the epoch on it. So the range follows `parent`'s chain, not the canonical
+/// one.
 ///
 /// # Errors
 ///
@@ -744,41 +749,16 @@ pub(crate) fn select_spec_after<S: IStateAccessor>(
     parent: EpochCommitment,
     parent_state: &S,
 ) -> WorkerResult<OLSpecId> {
-    let parent_l1_range = parent_epoch_l1_range(ctx, parent, parent_state)?;
-    select_next_epoch_spec(parent_state.spec_versions(), parent_l1_range, |block| {
-        ctx.fetch_l1_block_manifest(block)
-    })
-    .map_err(|err| match err {
-        EpochSpecSelectionError::ManifestLookup { source, .. } => source,
-        EpochSpecSelectionError::MissingLastManifest { block } => {
-            WorkerError::MissingLastManifest { block }
-        }
-        EpochSpecSelectionError::LastManifestMismatch { expected, found } => {
-            WorkerError::LastManifestMismatch { expected, found }
-        }
-        EpochSpecSelectionError::Exec(source) => WorkerError::StfExecution(source),
-        EpochSpecSelectionError::UpgradeRequired(upgrade) => WorkerError::UpgradeRequired(upgrade),
-    })
-}
-
-/// Returns the L1 blocks the epoch that ends at `parent` processed, from its
-/// terminal state `parent_state` and the summary of the epoch before it.
-///
-/// The previous epoch is the one `parent`'s own summary links to. A stored
-/// summary's link is checked when the summary is stored: block sync merges
-/// the epoch's blocks from that terminal, and checkpoint sync applies the
-/// epoch on it. So the range follows `parent`'s chain, not the canonical one.
-fn parent_epoch_l1_range<S: IStateAccessor>(
-    ctx: &impl ChainWorkerContext,
-    parent: EpochCommitment,
-    parent_state: &S,
-) -> WorkerResult<EpochL1Range> {
-    let last = L1BlockCommitment::new(parent_state.last_l1_height(), *parent_state.last_l1_blkid());
-    let prev_last = prev_epoch_last_l1(parent, ctx.genesis_l1_block(), |epoch| {
-        ctx.fetch_epoch_summary(epoch)?
-            .ok_or(WorkerError::MissingEpochSummary(epoch))
-    })?;
-    Ok(EpochL1Range::new(prev_last, last)?)
+    let parent_epoch_last_l1_block =
+        L1BlockCommitment::new(parent_state.last_l1_height(), *parent_state.last_l1_blkid());
+    Ok(select_spec_after_epoch(
+        parent,
+        parent_state.spec_versions(),
+        parent_epoch_last_l1_block,
+        ctx.genesis_l1_block(),
+        |epoch| ctx.fetch_epoch_summary(epoch),
+        |block| ctx.fetch_l1_block_manifest(&block),
+    )?)
 }
 
 /// Validates the epoch's L1 range and builds the manifest list and [`EpochInfo`]

@@ -6,14 +6,13 @@ use bitcoind_async_client::{
 };
 use strata_btc_types::BlockHashExt;
 use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
-use strata_checkpoint_types::{EpochSummary, prev_epoch_last_l1};
+use strata_checkpoint_types::{EpochSummary, select_spec_after_epoch};
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
-use strata_ol_stf::{EpochL1Range, select_next_epoch_spec};
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -713,28 +712,23 @@ fn verify_tip_from_history_base(
 
 /// Returns the spec of the epoch after `terminal`, an epoch's terminal block
 /// whose state is `state`, by the rule checkpoint sync applies,
-/// [`select_next_epoch_spec`].
+/// [`select_spec_after_epoch`], from the summaries and manifests in `storage`.
 ///
-/// The epoch's L1 range starts at the last L1 block of the epoch before it,
-/// read from the summary that `terminal`'s own summary links to; the genesis
-/// epoch starts at the L1 anchor. The manifest is read by L1 block, so a
-/// reorged block's manifest is never read as the epoch's.
-pub(crate) fn spec_after_terminal(
+/// The manifest is read by L1 block: the epoch's own last L1 block's manifest
+/// is read even after a reorg replaced that block, and never another block's
+/// manifest at the same height.
+pub(crate) fn select_spec_after_epoch_terminal_block(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
     terminal: EpochCommitment,
     state: &OLStateContainer,
 ) -> Result<OLSpecId> {
-    let prev_last = prev_epoch_last_l1(terminal, genesis_l1_block, |epoch| {
-        storage
-            .ol_checkpoint()
-            .get_epoch_summary_blocking(epoch)?
-            .ok_or_else(|| anyhow!("missing the epoch summary of {epoch}"))
-    })?;
-    let range = EpochL1Range::new(prev_last, state.chainstate().last_l1_block())?;
-    Ok(select_next_epoch_spec(
+    Ok(select_spec_after_epoch(
+        terminal,
         state.spec_versions(),
-        range,
+        state.chainstate().last_l1_block(),
+        genesis_l1_block,
+        |epoch| storage.ol_checkpoint().get_epoch_summary_blocking(epoch),
         |block| storage.l1().get_block_manifest(block.blkid()),
     )?)
 }
@@ -742,9 +736,9 @@ pub(crate) fn spec_after_terminal(
 /// Returns the spec of the block after `block`, whose state is `state`.
 ///
 /// A block that ends its epoch is followed by the next epoch, whose spec
-/// [`spec_after_terminal`] selects. Any other block is followed by a block of
+/// [`select_spec_after_epoch_terminal_block`] selects. Any other block is followed by a block of
 /// its own epoch, which runs the spec the block's state was produced under.
-fn spec_after_block(
+fn select_spec_after_block(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
     block: OLBlockCommitment,
@@ -757,7 +751,7 @@ fn spec_after_block(
         .ok_or_else(|| anyhow!("missing the OL header of {block}"))?;
     if header.is_terminal() {
         let terminal = EpochCommitment::from_terminal(header.epoch(), block);
-        spec_after_terminal(storage, genesis_l1_block, terminal, state)
+        select_spec_after_epoch_terminal_block(storage, genesis_l1_block, terminal, state)
     } else {
         Ok(state.cur_spec())
     }
@@ -766,7 +760,7 @@ fn spec_after_block(
 /// Checks that a sequencer can build on the canonical OL tip.
 ///
 /// This release builds only V1 blocks, so the block after the tip must run V1
-/// by the rule checkpoint sync applies, [`spec_after_block`]. A V1 tip passes
+/// by the rule checkpoint sync applies, [`select_spec_after_block`]. A V1 tip passes
 /// unless it ends an epoch that processed a checkpoint predicate enactment. A
 /// V0 tip passes only if it is the last V0 epoch, the one that ends at the
 /// checkpoint predicate enactment, which a promoted checkpoint-sync datadir
@@ -776,8 +770,7 @@ fn spec_after_block(
 /// This binary stores V0 states only from V0 genesis and checkpoint replay,
 /// and both store terminal states alone. Block execution runs V1 rules, which
 /// wrap a V0 state at the first block of an epoch and reject it anywhere else
-/// with
-/// [`ExecError::ContinuesV0Epoch`](strata_ol_stf::ExecError::ContinuesV0Epoch).
+/// with `ExecError::ContinuesV0Epoch` from `strata-ol-stf`.
 ///
 /// It runs once genesis exists, before the block producer starts.
 pub(crate) fn verify_sequencer_tip_spec(
@@ -793,7 +786,7 @@ pub(crate) fn verify_sequencer_tip_spec(
 
     // TODO(STR-4086): accept any spec this binary builds blocks under, and
     // let the sequencer start and halt when the next spec needs an upgrade.
-    let next_spec = spec_after_block(storage, genesis_l1_block, tip_commitment, &tip_state)
+    let next_spec = select_spec_after_block(storage, genesis_l1_block, tip_commitment, &tip_state)
         .with_context(|| {
             format!("startup: failed to select the spec of the block after tip {tip_commitment}")
         })?;
