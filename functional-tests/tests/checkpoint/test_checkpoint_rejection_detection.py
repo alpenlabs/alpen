@@ -20,12 +20,13 @@ from pathlib import Path
 import flexitest
 
 from common.base_test import StrataNodeTest
+from common.bridge import read_operator_xprivs
 from common.config import EpochSealingConfig, ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.test_cli import create_checkpoint_predicate_update
 from envconfigs.strata import StrataEnvConfig
-from tests.checkpoint.helpers import mine_until_finalized_epoch
+from tests.checkpoint.helpers import mine_until_finalized_epoch, strip_ansi, tx_block_height
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,6 @@ MINE_STEP_SECONDS = 1.5
 EXTRA_L1_BLOCKS = 3
 
 REJECTION_LOG = "checkpoint confirmed on L1 but rejected by ASM"
-ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 EPOCH_FIELD_RE = re.compile(r"\bepoch=(\d+)\b")
 
 
@@ -86,7 +86,7 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
         result = create_checkpoint_predicate_update(
             seq_no=1,
             predicate="NeverAccept",
-            admin_xpriv=self._read_admin_xpriv(strata),
+            admin_xpriv=read_operator_xprivs(strata)[0],
             btc_url=bitcoin.props["rpc_url"],
             btc_user=bitcoin.props["rpc_user"],
             btc_password=bitcoin.props["rpc_password"],
@@ -130,7 +130,7 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
             )
 
         # It is a checkpoint the rotated predicate governs, which the ASM never accepted.
-        reveal_height = self._tx_block_height(btc_rpc, result["reveal_txid"])
+        reveal_height = tx_block_height(btc_rpc, result["reveal_txid"])
         boundary = reveal_height + ADMIN_CONFIRMATION_DEPTH
         info = strata_rpc.strata_getCheckpointInfo(epoch)
         coverage_end = int(info["l1_range"][1]["height"])
@@ -173,23 +173,7 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
     def _rejection_log_lines(log_path: Path, offset: int, txid: str) -> list[str]:
         with log_path.open("r", errors="replace") as handle:
             handle.seek(offset)
-            # tracing writes ANSI colour codes, including between field names and values.
-            plain = ANSI_ESCAPE_RE.sub("", handle.read())
+            plain = strip_ansi(handle.read())
         return [
             line for line in plain.splitlines() if REJECTION_LOG in line and f"txid={txid}" in line
         ]
-
-    @staticmethod
-    def _tx_block_height(btc_rpc, txid: str) -> int:
-        blockhash = btc_rpc.proxy.getrawtransaction(txid, 1).get("blockhash")
-        if not blockhash:
-            raise AssertionError(f"tx {txid} is not confirmed yet, cannot derive its height")
-        return int(btc_rpc.proxy.getblock(blockhash)["height"])
-
-    @staticmethod
-    def _read_admin_xpriv(strata: StrataService) -> str:
-        admin_key_path = Path(strata.props["datadir"]) / "bridge-operator_keys"
-        admin_xpriv = admin_key_path.read_text().strip()
-        if not admin_xpriv:
-            raise AssertionError(f"admin key file is empty: {admin_key_path}")
-        return admin_xpriv
