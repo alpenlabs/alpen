@@ -2,8 +2,9 @@
 
 Rotating the OL checkpoint predicate to `NeverAccept` makes the ASM reject every
 checkpoint whose L1 coverage crosses the handover boundary, while the sequencer
-keeps posting them and the broadcaster sees them confirm. The ASM emits nothing
-for a rejection, so this is the case the submission tracker exists for.
+keeps posting them and the broadcaster sees them confirm. The ASM only logs a
+tracing warning for a rejection and emits no ASM log, so this is the case the
+submission tracker exists for.
 
 With every service running, the test pushes L1 past the boundary and asserts
 that once the first rejected checkpoint's block is buried at the reorg-safe
