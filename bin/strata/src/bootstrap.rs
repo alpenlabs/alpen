@@ -12,7 +12,9 @@ use strata_primitives::l1::compute_confirmation_depth;
 use strata_storage::NodeStorage;
 use tracing::info;
 
-use crate::startup_checks::{spec_after_terminal, verify_anchor_summary_and_state};
+use crate::startup_checks::{
+    select_spec_after_epoch_terminal_block, verify_anchor_summary_and_state,
+};
 
 pub(crate) fn validate_bootstrap_role(requested: bool, is_sequencer: bool) -> Result<()> {
     if requested && !is_sequencer {
@@ -253,7 +255,7 @@ fn promote_from_checkpoint_storage(
 /// V0 epoch, which processed the checkpoint predicate enactment; promoting an
 /// earlier V0 anchor would build V1 blocks where the network still runs V0.
 /// The rule and the data it reads are those of checkpoint sync and the
-/// sequencer's boot check, [`spec_after_terminal`].
+/// sequencer's boot check, [`select_spec_after_epoch_terminal_block`].
 fn verify_anchor_successor_runs_v1(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
@@ -261,10 +263,13 @@ fn verify_anchor_successor_runs_v1(
     anchor_state: &OLStateContainer,
 ) -> Result<()> {
     // TODO(STR-4086): accept any spec this binary builds blocks under.
-    let next_spec = spec_after_terminal(storage, genesis_l1_block, anchor, anchor_state)
-        .with_context(|| {
-            format!("checkpoint promotion: failed to select the spec of the epoch after {anchor}")
-        })?;
+    let next_spec =
+        select_spec_after_epoch_terminal_block(storage, genesis_l1_block, anchor, anchor_state)
+            .with_context(|| {
+                format!(
+                    "checkpoint promotion: failed to select the spec of the epoch after {anchor}"
+                )
+            })?;
     if next_spec != OLSpecId::V1 {
         bail!(
             "checkpoint promotion: anchor {anchor} is a V0 epoch before the switch to V1, and this release builds only V1 blocks. Keep running in checkpoint-sync mode until the epoch that ends at the checkpoint predicate enactment is finalized, then retry"
