@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -215,3 +216,23 @@ def extract_posted_checkpoint_payload(btc_rpc, txid: str) -> bytes:
         f"envelope length prefix mismatch: prefix={ssz_len}, actual={len(envelope) - start}"
     )
     return envelope[start:]
+
+
+# ---------------------------------------------------------------------------
+# L1 and node log helpers
+# ---------------------------------------------------------------------------
+
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI colour codes, which tracing writes even between field names and values."""
+    return _ANSI_ESCAPE_RE.sub("", text)
+
+
+def tx_block_height(btc_rpc, txid: str) -> int:
+    """Height of the block that mined `txid`."""
+    blockhash = btc_rpc.proxy.getrawtransaction(txid, 1).get("blockhash")
+    if not blockhash:
+        raise AssertionError(f"tx {txid} is not confirmed yet, cannot derive its height")
+    return int(btc_rpc.proxy.getblock(blockhash)["height"])
