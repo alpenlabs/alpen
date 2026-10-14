@@ -11,8 +11,19 @@ use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment};
 use strata_service::ServiceState;
 use tracing::{debug, info, warn};
 
-use super::classify::{SubmissionVerdict, classify_submission};
+use super::classify::{MinedReveal, SubmissionVerdict, classify_submission};
 use super::context::{BundleContents, SubmissionTrackerContext};
+
+/// Outcome of a check that did not fail.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Evaluation {
+    /// Every unsettled bundle was checked against the latest CSM state.
+    Completed,
+
+    /// The check was put off because the CSM state is not usable yet: genesis has not happened,
+    /// or the CSM has not followed an L1 reorg.
+    Deferred,
+}
 
 /// State of the checkpoint submission tracker.
 ///
@@ -42,14 +53,14 @@ pub(crate) struct SubmissionTrackerState<C: SubmissionTrackerContext> {
 
 impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
     /// Loads the cursor and recorded rejections from `ctx`.
-    pub(crate) fn new(
+    pub(crate) fn load(
         ctx: C,
         l1_reorg_safe_depth: u32,
         latest: CheckpointState,
     ) -> anyhow::Result<Self> {
-        let cursor = ctx.scan_cursor()?.unwrap_or(0);
+        let cursor = ctx.get_scan_cursor()?.unwrap_or(0);
         let rejected = ctx
-            .rejected_checkpoints()?
+            .get_rejected_checkpoints()?
             .into_iter()
             .map(|entry| (entry.txid(), entry))
             .collect();
@@ -97,14 +108,15 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
     ///
     /// The first failure is logged at warn, repeats of the same failure at debug, and the
     /// recovery once at info, so a persistent storage or broadcaster error does not warn on
-    /// every tick.
+    /// every tick. Only a completed check counts as a recovery.
     pub(crate) fn check(&mut self) {
         match self.evaluate() {
-            Ok(()) => {
+            Ok(Evaluation::Completed) => {
                 if self.failure.take().is_some() {
                     info!("checkpoint submission check recovered");
                 }
             }
+            Ok(Evaluation::Deferred) => {}
             Err(err) => {
                 let failure = format!("{err:#}");
                 if self.failure.as_ref() == Some(&failure) {
@@ -115,6 +127,9 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
                 }
             }
         }
+
+        // A new CSM state can resolve a recorded rejection even when the scan defers or fails.
+        gauge!("strata_checkpoint_unresolved_rejections").set(self.unresolved_rejections() as f64);
     }
 
     /// Checks every unsettled bundle against the latest CSM checkpoint state.
@@ -122,20 +137,20 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
     /// New rejections and the advanced cursor are committed together, and each rejection is
     /// logged once, after the commit. An orderly restart therefore never alerts twice; a crash
     /// before the database flushes can repeat one warning.
-    fn evaluate(&mut self) -> anyhow::Result<()> {
+    fn evaluate(&mut self) -> anyhow::Result<Evaluation> {
         let csm_tip = self.latest.block;
         if !self.latest.has_genesis_occurred() {
-            return Ok(());
+            return Ok(Evaluation::Deferred);
         }
         // A non-canonical CSM tip means the CSM has not followed a reorg yet; its verified tip
         // could belong to the abandoned branch.
         if !self.is_canonical(&csm_tip)? {
             debug!(%csm_tip, "CSM tip is not canonical; deferring checkpoint submission check");
-            return Ok(());
+            return Ok(Evaluation::Deferred);
         }
         let verified_tip = self.verified_tip();
 
-        let next_idx = self.ctx.next_bundle_idx()?;
+        let next_idx = self.ctx.get_next_bundle_idx()?;
         let mut cursor = self.cursor;
         let mut new_rejections = Vec::new();
         for idx in self.cursor..next_idx {
@@ -150,7 +165,7 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
             // turn into a recorded rejection. Reorgs deeper than the reorg-safe depth violate
             // CSM finality and are out of scope.
             if !new_rejections.is_empty() && !self.is_canonical(&csm_tip)? {
-                return Ok(());
+                return Ok(Evaluation::Deferred);
             }
             self.ctx.commit_scan(cursor, new_rejections.clone())?;
             self.cursor = cursor;
@@ -168,8 +183,7 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
             }
         }
 
-        gauge!("strata_checkpoint_confirmed_rejected").set(self.unresolved_rejections() as f64);
-        Ok(())
+        Ok(Evaluation::Completed)
     }
 
     /// Classifies bundle `idx`, appending a newly found rejection. Returns whether it is settled.
@@ -180,15 +194,16 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
         verified_tip: Option<EpochCommitment>,
         new_rejections: &mut Vec<RejectedCheckpointEntry>,
     ) -> anyhow::Result<bool> {
-        let bundle = match self.ctx.bundle_contents(idx)? {
+        let bundle = match self.ctx.get_bundle_contents(idx)? {
             BundleContents::Checkpoint(bundle) => bundle,
             BundleContents::Other => return Ok(true),
-            BundleContents::Undecodable => {
+            BundleContents::Undecodable(reason) => {
                 // Nothing to track, but an earlier unsettled bundle can hold the cursor and
                 // bring this one back on every pass.
                 if self.undecodable.insert(idx) {
                     warn!(
                         bundle_idx = idx,
+                        %reason,
                         "skipping checkpoint bundle with an undecodable payload"
                     );
                 }
@@ -208,36 +223,39 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
             && let Some(block) = reveal.inclusion
             && self.is_canonical(&block)?
         {
-            mined = Some((reveal.txid, block));
+            mined = Some(MinedReveal {
+                txid: reveal.txid,
+                block,
+            });
         }
 
         let verdict = classify_submission(
             bundle.commitment.epoch(),
-            mined.map(|(_, block)| block.height()),
+            mined,
             csm_tip.height(),
             verified_tip.map(|tip| tip.epoch()),
             self.l1_reorg_safe_depth,
         );
-        Ok(match (verdict, mined) {
+        Ok(match verdict {
             // A shallow reorg can undo an acceptance, so only a final one settles the bundle.
-            (SubmissionVerdict::EpochAccepted, _) => self
+            SubmissionVerdict::EpochAccepted => self
                 .finalized_epoch()
                 .is_some_and(|finalized| finalized >= bundle.commitment.epoch()),
-            (SubmissionVerdict::ConfirmedRejected, Some((txid, block))) => {
+            SubmissionVerdict::NotIncluded | SubmissionVerdict::AwaitingDepth => false,
+            SubmissionVerdict::ConfirmedRejected(mined) => {
                 new_rejections.push(RejectedCheckpointEntry::new(
                     bundle.commitment,
-                    txid,
-                    block,
+                    mined.txid,
+                    mined.block,
                     verified_tip,
                 ));
                 true
             }
-            _ => false,
         })
     }
 
     fn is_canonical(&self, block: &L1BlockCommitment) -> anyhow::Result<bool> {
-        Ok(self.ctx.canonical_l1_block(block.height())? == Some(*block.blkid()))
+        Ok(self.ctx.get_canonical_l1_blockid_at(block.height())? == Some(*block.blkid()))
     }
 }
 
@@ -261,7 +279,7 @@ mod tests {
     use tracing_subscriber::fmt::MakeWriter;
 
     use super::*;
-    use crate::submission_tracker::context::{CheckpointBundle, RevealStatus};
+    use crate::submission_tracker::context::{CheckpointBundle, RevealStatus, UndecodablePayload};
 
     const DEPTH: u32 = 3;
 
@@ -319,11 +337,11 @@ mod tests {
     }
 
     impl SubmissionTrackerContext for StubCtx {
-        fn scan_cursor(&self) -> anyhow::Result<Option<BundleIdx>> {
+        fn get_scan_cursor(&self) -> anyhow::Result<Option<BundleIdx>> {
             Ok(self.data().cursor)
         }
 
-        fn rejected_checkpoints(&self) -> anyhow::Result<Vec<RejectedCheckpointEntry>> {
+        fn get_rejected_checkpoints(&self) -> anyhow::Result<Vec<RejectedCheckpointEntry>> {
             Ok(self.data().rejected.clone())
         }
 
@@ -341,7 +359,7 @@ mod tests {
             Ok(())
         }
 
-        fn next_bundle_idx(&self) -> anyhow::Result<BundleIdx> {
+        fn get_next_bundle_idx(&self) -> anyhow::Result<BundleIdx> {
             let data = self.data();
             if let Some(failure) = data.failure {
                 anyhow::bail!(failure);
@@ -349,15 +367,18 @@ mod tests {
             Ok(data.bundles.len() as BundleIdx)
         }
 
-        fn bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents> {
-            Ok(self.data().bundles[idx as usize])
+        fn get_bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents> {
+            Ok(self.data().bundles[idx as usize].clone())
         }
 
         fn resolve_reveal(&self, txid: L1TxId) -> anyhow::Result<Option<RevealStatus>> {
             Ok(self.data().reveals.get(&txid).copied())
         }
 
-        fn canonical_l1_block(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>> {
+        fn get_canonical_l1_blockid_at(
+            &self,
+            height: L1Height,
+        ) -> anyhow::Result<Option<L1BlockId>> {
             Ok(self.data().canonical.get(&height).copied())
         }
     }
@@ -461,7 +482,7 @@ mod tests {
     }
 
     fn new_state(ctx: &StubCtx) -> SubmissionTrackerState<StubCtx> {
-        SubmissionTrackerState::new(ctx.clone(), DEPTH, csm_state(ctx, 1, None, None)).unwrap()
+        SubmissionTrackerState::load(ctx.clone(), DEPTH, csm_state(ctx, 1, None, None)).unwrap()
     }
 
     #[test]
@@ -573,10 +594,38 @@ mod tests {
     }
 
     #[test]
+    fn deferred_check_does_not_count_as_recovery() {
+        let ctx = StubCtx::default();
+        let mut state = new_state(&ctx);
+        state.set_latest(csm_state(&ctx, 101, Some(1), Some(1)));
+        ctx.data().failure = Some("writer database unavailable");
+
+        let logs = capture_logs(|| {
+            state.check();
+            // An L1 reorg the CSM has not followed yet puts the next check off.
+            ctx.set_canonical(block(101, 0xBB));
+            state.check();
+            ctx.set_canonical(block(101, 0xAA));
+            state.check();
+        });
+
+        let failed = "checkpoint submission check failed";
+        assert_eq!(count_logs(&logs, "WARN", failed), 1, "{logs:#?}");
+        let recovered = "checkpoint submission check recovered";
+        assert_eq!(count_logs(&logs, "INFO", recovered), 0, "{logs:#?}");
+        let still_failing = "checkpoint submission check still failing";
+        assert_eq!(count_logs(&logs, "DEBUG", still_failing), 1, "{logs:#?}");
+    }
+
+    #[test]
     fn undecodable_bundle_warns_once_while_the_cursor_is_held() {
         let ctx = StubCtx::default();
         ctx.push_checkpoint(2);
-        ctx.data().bundles.push(BundleContents::Undecodable);
+        ctx.data()
+            .bundles
+            .push(BundleContents::Undecodable(UndecodablePayload::Decode(
+                "unexpected end of buffer".to_owned(),
+            )));
         let mut state = new_state(&ctx);
 
         let logs = capture_logs(|| {
@@ -587,6 +636,8 @@ mod tests {
 
         let message = "skipping checkpoint bundle with an undecodable payload";
         assert_eq!(count_logs(&logs, "WARN", message), 1, "{logs:#?}");
+        let reason = "checkpoint payload does not decode: unexpected end of buffer";
+        assert_eq!(count_logs(&logs, "WARN", reason), 1, "{logs:#?}");
         assert_eq!(
             state.cursor(),
             0,

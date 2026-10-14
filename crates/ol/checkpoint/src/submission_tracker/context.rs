@@ -14,19 +14,32 @@ use strata_db_types::l1_writer::BundleIdx;
 use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 use strata_storage::NodeStorage;
+use thiserror::Error;
 use tokio::runtime::Handle;
 
 /// What an L1 writer bundle carries, as far as the tracker is concerned.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum BundleContents {
     /// Something other than a checkpoint.
     Other,
 
     /// A checkpoint-tagged payload that does not decode, which only a bug or corruption leaves.
-    Undecodable,
+    Undecodable(UndecodablePayload),
 
     /// A checkpoint.
     Checkpoint(CheckpointBundle),
+}
+
+/// Why a checkpoint-tagged writer payload does not decode.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum UndecodablePayload {
+    /// The payload has no data chunk.
+    #[error("payload has no data chunk")]
+    MissingChunk,
+
+    /// The first chunk is not a checkpoint payload; holds the codec error's message.
+    #[error("checkpoint payload does not decode: {0}")]
+    Decode(String),
 }
 
 /// A checkpoint the sequencer handed to the L1 writer.
@@ -55,10 +68,10 @@ pub(crate) struct RevealStatus {
 /// Kept as a trait so the tracker's logic is tested against an in-memory stub.
 pub(crate) trait SubmissionTrackerContext: Send + Sync + 'static {
     /// First writer bundle index the tracker has not settled, if it ever committed a scan.
-    fn scan_cursor(&self) -> anyhow::Result<Option<BundleIdx>>;
+    fn get_scan_cursor(&self) -> anyhow::Result<Option<BundleIdx>>;
 
     /// Rejections recorded so far.
-    fn rejected_checkpoints(&self) -> anyhow::Result<Vec<RejectedCheckpointEntry>>;
+    fn get_rejected_checkpoints(&self) -> anyhow::Result<Vec<RejectedCheckpointEntry>>;
 
     /// Atomically stores the scan cursor and newly recorded rejections.
     fn commit_scan(
@@ -68,16 +81,16 @@ pub(crate) trait SubmissionTrackerContext: Send + Sync + 'static {
     ) -> anyhow::Result<()>;
 
     /// Index the writer will assign to its next bundle.
-    fn next_bundle_idx(&self) -> anyhow::Result<BundleIdx>;
+    fn get_next_bundle_idx(&self) -> anyhow::Result<BundleIdx>;
 
     /// Returns what bundle `idx` carries.
-    fn bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents>;
+    fn get_bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents>;
 
     /// Resolves a reveal transaction through the broadcaster, or `None` if it is unknown there.
     fn resolve_reveal(&self, txid: L1TxId) -> anyhow::Result<Option<RevealStatus>>;
 
     /// Canonical L1 block at `height`, if the node has one there.
-    fn canonical_l1_block(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>>;
+    fn get_canonical_l1_blockid_at(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>>;
 }
 
 /// [`SubmissionTrackerContext`] backed by node storage and the running L1 broadcaster.
@@ -102,14 +115,14 @@ impl SubmissionTrackerContextImpl {
 }
 
 impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
-    fn scan_cursor(&self) -> anyhow::Result<Option<BundleIdx>> {
+    fn get_scan_cursor(&self) -> anyhow::Result<Option<BundleIdx>> {
         Ok(self
             .storage
             .ol_checkpoint()
             .get_checkpoint_submission_cursor_blocking()?)
     }
 
-    fn rejected_checkpoints(&self) -> anyhow::Result<Vec<RejectedCheckpointEntry>> {
+    fn get_rejected_checkpoints(&self) -> anyhow::Result<Vec<RejectedCheckpointEntry>> {
         Ok(self
             .storage
             .ol_checkpoint()
@@ -127,11 +140,11 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
             .put_checkpoint_submission_scan_blocking(cursor, rejected)?)
     }
 
-    fn next_bundle_idx(&self) -> anyhow::Result<BundleIdx> {
+    fn get_next_bundle_idx(&self) -> anyhow::Result<BundleIdx> {
         Ok(self.storage.l1_writer().get_next_payload_idx_blocking()?)
     }
 
-    fn bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents> {
+    fn get_bundle_contents(&self, idx: BundleIdx) -> anyhow::Result<BundleContents> {
         let entry = self
             .storage
             .l1_writer()
@@ -143,15 +156,19 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
 
         // The sequencer writes one `CodecSsz<CheckpointPayload>` chunk, the same encoding the
         // ASM decodes from the envelope.
-        let decoded = entry
-            .payload
-            .data()
-            .next()
-            .map(decode_buf_exact::<CodecSsz<CheckpointPayload>>);
-        let Some(Ok(payload)) = decoded else {
-            return Ok(BundleContents::Undecodable);
+        let Some(chunk) = entry.payload.data().next() else {
+            return Ok(BundleContents::Undecodable(
+                UndecodablePayload::MissingChunk,
+            ));
         };
-        let payload = payload.into_inner();
+        let payload = match decode_buf_exact::<CodecSsz<CheckpointPayload>>(chunk) {
+            Ok(payload) => payload.into_inner(),
+            Err(err) => {
+                return Ok(BundleContents::Undecodable(UndecodablePayload::Decode(
+                    err.to_string(),
+                )));
+            }
+        };
         let tip = payload.new_tip();
         let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
 
@@ -174,7 +191,7 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
         }))
     }
 
-    fn canonical_l1_block(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>> {
+    fn get_canonical_l1_blockid_at(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>> {
         Ok(self.storage.l1().get_canonical_blockid_at_height(height)?)
     }
 }
