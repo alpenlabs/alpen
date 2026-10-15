@@ -202,6 +202,7 @@ impl FixtureEpoch {
 /// and the result of every epoch it applies.
 struct Node {
     ctx: MockChainWorkerContext,
+    last_applied_epoch: EpochCommitment,
 }
 
 impl Node {
@@ -221,7 +222,10 @@ impl Node {
             ctx.checkpoint_payloads
                 .insert(epoch.epoch_commitment(), epoch.checkpoint_payload());
         }
-        Self { ctx }
+        Self {
+            ctx,
+            last_applied_epoch: genesis.epoch_summary.get_epoch_commitment(),
+        }
     }
 
     /// Replays `epochs` in order, asserting each reproduces what 0.3.0
@@ -264,13 +268,14 @@ impl Node {
 
     /// Applies the checkpoint of `epoch` and stores its state and summary.
     fn apply(&mut self, epoch: EpochCommitment) -> WorkerResult<AppliedEpochArtifacts> {
-        let artifacts = apply_checkpoint_epoch(&self.ctx, epoch)?;
+        let artifacts = apply_checkpoint_epoch(&self.ctx, epoch, self.last_applied_epoch)?;
         self.ctx
             .epoch_summaries
             .insert(epoch.epoch(), vec![artifacts.summary]);
         self.ctx
             .ol_states
             .insert(epoch.to_block_commitment(), artifacts.new_state.clone());
+        self.last_applied_epoch = epoch;
         Ok(artifacts)
     }
 
@@ -299,7 +304,10 @@ impl Node {
         );
         ctx.manifests = self.ctx.manifests.clone();
         ctx.checkpoint_payloads = self.ctx.checkpoint_payloads.clone();
-        Self { ctx }
+        Self {
+            ctx,
+            last_applied_epoch: summary.get_epoch_commitment(),
+        }
     }
 }
 

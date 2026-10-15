@@ -66,10 +66,11 @@ pub trait CheckpointSyncCtx: Send + Sync + 'static {
     ) -> impl Future<Output = DbResult<Option<EpochSummary>>> + Send;
 
     /// Reconstructs and persists an epoch's OL state from its checkpoint via the
-    /// chain worker.
+    /// chain worker, using the explicitly supplied previous epoch as its base.
     fn apply_checkpoint(
         &self,
         epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
     ) -> impl Future<Output = CheckpointSyncResult<()>> + Send;
 
     /// Updates the chain worker's safe tip.

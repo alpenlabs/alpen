@@ -63,8 +63,12 @@ impl SyncService for ChainWorkerService {
                 completion.send_blocking(res);
             }
 
-            ChainWorkerMessage::ApplyCheckpoint(epoch, completion) => {
-                let res = state.apply_checkpoint(epoch);
+            ChainWorkerMessage::ApplyCheckpoint {
+                epoch,
+                previous_epoch,
+                completion,
+            } => {
+                let res = state.apply_checkpoint(epoch, previous_epoch);
                 completion.send_blocking(res);
             }
         }

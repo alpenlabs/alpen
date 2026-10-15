@@ -132,9 +132,10 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
 pub(crate) async fn apply_and_finalize_epoch(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
+    previous_epoch: EpochCommitment,
 ) -> CheckpointSyncResult<()> {
     debug!(%epoch, "reconstructing epoch state via chain worker");
-    ctx.apply_checkpoint(epoch).await?;
+    ctx.apply_checkpoint(epoch, previous_epoch).await?;
 
     finalize_and_publish(ctx, epoch).await?;
 
@@ -244,7 +245,11 @@ pub(crate) async fn find_and_apply_unapplied_epochs(
             total = num_unapplied,
             "applying epoch during init"
         );
-        match apply_and_finalize_epoch(ctx, epoch).await {
+        // The scan always stops at an applied epoch or genesis; this is a defensive check.
+        let previous_epoch = last_applied_epoch.ok_or(CheckpointSyncError::MissingPredecessor(
+            epoch.epoch().saturating_sub(1),
+        ))?;
+        match apply_and_finalize_epoch(ctx, epoch, previous_epoch).await {
             Ok(()) => last_applied_epoch = Some(epoch),
             Err(CheckpointSyncError::EpochOp {
                 cause: cause @ WorkerError::UpgradeRequired(_),
