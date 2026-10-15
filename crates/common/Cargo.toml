@@ -15,11 +15,10 @@ serde.workspace = true
 strata-rpc-tracing.workspace = true
 tokio = { workspace = true, optional = true }
 tower.workspace = true
-tracing.workspace = true
+tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio.workspace = true
 
 [features]
-async = ["dep:tokio"]
-debug-utils = ["dep:tokio"]
+debug-utils = ["dep:tokio", "dep:tracing"]

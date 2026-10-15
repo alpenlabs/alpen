@@ -8,7 +8,6 @@ use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AuxData;
 use strata_asm_params::AsmParams;
 use strata_btc_types::L1BlockIdBitcoinExt;
-use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_csm_worker::{CsmWorkerContext, CsmWorkerError, CsmWorkerResult};
 use strata_db_types::asm::AsmExecOutput;
@@ -19,6 +18,7 @@ use strata_primitives::{
     l1::{L1BlockCommitment, L1BlockId},
     L1Height,
 };
+use strata_retry::{retry_with_backoff_async, ExponentialBackoff};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
@@ -108,15 +108,21 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
         // ASM has already processed this block, so bitcoind must have it. Retry
         // with backoff to absorb transient failures (RPC timeout, replica lag).
         let hash = blockid.to_block_hash();
-        let backoff = ExponentialBackoff::new(200, 15, 10);
-        retry_with_backoff("csm_get_l1_block", 10, &backoff, || {
-            self.handle
-                .block_on(self.bitcoin_client.get_block(&hash))
-                .map_err(|e| CsmWorkerError::L1Fetch {
-                    blockid: *blockid,
-                    cause: e.to_string(),
-                })
-        })
+        let backoff = ExponentialBackoff::new(200, 15, 10, None);
+        self.handle.block_on(retry_with_backoff_async(
+            "csm_get_l1_block",
+            10,
+            &backoff,
+            || async {
+                self.bitcoin_client
+                    .get_block(&hash)
+                    .await
+                    .map_err(|e| CsmWorkerError::L1Fetch {
+                        blockid: *blockid,
+                        cause: e.to_string(),
+                    })
+            },
+        ))
     }
 
     fn l1_reorg_safe_depth(&self) -> u32 {
