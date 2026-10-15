@@ -9597,6 +9597,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-canonical-chain-provider"
+version = "0.1.0"
+dependencies = [
+ "strata-checkpoint-types",
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-storage",
+ "tokio",
+]
+
+[[package]]
 name = "strata-ol-chain-types-v1"
 version = "0.1.0"
 dependencies = [
