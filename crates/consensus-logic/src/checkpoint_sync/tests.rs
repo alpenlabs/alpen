@@ -73,8 +73,7 @@ struct MockCtx {
     l1_tip_height: Mutex<L1Height>,
     /// CSM status returned by `fetch_csm_status`.
     csm_status: CsmWorkerStatus,
-    /// Epoch number -> commitment, used by mock `apply_checkpoint` to build the
-    /// previous-epoch link in synthesized summaries.
+    /// Epoch number -> commitment, used for genesis resolution.
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     /// L1 reference for each finalized epoch's checkpoint tx.
     l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
@@ -217,7 +216,11 @@ impl CheckpointSyncCtx for MockCtx {
         Ok(self.epoch_summaries.lock().unwrap().get(&epoch).copied())
     }
 
-    async fn apply_checkpoint(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
+    async fn apply_checkpoint(
+        &self,
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+    ) -> CheckpointSyncResult<()> {
         if self
             .upgrade_required_from
             .is_some_and(|from| epoch.epoch() >= from)
@@ -241,14 +244,9 @@ impl CheckpointSyncCtx for MockCtx {
 
         // Mimic the real chain worker writing the summary after reconstruction,
         // so a multi-epoch catch-up does not re-collect the same epoch.
-        let prev_epoch_num = epoch.epoch().saturating_sub(1);
-        let prev_ec = self
-            .epoch_commitments
-            .get(&prev_epoch_num)
-            .copied()
-            .unwrap_or(EpochCommitment::null());
         let l1_ref = self.l1_refs.get(&epoch).expect("l1_ref for applied epoch");
-        let summary = make_epoch_summary(epoch.epoch(), epoch, prev_ec, l1_ref.block_height());
+        let summary =
+            make_epoch_summary(epoch.epoch(), epoch, previous_epoch, l1_ref.block_height());
         self.epoch_summaries.lock().unwrap().insert(epoch, summary);
         Ok(())
     }
@@ -602,10 +600,46 @@ async fn find_and_apply_multi_epoch_catch_up() {
 
     assert_eq!(last_applied, Some(epoch3));
     assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch2, epoch3]);
+    let summaries = ctx.epoch_summaries.lock().unwrap();
+    assert_eq!(
+        summaries[&epoch2].prev_terminal(),
+        &epoch1.to_block_commitment()
+    );
+    assert_eq!(
+        summaries[&epoch3].prev_terminal(),
+        &epoch2.to_block_commitment()
+    );
     assert_eq!(*ctx.finalized_epochs.lock().unwrap(), vec![epoch2, epoch3]);
     assert_eq!(
         *ctx.safe_tips.lock().unwrap(),
         vec![epoch2.to_block_commitment(), epoch3.to_block_commitment()]
+    );
+}
+
+#[tokio::test]
+async fn find_and_apply_passes_predecessors_from_genesis() {
+    let genesis = make_epoch(0, 0, 0x00);
+    let epoch1 = make_epoch(1, 10, 0x01);
+    let epoch2 = make_epoch(2, 20, 0x02);
+    // Only genesis has a canonical entry; later checkpoints are observed on L1.
+    let ctx = MockCtx::new(3, 200)
+        .add_genesis(genesis)
+        .add_observed_epoch(epoch1, make_l1_ref(110))
+        .add_observed_epoch(epoch2, make_l1_ref(120));
+
+    let last_applied = find_and_apply_unapplied_epochs(&ctx, epoch2).await.unwrap();
+
+    assert_eq!(last_applied, Some(epoch2));
+    assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch1, epoch2]);
+    // Summaries retain the predecessors passed to the mock's apply call.
+    let summaries = ctx.epoch_summaries.lock().unwrap();
+    assert_eq!(
+        summaries[&epoch1].prev_terminal(),
+        &genesis.to_block_commitment()
+    );
+    assert_eq!(
+        summaries[&epoch2].prev_terminal(),
+        &epoch1.to_block_commitment()
     );
 }
 

@@ -20,6 +20,7 @@ use strata_db_types::{
 use strata_identifiers::{AccountId, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_node_context::NodeContext;
+use strata_ol_block_ancestry_provider::{BlockAncestryProvider, EpochBlockAncestry};
 use strata_ol_chain_types_v1::{
     OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType, SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID,
     SnarkAccountUpdateLogData,
@@ -58,6 +59,9 @@ pub struct ChainWorkerContextImpl {
     /// Manager for OL block data (headers + bodies).
     ol_block_mgr: Arc<OLBlockManager>,
 
+    /// Resolves epoch ancestry along an accepted block's branch.
+    block_ancestry_provider: BlockAncestryProvider,
+
     /// Manager for OL state snapshots and write batches.
     ol_state_mgr: Arc<OLStateManager>,
 
@@ -93,6 +97,9 @@ impl ChainWorkerContextImpl {
     pub fn from_node_context(nodectx: &NodeContext) -> Self {
         Self {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
+            block_ancestry_provider: BlockAncestryProvider::new(
+                nodectx.storage().ol_block().clone(),
+            ),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
@@ -133,6 +140,15 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
     fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeaderV1>> {
         fetch_header_from_manager(&self.ol_block_mgr, blkid)
+    }
+
+    fn collect_epoch_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+    ) -> WorkerResult<EpochBlockAncestry> {
+        Ok(self
+            .block_ancestry_provider
+            .collect_epoch_block_commitments_blocking(start)?)
     }
 
     fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>> {
@@ -248,19 +264,12 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(self.ol_checkpoint_mgr.get_epoch_summary_blocking(epoch)?)
     }
 
-    fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>> {
-        let commitment = self
-            .ol_checkpoint_mgr
-            .get_canonical_epoch_commitment_at_blocking(epoch)?;
-        if let Some(com) = commitment {
-            Ok(self.ol_checkpoint_mgr.get_epoch_summary_blocking(com)?)
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
-        let merged = merge_epoch_state(self, summary)?;
+    fn merge_epoch_data(
+        &self,
+        summary: &EpochSummary,
+        blocks: &[OLBlockCommitment],
+    ) -> WorkerResult<()> {
+        let merged = merge_epoch_state(self, summary, blocks)?;
 
         // Store the final merged state at the terminal commitment
         self.ol_state_mgr

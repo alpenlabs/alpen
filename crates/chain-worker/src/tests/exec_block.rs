@@ -7,21 +7,29 @@
 //! block of the epoch creates, and in a single-block epoch no earlier block
 //! has created that row.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use strata_acct_types::BitcoinAmount;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::{decode_buf_exact, encode_to_vec};
+use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
     SubjectId,
 };
+use strata_ol_block_ancestry_provider::{
+    BlockAncestryError, BlockAncestryProvider, EpochBlockAncestry,
+};
 use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{IStateAccessor, IStateAccessorMut, OLSpecId, OLSpecVersions};
 use strata_ol_state_types_v1::WriteBatch;
 use strata_ol_stf_v1::{
@@ -35,6 +43,7 @@ use strata_ol_stf_v1::{
         tamper_state_root, to_ol_block,
     },
 };
+use strata_storage::{OLBlockManager, create_node_storage, test_runtime_handle};
 
 use super::{fixture::make_marked_genesis_state, manifests::MockManifests};
 use crate::{
@@ -50,18 +59,19 @@ use crate::{
 /// first ([`Self::store_block_output`]), mirroring `set_epoch_commitment` on
 /// the sled-backed store.
 struct OrderEnforcingContext {
-    /// Blocks served to [`ChainWorkerContext::fetch_block`].
-    blocks: HashMap<OLBlockId, OLBlockV1>,
-    /// Headers served to [`ChainWorkerContext::fetch_header`].
-    headers: HashMap<OLBlockId, OLBlockHeaderV1>,
+    /// Block storage served to [`ChainWorkerContext::fetch_block`] and
+    /// [`ChainWorkerContext::fetch_header`].
+    blocks: Arc<OLBlockManager>,
+    /// Resolves epoch ancestry from [`Self::blocks`].
+    block_ancestry_provider: BlockAncestryProvider,
     /// States served to [`ChainWorkerContext::fetch_ol_state`].
     states: HashMap<OLBlockCommitment, OLStateContainer>,
     /// Stored manifests, served by height to
     /// [`ChainWorkerContext::fetch_l1_manifest`] and by block to
     /// [`ChainWorkerContext::fetch_l1_block_manifest`].
     manifests: MockManifests,
-    /// Canonical summaries served per epoch index.
-    canonical_summaries: HashMap<Epoch, EpochSummary>,
+    /// Summaries present before the test runs, served by exact commitment.
+    known_summaries: HashMap<EpochCommitment, EpochSummary>,
     /// L1 block genesis anchors to.
     genesis_l1: L1BlockCommitment,
     /// Epochs with at least one block's indexing writes applied.
@@ -83,19 +93,38 @@ struct OrderEnforcingContext {
 impl OrderEnforcingContext {
     /// Creates a context that serves the given chain data and has stored
     /// nothing yet.
+    ///
+    /// Blocks and header-only terminals go into block storage, so ancestry
+    /// walks read them the way the production context does.
     fn new(
-        blocks: HashMap<OLBlockId, OLBlockV1>,
-        headers: HashMap<OLBlockId, OLBlockHeaderV1>,
+        blocks: impl IntoIterator<Item = OLBlockV1>,
+        terminal_headers: impl IntoIterator<Item = OLBlockHeaderV1>,
         states: HashMap<OLBlockCommitment, OLStateContainer>,
-        canonical_summaries: HashMap<Epoch, EpochSummary>,
+        known_summaries: impl IntoIterator<Item = EpochSummary>,
         genesis_l1: L1BlockCommitment,
         manifests: MockManifests,
     ) -> Self {
+        let storage = create_node_storage(get_test_sled_backend(), test_runtime_handle())
+            .expect("test: create storage");
+        let block_storage = storage.ol_block().clone();
+        for block in blocks {
+            block_storage
+                .put_block_data_blocking(block)
+                .expect("test: store block");
+        }
+        for header in terminal_headers {
+            block_storage
+                .put_terminal_header_blocking(header.compute_blkid(), header)
+                .expect("test: store terminal header");
+        }
         Self {
-            blocks,
-            headers,
+            block_ancestry_provider: BlockAncestryProvider::new(block_storage.clone()),
+            blocks: block_storage,
             states,
-            canonical_summaries,
+            known_summaries: known_summaries
+                .into_iter()
+                .map(|summary| (summary.get_epoch_commitment(), summary))
+                .collect(),
             genesis_l1,
             manifests,
             indexed_epochs: Mutex::new(Vec::new()),
@@ -129,15 +158,20 @@ impl ChainWorkerContext for OrderEnforcingContext {
     }
 
     fn fetch_block(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockV1>> {
-        Ok(self.blocks.get(blkid).cloned())
+        Ok(self.blocks.get_block_data_blocking(*blkid)?)
     }
 
     fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeaderV1>> {
+        Ok(self.blocks.get_ol_header_blocking(*blkid)?)
+    }
+
+    fn collect_epoch_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+    ) -> WorkerResult<EpochBlockAncestry> {
         Ok(self
-            .headers
-            .get(blkid)
-            .cloned()
-            .or_else(|| self.blocks.get(blkid).map(|block| block.header().clone())))
+            .block_ancestry_provider
+            .collect_epoch_block_commitments_blocking(start)?)
     }
 
     fn fetch_ol_state(
@@ -161,13 +195,9 @@ impl ChainWorkerContext for OrderEnforcingContext {
             .lock()
             .unwrap()
             .iter()
-            .chain(self.canonical_summaries.values())
             .find(|summary| summary.get_epoch_commitment() == epoch)
-            .copied())
-    }
-
-    fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>> {
-        Ok(self.canonical_summaries.get(&epoch).cloned())
+            .copied()
+            .or_else(|| self.known_summaries.get(&epoch).copied()))
     }
 
     fn store_block_output(
@@ -229,8 +259,12 @@ impl ChainWorkerContext for OrderEnforcingContext {
         Ok(summaries.len() != old_len)
     }
 
-    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
-        let merged = merge_epoch_state(self, summary)?;
+    fn merge_epoch_data(
+        &self,
+        summary: &EpochSummary,
+        blocks: &[OLBlockCommitment],
+    ) -> WorkerResult<()> {
+        let merged = merge_epoch_state(self, summary, blocks)?;
         self.stored_states
             .lock()
             .unwrap()
@@ -343,7 +377,7 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
     assert!(terminal_header.is_terminal(), "epoch 1 block is terminal");
     assert_eq!(terminal_header.epoch(), 1, "single-block epoch 1");
 
-    // Genesis (epoch 0) commitment and summary, for `get_prev_terminal`.
+    // Genesis (epoch 0) commitment and summary; spec selection reads the summary.
     let genesis_commitment =
         OLBlockCommitment::new(genesis_header.slot(), genesis_header.compute_blkid());
     let genesis_summary = EpochSummary::new(
@@ -355,10 +389,10 @@ fn exec_single_block_epoch(v0_parent: bool) -> (OrderEnforcingContext, OLBlockHe
     );
 
     let ctx = OrderEnforcingContext::new(
-        HashMap::from([(*terminal_commitment.blkid(), terminal_block)]),
-        HashMap::from([(*genesis_commitment.blkid(), genesis_header)]),
+        [terminal_block],
+        [genesis_header],
         HashMap::from([(genesis_commitment, pre_epoch_state)]),
-        HashMap::from([(0, genesis_summary)]),
+        [genesis_summary],
         genesis_l1_anchor,
         MockManifests::from_iter([genesis_manifest, manifest]),
     );
@@ -506,7 +540,8 @@ fn test_merge_epoch_state_rejects_root_mismatch() {
         Buf32::from([0xab; 32]),
     );
 
-    let err = merge_epoch_state(&ctx, &wrong).expect_err("merged root must match the summary");
+    let err = merge_epoch_state(&ctx, &wrong, &[*summary.terminal()])
+        .expect_err("merged root must match the summary");
     assert!(matches!(
         err,
         WorkerError::MergedStateRootMismatch { merged, .. } if merged == *summary.final_state()
@@ -516,7 +551,7 @@ fn test_merge_epoch_state_rejects_root_mismatch() {
 /// Ordinary blocks must not create or delete summaries, or merge epoch data.
 #[test]
 fn test_handle_non_terminal_block_does_not_change_epoch_summaries() {
-    let (mut ctx, terminal_header) = exec_single_block_epoch(false);
+    let (ctx, terminal_header) = exec_single_block_epoch(false);
     let header = OLBlockHeaderV1::new(
         0,
         BlockFlagsV1::zero(),
@@ -528,7 +563,9 @@ fn test_handle_non_terminal_block_does_not_change_epoch_summaries() {
         Buf32::zero(),
     );
     let block = header.compute_block_commitment();
-    ctx.headers.insert(*block.blkid(), header);
+    ctx.blocks
+        .put_terminal_header_blocking(*block.blkid(), header)
+        .unwrap();
     let stored_state_count = ctx.stored_states.lock().unwrap().len();
 
     handle_accepted_block(&ctx, block).expect("ordinary accepted block needs no epoch completion");
@@ -595,11 +632,17 @@ fn test_accepted_terminal_with_summary_skips_epoch_work() {
 fn test_accepted_terminal_recovers_despite_other_summary_at_same_epoch() {
     let (ctx, header) = exec_single_block_epoch(false);
     let block = header.compute_block_commitment();
+    let genesis = ctx
+        .fetch_header(header.parent_blkid())
+        .unwrap()
+        .unwrap()
+        .compute_block_commitment();
+    let genesis_summary = ctx.known_summaries[&EpochCommitment::from_terminal(0, genesis)];
     let other = EpochSummary::new(
         header.epoch(),
         OLBlockCommitment::new(block.slot(), OLBlockId::from(Buf32::from([0xab; 32]))),
-        *ctx.canonical_summaries[&0].terminal(),
-        *ctx.canonical_summaries[&0].new_l1(),
+        *genesis_summary.terminal(),
+        *genesis_summary.new_l1(),
         *header.state_root(),
     );
     ctx.stored_summaries.lock().unwrap().push(other);
@@ -674,10 +717,10 @@ fn test_exec_refuses_the_block_after_a_v2_enactment() {
     let next_commitment = next.header().compute_block_commitment();
 
     let ctx = OrderEnforcingContext::new(
-        HashMap::from([(*next_commitment.blkid(), to_ol_block(&next))]),
-        HashMap::from([(*terminal_commitment.blkid(), terminal_header)]),
+        [to_ol_block(&next)],
+        [terminal_header],
         HashMap::from([(terminal_commitment, terminal_state)]),
-        HashMap::from([(0, genesis_summary), (1, terminal_summary)]),
+        [genesis_summary, terminal_summary],
         genesis_l1_anchor,
         MockManifests::from_iter([genesis_manifest, enactment]),
     );
@@ -692,4 +735,170 @@ fn test_exec_refuses_the_block_after_a_v2_enactment() {
     assert!(ctx.stored_states.lock().unwrap().is_empty());
     assert!(ctx.write_batches.lock().unwrap().is_empty());
     assert!(ctx.indexed_epochs.lock().unwrap().is_empty());
+}
+
+#[test]
+#[should_panic(expected = "epoch block list must not be empty")]
+fn test_merge_epoch_state_rejects_empty_blocks() {
+    let (ctx, header) = exec_single_block_epoch(false);
+    handle_accepted_block(&ctx, header.compute_block_commitment()).expect("accept terminal");
+    let summary = ctx.stored_summaries.lock().unwrap()[0];
+
+    let _ = merge_epoch_state(&ctx, &summary, &[]);
+}
+
+#[test]
+#[should_panic(expected = "epoch block list must end at the summary's terminal")]
+fn test_merge_epoch_state_rejects_mismatched_terminal() {
+    let (ctx, header) = exec_single_block_epoch(false);
+    handle_accepted_block(&ctx, header.compute_block_commitment()).expect("accept terminal");
+    let summary = ctx.stored_summaries.lock().unwrap()[0];
+
+    let _ = merge_epoch_state(&ctx, &summary, &[*summary.prev_terminal()]);
+}
+
+#[test]
+fn test_merge_epoch_state_uses_collected_blocks_without_headers() {
+    let (mut ctx, header) = exec_single_block_epoch(false);
+    handle_accepted_block(&ctx, header.compute_block_commitment()).expect("accept terminal");
+    let summary = ctx.stored_summaries.lock().unwrap()[0];
+    let blocks = [*summary.terminal()];
+
+    // Ancestry is already supplied. The merge needs only the base state and write batches.
+    let storage = create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap();
+    ctx.blocks = storage.ol_block().clone();
+    ctx.block_ancestry_provider = BlockAncestryProvider::new(ctx.blocks.clone());
+
+    let merged = merge_epoch_state(&ctx, &summary, &blocks).expect("merge without header reads");
+    assert_eq!(merged.compute_state_root(), *summary.final_state());
+}
+
+fn build_child_block(
+    ctx: &mut OrderEnforcingContext,
+    parent: &OLBlockHeaderV1,
+    terminal: bool,
+) -> OLBlockHeaderV1 {
+    let pre_state = ctx
+        .fetch_ol_state(parent.compute_block_commitment())
+        .unwrap()
+        .expect("executed parent state");
+    let mut state = MemoryStateBaseLayer::from_container(pre_state);
+    let info = BlockInfo::new(
+        parent.timestamp() + 1_000,
+        parent.slot() + 1,
+        parent.epoch() + u32::from(parent.is_terminal()),
+    );
+    let completed = execute_block(
+        &mut state,
+        &info,
+        Some(parent),
+        BlockComponents::new_empty().with_terminal(terminal),
+    )
+    .expect("build child block");
+    let block = to_ol_block(&completed);
+    let header = block.header().clone();
+    ctx.blocks.put_block_data_blocking(block).unwrap();
+    header
+}
+
+fn prepare_fork_epoch() -> (OrderEnforcingContext, OLBlockHeaderV1, OLBlockHeaderV1) {
+    let (mut ctx, header) = exec_single_block_epoch(false);
+    handle_accepted_block(&ctx, header.compute_block_commitment())
+        .expect("accept branch A terminal");
+    let genesis = ctx.fetch_header(header.parent_blkid()).unwrap().unwrap();
+
+    // Branch A already has an epoch-1 summary. Branch B forks from genesis
+    // and produces a different epoch-1 terminal at the same slot.
+    let previous_terminal = build_child_block(&mut ctx, &genesis, true);
+    exec_block(
+        &ctx,
+        OLRuntimeParams::test_default(),
+        &previous_terminal.compute_block_commitment(),
+    )
+    .expect("execute competing epoch-1 terminal");
+    handle_accepted_block(&ctx, previous_terminal.compute_block_commitment())
+        .expect("accept branch B terminal");
+
+    // Epoch 2 has two nonterminal ancestors to traverse before reaching B's terminal.
+    let mut parent = previous_terminal.clone();
+    for _ in 0..2 {
+        parent = build_child_block(&mut ctx, &parent, false);
+        exec_block(
+            &ctx,
+            OLRuntimeParams::test_default(),
+            &parent.compute_block_commitment(),
+        )
+        .expect("execute nonterminal block");
+    }
+    let terminal = build_child_block(&mut ctx, &parent, true);
+    (ctx, terminal, previous_terminal)
+}
+
+#[test]
+fn test_accepted_terminal_uses_own_branch_previous_terminal() {
+    let (mut ctx, terminal, previous_terminal) = prepare_fork_epoch();
+    let previous_commitment = previous_terminal.compute_block_commitment();
+    assert_ne!(
+        ctx.stored_summaries.lock().unwrap()[0].terminal(),
+        &previous_commitment
+    );
+
+    // Retain only epoch 2's blocks and the preceding terminal header. Its body
+    // and all older headers are absent, while the executed states remain available.
+    let storage = create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap();
+    let retained_blocks = storage.ol_block().clone();
+    for slot in previous_commitment.slot() + 1..=terminal.slot() {
+        for id in ctx.blocks.get_blocks_at_height_blocking(slot).unwrap() {
+            let block = ctx.fetch_block(&id).unwrap().unwrap();
+            retained_blocks.put_block_data_blocking(block).unwrap();
+        }
+    }
+    retained_blocks
+        .put_terminal_header_blocking(*previous_commitment.blkid(), previous_terminal)
+        .unwrap();
+    ctx.blocks = retained_blocks;
+    ctx.block_ancestry_provider = BlockAncestryProvider::new(ctx.blocks.clone());
+
+    exec_block(
+        &ctx,
+        OLRuntimeParams::test_default(),
+        &terminal.compute_block_commitment(),
+    )
+    .expect("execute terminal on competing branch");
+    handle_accepted_block(&ctx, terminal.compute_block_commitment())
+        .expect("accept competing terminal");
+
+    let summaries = ctx.stored_summaries.lock().unwrap();
+    let summary = summaries.last().unwrap();
+    assert_eq!(summary.epoch(), 2);
+    assert_eq!(summary.prev_terminal(), &previous_commitment);
+    assert_eq!(summary.terminal(), &terminal.compute_block_commitment());
+    let stored_states = ctx.stored_states.lock().unwrap();
+    assert_eq!(
+        stored_states.last().unwrap().1.compute_state_root(),
+        *terminal.state_root()
+    );
+}
+
+#[test]
+fn test_accepted_terminal_rejects_missing_ancestor_header() {
+    let (ctx, terminal, previous_terminal) = prepare_fork_epoch();
+    let missing_id = previous_terminal.compute_blkid();
+    ctx.blocks.del_block_data_blocking(missing_id).unwrap();
+    let summaries_before = ctx.stored_summaries.lock().unwrap().len();
+
+    // Other summaries and the requested terminal's parent state still exist;
+    // missing ancestry must fail instead of selecting another branch's summary.
+    exec_block(
+        &ctx,
+        OLRuntimeParams::test_default(),
+        &terminal.compute_block_commitment(),
+    )
+    .expect("execution only needs the immediate parent");
+    let err = handle_accepted_block(&ctx, terminal.compute_block_commitment())
+        .expect_err("missing ancestor must fail epoch finalization");
+    assert!(
+        matches!(err, WorkerError::BlockAncestry(BlockAncestryError::MissingHeader(id)) if id == missing_id)
+    );
+    assert_eq!(ctx.stored_summaries.lock().unwrap().len(), summaries_before);
 }

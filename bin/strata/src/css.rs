@@ -123,9 +123,13 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .await
     }
 
-    async fn apply_checkpoint(&self, epoch: EpochCommitment) -> CheckpointSyncResult<()> {
+    async fn apply_checkpoint(
+        &self,
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+    ) -> CheckpointSyncResult<()> {
         self.chain_worker
-            .apply_checkpoint(epoch)
+            .apply_checkpoint(epoch, previous_epoch)
             .await
             .map_err(|cause| CheckpointSyncError::EpochOp {
                 epoch,

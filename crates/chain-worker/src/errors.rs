@@ -6,6 +6,7 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{
     AccountId, Buf32, Epoch, L1BlockCommitment, L1Height, OLBlockCommitment, OLBlockId,
 };
+use strata_ol_block_ancestry_provider::BlockAncestryError;
 use strata_ol_spec_selection::SelectSpecAfterEpochError;
 use strata_ol_state_types::StateError;
 use strata_ol_stf::{EpochSpecSelectionError, ExecError, InvalidEpochL1Range, UpgradeRequired};
@@ -19,6 +20,10 @@ pub type WorkerResult<T> = Result<T, WorkerError>;
 /// Errors that can occur during chain worker operations.
 #[derive(Debug, Error)]
 pub enum WorkerError {
+    /// Failed to walk back from an epoch's terminal block to the previous epoch's terminal.
+    #[error("block ancestry lookup failed: {0}")]
+    BlockAncestry(#[from] BlockAncestryError),
+
     /// Block not found in database.
     #[error("missing OL block {0}")]
     MissingOLBlock(OLBlockId),
@@ -44,10 +49,6 @@ pub enum WorkerError {
     #[error("missing summary for epoch commitment {0:?}")]
     MissingEpochSummary(EpochCommitment),
 
-    /// Missing epoch summary for given epoch.
-    #[error("missing summary for epoch {0:?}")]
-    MissingSummaryForEpoch(u32),
-
     /// Missing checkpoint payload for an epoch the worker was asked to apply.
     #[error("missing checkpoint payload for epoch {0:?}")]
     MissingCheckpointPayload(EpochCommitment),
@@ -56,6 +57,13 @@ pub enum WorkerError {
     /// genesis-initialized locally and never reconstructed from a checkpoint.
     #[error("cannot apply checkpoint for epoch 0 (genesis-initialized)")]
     CannotApplyGenesisEpoch,
+
+    /// The predecessor must be the immediately preceding epoch with an earlier terminal slot.
+    #[error("invalid checkpoint predecessor {previous_epoch} for epoch {epoch}")]
+    InvalidCheckpointPredecessor {
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+    },
 
     /// The checkpoint payload's tip does not match the epoch being applied.
     /// Indicates a key→value mismatch from a storage-writer bug.
