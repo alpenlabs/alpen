@@ -1,3 +1,6 @@
+use std::sync::Barrier;
+use std::thread;
+
 use strata_db_types::ol_block::{BlockAvailability, BlockStatus, OLBlockDatabase};
 use strata_db_types::DbError;
 use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
@@ -67,10 +70,144 @@ pub fn test_get_canonical_block_empty(db: &impl OLBlockDatabase) {
         .get_canonical_block(7)
         .expect("test: get canonical at empty slot");
     assert!(result.is_none());
-    let err = db
-        .get_tip_slot()
-        .expect_err("test: empty canonical index has no tip slot");
-    assert!(matches!(err, DbError::NotBootstrapped));
+    assert_eq!(db.get_canonical_tip().unwrap(), None);
+}
+
+pub fn test_get_canonical_blocks_preserves_order_and_absence(db: &impl OLBlockDatabase) {
+    assert_eq!(db.get_canonical_blocks(vec![]).unwrap(), vec![]);
+    assert_eq!(
+        db.get_canonical_blocks(vec![5, 5]).unwrap(),
+        vec![None, None]
+    );
+
+    // Leave gaps before and between canonical rows, with no stored block bodies.
+    let first = canonical_id(0xa1);
+    let second = canonical_id(0xa2);
+    db.replace_canonical_suffix_from(5, vec![first])
+        .expect("test: seed first canonical row");
+    db.replace_canonical_suffix_from(9, vec![second])
+        .expect("test: seed second canonical row");
+
+    // Unsorted requests and duplicates retain their positions, including missing slots.
+    assert_eq!(
+        db.get_canonical_blocks(vec![9, 0, 5, 7, 9, u64::MAX])
+            .unwrap(),
+        vec![Some(second), None, Some(first), None, Some(second), None,]
+    );
+
+    db.replace_canonical_suffix_from(5, Vec::new())
+        .expect("test: clear canonical index");
+    assert_eq!(
+        db.get_canonical_blocks(vec![5, 9]).unwrap(),
+        vec![None, None]
+    );
+}
+
+pub fn test_canonical_blocks_during_suffix_replacement(db: &impl OLBlockDatabase) {
+    // Replacing the longer branch changes two IDs and removes the third row.
+    let long_branch = vec![canonical_id(0xa1), canonical_id(0xa2), canonical_id(0xa3)];
+    let short_branch = vec![canonical_id(0xb1), canonical_id(0xb2)];
+    let long_result = vec![
+        Some(long_branch[0]),
+        Some(long_branch[1]),
+        Some(long_branch[2]),
+    ];
+    let short_result = vec![Some(short_branch[0]), Some(short_branch[1]), None];
+    db.replace_canonical_suffix_from(5, long_branch.clone())
+        .expect("test: seed canonical branch");
+
+    // Start both threads together; this stress check does not force a particular interleaving.
+    let barrier = Barrier::new(2);
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            barrier.wait();
+            for iteration in 0..128 {
+                let branch = if iteration % 2 == 0 {
+                    &short_branch
+                } else {
+                    &long_branch
+                };
+                db.replace_canonical_suffix_from(5, branch.clone())
+                    .expect("test: replace canonical branch");
+            }
+        });
+        barrier.wait();
+        for _ in 0..128 {
+            let blocks = db.get_canonical_blocks(vec![5, 6, 7]).unwrap();
+            // Every batch must describe one whole branch, including its absent rows.
+            if blocks != long_result {
+                assert_eq!(
+                    blocks, short_result,
+                    "batch must describe one complete branch"
+                );
+            }
+        }
+    });
+}
+
+pub fn test_canonical_tip_follows_sparse_index_and_reorg(db: &impl OLBlockDatabase) {
+    // Seed only slots 5 and 6, leaving earlier history absent.
+    let first = canonical_id(0xa1);
+    let second = canonical_id(0xa2);
+    db.replace_canonical_suffix_from(5, vec![first, second])
+        .expect("test: seed sparse canonical index");
+
+    assert_eq!(
+        db.get_canonical_tip().unwrap(),
+        Some(OLBlockCommitment::new(6, second))
+    );
+
+    let replacement = canonical_id(0xb1);
+    // Replace the suffix with a shorter branch; both the tip's slot and ID must change.
+    db.replace_canonical_suffix_from(5, vec![replacement])
+        .expect("test: replace with shorter branch");
+    assert_eq!(
+        db.get_canonical_tip().unwrap(),
+        Some(OLBlockCommitment::new(5, replacement))
+    );
+
+    // Remove the remaining history; absence must return None rather than a bootstrap error.
+    db.replace_canonical_suffix_from(5, Vec::new())
+        .expect("test: clear canonical index");
+    assert_eq!(db.get_canonical_tip().unwrap(), None);
+}
+
+pub fn test_canonical_tip_during_suffix_replacement(db: &impl OLBlockDatabase) {
+    // Prepare branches at slots 5..=7 and 5..=6 with distinct block IDs, then seed the longer one.
+    let long_branch = vec![canonical_id(0xa1), canonical_id(0xa2), canonical_id(0xa3)];
+    let short_branch = vec![canonical_id(0xb1), canonical_id(0xb2)];
+    let long_tip = OLBlockCommitment::new(7, long_branch[2]);
+    let short_tip = OLBlockCommitment::new(6, short_branch[1]);
+    db.replace_canonical_suffix_from(5, long_branch.clone())
+        .expect("test: seed canonical branch");
+
+    // Start reader and writer together; the barrier does not guarantee reads overlap writes.
+    // This stress check can expose inconsistent tips, but passing does not prove atomicity.
+    let barrier = Barrier::new(2);
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            barrier.wait();
+            // Alternate branches so each replacement changes both the tip's slot and ID.
+            for iteration in 0..128 {
+                let branch = if iteration % 2 == 0 {
+                    &short_branch
+                } else {
+                    &long_branch
+                };
+                db.replace_canonical_suffix_from(5, branch.clone())
+                    .expect("test: replace canonical branch");
+            }
+        });
+
+        barrier.wait();
+        for _ in 0..128 {
+            let tip = db.get_canonical_tip().unwrap();
+            // Accept either complete tip, never None or a slot/ID pair from different branches.
+            if tip != Some(long_tip) {
+                assert_eq!(tip, Some(short_tip), "tip must be a complete index row");
+            }
+        }
+    });
 }
 
 pub fn test_replace_canonical_suffix_from_extend(db: &impl OLBlockDatabase) {
@@ -130,7 +267,10 @@ pub fn test_replace_canonical_suffix_from_revert_empty_branch(db: &impl OLBlockD
     }
     assert_eq!(db.get_canonical_block(3).unwrap(), None);
     assert_eq!(db.get_canonical_block(4).unwrap(), None);
-    assert_eq!(db.get_tip_slot().unwrap(), 2);
+    assert_eq!(
+        db.get_canonical_tip().unwrap(),
+        Some(OLBlockCommitment::new(2, canonical_id(2)))
+    );
 }
 
 pub fn test_replace_canonical_suffix_from_max(db: &impl OLBlockDatabase) {
@@ -170,7 +310,10 @@ pub fn test_replace_canonical_suffix_from_idempotent(db: &impl OLBlockDatabase) 
     for (slot, id) in seed.iter().enumerate() {
         assert_eq!(db.get_canonical_block(slot as u64).unwrap(), Some(*id));
     }
-    assert_eq!(db.get_tip_slot().unwrap(), 4);
+    assert_eq!(
+        db.get_canonical_tip().unwrap(),
+        Some(OLBlockCommitment::new(4, canonical_id(4)))
+    );
 }
 
 pub fn test_promote_to_history_anchor_atomic_surface_and_idempotency(db: &impl OLBlockDatabase) {
@@ -205,7 +348,10 @@ pub fn test_promote_to_history_anchor_atomic_surface_and_idempotency(db: &impl O
             None
         );
     }
-    assert_eq!(db.get_tip_slot().expect("test: get promoted tip"), 10);
+    assert_eq!(
+        db.get_canonical_tip().expect("test: get promoted tip"),
+        Some(anchor.to_block_commitment())
+    );
 
     db.promote_to_history_anchor(anchor)
         .expect("test: re-promote same history anchor");
@@ -264,7 +410,10 @@ pub fn test_delete_canonical_block_clears_canonical_index(
     db.replace_canonical_suffix_from(11, vec![block_id])
         .expect("test: seed canonical");
 
-    assert_eq!(db.get_tip_slot().expect("test: get tip slot"), 11);
+    assert_eq!(
+        db.get_canonical_tip().expect("test: get tip"),
+        Some(OLBlockCommitment::new(11, block_id))
+    );
 
     db.del_block_data(block_id).expect("test: delete block");
 
@@ -273,10 +422,7 @@ pub fn test_delete_canonical_block_clears_canonical_index(
             .expect("test: get deleted canonical slot"),
         None
     );
-    let err = db
-        .get_tip_slot()
-        .expect_err("test: deleted canonical tip leaves no tip slot");
-    assert!(matches!(err, DbError::NotBootstrapped));
+    assert_eq!(db.get_canonical_tip().expect("test: get deleted tip"), None);
 }
 
 pub fn test_delete_canonical_block_truncates_canonical_suffix(
@@ -316,7 +462,10 @@ pub fn test_delete_canonical_block_truncates_canonical_suffix(
             .expect("test: get canonical slot 12"),
         None
     );
-    assert_eq!(db.get_tip_slot().expect("test: get truncated tip slot"), 10);
+    assert_eq!(
+        db.get_canonical_tip().expect("test: get truncated tip"),
+        Some(OLBlockCommitment::new(10, block1_id))
+    );
 }
 
 pub fn test_delete_noncanonical_block_preserves_canonical_index(
@@ -866,7 +1015,7 @@ pub fn proptest_get_blocks_at_height(
     assert!(block_ids.contains(&block_id2));
 }
 
-pub fn proptest_get_tip_slot(
+pub fn proptest_get_canonical_tip(
     db: &impl OLBlockDatabase,
     mut block1: OLBlockV1,
     mut block2: OLBlockV1,
@@ -890,9 +1039,9 @@ pub fn proptest_get_tip_slot(
     db.replace_canonical_suffix_from(5, vec![block_id1])
         .expect("test: seed canonical index");
 
-    // Get tip slot - should be 5 (highest canonical slot), not the higher valid fork.
-    let tip_slot = db.get_tip_slot().expect("test: get tip slot");
-    assert_eq!(tip_slot, 5u64);
+    // The canonical tip is block1, despite the higher valid fork.
+    let tip = db.get_canonical_tip().expect("test: get canonical tip");
+    assert_eq!(tip, Some(OLBlockCommitment::new(5, block_id1)));
 }
 
 #[macro_export]
@@ -944,6 +1093,30 @@ macro_rules! ol_block_db_tests {
         fn test_get_canonical_block_empty() {
             let db = $setup_expr;
             $crate::ol_block_tests::test_get_canonical_block_empty(&db);
+        }
+
+        #[test]
+        fn test_get_canonical_blocks_preserves_order_and_absence() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_get_canonical_blocks_preserves_order_and_absence(&db);
+        }
+
+        #[test]
+        fn test_canonical_blocks_during_suffix_replacement() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_canonical_blocks_during_suffix_replacement(&db);
+        }
+
+        #[test]
+        fn test_canonical_tip_follows_sparse_index_and_reorg() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_canonical_tip_follows_sparse_index_and_reorg(&db);
+        }
+
+        #[test]
+        fn test_canonical_tip_during_suffix_replacement() {
+            let db = $setup_expr;
+            $crate::ol_block_tests::test_canonical_tip_during_suffix_replacement(&db);
         }
 
         #[test]
@@ -1120,9 +1293,9 @@ macro_rules! ol_block_db_tests {
             }
 
             #[test]
-            fn proptest_get_tip_slot(block1 in ol_test_utils::ol_block_strategy(), block2 in ol_test_utils::ol_block_strategy()) {
+            fn proptest_get_canonical_tip(block1 in ol_test_utils::ol_block_strategy(), block2 in ol_test_utils::ol_block_strategy()) {
                 let db = $setup_expr;
-                $crate::ol_block_tests::proptest_get_tip_slot(&db, block1, block2);
+                $crate::ol_block_tests::proptest_get_canonical_tip(&db, block1, block2);
             }
         }
     };

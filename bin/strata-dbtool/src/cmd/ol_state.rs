@@ -15,7 +15,10 @@ use super::{
         build_mmr_index_revert_plan, execute_mmr_index_revert_plan, print_mmr_index_revert_summary,
         validate_mmr_index_revert_prefixes,
     },
-    ol::{delete_ol_block_data, get_ol_block_slot_and_epoch, mark_ol_block_unchecked},
+    ol::{
+        delete_ol_block_data, get_canonical_ol_tip, get_ol_block_slot_and_epoch,
+        mark_ol_block_unchecked,
+    },
 };
 use crate::{
     cli::OutputFormat,
@@ -148,10 +151,7 @@ pub(crate) fn revert_ol_state(
 
     let dry_run = !args.force;
 
-    let chain_tip_slot = db
-        .ol_block_db()
-        .get_tip_slot()
-        .internal_error("Failed to get OL tip slot")?;
+    let chain_tip_slot = get_canonical_ol_tip(db)?.slot();
 
     // No-op: target is already at/after current tip.
     if target_slot >= chain_tip_slot {
