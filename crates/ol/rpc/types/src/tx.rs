@@ -11,7 +11,7 @@ use strata_ol_tx_types_v1::{
 };
 use strata_predicate::PredicateKey;
 use strata_primitives::{HexBytes, HexBytes32};
-use strata_snark_acct_types::{SnarkAccountUpdate, UpdateOperationData};
+use strata_snark_acct_types::{OutputsError, SnarkAccountUpdate, UpdateOperationData};
 
 use crate::RpcSnarkAccountUpdate;
 
@@ -145,6 +145,10 @@ impl From<RpcTxConstraints> for TxConstraintsV1 {
 /// Error type for transaction conversion.
 #[derive(Debug, thiserror::Error)]
 pub enum RpcTxConversionError {
+    /// The update outputs exceed transaction effect capacities.
+    #[error(transparent)]
+    Outputs(#[from] OutputsError),
+
     /// Failed to decode update operation data.
     #[error("failed to decode update operation data: {0}")]
     DecodeOperationData(String),
@@ -427,7 +431,7 @@ impl TryFrom<RpcOLTransaction> for OLTransactionV1 {
                     target,
                     sau_operation_data,
                 ));
-                let effects = operation.outputs().to_tx_effects();
+                let effects = operation.outputs().try_to_tx_effects()?;
                 let tx_data =
                     OLTransactionDataV1::new(payload, effects).with_constraints(constraints);
                 let tx_proofs = TxProofsV1::new(
@@ -443,8 +447,11 @@ impl TryFrom<RpcOLTransaction> for OLTransactionV1 {
 #[cfg(test)]
 mod tests {
     use ssz::Encode;
+    use strata_acct_types::{BitcoinAmount, MsgPayload, MAX_MESSAGES, MAX_TRANSFERS};
     use strata_predicate::PredicateTypeId;
-    use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs};
+    use strata_snark_acct_types::{
+        LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs,
+    };
 
     use super::*;
     use crate::RpcSnarkAccountUpdate;
@@ -465,6 +472,12 @@ mod tests {
         )
     }
 
+    fn make_account_id(index: u64) -> AccountId {
+        let mut bytes = [0; 32];
+        bytes[..8].copy_from_slice(&index.to_le_bytes());
+        AccountId::from(bytes)
+    }
+
     fn convert(update: RpcSnarkAccountUpdate) -> OLTransactionV1 {
         OLTransactionV1::try_from(RpcOLTransaction::new_snark_acct_update(update))
             .expect("test: conversion should succeed")
@@ -476,6 +489,109 @@ mod tests {
                 sau.operation().update().new_predicate().cloned()
             }
             _ => panic!("test: expected SAU payload"),
+        }
+    }
+
+    #[test]
+    fn test_sau_conversion_rejects_too_many_messages() {
+        let limit = MAX_MESSAGES as usize;
+        let message = OutputMessage::new(
+            AccountId::from([3; 32]),
+            MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![1]).unwrap(),
+        );
+        let update =
+            make_rpc_sau_update(UpdateOutputs::new_empty().with_messages(vec![message; limit + 1]));
+        let error =
+            OLTransactionV1::try_from(RpcOLTransaction::new_snark_acct_update(update)).unwrap_err();
+        let RpcTxConversionError::Outputs(error) = error else {
+            panic!("expected output capacity error, got {error:?}");
+        };
+        assert_eq!(
+            error,
+            OutputsError::MessagesCapacityExceeded {
+                actual: limit + 1,
+                limit,
+            }
+        );
+    }
+
+    #[test]
+    fn test_sau_conversion_rejects_too_many_transfers() {
+        let limit = MAX_TRANSFERS as usize;
+        let transfer = OutputTransfer::new(
+            AccountId::from([3; 32]),
+            BitcoinAmount::try_from(1).unwrap(),
+        );
+        let update = make_rpc_sau_update(
+            UpdateOutputs::new_empty().with_transfers(vec![transfer; limit + 1]),
+        );
+        let error =
+            OLTransactionV1::try_from(RpcOLTransaction::new_snark_acct_update(update)).unwrap_err();
+        let RpcTxConversionError::Outputs(error) = error else {
+            panic!("expected output capacity error, got {error:?}");
+        };
+        assert_eq!(
+            error,
+            OutputsError::TransfersCapacityExceeded {
+                actual: limit + 1,
+                limit,
+            }
+        );
+    }
+
+    #[test]
+    fn test_sau_conversion_preserves_all_effects_at_capacity() {
+        for (transfer_count, message_count) in [(0, 0), (MAX_TRANSFERS, MAX_MESSAGES)] {
+            let outputs = UpdateOutputs::new_empty()
+                .with_transfers(
+                    (0..transfer_count)
+                        .map(|i| {
+                            OutputTransfer::new(
+                                make_account_id(i),
+                                BitcoinAmount::try_from(i).unwrap(),
+                            )
+                        })
+                        .collect(),
+                )
+                .with_messages(
+                    (0..message_count)
+                        .map(|i| {
+                            OutputMessage::new(
+                                make_account_id(i),
+                                MsgPayload::from_bytes(
+                                    BitcoinAmount::try_from(i).unwrap(),
+                                    i.to_le_bytes().to_vec(),
+                                )
+                                .unwrap(),
+                            )
+                        })
+                        .collect(),
+                );
+            let tx = convert(make_rpc_sau_update(outputs.clone()));
+            assert_eq!(
+                tx.data()
+                    .effects()
+                    .transfers_iter()
+                    .map(|transfer| (transfer.dest(), transfer.value()))
+                    .collect::<Vec<_>>(),
+                outputs
+                    .transfers()
+                    .iter()
+                    .map(|transfer| (transfer.dest(), transfer.value()))
+                    .collect::<Vec<_>>(),
+            );
+            assert_eq!(
+                tx.data()
+                    .effects()
+                    .messages_iter()
+                    .map(|message| (message.dest(), message.payload()))
+                    .collect::<Vec<_>>(),
+                outputs
+                    .messages()
+                    .iter()
+                    .map(|message| (message.dest(), message.payload()))
+                    .collect::<Vec<_>>(),
+            );
         }
     }
 

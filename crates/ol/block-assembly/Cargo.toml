@@ -21,6 +21,7 @@ strata-identifiers.workspace = true
 strata-l1-txfmt = { workspace = true, optional = true }
 strata-msg-fmt = { workspace = true, optional = true }
 strata-ol-chain-types-v1.workspace = true
+strata-ol-da-types-v1 = { workspace = true, optional = true }
 strata-ol-log-budget.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-msg-types = { workspace = true, optional = true }
@@ -60,6 +61,7 @@ test-utils = [
   "dep:strata-db-store-sled",
   "dep:strata-l1-txfmt",
   "dep:strata-msg-fmt",
+  "dep:strata-ol-da-types-v1",
   "dep:strata-ol-msg-types",
   "strata-db-store-sled/test_utils",
   "strata-ol-chain-types-v1/test-utils",
@@ -80,6 +82,7 @@ strata-db-store-sled.workspace = true
 strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
+strata-ol-da-types-v1.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }

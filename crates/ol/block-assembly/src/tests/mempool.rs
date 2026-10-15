@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use ssz::Encode;
+use strata_asm_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
 use strata_config::SequencerConfig;
 use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId, OLTxId};
@@ -25,8 +26,8 @@ use crate::context::BlockAssemblyContext;
 use crate::resource_state::EpochResourceState;
 use crate::test_utils::{
     FailingStateProvider, MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
-    TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder, create_test_storage,
-    included_txids, test_account_id,
+    TEST_SLOTS_PER_EPOCH, TestAccount, TestEnv, TestStorageFixtureBuilder,
+    create_test_output_messages, create_test_storage, included_txids, test_account_id,
 };
 use crate::types::BlockGenerationConfig;
 use crate::{
@@ -186,7 +187,10 @@ async fn test_deferred_account_backlog_does_not_hide_independent_transaction() {
     );
     // These inbox messages pass log admission but exceed the DA budget.
     let deferred = MempoolSnarkTxBuilder::new(account_a)
-        .with_outputs(vec![(account_b, 0); 6_000])
+        .with_output_messages(create_test_output_messages(
+            account_b,
+            OL_DA_DIFF_MAX_SIZE as usize + 1,
+        ))
         .build();
     let deferred_id = mempool.submit_transaction(deferred).await.unwrap();
     for seq_no in 1..=1_024 {
