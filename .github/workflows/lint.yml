@@ -70,7 +70,6 @@ jobs:
         crate:
           # - strata-primitives # unsupported due to `secp256k1` FFI dependency
           # - strata-dbtool # unsupported due to `rkyv` dependency
-          # - strata-test-utils-btcio # unsupported due to `tokio::test` macro usage
           # - strata-btcio # unsupported due to `tokio::test` macro usage
           # - strata-key-derivation # unsupported due to `secp256k1` FFI dependency
           - strata-csm-types
