@@ -16,8 +16,7 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{
-    BRIDGE_GATEWAY_ACCT_ID, Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment,
-    SubjectId,
+    BRIDGE_GATEWAY_ACCT_ID, Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment, SubjectId,
 };
 use strata_ol_chain_types_v1::{MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_da_types_v1::OLDaPayloadV1;
@@ -155,8 +154,6 @@ pub struct BuiltEpoch {
     pub prev_manifests_by_height: Vec<(u32, AsmManifest)>,
     /// Epoch commitment of the built epoch (epoch 1).
     pub epoch_commitment: EpochCommitment,
-    /// Index of the previous epoch (genesis epoch 0).
-    pub prev_epoch_idx: Epoch,
     /// Summary of the previous (genesis) epoch.
     pub prev_summary: EpochSummary,
     /// Terminal block commitment of the previous (genesis) epoch.
@@ -315,7 +312,6 @@ pub fn build_epoch(plan: EpochPlan) -> BuiltEpoch {
         genesis_l1_block,
         prev_manifests_by_height: vec![(genesis_manifest.height(), genesis_manifest)],
         epoch_commitment,
-        prev_epoch_idx: 0,
         prev_summary,
         prev_terminal: genesis_commitment,
         pre_epoch_state,
