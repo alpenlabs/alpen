@@ -145,11 +145,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>> {
-        match self.ol_block_mgr.get_canonical_tip_blocking() {
-            Ok(tip) => Ok(tip),
-            Err(DbError::NotBootstrapped) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
+        Ok(self.ol_block_mgr.get_canonical_tip_blocking()?)
     }
 
     fn fetch_ol_state(
