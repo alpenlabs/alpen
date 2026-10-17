@@ -187,6 +187,7 @@ Orchestration Layer implementation.
 |-------|-------------|
 | `ol/stf` | Versioned OL STF entry point that dispatches each operation on `OLSpecId` |
 | `ol/stf-v1` | OL state transition function (block, epoch, manifest processing) |
+| `ol/spec-selection` | Selects the next epoch's spec from stored epoch summaries and L1 manifests; not compiled into the checkpoint guest |
 | `ol/state-types` | Version-independent state traits, ledger entry types, `OLSpecId`, and the fixed `OLRootState` |
 | `ol/state-types-v1` | Concrete state structures (toplevel, global, epochal, ledger, snark account) |
 | `ol/chain-types-v1` | Versioned OL block types (SSZ); re-exports OL log types from `strata-common` |
