@@ -16,7 +16,6 @@ use strata_asm_checkpoint_types::{CheckpointSidecar, CheckpointTip};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::{
     EpochSummary, TerminalHeaderReconstructionError, reconstruct_terminal_header,
-    select_spec_after_epoch,
 };
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_CHAIN_WORKER_AFTER_MMR_INDEX, check_bail_trigger};
@@ -28,6 +27,7 @@ use strata_ol_chain_types_v1::{
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_spec_selection::select_spec_after_epoch;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
