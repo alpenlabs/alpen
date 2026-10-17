@@ -10,8 +10,10 @@ workspace = true
 strata-acct-types.workspace = true
 strata-asm-checkpoint-types.workspace = true
 strata-asm-common = { workspace = true, optional = true }
+strata-asm-logs = { workspace = true, optional = true }
 strata-asm-manifest-types.workspace = true
 strata-btc-verification = { workspace = true, optional = true }
+strata-checkpoint-types.workspace = true
 strata-codec = { workspace = true, optional = true }
 strata-common = { workspace = true, optional = true }
 strata-config.workspace = true
@@ -25,6 +27,7 @@ strata-ol-log-budget.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-msg-types = { workspace = true, optional = true }
 strata-ol-params.workspace = true
+strata-ol-spec-selection.workspace = true
 strata-ol-state-provider.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
@@ -55,6 +58,7 @@ test-utils = [
   "dep:bitcoin",
   "dep:proptest",
   "dep:strata-asm-common",
+  "dep:strata-asm-logs",
   "dep:strata-btc-verification",
   "dep:strata-codec",
   "dep:strata-db-store-sled",

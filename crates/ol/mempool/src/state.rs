@@ -10,16 +10,18 @@ use ssz::{Decode, Encode};
 use strata_acct_types::AccountId;
 use strata_bridge_params::BridgeParams;
 use strata_db_types::mempool::MempoolTxData;
-use strata_identifiers::{OLBlockCommitment, OLTxId};
+use strata_identifiers::{L1BlockCommitment, OLBlockCommitment, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_log_budget::check_tx_log_budget;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_types::{IStateAccessor, OLSpecId};
+use strata_ol_stf::UpgradeRequired;
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_service::ServiceState;
 use strata_storage::NodeStorage;
 use tracing::{debug, info, instrument, warn};
 
+use crate::tip::{MempoolTip, select_tip_spec};
 use crate::types::{MempoolEntry, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats};
 use crate::validation::validate_transaction;
 use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
@@ -65,6 +67,10 @@ pub(crate) struct MempoolContext<P: StateProvider> {
 
     /// State provider for fetching OL state at different chain tips.
     pub(crate) provider: Arc<P>,
+
+    /// L1 block OL genesis anchors to, where the genesis epoch's L1 range
+    /// starts for spec selection.
+    pub(crate) genesis_l1_block: L1BlockCommitment,
 }
 
 impl<P: StateProvider> MempoolContext<P> {
@@ -74,12 +80,14 @@ impl<P: StateProvider> MempoolContext<P> {
         bridge_params: BridgeParams,
         storage: Arc<NodeStorage>,
         provider: Arc<P>,
+        genesis_l1_block: L1BlockCommitment,
     ) -> MempoolContext<P> {
         MempoolContext {
             config,
             bridge_params,
             storage,
             provider,
+            genesis_l1_block,
         }
     }
 }
@@ -92,6 +100,7 @@ impl MempoolContext<OLStateManagerProviderImpl> {
         config: OLMempoolConfig,
         bridge_params: BridgeParams,
         storage: Arc<NodeStorage>,
+        genesis_l1_block: L1BlockCommitment,
     ) -> Self {
         let provider = Arc::new(OLStateManagerProviderImpl::new(storage.ol_state().clone()));
         Self {
@@ -99,6 +108,7 @@ impl MempoolContext<OLStateManagerProviderImpl> {
             bridge_params,
             storage,
             provider,
+            genesis_l1_block,
         }
     }
 }
@@ -132,6 +142,13 @@ pub(crate) struct MempoolServiceState<P: StateProvider> {
     /// State accessor for validation. Updated when chain tip changes.
     state_accessor: P::State,
 
+    /// Spec of the block after the tip, selected with the tip state.
+    tip_spec: Result<OLSpecId, UpgradeRequired>,
+
+    /// Whether loading the stored transactions waits for a tip whose next
+    /// block this binary can run.
+    deferred_load: bool,
+
     /// Mempool statistics.
     stats: OLMempoolStats,
 }
@@ -144,13 +161,15 @@ impl<P: StateProvider> MempoolServiceState<P> {
         bridge_params: BridgeParams,
         storage: Arc<NodeStorage>,
         provider: Arc<P>,
-        tip: OLBlockCommitment,
+        genesis_l1_block: L1BlockCommitment,
+        tip: MempoolTip,
     ) -> OLMempoolResult<Self> {
         let ctx = Arc::new(MempoolContext::new(
             config,
             bridge_params,
             storage,
             provider,
+            genesis_l1_block,
         ));
         Self::new_with_context(ctx, tip).await
     }
@@ -158,30 +177,22 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Create new mempool service state with an existing context.
     /// Used for testing.
     ///
-    /// Fetches the state for the given tip from the provider.
+    /// Fetches the state for the given tip from the provider and selects the
+    /// spec of the block after it.
     pub(crate) async fn new_with_context(
         ctx: Arc<MempoolContext<P>>,
-        tip: OLBlockCommitment,
+        tip: MempoolTip,
     ) -> OLMempoolResult<Self> {
-        let state_accessor = ctx
-            .provider
-            .get_state_for_tip_async(tip)
-            .await
-            .map_err(|e| {
-                OLMempoolError::StateProvider(format!(
-                    "Failed to get state for tip {:?}: {}",
-                    tip, e
-                ))
-            })?
-            .ok_or_else(|| {
-                OLMempoolError::StateProvider(format!("State not found for tip {:?}", tip))
-            })?;
+        let (state_accessor, tip_spec) = load_tip(&ctx, tip).await?;
+        log_upgrade_required(tip.block(), None, &tip_spec);
 
         let state = Self {
             ctx,
             entries: HashMap::new(),
             account_state: HashMap::new(),
             state_accessor,
+            tip_spec,
+            deferred_load: false,
             stats: OLMempoolStats::default(),
         };
         state.record_mempool_gauges();
@@ -197,6 +208,19 @@ impl<P: StateProvider> MempoolServiceState<P> {
     pub(crate) async fn load_from_db(&mut self) -> OLMempoolResult<()> {
         let all_txs = self.ctx.storage.mempool().get_all_txs()?;
         let total_in_db = all_txs.len();
+        if let Err(upgrade) = &self.tip_spec {
+            // Admission cannot run, so keep the stored transactions instead of
+            // dropping them, and load them once a tip's next block runs a spec
+            // this binary implements.
+            debug!(
+                %total_in_db,
+                %upgrade,
+                "not loading mempool transactions until this node is upgraded"
+            );
+            self.deferred_load = true;
+            return Ok(());
+        }
+        self.deferred_load = false;
         info!(%total_in_db, "loading mempool transactions from database");
 
         let mut pending = HashMap::new();
@@ -205,6 +229,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
         let mut skipped_count = 0;
 
         for tx_data in all_txs {
+            if self.contains(&tx_data.txid()) {
+                continue;
+            }
+
             // Parse transaction from bytes
             let tx: OLTransactionV1 = match Decode::from_ssz_bytes(tx_data.tx_bytes()) {
                 Ok(tx) => tx,
@@ -385,15 +413,20 @@ impl<P: StateProvider> MempoolServiceState<P> {
         None
     }
 
-    /// Selects the protocol spec for the mempool's state snapshot.
-    fn select_spec(&self) -> OLSpecId {
-        // TODO(STR-4086): use the spec scheduled for the snapshot state's epoch.
-        OLSpecId::V1
+    /// Returns the spec of the block after the tip, the block admitted
+    /// transactions are built into.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OLMempoolError::UpgradeRequired`] if that block runs a spec
+    /// this binary does not implement.
+    fn select_spec(&self) -> OLMempoolResult<OLSpecId> {
+        Ok(self.tip_spec?)
     }
 
     /// Checks whether a submitted or restored transaction can enter the mempool.
     fn validate_admission(&self, txid: OLTxId, tx: &OLTransactionV1) -> OLMempoolResult<()> {
-        let spec = self.select_spec();
+        let spec = self.select_spec()?;
         check_tx_log_budget(spec, tx, &self.ctx.bridge_params)?;
         validate_transaction(spec, txid, tx, &self.state_accessor, &self.account_state)
     }
@@ -404,6 +437,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
     #[instrument(skip(self, tx), fields(component = "ol_mempool"))]
     pub(crate) async fn add_transaction(&mut self, tx: OLTransactionV1) -> OLMempoolResult<OLTxId> {
         let txid = tx.compute_txid();
+
+        // Nothing is admitted while the next block needs an upgrade, not even
+        // a transaction the mempool already holds.
+        self.select_spec()?;
 
         // Idempotent check - if already present, return success
         if self.contains(&txid) {
@@ -699,8 +736,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// - Slot bounds (`min_slot`, `max_slot`) depend on `state.cur_slot()`
     ///
     /// Returns a list of transaction IDs that failed validation.
+    ///
+    /// When the next block needs an upgrade, nothing is revalidated and every
+    /// transaction stays for a binary that implements the next spec.
     fn revalidate_all_transactions(&self) -> Vec<OLTxId> {
-        let spec = self.select_spec();
+        let Ok(spec) = self.tip_spec else {
+            return Vec::new();
+        };
         self.entries
             .iter()
             .filter_map(|(txid, entry)| {
@@ -798,40 +840,28 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// 1. Load state for new tip and update state accessor
     /// 2. Walk backwards from new tip to current tip via parent links
     /// 3. Process all blocks in chronological order (oldest to newest)
-    #[instrument(skip(self), fields(component = "ol_mempool", slot = new_tip.slot()))]
-    pub(crate) async fn handle_chain_update(
-        &mut self,
-        new_tip: OLBlockCommitment,
-    ) -> OLMempoolResult<()> {
+    #[instrument(skip(self), fields(component = "ol_mempool", slot = new_tip.block().slot()))]
+    pub(crate) async fn handle_chain_update(&mut self, new_tip: MempoolTip) -> OLMempoolResult<()> {
         let current_slot = self.state_accessor.cur_slot();
         debug!(
             %current_slot,
-            new_slot = %new_tip.slot(),
+            new_slot = %new_tip.block().slot(),
             "handling chain update"
         );
 
-        // Load state for new tip from provider
-        let new_state = self
-            .ctx
-            .provider
-            .get_state_for_tip_async(new_tip)
-            .await
-            .map_err(|e| {
-                OLMempoolError::StateProvider(format!(
-                    "Failed to load state for tip {:?}: {}",
-                    new_tip, e
-                ))
-            })?
-            .ok_or_else(|| {
-                OLMempoolError::StateProvider(format!("State not found for tip {:?}", new_tip))
-            })?;
-
-        // Update state accessor
+        // Load the new tip's state and the spec of the block after it, and
+        // install them together so admission never mixes two tips.
+        let (new_state, tip_spec) = load_tip(&self.ctx, new_tip).await?;
+        log_upgrade_required(new_tip.block(), self.tip_spec.as_ref().err(), &tip_spec);
         self.state_accessor = new_state;
+        self.tip_spec = tip_spec;
+        if self.deferred_load && self.tip_spec.is_ok() {
+            self.load_from_db().await?;
+        }
 
         // Walk backwards from new tip to current tip, collecting all block commitments
         let mut blocks_to_process = Vec::new();
-        let mut walk = new_tip;
+        let mut walk = new_tip.block();
 
         while walk.slot() > current_slot {
             blocks_to_process.push(walk);
@@ -847,6 +877,50 @@ impl<P: StateProvider> MempoolServiceState<P> {
         }
 
         Ok(())
+    }
+}
+
+/// Loads the state at `tip` and selects the spec of the block after it.
+async fn load_tip<P: StateProvider>(
+    ctx: &MempoolContext<P>,
+    tip: MempoolTip,
+) -> OLMempoolResult<(P::State, Result<OLSpecId, UpgradeRequired>)> {
+    let block = tip.block();
+    let state = ctx
+        .provider
+        .get_state_for_tip_async(block)
+        .await
+        .map_err(|e| {
+            OLMempoolError::StateProvider(format!("Failed to load state for tip {block:?}: {e}"))
+        })?
+        .ok_or_else(|| {
+            OLMempoolError::StateProvider(format!("State not found for tip {block:?}"))
+        })?;
+    let tip_spec = select_tip_spec(&ctx.storage, ctx.genesis_l1_block, tip, &state).await?;
+    Ok((state, tip_spec))
+}
+
+/// Warns that admission stops when the block after `block` runs a spec this
+/// binary does not implement, unless `prev`, the upgrade the previous tip ran
+/// into, is the same one.
+///
+/// A stopped node keeps receiving chain updates for the same tip while its
+/// last checkpoints finalize, so warning on every update would repeat one
+/// condition.
+fn log_upgrade_required(
+    block: OLBlockCommitment,
+    prev: Option<&UpgradeRequired>,
+    tip_spec: &Result<OLSpecId, UpgradeRequired>,
+) {
+    if let Err(upgrade) = tip_spec
+        && prev != Some(upgrade)
+    {
+        warn!(
+            %block,
+            enactment_l1_height = upgrade.enactment_l1_height(),
+            spec_version = upgrade.spec_version(),
+            "the mempool admits no transactions until this node is upgraded"
+        );
     }
 }
 
@@ -883,11 +957,18 @@ fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{BitcoinAmount, MsgPayload};
-    use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32};
+    use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
+    use strata_checkpoint_types::EpochSummary;
+    use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, OLBlockId};
     use strata_ol_log_budget::TxLogBudgetError;
     use strata_ol_params::BridgeParams;
-    use strata_ol_stf_v1::test_utils::{make_op_return_bosd_descriptor, make_withdrawal_payload};
+    use strata_ol_state_container::OLStateContainer;
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
+    use strata_ol_stf_v1::test_utils::{
+        make_checkpoint_predicate_enactment_manifest, make_empty_manifest,
+        make_op_return_bosd_descriptor, make_withdrawal_payload,
+    };
     use strata_snark_acct_types::{
         LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate, UpdateOperationData,
         UpdateOutputs,
@@ -895,7 +976,7 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        create_test_account_id_with, create_test_block_commitment,
+        InMemoryStateProvider, create_test_account_id_with, create_test_block_commitment,
         create_test_constraints_with_slots, create_test_context,
         create_test_generic_tx_for_account, create_test_generic_tx_with_size,
         create_test_ol_state_for_tip, create_test_snark_tx_from_update,
@@ -943,7 +1024,7 @@ mod tests {
             },
             Arc::new(create_test_state_provider(tip)),
         ));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
         let original_id = state
@@ -965,9 +1046,10 @@ mod tests {
         assert_eq!(pending[0].txid(), original_id);
 
         // Reload through the service path to verify the rejected replacement was not persisted.
-        let mut reloaded = MempoolServiceState::new_with_context(state.ctx.clone(), tip)
-            .await
-            .unwrap();
+        let mut reloaded =
+            MempoolServiceState::new_with_context(state.ctx.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         reloaded.load_from_db().await.unwrap();
         let pending = reloaded.handle_get_candidates().collect::<Vec<_>>();
         assert_eq!(pending.len(), 1);
@@ -988,18 +1070,20 @@ mod tests {
             21,
         )
         .unwrap();
-        let mut state = MempoolServiceState::new_with_context(Arc::new(context), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::new_with_context(Arc::new(context), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         let txid = state
             .add_transaction(create_test_snark_tx_with_withdrawals(173))
             .await
             .unwrap();
         assert_eq!(state.handle_get_candidates().count(), 1);
 
-        let mut reloaded = MempoolServiceState::new_with_context(state.ctx.clone(), tip)
-            .await
-            .unwrap();
+        let mut reloaded =
+            MempoolServiceState::new_with_context(state.ctx.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         reloaded.load_from_db().await.unwrap();
         let pending: Vec<_> = reloaded
             .handle_get_candidates()
@@ -1043,9 +1127,10 @@ mod tests {
                 .unwrap();
         }
 
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::new_with_context(context.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         state.load_from_db().await.unwrap();
         let pending: Vec<_> = state
             .handle_get_candidates()
@@ -1069,9 +1154,10 @@ mod tests {
             OLMempoolConfig::default(),
             Arc::new(create_test_state_provider(tip)),
         ));
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::new_with_context(context.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         for tx in [
             create_test_snark_tx_with_withdrawals(173),
             with_max_slot(
@@ -1087,9 +1173,10 @@ mod tests {
             ));
         }
         assert_eq!(state.handle_get_candidates().count(), 0);
-        let mut reloaded = MempoolServiceState::new_with_context(context, tip)
-            .await
-            .unwrap();
+        let mut reloaded =
+            MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         reloaded.load_from_db().await.unwrap();
         assert_eq!(reloaded.handle_get_candidates().count(), 0);
     }
@@ -1106,7 +1193,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1135,7 +1222,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1163,7 +1250,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1202,7 +1289,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1241,7 +1328,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1281,7 +1368,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1328,7 +1415,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1367,7 +1454,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1402,7 +1489,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1424,9 +1511,10 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::new_with_context(context.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
 
         // Add transactions - mix of different accounts and sequential txs for same account
         let account1 = create_test_account_id_with(1);
@@ -1443,9 +1531,10 @@ mod tests {
         let txid4 = state.add_transaction(tx4).await.unwrap();
 
         // Create new state and load from DB
-        let mut state2 = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state2 =
+            MempoolServiceState::new_with_context(context.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         state2.load_from_db().await.unwrap();
 
         // Should have 4 transactions
@@ -1484,7 +1573,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1520,7 +1609,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1569,7 +1658,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1620,9 +1709,10 @@ mod tests {
         };
         let provider2 = Arc::new(create_test_state_provider(tip2));
         let context_tiny = Arc::new(create_test_context(config_tiny, provider2.clone()));
-        let mut state2 = MempoolServiceState::new_with_context(context_tiny, tip2)
-            .await
-            .unwrap();
+        let mut state2 =
+            MempoolServiceState::new_with_context(context_tiny, MempoolTip::new(tip2, None))
+                .await
+                .unwrap();
 
         let large_tx = create_test_tx_with_id(99);
         let result = state2.add_transaction(large_tx).await;
@@ -1651,7 +1741,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1727,7 +1817,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1793,7 +1883,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1848,7 +1938,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1919,7 +2009,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -1970,7 +2060,7 @@ mod tests {
             OLMempoolConfig::default(),
             Arc::new(create_test_state_provider(tip)),
         ));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
         let original = create_test_snark_tx_with_seq_no(1, 0);
@@ -2006,9 +2096,10 @@ mod tests {
             OLMempoolConfig::default(),
             Arc::new(create_test_state_provider(tip)),
         ));
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::new_with_context(context.clone(), MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         let original = state
             .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
             .await
@@ -2039,9 +2130,10 @@ mod tests {
             expected
         );
 
-        let mut reloaded = MempoolServiceState::new_with_context(context, tip)
-            .await
-            .unwrap();
+        let mut reloaded =
+            MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
+                .await
+                .unwrap();
         reloaded.load_from_db().await.unwrap();
         assert_eq!(
             reloaded
@@ -2064,7 +2156,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2099,7 +2191,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2130,7 +2222,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2163,7 +2255,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2213,7 +2305,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2261,7 +2353,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2303,7 +2395,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2338,7 +2430,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2373,7 +2465,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2408,7 +2500,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
@@ -2454,6 +2546,196 @@ mod tests {
                 .get(&account_id)
                 .and_then(|a| a.seq_nos.last().copied()),
             Some(3)
+        );
+    }
+
+    /// Stores the chain data of a tip at slot 100 that ends epoch 1 under
+    /// `spec`, which processed the L1 block after the genesis anchor, and
+    /// returns the tip and its state. With `enactment`, that block's manifest
+    /// carries a checkpoint predicate enactment.
+    async fn store_terminal_tip(
+        storage: &NodeStorage,
+        genesis_l1_block: L1BlockCommitment,
+        spec: OLSpecId,
+        enactment: bool,
+    ) -> (MempoolTip, OLStateContainer) {
+        let tip = OLBlockCommitment::new(100, OLBlockId::from(Buf32::from([0xee; 32])));
+        let mut state =
+            MemoryStateBaseLayer::from_container(create_test_ol_state_for_tip(tip.slot()));
+        state.set_spec_versions(OLSpecVersions::uniform(spec));
+        let anchor = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
+        assert_eq!(anchor, genesis_l1_block);
+        let height = anchor.height() + 1;
+        let manifest = if enactment {
+            make_checkpoint_predicate_enactment_manifest(height, 1)
+        } else {
+            make_empty_manifest(height, 0)
+        };
+        state.append_l1_block_rec(
+            height,
+            L1BlockRecord::new(*manifest.blkid().as_ref(), [0; 32]),
+        );
+        let last_l1 = L1BlockCommitment::new(height, *manifest.blkid());
+
+        storage.l1().put_block_data_async(manifest).await.unwrap();
+        let genesis = create_test_block_commitment(0);
+        let checkpoints = storage.ol_checkpoint();
+        for summary in [
+            EpochSummary::new(0, genesis, OLBlockCommitment::null(), anchor, Buf32::zero()),
+            EpochSummary::new(1, tip, genesis, last_l1, Buf32::zero()),
+        ] {
+            checkpoints
+                .insert_epoch_summary_async(summary)
+                .await
+                .unwrap();
+        }
+        (MempoolTip::new(tip, Some(1)), state.into_container())
+    }
+
+    /// Builds a mempool on the terminal tip [`store_terminal_tip`] stores, and
+    /// returns it with its state provider.
+    async fn mempool_on_terminal_tip(
+        spec: OLSpecId,
+        enactment: bool,
+    ) -> (
+        MempoolServiceState<InMemoryStateProvider>,
+        Arc<InMemoryStateProvider>,
+    ) {
+        let mid_epoch_tip = create_test_block_commitment(100);
+        let provider = Arc::new(create_test_state_provider(mid_epoch_tip));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            provider.clone(),
+        ));
+        let (tip, tip_state) =
+            store_terminal_tip(&context.storage, context.genesis_l1_block, spec, enactment).await;
+        provider.insert_state(tip.block(), tip_state);
+        let state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .unwrap();
+        (state, provider)
+    }
+
+    /// Stores `tx` in the mempool database, as an earlier run admitted it.
+    fn store_tx(state: &MempoolServiceState<InMemoryStateProvider>, tx: &OLTransactionV1) {
+        state
+            .ctx
+            .storage
+            .mempool()
+            .put_tx(MempoolTxData::new(tx.compute_txid(), tx.as_ssz_bytes(), 1))
+            .unwrap();
+    }
+
+    /// After a terminal tip whose epoch processed a V1 enactment, the next
+    /// block runs V1's successor. The mempool rejects new transactions and
+    /// keeps the stored ones for later instead of dropping them.
+    #[tokio::test]
+    async fn test_mempool_admits_nothing_after_a_v1_enactment() {
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, true).await;
+
+        let err = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
+            .await
+            .expect_err("no transaction is admitted");
+        assert!(matches!(err, OLMempoolError::UpgradeRequired(_)), "{err}");
+
+        let stored = create_test_snark_tx_with_seq_no(2, 0);
+        store_tx(&state, &stored);
+        state.load_from_db().await.unwrap();
+        assert!(!state.contains(&stored.compute_txid()), "nothing is loaded");
+        assert_eq!(state.ctx.storage.mempool().get_all_txs().unwrap().len(), 1);
+    }
+
+    /// After a terminal tip whose epoch processed no enactment, the next block
+    /// runs V1 and the mempool admits transactions.
+    #[tokio::test]
+    async fn test_mempool_admits_after_a_plain_epoch() {
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, false).await;
+        let txid = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
+            .await
+            .expect("admitted under V1");
+        assert!(state.contains(&txid));
+    }
+
+    /// After the last V0 terminal, which processed the enactment that ends V0,
+    /// the next block runs V1 and the mempool admits transactions under it.
+    #[tokio::test]
+    async fn test_mempool_admits_under_v1_after_the_v0_enactment() {
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V0, true).await;
+        assert_eq!(state.select_spec().unwrap(), OLSpecId::V1);
+        let txid = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
+            .await
+            .expect("admitted under V1");
+        assert!(state.contains(&txid));
+    }
+
+    /// When the tip moves to a terminal block whose epoch processed a V1
+    /// enactment, the mempool keeps what it holds, revalidates nothing, and
+    /// rejects even a resubmission. A reorg back to a block whose next block
+    /// runs V1 resumes admission.
+    #[tokio::test]
+    async fn test_mempool_follows_the_tip_into_and_out_of_an_upgrade() {
+        let mid_epoch_tip = create_test_block_commitment(100);
+        let provider = Arc::new(create_test_state_provider(mid_epoch_tip));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            provider.clone(),
+        ));
+        let mut state = MempoolServiceState::new_with_context(
+            context.clone(),
+            MempoolTip::new(mid_epoch_tip, None),
+        )
+        .await
+        .unwrap();
+        let held = create_test_snark_tx_with_seq_no(1, 0);
+        let held_txid = state.add_transaction(held.clone()).await.unwrap();
+
+        let (terminal_tip, terminal_state) = store_terminal_tip(
+            &context.storage,
+            context.genesis_l1_block,
+            OLSpecId::V1,
+            true,
+        )
+        .await;
+        provider.insert_state(terminal_tip.block(), terminal_state);
+        state.handle_chain_update(terminal_tip).await.unwrap();
+        assert!(state.contains(&held_txid), "held transactions stay");
+        let err = state
+            .add_transaction(held)
+            .await
+            .expect_err("a resubmission is rejected too");
+        assert!(matches!(err, OLMempoolError::UpgradeRequired(_)), "{err}");
+
+        state
+            .handle_chain_update(MempoolTip::new(mid_epoch_tip, None))
+            .await
+            .unwrap();
+        state
+            .add_transaction(create_test_snark_tx_with_seq_no(2, 0))
+            .await
+            .expect("admission resumes under V1");
+        assert!(state.contains(&held_txid));
+    }
+
+    /// A mempool that starts while the next block needs an upgrade loads its
+    /// stored transactions once a tip's next block runs V1 again.
+    #[tokio::test]
+    async fn test_mempool_loads_deferred_transactions_when_admission_resumes() {
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, true).await;
+        let stored = create_test_snark_tx_with_seq_no(1, 0);
+        store_tx(&state, &stored);
+        state.load_from_db().await.unwrap();
+        assert!(!state.contains(&stored.compute_txid()));
+
+        state
+            .handle_chain_update(MempoolTip::new(create_test_block_commitment(100), None))
+            .await
+            .unwrap();
+        assert!(
+            state.contains(&stored.compute_txid()),
+            "loaded once admission resumes"
         );
     }
 }

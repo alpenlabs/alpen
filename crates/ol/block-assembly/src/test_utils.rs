@@ -30,8 +30,10 @@ use strata_acct_types::{
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
 };
+use strata_asm_logs::CheckpointPredicateEnacted;
 use strata_asm_manifest_types::{AsmLogEntry, AsmManifest};
 use strata_btc_verification::L1Anchor;
+use strata_checkpoint_types::EpochSummary;
 use strata_codec::encode_to_vec;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -169,7 +171,7 @@ pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyCon
         (),
         (),
         TEST_L1_REORG_SAFE_DEPTH,
-        OLRuntimeParams::test_default(),
+        &OLParams::test_default(),
     )
 }
 
@@ -867,6 +869,14 @@ impl TestAccount {
     }
 }
 
+/// Builds a checkpoint predicate enactment log.
+pub(crate) fn checkpoint_enactment_log() -> AsmLogEntry {
+    AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(
+        PredicateKey::always_accept(),
+    ))
+    .expect("enactment log encodes")
+}
+
 /// Storage fixture layer for block assembly tests.
 #[expect(
     missing_debug_implementations,
@@ -1178,6 +1188,9 @@ impl TestEnv {
     }
 
     /// Persists assembled output as the next parent block/state and advances parent commitment.
+    ///
+    /// A terminal block also gets its epoch summary, as block execution stores
+    /// it, so blocks of the next epoch can select their spec.
     pub(crate) async fn persist(
         &mut self,
         output: &ConstructBlockOutput<MemoryStateBaseLayer<OLStateV1>>,
@@ -1185,6 +1198,24 @@ impl TestEnv {
         let header = output.template.header().clone();
         let commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
         let (block, post_state) = block_and_post_state_from_output(output);
+
+        if header.is_terminal() {
+            let prev_terminal = self.prev_terminal_of(&header).await;
+            let new_l1 =
+                L1BlockCommitment::new(post_state.last_l1_height(), *post_state.last_l1_blkid());
+            let summary = EpochSummary::new(
+                header.epoch(),
+                commitment,
+                prev_terminal,
+                new_l1,
+                *header.state_root(),
+            );
+            self.storage()
+                .ol_checkpoint()
+                .insert_epoch_summary_async(summary)
+                .await
+                .expect("store epoch summary");
+        }
 
         self.storage()
             .ol_block()
@@ -1199,6 +1230,31 @@ impl TestEnv {
 
         self.parent_commitment = commitment;
         commitment
+    }
+
+    /// Returns the terminal block of the epoch before `header`'s, the nearest
+    /// terminal ancestor of `header`, or the null commitment for epoch 0, as
+    /// the genesis summary records it.
+    async fn prev_terminal_of(&self, header: &OLBlockHeaderV1) -> OLBlockCommitment {
+        if header.epoch() == 0 {
+            return OLBlockCommitment::null();
+        }
+        let mut slot = header.slot() - 1;
+        let mut blkid = *header.parent_blkid();
+        loop {
+            let ancestor = self
+                .storage()
+                .ol_block()
+                .get_ol_header_async(blkid)
+                .await
+                .expect("read ancestor header")
+                .expect("ancestor header is stored");
+            if ancestor.is_terminal() {
+                return OLBlockCommitment::new(slot, blkid);
+            }
+            slot -= 1;
+            blkid = *ancestor.parent_blkid();
+        }
     }
 
     /// Stores an OL block in runtime storage.
@@ -1437,14 +1493,29 @@ impl TestStorageFixtureBuilder {
                 // Slot 0 is genesis - create terminal block
                 let block_info = BlockInfo::new_genesis(1000000);
 
-                // Create genesis manifest when last_l1_height is 0.
+                // Create genesis manifest when last_l1_height is 0. A genesis
+                // relabelled as the last V0 terminal processes the checkpoint
+                // predicate enactment that ends V0, so the next epoch runs V1.
+                let genesis_logs = if self.v0_genesis_parent {
+                    vec![checkpoint_enactment_log()]
+                } else {
+                    Vec::new()
+                };
                 let genesis_manifest = AsmManifest::new(
                     GENESIS_L1_MANIFEST_HEIGHT,
                     L1BlockId::from(Buf32::zero()),
                     WtxidsRoot::from(Buf32::zero()),
-                    vec![],
+                    genesis_logs,
                 )
                 .expect("test manifest should be valid");
+                // Spec selection reads the manifest the genesis epoch
+                // processed last.
+                fixture
+                    .storage()
+                    .l1()
+                    .put_block_data_async(genesis_manifest.clone())
+                    .await
+                    .expect("Failed to store genesis L1 manifest");
                 let components =
                     BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
 
@@ -1487,6 +1558,26 @@ impl TestStorageFixtureBuilder {
             let parent_signed_header =
                 SignedOLBlockHeaderV1::new(parent_header.clone(), Buf64::zero());
             let parent_block = OLBlockV1::new(parent_signed_header, parent_block_body);
+
+            if slot == 0 {
+                // Genesis stores its epoch summary, as node genesis does.
+                let summary = EpochSummary::new(
+                    0,
+                    commitment,
+                    OLBlockCommitment::null(),
+                    L1BlockCommitment::new(
+                        parent_state.last_l1_height(),
+                        *parent_state.last_l1_blkid(),
+                    ),
+                    *parent_header.state_root(),
+                );
+                fixture
+                    .storage()
+                    .ol_checkpoint()
+                    .insert_epoch_summary_async(summary)
+                    .await
+                    .expect("Failed to store genesis epoch summary");
+            }
 
             fixture
                 .storage()
@@ -1643,7 +1734,7 @@ pub(crate) fn create_test_block_assembly_context(
         mempool_provider.clone(),
         state_provider,
         l1_reorg_safe_depth,
-        OLRuntimeParams::test_default(),
+        &OLParams::test_default(),
     );
     (ctx, mempool_provider)
 }
