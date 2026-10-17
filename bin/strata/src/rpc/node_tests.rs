@@ -20,6 +20,7 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult,
     ol_block::BlockAvailability,
+    ol_checkpoint::RejectedCheckpointEntry,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::*;
@@ -46,7 +47,7 @@ use strata_snark_acct_types::{
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
 
-use super::{OLBlockDataAccess, OLRpcServer};
+use super::{OLBlockDataAccess, OLRpcServer, REJECTED_CHECKPOINTS_PAGE_SIZE};
 use crate::rpc::errors::{
     BLOCK_HISTORY_UNAVAILABLE_CODE, INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE,
     MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE, map_mempool_error_to_rpc,
@@ -93,6 +94,7 @@ struct MockProvider {
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
+    rejected_checkpoints: Vec<RejectedCheckpointEntry>,
     account_update_entries: HashMap<(Epoch, AccountId), Vec<AccountUpdateRecord>>,
     account_inbox_entries: HashMap<(Epoch, AccountId), Vec<InboxMessageRecord>>,
     account_creation_epochs: HashMap<AccountId, Epoch>,
@@ -116,6 +118,7 @@ impl MockProvider {
             epoch_commitments: HashMap::new(),
             epoch_summaries: HashMap::new(),
             checkpoint_l1_refs: HashMap::new(),
+            rejected_checkpoints: Vec::new(),
             account_update_entries: HashMap::new(),
             account_inbox_entries: HashMap::new(),
             account_creation_epochs: HashMap::new(),
@@ -171,6 +174,11 @@ impl MockProvider {
         l1_ref: CheckpointL1Ref,
     ) -> Self {
         self.checkpoint_l1_refs.insert(commitment, l1_ref);
+        self
+    }
+
+    fn with_rejected_checkpoint(mut self, entry: RejectedCheckpointEntry) -> Self {
+        self.rejected_checkpoints.push(entry);
         self
     }
 
@@ -426,6 +434,10 @@ impl OLRpcProvider for MockProvider {
         commitment: EpochCommitment,
     ) -> DbResult<Option<CheckpointL1Ref>> {
         Ok(self.checkpoint_l1_refs.get(&commitment).cloned())
+    }
+
+    async fn get_rejected_checkpoints(&self) -> DbResult<Vec<RejectedCheckpointEntry>> {
+        Ok(self.rejected_checkpoints.clone())
     }
 
     async fn get_account_update_records(
@@ -970,6 +982,69 @@ async fn chain_status_returns_correct_values() {
     assert_eq!(status.finalized().last_slot(), 20);
     assert_eq!(status.latest().epoch(), 1);
     assert_eq!(status.latest().last_slot(), 50);
+}
+
+// ── get_rejected_checkpoints ──
+
+fn rejected_entry(epoch: Epoch, posting: u8) -> RejectedCheckpointEntry {
+    let tag = epoch as u8;
+    let mut txid = [posting; 32];
+    txid[..4].copy_from_slice(&epoch.to_be_bytes());
+    RejectedCheckpointEntry::new(
+        test_epoch_commitment(epoch, u64::from(epoch) * 4, tag),
+        RBuf32::from(txid),
+        L1BlockCommitment::new(100 + epoch, L1BlockId::from(Buf32::from([tag; 32]))),
+        Some(test_epoch_commitment(
+            epoch - 1,
+            u64::from(epoch - 1) * 4,
+            tag,
+        )),
+    )
+}
+
+#[tokio::test]
+async fn rejected_checkpoints_report_recorded_entries() {
+    let rpc = make_rpc(MockProvider::new());
+    assert!(rpc.get_rejected_checkpoints(0).await.unwrap().is_empty());
+
+    let entry = rejected_entry(3, 0);
+    let rpc = make_rpc(MockProvider::new().with_rejected_checkpoint(entry.clone()));
+    let rejected = rpc.get_rejected_checkpoints(0).await.unwrap();
+    assert_eq!(
+        rejected,
+        vec![RpcRejectedCheckpoint {
+            epoch: 3,
+            commitment: entry.commitment(),
+            txid: entry.txid(),
+            l1_block: entry.l1_block(),
+            asm_verified_tip: entry.asm_verified_tip(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn rejected_checkpoints_pages_end_between_epochs() {
+    // The epoch that reaches the page size was posted three times, so the page has to run past
+    // the size to finish that epoch.
+    let full_epoch = REJECTED_CHECKPOINTS_PAGE_SIZE as Epoch;
+    let last_epoch = full_epoch + 10;
+    let mut provider = MockProvider::new();
+    for epoch in 1..=last_epoch {
+        let postings = if epoch == full_epoch { 3 } else { 1 };
+        for posting in 0..postings {
+            provider = provider.with_rejected_checkpoint(rejected_entry(epoch, posting));
+        }
+    }
+    let rpc = make_rpc(provider);
+
+    let first_page = rpc.get_rejected_checkpoints(0).await.unwrap();
+    assert_eq!(first_page.len(), REJECTED_CHECKPOINTS_PAGE_SIZE + 2);
+    assert_eq!(first_page.first().unwrap().epoch, 1);
+    assert_eq!(first_page.last().unwrap().epoch, full_epoch);
+
+    let next_page = rpc.get_rejected_checkpoints(full_epoch + 1).await.unwrap();
+    let epochs: Vec<Epoch> = next_page.iter().map(|entry| entry.epoch).collect();
+    assert_eq!(epochs, (full_epoch + 1..=last_epoch).collect::<Vec<_>>());
 }
 
 // ── get_checkpoint_info ──

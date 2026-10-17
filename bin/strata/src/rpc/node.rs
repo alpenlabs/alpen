@@ -22,7 +22,7 @@ use strata_ol_rpc_types::{
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
-    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
+    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcRejectedCheckpoint, RpcSnarkAccountState,
     RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
 use strata_ol_state_container::{OLStateContainer, OLStateSeries};
@@ -84,6 +84,13 @@ struct AccountRecords {
 /// This is a server-side page-size and DoS guard, not a protocol limit. Callers
 /// that need a larger inbox span should split it into multiple requests.
 const MAX_SNARK_ACCT_INBOX_MSG_RANGE: u64 = 1_000;
+
+/// Entry count after which a rejected-checkpoints response ends at the next epoch boundary.
+///
+/// A server-side page-size guard: the sequencer keeps every rejection it records, so a long
+/// run of rejected checkpoints would otherwise make each response grow without bound. Pages
+/// end between epochs so a caller resuming at the next epoch neither repeats nor skips entries.
+pub(super) const REJECTED_CHECKPOINTS_PAGE_SIZE: usize = 1_000;
 
 fn local_inbox_message_range(
     account_id: AccountId,
@@ -950,6 +957,30 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             l2_end,
             confirmation_status,
         }))
+    }
+
+    async fn get_rejected_checkpoints(
+        &self,
+        start_epoch: Epoch,
+    ) -> RpcResult<Vec<RpcRejectedCheckpoint>> {
+        let entries = self
+            .provider
+            .get_rejected_checkpoints()
+            .await
+            .map_err(db_error)?;
+        // Entries come ordered by epoch, so this is the first page from `start_epoch`.
+        let mut page: Vec<RpcRejectedCheckpoint> = Vec::new();
+        for entry in entries
+            .into_iter()
+            .filter(|entry| entry.epoch() >= start_epoch)
+        {
+            let at_epoch_boundary = page.last().is_some_and(|last| last.epoch != entry.epoch());
+            if page.len() >= REJECTED_CHECKPOINTS_PAGE_SIZE && at_epoch_boundary {
+                break;
+            }
+            page.push(RpcRejectedCheckpoint::from(entry));
+        }
+        Ok(page)
     }
 
     async fn get_account_genesis_epoch_commitment(

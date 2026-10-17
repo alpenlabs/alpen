@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{L1BlockCommitment, L2BlockCommitment, RBuf32};
+use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
+use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment, RBuf32};
 
 /// RPC checkpoint confirmation status.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -58,4 +59,34 @@ pub struct RpcCheckpointInfo {
     pub l2_end: L2BlockCommitment,
     /// Confirmation/finality status.
     pub confirmation_status: RpcCheckpointConfStatus,
+}
+
+/// A checkpoint transaction this node submitted that was mined on L1 but not accepted by the ASM.
+///
+/// Reported once its block is buried at the node's L1 reorg-safe depth while the ASM's verified
+/// epoch is still below the checkpoint's epoch.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RpcRejectedCheckpoint {
+    /// Epoch the checkpoint declared.
+    pub epoch: Epoch,
+    /// Epoch commitment the checkpoint declared.
+    pub commitment: EpochCommitment,
+    /// Txid of the checkpoint transaction.
+    pub txid: RBuf32,
+    /// L1 block the transaction was mined in.
+    pub l1_block: L1BlockCommitment,
+    /// ASM verified tip when the rejection was recorded, `None` before any accepted checkpoint.
+    pub asm_verified_tip: Option<EpochCommitment>,
+}
+
+impl From<RejectedCheckpointEntry> for RpcRejectedCheckpoint {
+    fn from(entry: RejectedCheckpointEntry) -> Self {
+        Self {
+            epoch: entry.epoch(),
+            commitment: entry.commitment(),
+            txid: entry.txid(),
+            l1_block: entry.l1_block(),
+            asm_verified_tip: entry.asm_verified_tip(),
+        }
+    }
 }
