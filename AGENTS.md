@@ -203,7 +203,7 @@ Orchestration Layer implementation.
 | `ol/mmr-index` | OL-owned MMR index comparison and reconciliation helpers |
 | `ol/genesis` | OL genesis state construction |
 | `ol/params` | `OLGenesisParams`, `OLRuntimeParams`, and combined `OLParams` |
-| `ol/checkpoint` | OL checkpoint builder service |
+| `ol/checkpoint` | OL checkpoint builder service and the submission tracker that reports checkpoints mined on L1 but rejected by the ASM |
 | `ol/sequencer` | OL sequencing helpers and state |
 | `ol/rpc/api` | OL JSON-RPC API traits and client/server glue |
 | `ol/rpc/types` | OL RPC request and response types |

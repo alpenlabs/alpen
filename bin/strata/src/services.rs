@@ -43,6 +43,7 @@ mod sequencer_services {
     use strata_ol_block_assembly::{
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, LimitAwareSealing, MempoolProviderImpl,
     };
+    use strata_ol_checkpoint::launch_submission_tracker;
     use strata_ol_mempool::MempoolHandle;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -69,6 +70,7 @@ mod sequencer_services {
         let mempool_handle = mempool_handle.expect("sequencer node must have a mempool handle");
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
+        start_checkpoint_submission_tracker(nodectx, broadcast_handle.clone())?;
         let (envelope_handle, watcher_handle) = start_writer(nodectx, broadcast_handle.clone())?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
 
@@ -111,6 +113,24 @@ mod sequencer_services {
             .launch(nodectx.executor().as_ref())
             .await
         })
+    }
+
+    /// Starts the checkpoint submission tracker.
+    ///
+    /// Reports checkpoints this sequencer posted that were mined on L1 but not accepted by the
+    /// ASM. Its findings are persisted and served over RPC, so the status monitor is not kept.
+    fn start_checkpoint_submission_tracker(
+        nodectx: &NodeContext,
+        broadcast_handle: Arc<L1BroadcastHandle>,
+    ) -> Result<()> {
+        launch_submission_tracker(
+            nodectx.storage().clone(),
+            broadcast_handle,
+            nodectx.status_channel().subscribe_checkpoint_state(),
+            nodectx.config().btcio.l1_reorg_safe_depth,
+            nodectx.executor(),
+        )?;
+        Ok(())
     }
 
     /// Starts the L1 writer/envelope task.
