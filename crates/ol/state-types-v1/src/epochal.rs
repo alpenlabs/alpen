@@ -102,7 +102,7 @@ impl EpochalStateV1 {
 
 #[cfg(test)]
 mod tests {
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use super::*;
     use crate::test_utils::epochal_state_strategy;

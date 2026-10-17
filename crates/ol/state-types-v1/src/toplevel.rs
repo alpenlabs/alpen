@@ -657,7 +657,7 @@ mod tests {
     }
 
     mod ol_state {
-        use strata_test_utils_ssz::ssz_proptest;
+        use strata_ssz_tests::ssz_proptest;
 
         use super::*;
         use crate::test_utils::ol_state_strategy;

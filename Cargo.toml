@@ -59,7 +59,6 @@ members = [
   "crates/storage-common",
   "crates/test-utils/btcio",
   "crates/test-utils/l2",
-  "crates/test-utils/ssz",
   "crates/test-utils/test-utils",
   "provers/sp1",
 
@@ -156,7 +155,6 @@ strata-storage-common = { path = "crates/storage-common" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
 strata-test-utils-btcio = { path = "crates/test-utils/btcio" }
 strata-test-utils-l2 = { path = "crates/test-utils/l2" }
-strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
@@ -183,6 +181,7 @@ strata-predicate = { git = "https://github.com/alpenlabs/strata-common", feature
 ], tag = "v0.4.0" }
 strata-rpc-tracing = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
 strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
+strata-ssz-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
 strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.4.0" }
 
 # asm
