@@ -62,6 +62,17 @@ pub enum CheckpointSyncError {
         cause: WorkerError,
     },
 
+    /// The epoch runs a spec this binary does not implement, so checkpoint
+    /// sync applies nothing from it on. Every epoch before it is applied and
+    /// finalized.
+    #[error("checkpoint sync stops before {epoch}: {cause}")]
+    UpgradeRequired {
+        epoch: EpochCommitment,
+        last_applied: Option<EpochCommitment>,
+        #[source]
+        cause: WorkerError,
+    },
+
     /// Failure updating the chain worker's safe tip.
     #[error("chain worker update_safe_tip: {0}")]
     SafeTipUpdate(#[source] WorkerError),

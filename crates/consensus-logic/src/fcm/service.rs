@@ -3,6 +3,7 @@ use std::{marker::PhantomData, sync::Arc};
 use anyhow::{anyhow, Context};
 use metrics::{counter, histogram};
 use serde::Serialize;
+use strata_chain_worker::WorkerError;
 use strata_csm_types::CheckpointState;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::Slot;
@@ -152,8 +153,23 @@ async fn process_fc_message<C: FcmContext>(
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
 
+            // A block whose parent waits for an upgrade cannot execute either,
+            // and is not invalid. It stays unchecked like its parent.
+            let parent_blkid = *block_bundle.header().parent_blkid();
+            if fcm_state.is_upgrade_blocked(&parent_blkid) {
+                fcm_state.record_upgrade_blocked_child(*blkid, parent_blkid);
+                return Ok(());
+            }
+
             let ok = match handle_new_block(fcm_state, &block_bundle).await {
                 Ok(v) => v,
+                // The block is not invalid: this binary cannot run its spec.
+                // It stays unchecked, so an upgraded binary executes it on
+                // startup replay.
+                Err(e) if is_upgrade_required(&e) => {
+                    fcm_state.record_upgrade_required(*blkid, &e);
+                    return Ok(());
+                }
                 Err(e) => {
                     // Really we shouldn't emit this error unless there's a
                     // problem checking the block in general and it could be
@@ -434,6 +450,7 @@ async fn handle_new_block<C: FcmContext>(
     let bc = OLBlockCommitment::new(bundle.header().slot(), *blkid);
     let exec_ok = match fcm_state.ctx().try_exec_block(bc).await {
         Ok(()) => true,
+        Err(err) if is_upgrade_required(&err) => return Err(err),
         Err(err) => {
             // TODO(STR-2141): Need some way to distinguish an invalid block from a exec failure
             error!(%err, "try_exec_block failed");
@@ -513,6 +530,16 @@ async fn handle_new_block<C: FcmContext>(
     };
 
     res
+}
+
+/// Returns whether executing a block failed because the block runs a spec
+/// this binary does not implement, which the chain worker reports before it
+/// stores anything.
+fn is_upgrade_required(err: &anyhow::Error) -> bool {
+    matches!(
+        err.downcast_ref::<WorkerError>(),
+        Some(WorkerError::UpgradeRequired(_))
+    )
 }
 
 /// Check if any pending epochs can be finalized.
@@ -812,6 +839,7 @@ mod tests {
     use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
+    use strata_ol_stf::{next_epoch_spec, OLSpecId};
     use strata_ol_stf_v1::{
         test_utils::{execute_block, make_genesis_state},
         BlockComponents, BlockInfo, CompletedBlock,
@@ -961,6 +989,10 @@ mod tests {
         finalized_epochs: Mutex<Vec<EpochCommitment>>,
         published_statuses: Mutex<Vec<OLSyncStatus>>,
         startup_mmr_reconcile_targets: Mutex<Vec<OLMmrReconcileTarget>>,
+        /// Slot whose blocks run a spec this binary does not implement, if
+        /// any. Execution of a later block fails as the chain worker's does
+        /// when the parent was never executed.
+        upgrade_required_at: Mutex<Option<Slot>>,
     }
 
     impl StubFcmContext {
@@ -975,6 +1007,16 @@ mod tests {
         fn with_last_finalized_epoch(mut self, epoch: Option<EpochCommitment>) -> Self {
             self.last_finalized_epoch = epoch;
             self
+        }
+
+        fn with_upgrade_required_at(self, slot: Slot) -> Self {
+            *self.upgrade_required_at.lock().unwrap() = Some(slot);
+            self
+        }
+
+        /// Makes every block executable, as after upgrading the binary.
+        fn upgrade(&self) {
+            *self.upgrade_required_at.lock().unwrap() = None;
         }
 
         fn with_last_confirmed_epoch(mut self, epoch: Option<EpochCommitment>) -> Self {
@@ -1143,6 +1185,17 @@ mod tests {
     #[async_trait]
     impl ChainController for StubFcmContext {
         async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()> {
+            match *self.upgrade_required_at.lock().unwrap() {
+                Some(slot) if block.slot() == slot => {
+                    let upgrade = next_epoch_spec(OLSpecId::V1, Some(7))
+                        .expect_err("this binary implements no spec after V1");
+                    return Err(WorkerError::UpgradeRequired(upgrade).into());
+                }
+                Some(slot) if block.slot() > slot => {
+                    return Err(anyhow!("missing pre-state for the parent of {block}"));
+                }
+                _ => {}
+            }
             self.executed_blocks.lock().unwrap().push(block);
             Ok(())
         }
@@ -2413,6 +2466,91 @@ mod tests {
         // Non-terminal blocks never store a summary, so none is deleted.
         assert!(ctx.storage().epoch_summary_deletes().is_empty());
 
+        Ok(())
+    }
+
+    /// A block that runs a spec this binary does not implement is not invalid,
+    /// and neither is a block built on it. Both stay unchecked and unattached,
+    /// across repeated processing and restarts, and an upgraded binary
+    /// executes them on startup replay.
+    #[tokio::test]
+    async fn process_fc_message_leaves_upgrade_required_blocks_unchecked() -> anyhow::Result<()> {
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch))
+                .with_upgrade_required_at(1),
+        );
+
+        let block1 = make_storage_block(1, genesis_blkid);
+        let blkid1 = block1.header().compute_blkid();
+        let commitment1 = OLBlockCommitment::new(block1.header().slot(), blkid1);
+        let block2 = make_storage_block(2, blkid1);
+        let blkid2 = block2.header().compute_blkid();
+        let commitment2 = OLBlockCommitment::new(block2.header().slot(), blkid2);
+        ctx.storage().put_executed_block(
+            genesis,
+            make_genesis_state().into_container(),
+            BlockStatus::Valid,
+        );
+        for (block, commitment) in [(block1, commitment1), (block2, commitment2)] {
+            let blkid = block.header().compute_blkid();
+            ctx.storage().put_ol_block(block);
+            ctx.storage()
+                .set_block_status(blkid, BlockStatus::Unchecked)
+                .await?;
+            // The stub executes nothing, so the post-states that the upgraded
+            // replay reads are stored up front.
+            ctx.storage()
+                .put_toplevel_ol_state(commitment, make_genesis_state().into_container());
+        }
+        ctx.storage().set_block_high_watermark(commitment2);
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+        ctx.storage().seed_canonical_genesis(genesis_blkid);
+
+        // Process both blocks at startup replay and again after a restart.
+        for _ in 0..2 {
+            let mut fcm_state =
+                init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+            assert_eq!(
+                fcm_state.take_startup_replay_candidates(),
+                vec![blkid1, blkid2]
+            );
+            for blkid in [blkid1, blkid2, blkid1, blkid2] {
+                process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state).await?;
+            }
+            assert_eq!(fcm_state.cur_best_block(), genesis_commitment);
+        }
+
+        for blkid in [blkid1, blkid2] {
+            assert_eq!(
+                ctx.storage().get_block_status(blkid).await?,
+                Some(BlockStatus::Unchecked)
+            );
+        }
+        assert!(ctx.executed_blocks().is_empty());
+        assert_eq!(ctx.storage().block_high_watermark(), Some(commitment2));
+        assert!(ctx.storage().indexing_rollbacks().is_empty());
+        assert!(ctx.published_statuses().is_empty());
+
+        // An upgraded binary executes both on its startup replay.
+        ctx.upgrade();
+        let mut fcm_state =
+            init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+        <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut fcm_state).await?;
+
+        assert_eq!(ctx.executed_blocks(), vec![commitment1, commitment2]);
+        assert_eq!(fcm_state.cur_best_block(), commitment2);
+        for blkid in [blkid1, blkid2] {
+            assert_eq!(
+                ctx.storage().get_block_status(blkid).await?,
+                Some(BlockStatus::Valid)
+            );
+        }
         Ok(())
     }
 

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeSet, HashSet, VecDeque},
     iter, mem,
     sync::Arc,
     time,
@@ -109,6 +109,32 @@ impl<C: FcmContext> FcmServiceState<C> {
 
     pub(crate) fn cur_best_block(&self) -> OLBlockCommitment {
         self.inner_state.cur_best_block
+    }
+
+    /// Returns whether `blkid` waits for an upgrade, because it or one of its
+    /// ancestors runs an OL spec this binary does not implement.
+    pub(crate) fn is_upgrade_blocked(&self, blkid: &OLBlockId) -> bool {
+        self.inner_state.upgrade_blocked.contains(blkid)
+    }
+
+    /// Records that `blkid` stays unexecuted because it runs an OL spec this
+    /// binary does not implement, and logs it the first time.
+    pub(crate) fn record_upgrade_required(&mut self, blkid: OLBlockId, err: &anyhow::Error) {
+        if self.inner_state.upgrade_blocked.insert(blkid) {
+            warn!(
+                %blkid,
+                %err,
+                "not executing block: it runs an OL spec this binary does not implement; upgrade the node"
+            );
+        }
+    }
+
+    /// Records that `blkid` stays unexecuted because its parent waits for an
+    /// upgrade, and logs it the first time.
+    pub(crate) fn record_upgrade_blocked_child(&mut self, blkid: OLBlockId, parent: OLBlockId) {
+        if self.inner_state.upgrade_blocked.insert(blkid) {
+            debug!(%blkid, %parent, "not executing block: its parent waits for an upgrade");
+        }
     }
 
     pub(crate) fn take_startup_replay_candidates(&mut self) -> Vec<OLBlockId> {
@@ -257,6 +283,13 @@ pub(crate) struct FcmInnerState {
     cur_olstate: Arc<OLStateContainer>,
     startup_replay_candidates: Vec<OLBlockId>,
     epochs_pending_finalization: VecDeque<EpochCommitment>,
+    /// Blocks left unchecked because they or an ancestor run an OL spec this
+    /// binary does not implement.
+    ///
+    /// Only blocks this binary will never execute enter the set, so it is
+    /// never pruned. Startup replay rebuilds it, as it replays parents before
+    /// their children.
+    upgrade_blocked: HashSet<OLBlockId>,
 }
 
 impl FcmInnerState {
@@ -272,6 +305,7 @@ impl FcmInnerState {
             cur_olstate,
             startup_replay_candidates,
             epochs_pending_finalization: VecDeque::new(),
+            upgrade_blocked: HashSet::new(),
         }
     }
 }

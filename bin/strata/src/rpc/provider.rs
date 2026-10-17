@@ -198,6 +198,10 @@ impl OLRpcProvider for NodeRpcProvider {
             .await
     }
 
+    async fn get_block_manifest(&self, blkid: L1BlockId) -> DbResult<Option<AsmManifest>> {
+        self.storage.l1().get_block_manifest_async(&blkid).await
+    }
+
     async fn get_canonical_l1_blockid_at_height(
         &self,
         height: L1Height,
