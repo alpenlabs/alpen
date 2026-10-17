@@ -10,11 +10,11 @@ workspace = true
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-bridge-params.workspace = true
-strata-checkpoint-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-log-budget.workspace = true
+strata-ol-spec-selection.workspace = true
 strata-ol-state-provider.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
@@ -35,6 +35,7 @@ tracing.workspace = true
 
 [dev-dependencies]
 strata-bridge-params = { workspace = true, features = ["test-defaults"] }
+strata-checkpoint-types.workspace = true
 strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }

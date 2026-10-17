@@ -27,6 +27,7 @@ strata-ol-log-budget.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-msg-types = { workspace = true, optional = true }
 strata-ol-params.workspace = true
+strata-ol-spec-selection.workspace = true
 strata-ol-state-provider.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true

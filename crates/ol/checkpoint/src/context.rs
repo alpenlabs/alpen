@@ -4,10 +4,11 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
-use strata_checkpoint_types::{EpochSummary, select_spec_after_epoch};
+use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_spec_selection::select_spec_after_epoch;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_stf::OLSpecId;

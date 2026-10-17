@@ -3,10 +3,10 @@
 use std::convert::Infallible;
 
 use strata_acct_types::AccountId;
-use strata_checkpoint_types::SelectSpecAfterEpochError;
 use strata_db_types::DbError;
 use strata_identifiers::OLTxId;
 use strata_ol_log_budget::TxLogBudgetError;
+use strata_ol_spec_selection::SelectSpecAfterEpochError;
 use strata_ol_stf::UpgradeRequired;
 
 /// Errors that can occur during mempool operations.

@@ -1,8 +1,8 @@
 //! The spec each assembled block runs under.
 
-use strata_checkpoint_types::select_spec_after_epoch_async;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_chain_types_v1::OLBlockHeaderV1;
+use strata_ol_spec_selection::select_spec_after_epoch_async;
 use strata_ol_state_types::{IStateAccessor, OLSpecVersions};
 use strata_ol_stf::OLSpecId;
 

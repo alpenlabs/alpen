@@ -9,7 +9,8 @@
 //! The checkpoint guest does not compile this crate, so changing it leaves the
 //! checkpoint verifying key unchanged.
 
-use std::{convert::Infallible, future::Future};
+use std::convert::Infallible;
+use std::future::Future;
 
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment};
