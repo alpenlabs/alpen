@@ -1,8 +1,8 @@
 //! The chain tip the mempool admits transactions for, and the spec of the
 //! block after it.
 
-use strata_checkpoint_types::{SelectSpecAfterEpochError, select_spec_after_epoch_async};
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
+use strata_ol_spec_selection::{SelectSpecAfterEpochError, select_spec_after_epoch_async};
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_stf::{EpochSpecSelectionError, OLSpecId, UpgradeRequired};
 use strata_status::OLSyncStatus;
