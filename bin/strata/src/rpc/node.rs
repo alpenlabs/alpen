@@ -9,9 +9,7 @@ use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
-use strata_checkpoint_types::{
-    EpochSummary, SelectSpecAfterEpochError, select_spec_after_epoch_async,
-};
+use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{ol_block::BlockAvailability, ol_state_index::InboxMessageRecord};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
@@ -27,6 +25,7 @@ use strata_ol_rpc_types::{
     RpcOLChainStatus, RpcOLSpecStatus, RpcOLTransaction, RpcOLTxDetail, RpcRejectedCheckpoint,
     RpcSnarkAccountState, RpcSnarkAcctUpdateManifest, RpcUpdateInputData, RpcUpgradeRequired,
 };
+use strata_ol_spec_selection::{SelectSpecAfterEpochError, select_spec_after_epoch_async};
 use strata_ol_state_container::{OLStateContainer, OLStateSeries};
 use strata_ol_state_types::{IAccountState, ISnarkAccountState, OLSpecId};
 use strata_ol_stf::{EpochSpecSelectionError, UpgradeRequired};
