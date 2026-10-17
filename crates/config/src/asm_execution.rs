@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use strata_asm_common::SpecId;
 use strata_predicate::PredicateKey;
 
-/// Initial ASM authority and trusted predicate-to-implementation associations.
+/// Initial ASM ruleset and trusted predicate-to-implementation associations.
 ///
 /// Load these from the network's execution-parameters JSON, independently of the
 /// proving backend. Keep associations immutable across restarts. Upstream native
@@ -12,22 +12,26 @@ use strata_predicate::PredicateKey;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AsmExecutionParams {
-    genesis_predicate: PredicateKey,
+    genesis_spec_id: SpecId,
     targets: Vec<AsmExecutionTarget>,
 }
 
 impl AsmExecutionParams {
     /// Assembles parameters for validation by the upstream native ASM registry.
-    pub fn new(genesis_predicate: PredicateKey, targets: Vec<AsmExecutionTarget>) -> Self {
+    pub fn new(genesis_spec_id: SpecId, targets: Vec<AsmExecutionTarget>) -> Self {
         Self {
-            genesis_predicate,
+            genesis_spec_id,
             targets,
         }
     }
 
-    /// Returns the predicate authorizing the chain's initial ASM ruleset.
-    pub fn genesis_predicate(&self) -> &PredicateKey {
-        &self.genesis_predicate
+    /// Returns the spec the chain starts under.
+    ///
+    /// Its predicate is the one its entry in [`targets`](Self::targets) lists. This stays
+    /// separate from the catalog because once an upgrade adds a second target, nothing else
+    /// records which spec the chain started under.
+    pub fn genesis_spec_id(&self) -> SpecId {
+        self.genesis_spec_id
     }
 
     /// Returns the trusted native execution catalog.
@@ -68,18 +72,18 @@ mod tests {
     #[test]
     fn execution_params_preserve_json_fields() {
         let json = serde_json::json!({
-            "genesis_predicate": "AlwaysAccept",
+            "genesis_spec_id": 0,
             "targets": [{"predicate": "AlwaysAccept", "spec_id": 0}]
         });
         let params: AsmExecutionParams = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(
             params,
             AsmExecutionParams::new(
-                PredicateKey::always_accept(),
+                0,
                 vec![AsmExecutionTarget::new(PredicateKey::always_accept(), 0)],
             )
         );
-        assert_eq!(params.genesis_predicate(), &PredicateKey::always_accept());
+        assert_eq!(params.genesis_spec_id(), 0);
         assert_eq!(
             params.targets()[0].predicate(),
             &PredicateKey::always_accept()

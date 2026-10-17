@@ -54,11 +54,30 @@ Set `BITCOIND_RPC_URL` in `.env` to the remote endpoint and run `just docker-seq
 ## ASM execution parameters
 
 Node TOML requires `asm_execution = "asm-execution-params.json"`. Relative paths
-resolve against the TOML file's directory. The referenced JSON carries the genesis
-ASM predicate and the trusted mapping from predicates to compiled native spec IDs.
-Distribute it with the network parameters and preserve existing mappings across
-restarts. Upstream ASM validates the catalog structure, but does not authenticate
-the mapping. These parameters are independent of checkpoint proving settings.
+resolve against the TOML file's directory. The referenced JSON carries the trusted
+mapping from predicates to compiled native spec IDs (`targets`) and the spec the
+chain starts under (`genesis_spec_id`); the genesis predicate is the one its target
+lists. Distribute it with the network parameters and preserve existing mappings
+across restarts. Upstream ASM validates the catalog structure, but does not
+authenticate the mapping. These parameters are independent of checkpoint proving
+settings.
+
+```json
+{
+  "genesis_spec_id": 0,
+  "targets": [
+    { "predicate": "AlwaysAccept", "spec_id": 0 },
+    { "predicate": "<spec 1 predicate>", "spec_id": 1 }
+  ]
+}
+```
+
+ASM v0.5.0-rc.1 compiles spec 0 and spec 1. A node executes spec 1 only after an
+admin update activates a predicate that its catalog maps to spec 1, so add that
+target before the activation reaches L1. Each predicate and each spec ID appears
+at most once. Files written for ASM v0.4.0 name the genesis program with
+`genesis_predicate`; replace it with `genesis_spec_id`, the spec ID of that
+predicate's target. The node refuses the old field.
 
 Compose mounts `configs/dev/asm-execution-params.json` read-only at
 `/app/configs/asm-execution-params.json`. Its `AlwaysAccept`

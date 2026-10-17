@@ -1,4 +1,4 @@
 {
-  "genesis_predicate": "AlwaysAccept",
+  "genesis_spec_id": 0,
   "targets": [{ "predicate": "AlwaysAccept", "spec_id": 0 }]
 }

@@ -93,8 +93,9 @@ The ASM implementation is consumed through the `strata-asm-*` workspace dependen
 | 1 | Checkpoint | OL checkpoint verification |
 | 2 | Bridge V1 | Deposit/withdrawal management |
 
-The pinned `StrataAsmSpec` invokes exactly these three subprotocols. The former Debug
-subprotocol was removed; functional tests create deposits through the bridge path.
+The pinned `StrataAsmSpec` (spec 0) invokes exactly these three subprotocols.
+Its successor `StrataAsmSpecV1` (spec 1) keeps the same IDs and section schema but runs `BridgeSubprotoV2`, which commits `OperatorClaimUnlockV1` export leaves. The node executes spec 1 only when the ASM execution parameters list a target for it and an admin update activates that target's predicate. 
+The former Debug subprotocol was removed; functional tests create deposits through the bridge path.
 
 #### OL Layer (Orchestration Layer)
 

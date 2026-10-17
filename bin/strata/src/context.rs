@@ -719,7 +719,12 @@ mod tests {
         assert!(
             matches!(error, InitError::AsmExecutionParamsRead { path, .. } if path == params_path)
         );
-        fs::write(&params_path, r#"{"genesis_predicate": "AlwaysAccept"}"#).unwrap();
+        // The pre-v0.5.0-rc.1 format named the genesis program by predicate; it must not load.
+        fs::write(
+            &params_path,
+            r#"{"genesis_predicate": "AlwaysAccept", "targets": [{"predicate": "AlwaysAccept", "spec_id": 0}]}"#,
+        )
+        .unwrap();
         assert!(matches!(
             load_asm_execution_params(&config_path, Path::new("execution.json")),
             Err(InitError::UnparsableParamsFile(_)),

@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
 use strata_asm_spec::host::{build_execution_registry, CompiledSpec};
@@ -132,9 +133,12 @@ pub fn spawn_asm_worker(
             .iter()
             .map(|target| (target.predicate().clone(), target.spec_id())),
     )?;
-    let genesis_spec =
-        CompiledSpec::resolve(registry.resolve(execution.genesis_predicate())?.spec_id())?;
-    let genesis = genesis_spec.construct_genesis_state(&asm_params);
+    let genesis_predicate = registry
+        .predicate(execution.genesis_spec_id())
+        .context("ASM genesis_spec_id is not listed in the execution targets")?
+        .clone();
+    let genesis =
+        CompiledSpec::resolve(execution.genesis_spec_id())?.construct_genesis_state(&asm_params);
 
     let context = AsmWorkerCtx::new(
         handle.clone(),
@@ -147,7 +151,7 @@ pub fn spawn_asm_worker(
     // The worker validates the anchor and prefills its manifest MMR.
     let handle = AsmWorkerBuilder::new()
         .with_context(context)
-        .with_genesis(genesis, execution.genesis_predicate().clone())
+        .with_genesis(genesis, genesis_predicate)
         .with_registry(registry)
         .launch(executor)?;
 
