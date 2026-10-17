@@ -236,7 +236,7 @@ anyhow = "1.0.102"
 arbitrary = { version = "1.3.2", features = ["derive"] }
 argh = "0.1"
 async-trait = "0.1.80"
-base64 = "0.22.1"
+base64 = "0.23.1"
 bdk_bitcoind_rpc = "0.17.1"
 bdk_esplora = { version = "0.20.1", features = [
   "async-https",
