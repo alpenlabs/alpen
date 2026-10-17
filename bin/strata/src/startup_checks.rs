@@ -6,11 +6,12 @@ use bitcoind_async_client::{
 };
 use strata_btc_types::BlockHashExt;
 use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
-use strata_checkpoint_types::{EpochSummary, select_spec_after_epoch};
+use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
+use strata_ol_spec_selection::select_spec_after_epoch;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
 use strata_primitives::L1BlockCommitment;

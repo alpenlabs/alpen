@@ -4,19 +4,21 @@
 //! checkpoint promotion and the sequencer's startup checks, block assembly,
 //! the checkpoint builder, the mempool and the status RPC. They differ only in
 //! how they read summaries and manifests. The rule itself is
-//! [`select_next_epoch_spec`]; this module finds the L1 range it reads.
+//! [`select_next_epoch_spec`]; this crate finds the L1 range it reads.
+//!
+//! The checkpoint guest does not compile this crate, so changing it leaves the
+//! checkpoint verifying key unchanged.
 
 use std::future::Future;
 
+use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment};
 use strata_ol_chain_types_v1::AsmManifest;
 use strata_ol_state_types::{OLSpecId, OLSpecVersions};
 use strata_ol_stf::{
-    select_next_epoch_spec, EpochL1Range, EpochSpecSelectionError, InvalidEpochL1Range,
+    EpochL1Range, EpochSpecSelectionError, InvalidEpochL1Range, select_next_epoch_spec,
 };
 use thiserror::Error;
-
-use crate::EpochSummary;
 
 /// Errors returned by [`select_spec_after_epoch`] and
 /// [`select_spec_after_epoch_async`].
@@ -184,7 +186,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, future::Ready};
+    use std::collections::HashMap;
+    use std::future::Ready;
 
     use futures::executor::block_on;
     use strata_identifiers::{Buf32, L1BlockId, OLBlockCommitment, OLBlockId};

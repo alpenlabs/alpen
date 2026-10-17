@@ -1,12 +1,12 @@
 //! Error types for the chain worker.
 
 use strata_acct_types::AccountSerial;
-use strata_checkpoint_types::SelectSpecAfterEpochError;
 use strata_codec::CodecError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
     AccountId, Buf32, Epoch, L1BlockCommitment, L1Height, OLBlockCommitment, OLBlockId,
 };
+use strata_ol_spec_selection::SelectSpecAfterEpochError;
 use strata_ol_state_types::StateError;
 use strata_ol_stf::{EpochSpecSelectionError, ExecError, InvalidEpochL1Range, UpgradeRequired};
 use strata_primitives::epoch::EpochCommitment;
