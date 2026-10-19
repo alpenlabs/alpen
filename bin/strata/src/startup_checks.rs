@@ -14,6 +14,7 @@ use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_spec_selection::select_spec_after_epoch;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
+use strata_ol_stf::{EpochL1Range, select_next_epoch_spec};
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -737,8 +738,10 @@ pub(crate) fn select_spec_after_epoch_terminal_block(
 /// Returns the spec of the block after `block`, whose state is `state`.
 ///
 /// A block that ends its epoch is followed by the next epoch, whose spec
-/// [`select_spec_after_epoch_terminal_block`] selects. Any other block is followed by a block of
-/// its own epoch, which runs the spec the block's state was produced under.
+/// [`select_spec_after_epoch_terminal_block`] selects, or
+/// [`select_spec_after_unsummarized_terminal_block`] while the epoch has no
+/// summary yet. Any other block is followed by a block of its own epoch, which
+/// runs the spec the block's state was produced under.
 fn select_spec_after_block(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
@@ -750,12 +753,55 @@ fn select_spec_after_block(
         .get_ol_header_blocking(*block.blkid())
         .context("failed to query the OL header")?
         .ok_or_else(|| anyhow!("missing the OL header of {block}"))?;
-    if header.is_terminal() {
-        let terminal = EpochCommitment::from_terminal(header.epoch(), block);
+    if !header.is_terminal() {
+        return Ok(state.cur_spec());
+    }
+    let terminal = EpochCommitment::from_terminal(header.epoch(), block);
+    let summarized = terminal.epoch() == 0
+        || storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(terminal)
+            .context("failed to query the epoch summary")?
+            .is_some();
+    if summarized {
         select_spec_after_epoch_terminal_block(storage, genesis_l1_block, terminal, state)
     } else {
-        Ok(state.cur_spec())
+        select_spec_after_unsummarized_terminal_block(storage, terminal, state)
     }
+}
+
+/// Returns the spec of the epoch after `terminal`, an epoch after genesis
+/// whose terminal block has state `state` but whose summary is not stored.
+///
+/// FCM marks a terminal block valid before the chain worker stores its epoch
+/// summary, and repeats the acceptance at startup to store a summary that a
+/// crash left missing. The sequencer checks its tip before FCM starts, so the
+/// tip can be such a block. The chain worker links the summary it stores to
+/// the canonical summary of the epoch before, so the epoch's L1 range starts
+/// at that summary's last L1 block, as
+/// [`select_spec_after_epoch_terminal_block`] reads it once the summary exists.
+fn select_spec_after_unsummarized_terminal_block(
+    storage: &NodeStorage,
+    terminal: EpochCommitment,
+    state: &OLStateContainer,
+) -> Result<OLSpecId> {
+    let prev_epoch = terminal.epoch() - 1;
+    let prev_commitment = storage
+        .ol_checkpoint()
+        .get_canonical_epoch_commitment_at_blocking(prev_epoch)
+        .context("failed to query the previous epoch's commitment")?
+        .ok_or_else(|| anyhow!("missing the commitment of epoch {prev_epoch}"))?;
+    let prev_summary = storage
+        .ol_checkpoint()
+        .get_epoch_summary_blocking(prev_commitment)
+        .context("failed to query the previous epoch's summary")?
+        .ok_or_else(|| anyhow!("missing the epoch summary of {prev_commitment}"))?;
+    let range = EpochL1Range::new(*prev_summary.new_l1(), state.chainstate().last_l1_block())?;
+    Ok(select_next_epoch_spec(
+        state.spec_versions(),
+        range,
+        |block| storage.l1().get_block_manifest(block.blkid()),
+    )?)
 }
 
 /// Checks that a sequencer can build on the canonical OL tip.
@@ -1552,6 +1598,26 @@ mod tests {
     #[test]
     fn test_sequencer_refuses_the_tip_after_a_v1_enactment() {
         let (storage, genesis_l1) = setup_v1_tip_on_enactment(true);
+        let err =
+            verify_sequencer_tip_spec(&storage, genesis_l1).expect_err("the next epoch runs V2");
+        assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
+    }
+
+    /// A crash after FCM marks a terminal tip valid, and before the chain
+    /// worker stores its summary, leaves the tip without one. The sequencer
+    /// still selects the next epoch's spec from the enactment the epoch
+    /// processed, instead of refusing to start for the missing summary that
+    /// FCM's acceptance replay stores.
+    #[test]
+    fn test_sequencer_selects_after_a_terminal_tip_without_its_summary() {
+        let (storage, genesis_l1) = setup_v1_tip_on_enactment(true);
+        let tip = resolve_tip_ol_block(&storage).expect("test: resolve tip");
+        assert!(
+            storage
+                .ol_checkpoint()
+                .del_epoch_summary_blocking(EpochCommitment::from_terminal(1, tip))
+                .expect("test: delete tip summary")
+        );
         let err =
             verify_sequencer_tip_spec(&storage, genesis_l1).expect_err("the next epoch runs V2");
         assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
