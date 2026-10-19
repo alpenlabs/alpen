@@ -959,7 +959,7 @@ fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
 mod tests {
     use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_checkpoint_types::EpochSummary;
-    use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, OLBlockId};
+    use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, EpochCommitment, OLBlockId};
     use strata_ol_log_budget::TxLogBudgetError;
     use strata_ol_params::BridgeParams;
     use strata_ol_state_container::OLStateContainer;
@@ -2669,6 +2669,46 @@ mod tests {
             .await
             .expect("admitted under V1");
         assert!(state.contains(&txid));
+    }
+
+    /// The mempool launches before FCM repairs a summary that a crash left
+    /// missing. On a terminal tip without its summary, it still selects the
+    /// next block's spec, from the canonical summary of the epoch before,
+    /// instead of failing to launch.
+    #[tokio::test]
+    async fn test_mempool_launches_on_a_terminal_tip_without_its_summary() {
+        let mid_epoch_tip = create_test_block_commitment(100);
+        let provider = Arc::new(create_test_state_provider(mid_epoch_tip));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            provider.clone(),
+        ));
+        let (tip, tip_state) = store_terminal_tip(
+            &context.storage,
+            context.genesis_l1_block,
+            OLSpecId::V1,
+            true,
+        )
+        .await;
+        provider.insert_state(tip.block(), tip_state);
+        let tip_epoch = EpochCommitment::from_terminal(1, tip.block());
+        assert!(
+            context
+                .storage
+                .ol_checkpoint()
+                .del_epoch_summary_async(tip_epoch)
+                .await
+                .unwrap()
+        );
+
+        let mut state = MempoolServiceState::new_with_context(context, tip)
+            .await
+            .expect("the mempool launches");
+        let err = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
+            .await
+            .expect_err("no transaction is admitted");
+        assert!(matches!(err, OLMempoolError::UpgradeRequired(_)), "{err}");
     }
 
     /// When the tip moves to a terminal block whose epoch processed a V1

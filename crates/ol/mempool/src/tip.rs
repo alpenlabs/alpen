@@ -2,7 +2,10 @@
 //! block after it.
 
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
-use strata_ol_spec_selection::{SelectSpecAfterEpochError, select_spec_after_epoch_async};
+use strata_ol_spec_selection::{
+    SelectSpecAfterEpochError, select_spec_after_epoch_async,
+    select_spec_after_unsummarized_epoch_async,
+};
 use strata_ol_state_types::IStateAccessor;
 use strata_ol_stf::{EpochSpecSelectionError, OLSpecId, UpgradeRequired};
 use strata_status::OLSyncStatus;
@@ -53,6 +56,11 @@ impl MempoolTip {
 /// genesis epoch starts at `genesis_l1_block`. Any other block continues the
 /// tip's epoch under the spec the tip state was produced under.
 ///
+/// The mempool launches before FCM repairs a summary that a crash left
+/// missing, so a terminal tip's own summary can be absent. Its epoch's L1 range
+/// then starts at the canonical summary of the epoch before, as
+/// [`select_spec_after_unsummarized_epoch_async`] describes.
+///
 /// Returns the [`UpgradeRequired`] outcome as a value, since the mempool keeps
 /// running and only stops admitting transactions.
 ///
@@ -74,15 +82,43 @@ pub(crate) async fn select_tip_spec(
         L1BlockCommitment::new(tip_state.last_l1_height(), *tip_state.last_l1_blkid());
 
     let tip_epoch = EpochCommitment::from_terminal(epoch, tip.block());
-    let selected = select_spec_after_epoch_async(
+    let checkpoints = storage.ol_checkpoint();
+    let get_manifest = |block: L1BlockCommitment| async move {
+        storage.l1().get_block_manifest_async(block.blkid()).await
+    };
+    let selected = match select_spec_after_epoch_async(
         tip_epoch,
         tip_versions,
         tip_last_l1,
         genesis_l1_block,
-        |epoch| async move { storage.ol_checkpoint().get_epoch_summary_async(epoch).await },
-        |block| async move { storage.l1().get_block_manifest_async(block.blkid()).await },
+        |epoch| async move { checkpoints.get_epoch_summary_async(epoch).await },
+        get_manifest,
     )
-    .await;
+    .await
+    {
+        Err(SelectSpecAfterEpochError::MissingEpochSummary(missing)) if missing == tip_epoch => {
+            let prev_epoch_summary = match checkpoints
+                .get_canonical_epoch_commitment_at_async(epoch - 1)
+                .await?
+            {
+                Some(prev_epoch) => checkpoints.get_epoch_summary_async(prev_epoch).await?,
+                None => None,
+            };
+            match prev_epoch_summary {
+                Some(prev_epoch_summary) => {
+                    select_spec_after_unsummarized_epoch_async(
+                        tip_versions,
+                        tip_last_l1,
+                        &prev_epoch_summary,
+                        get_manifest,
+                    )
+                    .await
+                }
+                None => Err(SelectSpecAfterEpochError::MissingEpochSummary(missing)),
+            }
+        }
+        selected => selected,
+    };
     match selected {
         Ok(spec) => Ok(Ok(spec)),
         Err(err) => match err.into_lookup_error() {
