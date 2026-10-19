@@ -39,6 +39,11 @@ pub trait OLClientRpc {
     /// Returns entries for `start_epoch` and later, ordered by epoch. A response ends at the
     /// first epoch boundary after 1,000 entries, so it holds every entry of the epochs it covers;
     /// to read further, call again with the last returned epoch plus one.
+    ///
+    /// Entries aren't always recorded in epoch order, so a later call can return an entry for an
+    /// epoch below the ones an earlier call returned. No epoch works as a cursor for following
+    /// new rejections: to catch every new entry, re-read from epoch 0 and deduplicate entries by
+    /// txid.
     #[method(name = "getRejectedCheckpoints")]
     async fn get_rejected_checkpoints(
         &self,
