@@ -134,14 +134,6 @@ impl ChainWorkerContext for OrderEnforcingContext {
         Ok(self.canonical_summaries.get(&epoch).cloned())
     }
 
-    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>> {
-        Ok(self
-            .canonical_summaries
-            .get(&epoch.epoch())
-            .filter(|summary| summary.get_epoch_commitment() == epoch)
-            .cloned())
-    }
-
     fn store_block_output(
         &self,
         block: &OLBlockV1,

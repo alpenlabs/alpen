@@ -770,7 +770,7 @@ pub(crate) fn select_spec_after<S: IStateAccessor>(
         parent_state.spec_versions(),
         parent_epoch_last_l1_block,
         ctx.genesis_l1_block(),
-        |epoch| ctx.fetch_epoch_summary(epoch),
+        |epoch| ctx.fetch_summary(epoch),
         |block| ctx.fetch_l1_block_manifest(&block),
     )?)
 }

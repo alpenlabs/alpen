@@ -120,18 +120,6 @@ impl ChainWorkerContext for MockChainWorkerContext {
             .cloned())
     }
 
-    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>> {
-        Ok(self
-            .epoch_summaries
-            .get(&epoch.epoch())
-            .and_then(|summaries| {
-                summaries
-                    .iter()
-                    .find(|summary| summary.get_epoch_commitment() == epoch)
-                    .copied()
-            }))
-    }
-
     fn fetch_ol_state(
         &self,
         commitment: OLBlockCommitment,

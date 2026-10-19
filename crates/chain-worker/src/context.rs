@@ -273,10 +273,6 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         }
     }
 
-    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>> {
-        Ok(self.ol_checkpoint_mgr.get_epoch_summary_blocking(epoch)?)
-    }
-
     fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()> {
         let merged = merge_epoch_state(self, summary)?;
 

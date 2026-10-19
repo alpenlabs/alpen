@@ -97,10 +97,6 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Fetches canonical epoch summary for an epoch index.
     fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>>;
 
-    /// Fetches the summary of the epoch that ends at `epoch`'s terminal block,
-    /// whether or not that block is canonical.
-    fn fetch_epoch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>>;
-
     /// Merges write batches of the epoch described by `summary` and stores
     /// the merged state at the epoch's terminal commitment.
     ///
