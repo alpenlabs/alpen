@@ -86,10 +86,12 @@ pub fn select_spec_after_epoch<E>(
 ) -> Result<OLSpecId, SelectSpecAfterEpochError<E>> {
     let prev_epoch_last_l1_block =
         resolve_prev_epoch_last_l1_block(terminal, genesis_l1_block, get_summary)?;
-    let range = EpochL1Range::new(prev_epoch_last_l1_block, epoch_last_l1_block)?;
-    Ok(select_next_epoch_spec(spec_versions, range, |block| {
-        get_manifest(*block)
-    })?)
+    select_spec_in_range(
+        spec_versions,
+        prev_epoch_last_l1_block,
+        epoch_last_l1_block,
+        get_manifest,
+    )
 }
 
 /// [`select_spec_after_epoch`] for callers whose lookups are async.
@@ -118,6 +120,100 @@ where
 {
     let prev_epoch_last_l1_block =
         resolve_prev_epoch_last_l1_block_async(terminal, genesis_l1_block, get_summary).await?;
+    select_spec_in_range_async(
+        spec_versions,
+        prev_epoch_last_l1_block,
+        epoch_last_l1_block,
+        get_manifest,
+    )
+    .await
+}
+
+/// Selects the spec of the epoch after one whose terminal block's summary is
+/// not stored yet, with [`select_next_epoch_spec`].
+///
+/// FCM marks a terminal block valid before the chain worker stores its epoch
+/// summary, and repeats the acceptance at startup to store a summary that a
+/// crash left missing. A driver that reads the chain tip before that repair,
+/// such as the sequencer's startup check or the mempool at launch, finds
+/// [`select_spec_after_epoch`] reporting the tip's own summary as missing. The
+/// chain worker links the summary it stores to the canonical summary of the
+/// epoch before, so the epoch's L1 range starts at the last L1 block of that
+/// summary, `prev_epoch_summary`, as [`select_spec_after_epoch`] reads it once
+/// the summary exists.
+///
+/// `spec_versions`, `epoch_last_l1_block` and `get_manifest` are those
+/// [`select_spec_after_epoch`] takes.
+///
+/// # Errors
+///
+/// Returns an error if the manifest lookup fails or the manifest is missing,
+/// the epoch's last L1 block does not follow `prev_epoch_summary`'s, or
+/// [`select_next_epoch_spec`] fails, as [`select_spec_after_epoch`] does.
+pub fn select_spec_after_unsummarized_epoch<E>(
+    spec_versions: OLSpecVersions,
+    epoch_last_l1_block: L1BlockCommitment,
+    prev_epoch_summary: &EpochSummary,
+    get_manifest: impl FnOnce(L1BlockCommitment) -> Result<Option<AsmManifest>, E>,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>> {
+    select_spec_in_range(
+        spec_versions,
+        *prev_epoch_summary.new_l1(),
+        epoch_last_l1_block,
+        get_manifest,
+    )
+}
+
+/// [`select_spec_after_unsummarized_epoch`] for callers whose manifest lookup
+/// is async.
+///
+/// # Errors
+///
+/// Returns the errors [`select_spec_after_unsummarized_epoch`] returns.
+pub async fn select_spec_after_unsummarized_epoch_async<E, M, MFut>(
+    spec_versions: OLSpecVersions,
+    epoch_last_l1_block: L1BlockCommitment,
+    prev_epoch_summary: &EpochSummary,
+    get_manifest: M,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>>
+where
+    M: FnOnce(L1BlockCommitment) -> MFut,
+    MFut: Future<Output = Result<Option<AsmManifest>, E>>,
+{
+    select_spec_in_range_async(
+        spec_versions,
+        *prev_epoch_summary.new_l1(),
+        epoch_last_l1_block,
+        get_manifest,
+    )
+    .await
+}
+
+/// Selects the spec of the epoch after one whose L1 range runs from
+/// `prev_epoch_last_l1_block`, exclusive, to `epoch_last_l1_block`.
+fn select_spec_in_range<E>(
+    spec_versions: OLSpecVersions,
+    prev_epoch_last_l1_block: L1BlockCommitment,
+    epoch_last_l1_block: L1BlockCommitment,
+    get_manifest: impl FnOnce(L1BlockCommitment) -> Result<Option<AsmManifest>, E>,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>> {
+    let range = EpochL1Range::new(prev_epoch_last_l1_block, epoch_last_l1_block)?;
+    Ok(select_next_epoch_spec(spec_versions, range, |block| {
+        get_manifest(*block)
+    })?)
+}
+
+/// [`select_spec_in_range`] for callers whose manifest lookup is async.
+async fn select_spec_in_range_async<E, M, MFut>(
+    spec_versions: OLSpecVersions,
+    prev_epoch_last_l1_block: L1BlockCommitment,
+    epoch_last_l1_block: L1BlockCommitment,
+    get_manifest: M,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>>
+where
+    M: FnOnce(L1BlockCommitment) -> MFut,
+    MFut: Future<Output = Result<Option<AsmManifest>, E>>,
+{
     let range = EpochL1Range::new(prev_epoch_last_l1_block, epoch_last_l1_block)?;
 
     // Selection is not async, so look up the one manifest it reads first.
@@ -448,5 +544,52 @@ mod tests {
             ),
             "{err:?}"
         );
+    }
+    /// While epoch 2's summary is missing, selection starts the range at the
+    /// last L1 block of the summary the chain worker will link it to, and
+    /// finds the enactment epoch 2 processed.
+    #[test]
+    fn test_unsummarized_epoch_selects_from_the_previous_summary() {
+        let prev_epoch_summary =
+            EpochSummary::new(1, block(10, 1), block(0, 0), l1_block(5, 1), Buf32::zero());
+        let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
+        let expected = manifest_block(&enactment);
+
+        let err = select_spec_after_unsummarized_epoch(
+            OLSpecVersions::uniform(OLSpecId::V1),
+            expected,
+            &prev_epoch_summary,
+            |block| -> Result<_, ()> {
+                assert_eq!(block, expected, "looked up another block's manifest");
+                Ok(Some(enactment))
+            },
+        )
+        .expect_err("V1 has no implemented successor");
+        let SelectSpecAfterEpochError::Selection(EpochSpecSelectionError::UpgradeRequired(upgrade)) =
+            err
+        else {
+            panic!("expected an upgrade-required error, got {err:?}");
+        };
+        assert_eq!(upgrade.enactment_l1_height(), 9);
+    }
+
+    #[test]
+    fn test_async_unsummarized_epoch_selects_from_the_previous_summary() {
+        let prev_epoch_summary =
+            EpochSummary::new(1, block(10, 1), block(0, 0), l1_block(5, 1), Buf32::zero());
+        let manifest = make_empty_manifest(9, 3);
+        let expected = manifest_block(&manifest);
+
+        let spec = block_on(select_spec_after_unsummarized_epoch_async(
+            OLSpecVersions::uniform(OLSpecId::V1),
+            expected,
+            &prev_epoch_summary,
+            |block| {
+                assert_eq!(block, expected, "looked up another block's manifest");
+                async move { Ok::<_, ()>(Some(manifest)) }
+            },
+        ));
+
+        assert_eq!(spec.unwrap(), OLSpecId::V1);
     }
 }
