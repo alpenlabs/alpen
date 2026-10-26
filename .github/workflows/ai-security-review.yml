@@ -1,8 +1,9 @@
 name: AI Security Review
 
-# Review behavior lives in https://github.com/alpenlabs/actions/tree/v1.1.0/ai-security-review.
+# Review behavior lives in https://github.com/alpenlabs/actions/tree/v1.2.0/ai-security-review.
 # ALPEN_ACTIONS_READ_TOKEN needs Contents: read access to the internal actions repository.
 # Also configure CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY for the shared action.
+# ALPEN_PRODUCT_READ_TOKEN (Contents: read on alpenlabs/product) loads PRDs; without it the review skips them.
 # Keep pull_request: pull_request_target would expose secrets to untrusted PR content.
 
 on:
@@ -57,7 +58,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: alpenlabs/actions
-          ref: cb88ece94a7723eeb272bb2a14fb20184d0f1c9f # v1.1.0
+          ref: 1e30c71ed3566bc0405118276357aff8cf61809f # v1.2.0
           token: ${{ secrets.ALPEN_ACTIONS_READ_TOKEN }}
           path: .alpen-actions
           persist-credentials: false
@@ -69,3 +70,5 @@ jobs:
           pr-number: ${{ github.event.pull_request.number || inputs.pr_number }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          product-read-token: ${{ secrets.ALPEN_PRODUCT_READ_TOKEN }}
+          require-repo-context: true
