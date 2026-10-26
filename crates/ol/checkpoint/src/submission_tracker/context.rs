@@ -8,11 +8,12 @@ use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::broadcaster::L1BroadcastHandle;
 use strata_codec::decode_buf_exact;
 use strata_codec_utils::CodecSsz;
+use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::common::L1TxId;
 use strata_db_types::l1_broadcast::L1TxStatus;
 use strata_db_types::l1_writer::BundleIdx;
 use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
-use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
+use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 use strata_storage::NodeStorage;
 use thiserror::Error;
 use tokio::runtime::Handle;
@@ -88,6 +89,14 @@ pub(crate) trait SubmissionTrackerContext: Send + Sync + 'static {
 
     /// Resolves a reveal transaction through the broadcaster, or `None` if it is unknown there.
     fn resolve_reveal(&self, txid: L1TxId) -> anyhow::Result<Option<RevealStatus>>;
+
+    /// L1 refs of the checkpoints the CSM observed the ASM accept for `epoch`.
+    ///
+    /// An L1 reorg can leave refs on abandoned blocks behind, so callers keep the canonical ones.
+    fn get_checkpoint_l1_refs_for_epoch(
+        &self,
+        epoch: Epoch,
+    ) -> anyhow::Result<Vec<(EpochCommitment, CheckpointL1Ref)>>;
 
     /// Canonical L1 block at `height`, if the node has one there.
     fn get_canonical_l1_blockid_at(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>>;
@@ -189,6 +198,22 @@ impl SubmissionTrackerContext for SubmissionTrackerContextImpl {
             txid: L1TxId::from(live_txid.0),
             inclusion: inclusion_block(&entry.status),
         }))
+    }
+
+    fn get_checkpoint_l1_refs_for_epoch(
+        &self,
+        epoch: Epoch,
+    ) -> anyhow::Result<Vec<(EpochCommitment, CheckpointL1Ref)>> {
+        let ol_checkpoint = self.storage.ol_checkpoint();
+        let mut refs = Vec::new();
+        for commitment in
+            ol_checkpoint.get_observed_checkpoint_commitments_for_epoch_blocking(epoch)?
+        {
+            if let Some(l1_ref) = ol_checkpoint.get_checkpoint_l1_ref_blocking(commitment)? {
+                refs.push((commitment, l1_ref));
+            }
+        }
+        Ok(refs)
     }
 
     fn get_canonical_l1_blockid_at(&self, height: L1Height) -> anyhow::Result<Option<L1BlockId>> {

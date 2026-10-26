@@ -20,7 +20,8 @@ use crate::DbResult;
 /// ASM.
 ///
 /// The submission tracker records one entry per transaction once its inclusion block is buried
-/// at the reorg-safe depth while the ASM's verified epoch is still below the checkpoint's epoch.
+/// at the reorg-safe depth and the ASM did not accept that transaction: its verified epoch is
+/// still below the checkpoint's epoch, or it accepted another transaction for the epoch.
 /// Persisting it lets the node keep reporting the rejection across restarts without alerting
 /// again.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -11,7 +11,7 @@ use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment};
 use strata_service::ServiceState;
 use tracing::{debug, info, warn};
 
-use super::classify::{MinedReveal, SubmissionVerdict, classify_submission};
+use super::classify::{EpochAcceptance, MinedReveal, SubmissionVerdict, classify_submission};
 use super::context::{BundleContents, SubmissionTrackerContext};
 
 /// Outcome of a check that did not fail.
@@ -229,16 +229,19 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
             });
         }
 
+        let acceptance = self.get_epoch_acceptance(bundle.commitment.epoch(), verified_tip)?;
         let verdict = classify_submission(
-            bundle.commitment.epoch(),
+            bundle.commitment,
             mined,
+            acceptance,
             csm_tip.height(),
-            verified_tip.map(|tip| tip.epoch()),
             self.l1_reorg_safe_depth,
         );
         Ok(match verdict {
-            // A shallow reorg can undo an acceptance, so only a final one settles the bundle.
-            SubmissionVerdict::EpochAccepted => self
+            // A shallow reorg can undo an acceptance, so only a final one settles the bundle. A
+            // superseded transaction settles the same way, so if the broadcaster only reports it
+            // mined after the epoch is final, its rejection goes unrecorded.
+            SubmissionVerdict::Accepted | SubmissionVerdict::Superseded => self
                 .finalized_epoch()
                 .is_some_and(|finalized| finalized >= bundle.commitment.epoch()),
             SubmissionVerdict::NotIncluded | SubmissionVerdict::AwaitingDepth => false,
@@ -252,6 +255,34 @@ impl<C: SubmissionTrackerContext> SubmissionTrackerState<C> {
                 true
             }
         })
+    }
+
+    /// What the ASM accepted for `epoch`, from the CSM's verified tip and its canonical L1 refs.
+    ///
+    /// The CSM stores a checkpoint's L1 ref before it publishes the state that accepts it, so
+    /// any state whose verified tip covers `epoch` comes with the ref already stored.
+    fn get_epoch_acceptance(
+        &self,
+        epoch: Epoch,
+        verified_tip: Option<EpochCommitment>,
+    ) -> anyhow::Result<EpochAcceptance> {
+        if verified_tip.is_none_or(|tip| tip.epoch() < epoch) {
+            return Ok(EpochAcceptance::Pending);
+        }
+        let mut acceptance = EpochAcceptance::Unobserved;
+        for (commitment, l1_ref) in self.ctx.get_checkpoint_l1_refs_for_epoch(epoch)? {
+            if !self.is_canonical(&l1_ref.l1_commitment)? {
+                continue;
+            }
+            if acceptance != EpochAcceptance::Unobserved {
+                anyhow::bail!("more than one canonical checkpoint observation for epoch {epoch}");
+            }
+            acceptance = EpochAcceptance::Observed {
+                commitment,
+                txid: l1_ref.txid,
+            };
+        }
+        Ok(acceptance)
     }
 
     fn is_canonical(&self, block: &L1BlockCommitment) -> anyhow::Result<bool> {
@@ -289,6 +320,8 @@ mod tests {
         bundles: Vec<BundleContents>,
         reveals: HashMap<L1TxId, RevealStatus>,
         canonical: HashMap<L1Height, L1BlockId>,
+        /// CSM L1 refs of accepted checkpoints by epoch, canonical or not.
+        l1_refs: HashMap<Epoch, Vec<(EpochCommitment, CheckpointL1Ref)>>,
         cursor: Option<BundleIdx>,
         rejected: Vec<RejectedCheckpointEntry>,
         commits_with_rejections: usize,
@@ -334,6 +367,17 @@ mod tests {
         fn set_canonical(&self, block: L1BlockCommitment) {
             self.data().canonical.insert(block.height(), *block.blkid());
         }
+
+        /// Records that the CSM saw the ASM accept `commitment` from `txid` in `block`, and
+        /// marks `block` canonical.
+        fn observe(&self, commitment: EpochCommitment, txid: L1TxId, block: L1BlockCommitment) {
+            let mut data = self.data();
+            data.l1_refs.entry(commitment.epoch()).or_default().push((
+                commitment,
+                CheckpointL1Ref::new(block, txid, RBuf32::zero()),
+            ));
+            data.canonical.insert(block.height(), *block.blkid());
+        }
     }
 
     impl SubmissionTrackerContext for StubCtx {
@@ -373,6 +417,13 @@ mod tests {
 
         fn resolve_reveal(&self, txid: L1TxId) -> anyhow::Result<Option<RevealStatus>> {
             Ok(self.data().reveals.get(&txid).copied())
+        }
+
+        fn get_checkpoint_l1_refs_for_epoch(
+            &self,
+            epoch: Epoch,
+        ) -> anyhow::Result<Vec<(EpochCommitment, CheckpointL1Ref)>> {
+            Ok(self.data().l1_refs.get(&epoch).cloned().unwrap_or_default())
         }
 
         fn get_canonical_l1_blockid_at(
@@ -439,14 +490,22 @@ mod tests {
         )
     }
 
+    /// A commitment for `epoch` with a different terminal than [`commitment`] gives.
+    fn other_commitment(epoch: Epoch) -> EpochCommitment {
+        EpochCommitment::new(
+            epoch,
+            u64::from(epoch) * 4,
+            OLBlockId::from(Buf32::from([0xEE; 32])),
+        )
+    }
+
     fn block(height: L1Height, fork: u8) -> L1BlockCommitment {
         L1BlockCommitment::new(height, L1BlockId::from(Buf32::from([fork; 32])))
     }
 
-    fn l1_checkpoint(epoch: Epoch, observed: L1BlockCommitment) -> L1Checkpoint {
-        let terminal = commitment(epoch);
+    fn l1_checkpoint(terminal: EpochCommitment, observed: L1BlockCommitment) -> L1Checkpoint {
         let tip = CheckpointTip {
-            epoch,
+            epoch: terminal.epoch(),
             l1_height: observed.height() - 10,
             l2_commitment: OLBlockCommitment::new(terminal.last_slot(), *terminal.last_blkid()),
         };
@@ -463,10 +522,26 @@ mod tests {
         verified_epoch: Option<Epoch>,
         finalized_epoch: Option<Epoch>,
     ) -> CheckpointState {
+        csm_state_with(
+            ctx,
+            tip,
+            verified_epoch.map(commitment),
+            finalized_epoch.map(commitment),
+        )
+    }
+
+    /// CSM state at `tip` (made canonical) with the last accepted and last finalized
+    /// checkpoints.
+    fn csm_state_with(
+        ctx: &StubCtx,
+        tip: L1Height,
+        verified: Option<EpochCommitment>,
+        finalized: Option<EpochCommitment>,
+    ) -> CheckpointState {
         let tip = block(tip, 0xAA);
         ctx.set_canonical(tip);
-        let finalized = finalized_epoch.map(|epoch| l1_checkpoint(epoch, tip));
-        let last_seen = verified_epoch.map(|epoch| l1_checkpoint(epoch, tip));
+        let finalized = finalized.map(|terminal| l1_checkpoint(terminal, tip));
+        let last_seen = verified.map(|terminal| l1_checkpoint(terminal, tip));
         CheckpointState::new(ClientState::new(finalized, last_seen), tip)
     }
 
@@ -478,6 +553,17 @@ mod tests {
         verified_epoch: Option<Epoch>,
     ) {
         state.set_latest(csm_state(ctx, tip, verified_epoch, verified_epoch));
+        state.evaluate().unwrap();
+    }
+
+    /// Checks at `tip` with `accepted` verified and already final.
+    fn evaluate_accepting(
+        state: &mut SubmissionTrackerState<StubCtx>,
+        ctx: &StubCtx,
+        tip: L1Height,
+        accepted: EpochCommitment,
+    ) {
+        state.set_latest(csm_state_with(ctx, tip, Some(accepted), Some(accepted)));
         state.evaluate().unwrap();
     }
 
@@ -702,5 +788,168 @@ mod tests {
         assert_eq!(rejected_epochs(&state), vec![2, 3]);
         assert_eq!(state.cursor(), 2);
         assert_eq!(ctx.data().commits_with_rejections, 2);
+    }
+
+    #[test]
+    fn rejected_before_any_accepted_checkpoint() {
+        let ctx = StubCtx::default();
+        let txid = ctx.push_checkpoint(1);
+        ctx.mine(txid, block(100, 1));
+        let mut state = new_state(&ctx);
+
+        evaluate_at(&mut state, &ctx, 102, None);
+        assert_eq!(
+            ctx.data().rejected,
+            vec![RejectedCheckpointEntry::new(
+                commitment(1),
+                txid,
+                block(100, 1),
+                None
+            )]
+        );
+    }
+
+    #[test]
+    fn own_observed_acceptance_is_not_reported() {
+        let ctx = StubCtx::default();
+        let txid = ctx.push_checkpoint(2);
+        ctx.mine(txid, block(100, 1));
+        ctx.observe(commitment(2), txid, block(100, 1));
+        let mut state = new_state(&ctx);
+
+        evaluate_at(&mut state, &ctx, 110, Some(2));
+        assert!(ctx.data().rejected.is_empty());
+        assert_eq!(state.cursor(), 1);
+    }
+
+    #[test]
+    fn rejected_when_the_asm_accepts_another_commitment() {
+        let ctx = StubCtx::default();
+        let txid = ctx.push_checkpoint(2);
+        ctx.mine(txid, block(101, 1));
+        ctx.observe(other_commitment(2), RBuf32::from([0xEE; 32]), block(100, 1));
+        let mut state = new_state(&ctx);
+
+        evaluate_accepting(&mut state, &ctx, 103, other_commitment(2));
+        assert_eq!(
+            ctx.data().rejected,
+            vec![RejectedCheckpointEntry::new(
+                commitment(2),
+                txid,
+                block(101, 1),
+                Some(other_commitment(2)),
+            )]
+        );
+        assert_eq!(state.cursor(), 1);
+        assert_eq!(
+            state.unresolved_rejections(),
+            0,
+            "the epoch itself is accepted"
+        );
+    }
+
+    #[test]
+    fn rejected_when_another_transaction_carries_the_accepted_commitment() {
+        // The first posting was proven with the wrong artifact; a re-proven posting of the same
+        // commitment got accepted before the first was buried.
+        let ctx = StubCtx::default();
+        let wrong = ctx.push_checkpoint(2);
+        ctx.mine(wrong, block(100, 1));
+        let reproven = ctx.push_checkpoint(2);
+        ctx.mine(reproven, block(101, 1));
+        ctx.observe(commitment(2), reproven, block(101, 1));
+        let mut state = new_state(&ctx);
+
+        evaluate_at(&mut state, &ctx, 110, Some(2));
+        let rejected = ctx.data().rejected.clone();
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].txid(), wrong);
+        assert_eq!(state.cursor(), 2);
+    }
+
+    #[test]
+    fn observation_on_an_abandoned_block_is_ignored() {
+        let ctx = StubCtx::default();
+        let txid = ctx.push_checkpoint(2);
+        ctx.mine(txid, block(100, 1));
+        ctx.observe(commitment(2), txid, block(100, 1));
+
+        // A reorg drops that block. On the new branch another commitment is accepted first, and
+        // the reveal is mined again after it.
+        ctx.set_canonical(block(100, 2));
+        ctx.observe(other_commitment(2), RBuf32::from([0xEE; 32]), block(101, 2));
+        ctx.mine(txid, block(102, 2));
+        let mut state = new_state(&ctx);
+
+        evaluate_accepting(&mut state, &ctx, 110, other_commitment(2));
+        assert_eq!(ctx.data().rejected[0].l1_block(), block(102, 2));
+    }
+
+    #[test]
+    fn superseded_checkpoint_mined_before_finality_is_reported() {
+        // The reveal is mined at 100 and another commitment is accepted at the CSM tip, 102, so
+        // the acceptance is not final yet. The broadcaster has not reported the reveal mined.
+        let ctx = StubCtx::default();
+        let txid = ctx.push_checkpoint(2);
+        let accepted = other_commitment(2);
+        ctx.observe(accepted, RBuf32::from([0xEE; 32]), block(102, 0xAA));
+        let mut state = new_state(&ctx);
+
+        state.set_latest(csm_state_with(
+            &ctx,
+            102,
+            Some(accepted),
+            Some(commitment(1)),
+        ));
+        state.evaluate().unwrap();
+        assert_eq!(
+            state.cursor(),
+            0,
+            "unmined and not final, so the bundle waits"
+        );
+
+        // The broadcaster catches up before the acceptance is final.
+        ctx.mine(txid, block(100, 1));
+        state.evaluate().unwrap();
+        assert_eq!(rejected_epochs(&state), vec![2]);
+        assert_eq!(state.cursor(), 1);
+    }
+
+    #[test]
+    fn superseded_unmined_checkpoint_settles_once_final() {
+        let ctx = StubCtx::default();
+        ctx.push_checkpoint(2);
+        let accepted = other_commitment(2);
+        ctx.observe(accepted, RBuf32::from([0xEE; 32]), block(100, 1));
+        let mut state = new_state(&ctx);
+
+        state.set_latest(csm_state_with(
+            &ctx,
+            101,
+            Some(accepted),
+            Some(commitment(1)),
+        ));
+        state.evaluate().unwrap();
+        assert_eq!(state.cursor(), 0);
+
+        // At 102 the acceptance at 100 is buried at the reorg-safe depth, so it is final.
+        evaluate_accepting(&mut state, &ctx, 102, accepted);
+        assert!(ctx.data().rejected.is_empty());
+        assert_eq!(state.cursor(), 1);
+    }
+
+    #[test]
+    fn two_canonical_observations_for_an_epoch_fail_the_check() {
+        let ctx = StubCtx::default();
+        let txid = ctx.push_checkpoint(2);
+        ctx.mine(txid, block(100, 1));
+        ctx.observe(commitment(2), txid, block(100, 1));
+        ctx.observe(other_commitment(2), RBuf32::from([0xEE; 32]), block(101, 1));
+        let mut state = new_state(&ctx);
+
+        state.set_latest(csm_state(&ctx, 110, Some(2), Some(2)));
+        assert!(state.evaluate().is_err());
+        assert!(ctx.data().rejected.is_empty());
+        assert_eq!(state.cursor(), 0);
     }
 }

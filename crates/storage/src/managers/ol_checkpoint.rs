@@ -352,6 +352,18 @@ impl OLCheckpointManager {
             .await
     }
 
+    /// Gets the observed checkpoint commitments for `epoch`.
+    ///
+    /// Candidates are observed, not canonical; callers resolve canonicity at
+    /// read time since an L1 reorg can leave more than one.
+    pub fn get_observed_checkpoint_commitments_for_epoch_blocking(
+        &self,
+        epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.ops
+            .get_observed_checkpoint_commitments_for_epoch_blocking(epoch)
+    }
+
     /// Deletes an OL checkpoint L1 ref by epoch commitment.
     pub async fn del_checkpoint_l1_ref_async(&self, epoch: EpochCommitment) -> DbResult<bool> {
         self.ops.del_checkpoint_l1_ref_async(epoch).await
