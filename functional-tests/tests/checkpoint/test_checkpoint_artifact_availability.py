@@ -15,7 +15,8 @@ from tests.dbtool.helpers import run_dbtool_json
 
 ADMIN_CONFIRMATION_DEPTH = 24
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
-EPOCH_FIELD_RE = re.compile(r"\bepoch=(\d+)")
+# EpochCommitment displays as last_slot[epoch]@last_blkid.
+EPOCH_COMMITMENT_RE = re.compile(r"\bcommitment=(?P<slot>\d+)\[(?P<epoch>\d+)\]@(?P<blkid>\S+)")
 
 
 @flexitest.register
@@ -131,9 +132,9 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
             for line in lines:
                 if "checkpoint proof completed" not in line:
                     continue
-                match = EPOCH_FIELD_RE.search(line)
-                if match and int(match.group(1)) >= target_epoch:
-                    return int(match.group(1))
+                match = EPOCH_COMMITMENT_RE.search(line)
+                if match and int(match.group("epoch")) >= target_epoch:
+                    return int(match.group("epoch"))
             return None
 
         epoch = wait_until_with_value(

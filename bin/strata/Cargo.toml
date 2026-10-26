@@ -112,7 +112,6 @@ zkaleido = { workspace = true, optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
-strata-paas.workspace = true
 strata-db-tests.workspace = true
 strata-ol-stf.workspace = true
 proptest.workspace = true
