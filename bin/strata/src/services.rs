@@ -353,13 +353,13 @@ pub(crate) fn start_strata_services(
     // Start OL checkpoint service.
     // When an integrated prover is configured, the prover writes proofs to
     // the proof DB and signals ProofNotify to wake the checkpoint worker.
-    // The worker waits indefinitely for proofs. Without a prover, empty
-    // proofs are used immediately.
+    // The worker waits while the selected commitment remains canonical.
+    // Without a prover, empty proofs are used immediately.
     let (checkpoint_handle, proof_notify) = if is_sequencer {
-        let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
+        let ol_sync_rx = nodectx.status_channel().subscribe_ol_sync();
         let checkpoint_builder = OLCheckpointBuilder::new()
             .with_node_context(&nodectx)
-            .with_epoch_summary_receiver(epoch_summary_rx);
+            .with_ol_sync_receiver(ol_sync_rx);
 
         let (checkpoint_builder, proof_notify): (
             OLCheckpointBuilder,

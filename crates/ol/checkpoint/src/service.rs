@@ -4,9 +4,9 @@ use std::marker::PhantomData;
 
 use serde::Serialize;
 use strata_identifiers::Epoch;
-use strata_primitives::epoch::EpochCommitment;
 use strata_service::{Response, Service, SyncService};
-use tracing::{error, warn};
+use strata_status::OLSyncStatusUpdate;
+use tracing::{debug, error};
 
 use crate::context::CheckpointWorkerContext;
 use crate::errors::CheckpointNotReady;
@@ -21,11 +21,8 @@ pub(crate) struct OLCheckpointService<C: CheckpointWorkerContext>(PhantomData<C>
 impl<C: CheckpointWorkerContext> Service for OLCheckpointService<C> {
     type State = OLCheckpointServiceState<C>;
 
-    /// Input from a [`watch::Receiver<Option<EpochCommitment>>`].
-    ///
-    /// `None` = initial state (no epoch completed yet), skip processing.
-    /// `Some(commitment)` = an epoch was completed, process checkpoint.
-    type Msg = Option<EpochCommitment>;
+    /// Wake-up after canonical index publication; status fields are not used for selection.
+    type Msg = Option<OLSyncStatusUpdate>;
 
     type Status = OLCheckpointStatus;
 
@@ -39,35 +36,33 @@ impl<C: CheckpointWorkerContext> Service for OLCheckpointService<C> {
 
 impl<C: CheckpointWorkerContext> SyncService for OLCheckpointService<C> {
     fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
-        state.initialize();
-        // Catch up on epochs summarized before startup, since their notifications
-        // may no longer be available. New summaries arrive through the watch channel.
-        if let Some(commitment) = state.last_summarized_commitment()? {
-            Self::process_input(state, Some(commitment))?;
-        }
+        state.initialize()?;
+        // Catch up even if no new fork-choice notification arrives after restart.
+        process_canonical_chain(state)?;
         Ok(())
     }
 
     fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
-        // Skip if no epoch commitment yet (initial watch channel state)
-        let Some(commitment) = input else {
-            return Ok(Response::Continue);
-        };
-
-        let epoch = commitment.epoch();
-        if let Err(err) = state.handle_complete_epoch(commitment) {
-            match err.downcast_ref::<CheckpointNotReady>() {
-                Some(not_ready) => {
-                    warn!(%epoch, %not_ready, "epoch data not yet available");
-                }
-                None => {
-                    error!(%epoch, %err, "checkpoint build failed");
-                    return Err(err);
-                }
-            }
+        if input.is_some() {
+            process_canonical_chain(state)?;
         }
         Ok(Response::Continue)
     }
+}
+
+fn process_canonical_chain<C: CheckpointWorkerContext>(
+    state: &mut OLCheckpointServiceState<C>,
+) -> anyhow::Result<()> {
+    if let Err(err) = state.handle_chain_update() {
+        match err.downcast_ref::<CheckpointNotReady>() {
+            Some(not_ready) => debug!(%not_ready, "checkpoint data not yet available"),
+            None => {
+                error!(%err, "checkpoint build failed");
+                return Err(err);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Status information for the OL checkpoint builder service.

@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
+use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, Slot};
+use strata_ol_canonical_chain_provider::{OLCanonicalChainProvider, OLCanonicalChainProviderImpl};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_spec_selection::select_spec_after_epoch;
@@ -16,22 +17,42 @@ use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
 
-use crate::compute_epoch_da;
+use crate::{CanonicalEpochReconciler, compute_epoch_da};
 
 pub(crate) type StateDiffRaw = Vec<u8>;
+
+/// Result of waiting for a checkpoint proof.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ProofWaitOutcome {
+    /// The proof bytes are ready; empty when no prover is configured.
+    Ready(Vec<u8>),
+
+    /// The epoch commitment is no longer canonical.
+    Superseded,
+}
 
 /// Context providing dependencies for the checkpoint worker.
 ///
 /// This trait abstracts storage and data providers, enabling testing
 /// with mock implementations and future production providers.
 pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
-    /// Get the last summarized epoch index, if any.
-    fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<Epoch>>;
+    /// Finds the canonical point after which checkpoint processing can resume.
+    fn find_canonical_resume_point(
+        &self,
+        last_processed: EpochCommitment,
+        history_base: Option<EpochCommitment>,
+    ) -> anyhow::Result<Option<EpochCommitment>>;
 
-    /// Get the canonical epoch commitment for a given epoch index.
+    /// Gets the canonical tip, or `None` for an empty index.
+    fn get_canonical_tip(&self) -> anyhow::Result<Option<OLBlockCommitment>>;
+
+    /// Gets the canonical block at `slot`, or `None` when there is no canonical block at that slot.
+    fn get_canonical_block_at(&self, slot: Slot) -> anyhow::Result<Option<OLBlockCommitment>>;
+
+    /// Gets the canonical commitment for `epoch`.
     fn get_canonical_epoch_commitment_at(
         &self,
-        index: Epoch,
+        epoch: Epoch,
     ) -> anyhow::Result<Option<EpochCommitment>>;
 
     /// Get the epoch summary for a commitment.
@@ -49,8 +70,8 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     /// Get the last checkpointed payload commitment, if any.
     fn get_last_checkpoint_payload_epoch(&self) -> anyhow::Result<Option<EpochCommitment>>;
 
-    /// Get the epoch at the base of locally available OL block history, if any.
-    fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>>;
+    /// Gets the base of retained OL history.
+    fn get_history_base(&self) -> anyhow::Result<Option<EpochCommitment>>;
 
     /// Store a checkpoint payload entry for the given epoch commitment.
     fn put_checkpoint_payload(
@@ -59,8 +80,8 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
         payload: CheckpointPayload,
     ) -> anyhow::Result<()>;
 
-    /// Gets proof bytes for the checkpoint.
-    fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>>;
+    /// Waits for proof bytes while the selected commitment remains canonical.
+    fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<ProofWaitOutcome>;
 
     /// Gets the OL block header for the given block id.
     fn get_block_header(
@@ -94,9 +115,8 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
 /// Safety-net interval for the proof wait loop.
 ///
 /// The checkpoint worker sleeps on a [`Condvar`] that the proof storer
-/// signals immediately after writing a proof, so in practice the worker
-/// wakes up right away. This timeout is only a fallback in case a
-/// signal is missed (e.g. spurious wakeup).
+/// signals after writing a proof. The timeout also lets the worker detect
+/// reorgs when no proof notification arrives.
 const PROOF_WAIT_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Shared signal between the proof storer and the checkpoint worker.
@@ -144,7 +164,7 @@ impl Default for ProofNotify {
 /// Prover configuration for the checkpoint worker.
 ///
 /// When provided, the worker reads proofs from the proof DB and waits
-/// indefinitely for the prover to store them. The checkpoint predicate
+/// while the selected commitment remains canonical. The checkpoint predicate
 /// in `AsmParams` determines whether proofs are required; if the
 /// predicate rejects empty proofs (e.g. `Sp1Groth16`), there is no
 /// safe fallback, so the worker must wait for a real proof.
@@ -159,24 +179,28 @@ pub struct ProverConfig {
 /// When a [`ProverConfig`] is set, reads proofs from the proof DB and waits
 /// for the prover to deliver them. Without it, returns empty proofs.
 pub(crate) struct CheckpointWorkerContextImpl {
+    canonical_chain_provider: OLCanonicalChainProviderImpl,
+    epoch_reconciler: CanonicalEpochReconciler,
     storage: Arc<NodeStorage>,
     runtime_params: OLRuntimeParams,
     genesis_l1_block: L1BlockCommitment,
     /// When present, a prover is running and `get_proof` waits for proofs.
-    /// When absent, `get_proof` returns empty immediately.
+    /// When absent, canonical commitments use empty proofs.
     prover: Option<ProverConfig>,
 }
 
 impl CheckpointWorkerContextImpl {
     /// Creates a new context without a prover.
     ///
-    /// `get_proof` always returns empty bytes.
+    /// Returns empty proof bytes for canonical commitments.
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
         runtime_params: OLRuntimeParams,
         genesis_l1_block: L1BlockCommitment,
     ) -> Self {
         Self {
+            canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
+            epoch_reconciler: CanonicalEpochReconciler::new(&storage),
             storage,
             runtime_params,
             genesis_l1_block,
@@ -192,6 +216,8 @@ impl CheckpointWorkerContextImpl {
         prover: ProverConfig,
     ) -> Self {
         Self {
+            canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
+            epoch_reconciler: CanonicalEpochReconciler::new(&storage),
             storage,
             runtime_params,
             genesis_l1_block,
@@ -218,21 +244,33 @@ impl CheckpointWorkerContextImpl {
 }
 
 impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
-    fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<Epoch>> {
-        self.storage
-            .ol_checkpoint()
-            .get_last_summarized_epoch_blocking()
-            .map_err(Into::into)
+    fn find_canonical_resume_point(
+        &self,
+        last_processed: EpochCommitment,
+        history_base: Option<EpochCommitment>,
+    ) -> anyhow::Result<Option<EpochCommitment>> {
+        Ok(self
+            .epoch_reconciler
+            .find_canonical_resume_point(last_processed, history_base)?)
+    }
+
+    fn get_canonical_tip(&self) -> anyhow::Result<Option<OLBlockCommitment>> {
+        Ok(self.canonical_chain_provider.get_canonical_tip_blocking()?)
+    }
+
+    fn get_canonical_block_at(&self, slot: Slot) -> anyhow::Result<Option<OLBlockCommitment>> {
+        Ok(self
+            .canonical_chain_provider
+            .get_canonical_block_at_blocking(slot)?)
     }
 
     fn get_canonical_epoch_commitment_at(
         &self,
-        index: Epoch,
+        epoch: Epoch,
     ) -> anyhow::Result<Option<EpochCommitment>> {
-        self.storage
-            .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_blocking(index)
-            .map_err(Into::into)
+        Ok(self
+            .canonical_chain_provider
+            .get_canonical_epoch_commitment_at_blocking(epoch)?)
     }
 
     fn get_epoch_summary(
@@ -262,11 +300,10 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
-    fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>> {
+    fn get_history_base(&self) -> anyhow::Result<Option<EpochCommitment>> {
         self.storage
             .ol_block()
             .get_history_base_blocking()
-            .map(|commitment| commitment.map(|commitment| commitment.epoch()))
             .map_err(Into::into)
     }
 
@@ -281,37 +318,23 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
-    /// Returns proof bytes for the given epoch.
     // TODO(STR-3064): move proof waiting to the service/runner layer using
     // tokio::select! over a watch channel instead of blocking on Condvar here.
-    /// The flow depends on whether a prover is configured:
-    ///
-    /// 1. No prover (`self.prover` is `None`): returns empty bytes.
-    /// 2. Prover configured: checks the proof DB first (handles restarts where the proof was
-    ///    already stored). If not found, enters a wait loop where `ProofNotify::wait` blocks until
-    ///    the proof storer signals, then re-checks the DB. The loop waits indefinitely until a
-    ///    proof appears.
-    fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
-        let Some(prover) = &self.prover else {
-            return Ok(Vec::new());
-        };
-
-        let epoch_idx = u64::from(epoch.epoch());
-
-        // Check DB first — proof may already exist (e.g. after restart).
-        if let Some(bytes) = self.try_read_proof(*epoch)? {
-            return Ok(bytes);
-        }
-
-        // Wait loop: sleep on the condvar until the proof storer wakes us,
-        // then check DB. Repeat until proof is found.
+    fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<ProofWaitOutcome> {
         loop {
-            debug!(epoch = epoch_idx, "waiting for checkpoint proof...");
-            prover.notify.wait();
-
-            if let Some(bytes) = self.try_read_proof(*epoch)? {
-                return Ok(bytes);
+            if self.get_canonical_epoch_commitment_at(epoch.epoch())? != Some(*epoch) {
+                return Ok(ProofWaitOutcome::Superseded);
             }
+            let Some(prover) = &self.prover else {
+                return Ok(ProofWaitOutcome::Ready(Vec::new()));
+            };
+            if let Some(bytes) = self.try_read_proof(*epoch)? {
+                return Ok(ProofWaitOutcome::Ready(bytes));
+            }
+
+            // The timeout also detects reorgs when no proof notification arrives.
+            debug!(%epoch, "waiting for checkpoint proof");
+            prover.notify.wait();
         }
     }
 
@@ -506,15 +529,151 @@ fn collect_epoch_blocks<C: CheckpointWorkerContext>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, mpsc};
+    use std::thread;
+    use std::time::Duration;
 
+    use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_identifiers::{Buf32, L1BlockCommitment, OLBlockId};
+    use strata_db_types::DbError;
+    use strata_db_types::backend::DatabaseBackend;
+    use strata_db_types::checkpoint_proof::{CheckpointProofDatabase, ProofReceiptEntry};
+    use strata_identifiers::{
+        Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+    };
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
     use strata_ol_params::OLRuntimeParams;
     use strata_storage::create_node_storage;
 
-    use super::{CheckpointWorkerContext, CheckpointWorkerContextImpl};
+    use super::{
+        CheckpointWorkerContext, CheckpointWorkerContextImpl, PROOF_WAIT_INTERVAL, ProofNotify,
+        ProofWaitOutcome, ProverConfig,
+    };
+
+    fn proof_test_context() -> (
+        CheckpointWorkerContextImpl,
+        Arc<ProofNotify>,
+        EpochCommitment,
+    ) {
+        let storage = Arc::new(
+            create_node_storage(
+                get_test_sled_backend(),
+                strata_storage::test_runtime_handle(),
+            )
+            .unwrap(),
+        );
+        let mut flags = BlockFlagsV1::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeaderV1::new(
+            1_000,
+            flags,
+            1,
+            1,
+            OLBlockId::from(Buf32::zero()),
+            Buf32::from([1; 32]),
+            Buf32::from([2; 32]),
+            Buf32::from([3; 32]),
+        );
+        let terminal = header.compute_block_commitment();
+        storage
+            .ol_block()
+            .put_terminal_header_blocking(*terminal.blkid(), header)
+            .unwrap();
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(EpochSummary::new(
+                1,
+                terminal,
+                OLBlockCommitment::null(),
+                L1BlockCommitment::new(1, L1BlockId::default()),
+                Buf32::from([2; 32]),
+            ))
+            .unwrap();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(1, vec![*terminal.blkid()])
+            .unwrap();
+        let notify = Arc::new(ProofNotify::new());
+        let context = CheckpointWorkerContextImpl::with_prover(
+            storage,
+            OLRuntimeParams::test_default(),
+            L1BlockCommitment::default(),
+            ProverConfig {
+                notify: Arc::clone(&notify),
+            },
+        );
+        (context, notify, EpochCommitment::from_terminal(1, terminal))
+    }
+
+    #[test]
+    fn test_empty_proof_requires_canonical_commitment() {
+        let (mut context, _, epoch) = proof_test_context();
+        context.prover = None;
+        assert_eq!(
+            context.get_proof(&epoch).unwrap(),
+            ProofWaitOutcome::Ready(vec![])
+        );
+        context
+            .storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(epoch.last_slot(), vec![])
+            .unwrap();
+        assert_eq!(
+            context.get_proof(&epoch).unwrap(),
+            ProofWaitOutcome::Superseded
+        );
+    }
+
+    #[test]
+    fn test_proof_wait_cancels_after_notification_or_timeout() {
+        for notify_on_reorg in [true, false] {
+            let (context, notify, epoch) = proof_test_context();
+            let storage = Arc::clone(&context.storage);
+            let (started_tx, started_rx) = mpsc::channel();
+            let (result_tx, result_rx) = mpsc::channel();
+            let worker = thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                result_tx.send(context.get_proof(&epoch)).unwrap();
+            });
+            started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            // No proof exists, so the worker must not finish on the old branch.
+            assert!(matches!(
+                result_rx.recv_timeout(Duration::from_millis(100)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            storage
+                .ol_block()
+                .replace_canonical_suffix_from_blocking(epoch.last_slot(), vec![])
+                .unwrap();
+            if notify_on_reorg {
+                notify.notify();
+            }
+            // With no notification, the existing timeout still cancels the wait.
+            let result = result_rx
+                .recv_timeout(PROOF_WAIT_INTERVAL + Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+            worker.join().unwrap();
+            assert_eq!(result, ProofWaitOutcome::Superseded);
+        }
+    }
+
+    #[test]
+    fn test_proof_storage_failure_not_superseded() {
+        let (context, _, epoch) = proof_test_context();
+        // A malformed stored receipt produces a typed storage decoding failure.
+        context
+            .storage
+            .db()
+            .checkpoint_proof_db()
+            .put_proof(epoch, ProofReceiptEntry::new(vec![0xff]))
+            .unwrap();
+        let err = context.get_proof(&epoch).unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<DbError>(),
+            Some(DbError::CodecError(_))
+        ));
+    }
 
     #[test]
     fn production_context_gets_header_from_terminal_header_record() {
