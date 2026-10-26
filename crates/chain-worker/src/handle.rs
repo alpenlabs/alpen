@@ -3,7 +3,6 @@
 use strata_identifiers::OLBlockCommitment;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{CommandHandle, ServiceError, ServiceMonitor};
-use tokio::sync::watch;
 
 use crate::{ChainWorkerStatus, WorkerError, WorkerResult, message::ChainWorkerMessage};
 
@@ -15,7 +14,6 @@ use crate::{ChainWorkerStatus, WorkerError, WorkerResult, message::ChainWorkerMe
 pub struct ChainWorkerHandle {
     command_handle: CommandHandle<ChainWorkerMessage>,
     monitor: ServiceMonitor<ChainWorkerStatus>,
-    epoch_summary_tx: watch::Sender<Option<EpochCommitment>>,
 }
 
 impl ChainWorkerHandle {
@@ -23,12 +21,10 @@ impl ChainWorkerHandle {
     pub fn new(
         command_handle: CommandHandle<ChainWorkerMessage>,
         monitor: ServiceMonitor<ChainWorkerStatus>,
-        epoch_summary_tx: watch::Sender<Option<EpochCommitment>>,
     ) -> Self {
         Self {
             command_handle,
             monitor,
-            epoch_summary_tx,
         }
     }
 
@@ -128,11 +124,6 @@ impl ChainWorkerHandle {
     /// Get status
     pub fn get_status(&self) -> ChainWorkerStatus {
         self.monitor.get_current()
-    }
-
-    /// Subscribe to epoch summary notifications.
-    pub fn subscribe_epoch_summaries(&self) -> watch::Receiver<Option<EpochCommitment>> {
-        self.epoch_summary_tx.subscribe()
     }
 }
 

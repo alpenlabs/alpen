@@ -91,7 +91,6 @@ pub fn start_chain_worker_service_from_ctx(
     nodectx: &NodeContext,
 ) -> anyhow::Result<ChainWorkerHandle> {
     let ctx = ChainWorkerContextImpl::from_node_context(nodectx);
-    let epoch_summary_tx = ctx.epoch_summary_sender();
     let state = ChainWorkerServiceState::new(ctx);
     let mut builder = ServiceBuilder::<ChainWorkerService, _>::new().with_state(state);
 
@@ -103,9 +102,5 @@ pub fn start_chain_worker_service_from_ctx(
         .launch_sync("chain_worker", nodectx.executor().as_ref())
         .map_err(|e| WorkerError::Unexpected(format!("failed to launch service: {}", e)))?;
 
-    Ok(ChainWorkerHandle::new(
-        command_handle,
-        monitor,
-        epoch_summary_tx,
-    ))
+    Ok(ChainWorkerHandle::new(command_handle, monitor))
 }

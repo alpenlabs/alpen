@@ -1,6 +1,6 @@
 //! Exercises checkpoint routing, witness validation, and task recovery.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use strata_asm_checkpoint_types::{CheckpointInitConfig, PendingPredicateTransition};
 use strata_asm_common::{SectionState, SectionStateExt};
@@ -13,7 +13,7 @@ use strata_identifiers::{
     Buf32, Buf64, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
 };
 use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
-use strata_ol_checkpoint::ProofNotify;
+use strata_ol_checkpoint::{CanonicalEpochReconcileError, ProofNotify};
 use strata_ol_checkpoint_artifacts::{LoadedCheckpointPredicates, native_checkpoint_registry};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::{OLStateContainer, test_utils::create_test_container_with_staged};
@@ -24,7 +24,9 @@ use strata_ol_stf_v1::test_utils::{
     EPOCH_RUNNER_GENESIS_TIMESTAMP, EPOCH_RUNNER_SLOT_TIMESTAMP_STEP, make_empty_manifest,
     make_genesis_state, tamper_state_root, to_ol_block,
 };
-use strata_paas::{InputResolution, ProofSpec, Prover, TaskRecord, TaskStatus, TaskStore};
+use strata_paas::{
+    InputResolution, ProofSpec, Prover, TaskRecord, TaskResult, TaskStatus, TaskStore,
+};
 use strata_predicate::PredicateKey;
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::{NodeStorage, VersionedTaskStore, create_node_storage, test_runtime_handle};
@@ -32,6 +34,7 @@ use tokio::time::timeout;
 
 use super::{
     build_checkpoint_provers,
+    context::{CheckpointProverContext, CheckpointProverContextImpl},
     errors::ProverError,
     spec::{CheckpointSpec, CheckpointTask, checkpoint_task_spec},
 };
@@ -124,6 +127,16 @@ impl EpochFixture {
             .ol_checkpoint()
             .insert_epoch_summary_blocking(summary)
             .unwrap();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                0,
+                vec![
+                    parent.header().compute_blkid(),
+                    terminal.header().compute_blkid(),
+                ],
+            )
+            .unwrap();
         Self {
             storage,
             parent,
@@ -147,13 +160,6 @@ impl EpochFixture {
         test_runtime_handle()
             .block_on(spec.resolve_input(&self.task))
             .unwrap()
-    }
-
-    fn discard_epoch_blocks(&self) {
-        self.storage
-            .ol_block()
-            .del_block_data_blocking(self.terminal.header().compute_blkid())
-            .unwrap();
     }
 
     /// Changes the persisted terminal snapshot for routing tests, without proving it.
@@ -199,6 +205,13 @@ impl EpochFixture {
         self.storage
             .ol_checkpoint()
             .insert_epoch_summary_blocking(summary)
+            .unwrap();
+        self.storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                summary.terminal().slot(),
+                vec![*summary.terminal().blkid()],
+            )
             .unwrap();
         self.task = CheckpointTask(summary.get_epoch_commitment());
     }
@@ -263,7 +276,6 @@ fn v0_epoch_is_not_routed_to_the_v1_prover() {
         checkpoint_task_spec(&fixture.storage, fixture.task).unwrap(),
         OLSpecId::V0
     );
-    fixture.discard_epoch_blocks();
     assert!(
         matches!(fixture.resolve(), InputResolution::Rejected { reason }
         if reason.contains("requires V0") && reason.contains("routed to V1"))
@@ -351,7 +363,6 @@ fn first_v1_checkpoint_after_v0_anchor_uses_v1_after_restart() {
 #[test]
 fn fixed_host_service_rejects_an_epoch_assigned_to_another_spec() {
     let fixture = EpochFixture::new();
-    fixture.discard_epoch_blocks();
     // V0 is only an incorrect service assignment. No V0 host is built or executed.
     assert!(matches!(
         fixture.resolve_on(OLSpecId::V0),
@@ -459,10 +470,14 @@ fn routing_rejects_a_task_that_does_not_match_the_canonical_epoch() {
         fixture.task.0.last_slot(),
         OLBlockId::from(Buf32::from([9; 32])),
     ));
+    let context = CheckpointProverContextImpl::new(fixture.storage.clone(), BTreeMap::new());
+    let error = test_runtime_handle()
+        .block_on(context.get_task_spec(stale.0))
+        .unwrap_err();
     assert!(matches!(
-        checkpoint_task_spec(&fixture.storage, stale),
-        Err(ProverError::StaleTaskCommitment { task, canonical, .. })
-            if task == stale.0 && canonical == fixture.task.0
+        error.downcast_ref::<ProverError>(),
+        Some(ProverError::StaleTaskCommitment { task, canonical, .. })
+            if *task == stale.0 && *canonical == fixture.task.0
     ));
 }
 
@@ -474,7 +489,6 @@ fn input_resolution_rejects_stale_task_before_assembling_a_witness() {
         fixture.task.0.last_slot(),
         OLBlockId::from(Buf32::from([9; 32])),
     ));
-    fixture.discard_epoch_blocks();
     let spec = CheckpointSpec::new(
         Arc::clone(&fixture.storage),
         OLRuntimeParams::test_default(),
@@ -511,7 +525,7 @@ fn checkpoint_prover(fixture: &EpochFixture) -> Arc<Prover<CheckpointSpec>> {
     Arc::new(provers.remove(&OLSpecId::V1).unwrap())
 }
 
-fn assert_persisted_task_proving(recovered: bool) {
+fn assert_persisted_task_proving(recovered: bool, superseded: bool) {
     let fixture = EpochFixture::new();
     let own_store =
         VersionedTaskStore::new(Arc::clone(fixture.storage.prover_tasks()), OLSpecId::V1);
@@ -530,6 +544,31 @@ fn assert_persisted_task_proving(recovered: bool) {
         own_store.set_metadata(&key, vec![1, 2, 3]).unwrap();
     }
     let prover = checkpoint_prover(&fixture);
+    if superseded {
+        // Preserve the saved task and request metadata, but make another stored
+        // commitment canonical before the service recovers unfinished tasks.
+        let replacement = OLBlockCommitment::new(
+            fixture.task.0.last_slot(),
+            OLBlockId::from(Buf32::from([9; 32])),
+        );
+        let summary = EpochSummary::new(
+            fixture.task.0.epoch(),
+            replacement,
+            fixture.parent.header().compute_block_commitment(),
+            L1BlockCommitment::default(),
+            Buf32::zero(),
+        );
+        fixture
+            .storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .unwrap();
+        fixture
+            .storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(replacement.slot(), vec![*replacement.blkid()])
+            .unwrap();
+    }
     let results = test_runtime_handle().block_on(async {
         if recovered {
             prover.tick().await;
@@ -544,19 +583,37 @@ fn assert_persisted_task_proving(recovered: bool) {
         .unwrap()
         .unwrap()
     });
-    assert!(results[0].is_completed());
-    assert!(
-        fixture
-            .storage
-            .checkpoint_proof()
-            .get_proof(&fixture.task.0)
-            .unwrap()
-            .is_some()
-    );
-    assert_eq!(
-        own_store.get(&key).unwrap().unwrap().status(),
-        &TaskStatus::Completed
-    );
+    let record = own_store.get(&key).unwrap().unwrap();
+    let proof = fixture
+        .storage
+        .checkpoint_proof()
+        .get_proof(&fixture.task.0)
+        .unwrap();
+    if superseded {
+        let expected = ProverError::StaleTaskCommitment {
+            epoch: u64::from(fixture.task.0.epoch()),
+            task: fixture.task.0,
+            canonical: EpochCommitment::new(
+                fixture.task.0.epoch(),
+                fixture.task.0.last_slot(),
+                OLBlockId::from(Buf32::from([9; 32])),
+            ),
+        }
+        .to_string();
+        assert_eq!(
+            record.status(),
+            &TaskStatus::PermanentFailure {
+                error: expected.clone()
+            }
+        );
+        assert!(matches!(&results[0], TaskResult::Failed { error, .. } if error == &expected));
+        assert!(proof.is_none());
+        assert_eq!(record.metadata(), Some(&[1, 2, 3][..]));
+    } else {
+        assert!(results[0].is_completed());
+        assert!(proof.is_some());
+        assert_eq!(record.status(), &TaskStatus::Completed);
+    }
     let foreign = foreign_store.get(&key).unwrap().unwrap();
     assert_eq!(foreign.status(), &TaskStatus::Pending);
     assert_eq!(foreign.metadata(), Some(&[9, 8, 7][..]));
@@ -564,10 +621,143 @@ fn assert_persisted_task_proving(recovered: bool) {
 
 #[test]
 fn fresh_checkpoint_task_proves_in_its_own_store() {
-    assert_persisted_task_proving(false);
+    assert_persisted_task_proving(false, false);
 }
 
 #[test]
 fn recovered_checkpoint_task_proves_in_its_own_store() {
-    assert_persisted_task_proving(true);
+    assert_persisted_task_proving(true, false);
+}
+
+#[test]
+fn recovered_noncanonical_task_rejected_before_proving() {
+    assert_persisted_task_proving(true, true);
+}
+
+#[test]
+fn routing_selects_canonical_candidate_with_competing_summaries() {
+    let fixture = EpochFixture::new();
+    let header = tamper_state_root(fixture.terminal.header(), Buf32::from([9; 32]));
+    let summary = EpochSummary::new(
+        header.epoch(),
+        header.compute_block_commitment(),
+        fixture.parent.header().compute_block_commitment(),
+        L1BlockCommitment::default(),
+        *header.state_root(),
+    );
+    fixture
+        .storage
+        .ol_checkpoint()
+        .insert_epoch_summary_blocking(summary)
+        .unwrap();
+    fixture
+        .storage
+        .ol_state()
+        .put_toplevel_ol_state_blocking(*summary.terminal(), fixture.terminal_state.clone())
+        .unwrap();
+    let candidates = fixture
+        .storage
+        .ol_checkpoint()
+        .get_epoch_commitments_at_blocking(1)
+        .unwrap();
+    assert_eq!(candidates.len(), 2);
+    // Select the candidate that the old first() lookup would miss.
+    let canonical = candidates[1];
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(
+            canonical.last_slot(),
+            vec![*canonical.last_blkid()],
+        )
+        .unwrap();
+    let context = CheckpointProverContextImpl::new(fixture.storage.clone(), BTreeMap::new());
+    test_runtime_handle().block_on(async {
+        assert_eq!(
+            context.get_task_spec(canonical).await.unwrap(),
+            OLSpecId::V1
+        );
+        let error = context.get_task_spec(candidates[0]).await.unwrap_err();
+        assert!(matches!(error.downcast_ref::<ProverError>(),
+            Some(ProverError::StaleTaskCommitment { task, canonical: selected, .. })
+                if *task == candidates[0] && *selected == canonical));
+    });
+}
+
+#[test]
+fn canonical_terminal_without_summary_does_not_supply_a_proof_task() {
+    let fixture = EpochFixture::new();
+    fixture
+        .storage
+        .ol_checkpoint()
+        .del_epoch_summary_blocking(fixture.task.0)
+        .unwrap();
+    let context = CheckpointProverContextImpl::new(fixture.storage.clone(), BTreeMap::new());
+    test_runtime_handle().block_on(async {
+        // The terminal exists in the canonical index, but summary publication has not caught up.
+        assert_eq!(
+            context.get_canonical_tip().await.unwrap(),
+            Some(fixture.task.0.to_block_commitment())
+        );
+        assert_eq!(
+            context
+                .get_canonical_epoch_commitment_at(fixture.task.0.epoch())
+                .await
+                .unwrap(),
+            None
+        );
+    });
+}
+
+#[test]
+fn context_reconciles_replaced_epoch_to_retained_anchor() {
+    let fixture = EpochFixture::new();
+    let base =
+        EpochCommitment::from_terminal(0, fixture.parent.header().compute_block_commitment());
+    let context = CheckpointProverContextImpl::new(fixture.storage.clone(), BTreeMap::new());
+    // Remove the processed terminal from the index, keeping its exact summary and the anchor row.
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(fixture.task.0.last_slot(), vec![])
+        .unwrap();
+    test_runtime_handle().block_on(async {
+        assert_eq!(
+            context
+                .find_canonical_resume_point(fixture.task.0, Some(base))
+                .await
+                .unwrap(),
+            Some(base)
+        );
+        assert_eq!(
+            context
+                .find_canonical_resume_point(fixture.task.0, None)
+                .await
+                .unwrap(),
+            None
+        );
+    });
+}
+
+#[test]
+fn context_preserves_reconciliation_error_type() {
+    let fixture = EpochFixture::new();
+    let context = CheckpointProverContextImpl::new(fixture.storage.clone(), BTreeMap::new());
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(fixture.task.0.last_slot(), vec![])
+        .unwrap();
+    fixture
+        .storage
+        .ol_checkpoint()
+        .del_epoch_summary_blocking(fixture.task.0)
+        .unwrap();
+    let error = test_runtime_handle()
+        .block_on(context.find_canonical_resume_point(fixture.task.0, None))
+        .unwrap_err();
+    assert!(
+        matches!(error.downcast_ref::<CanonicalEpochReconcileError>(),
+        Some(CanonicalEpochReconcileError::MissingSummary(commitment)) if *commitment == fixture.task.0)
+    );
 }
