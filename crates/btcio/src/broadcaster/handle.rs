@@ -168,12 +168,18 @@ impl L1BroadcastHandle {
         &self,
         original_txid: Buf32,
         replacement_txid: Buf32,
-        replacement: L1TxEntry,
+        mut replacement: L1TxEntry,
     ) -> BroadcasterResult<bool> {
         assert!(
             replacement.try_to_tx().is_ok(),
             "invalid replacement entry {replacement:?}"
         );
+
+        // The DB writes this link on its own copy, but the service tracks the copy sent below. A
+        // replacement rejected because its original was mined walks the link to adopt that
+        // original. Without it the rejection stands and the writer re-signs the envelope, which
+        // posts the same payload to L1 a second time.
+        replacement.set_replaces(L1TxId::from(original_txid.0));
 
         let Some(idx) = self
             .ops
@@ -258,11 +264,61 @@ impl L1BroadcastHandle {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::{absolute::LockTime, hashes::Hash, Amount};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{backend::DatabaseBackend, l1_broadcast::L1TxStatus};
     use tokio::runtime::Handle;
 
     use super::*;
+    use crate::test_utils::gen_l1_tx_entry_with_status;
+
+    #[tokio::test]
+    async fn replacement_sent_to_the_service_names_the_tx_it_replaces() {
+        let db = get_test_sled_backend().broadcast_db();
+        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
+        let (sender, mut receiver) = mpsc::channel::<BroadcasterInputMessage>(64);
+        let handle = L1BroadcastHandle::new(
+            sender,
+            ops.clone(),
+            None,
+            FeeRate::from_sat_per_vb(1_000).unwrap(),
+        );
+
+        let original = gen_l1_tx_entry_with_status(L1TxStatus::Published);
+        let original_tx = original.try_to_tx().unwrap();
+        let original_txid = Buf32(original_tx.compute_txid().to_byte_array());
+        ops.put_tx_entry_async(original_txid, original)
+            .await
+            .unwrap();
+
+        let mut replacement_tx = original_tx;
+        replacement_tx.lock_time = LockTime::from_consensus(1);
+        let replacement_txid = Buf32(replacement_tx.compute_txid().to_byte_array());
+        let replacement = L1TxEntry::from_tx_with_fee(
+            &replacement_tx,
+            FeeRate::from_sat_per_vb(2).unwrap(),
+            Amount::from_sat(400),
+        );
+
+        assert!(handle
+            .put_replacement_tx_entry(original_txid, replacement_txid, replacement)
+            .await
+            .unwrap());
+
+        let expected = Some(L1TxId::from(original_txid.0));
+        let Some(BroadcasterInputMessage::NotifyNewEntry { txentry, .. }) = receiver.recv().await
+        else {
+            panic!("test: the service must be told about the replacement first");
+        };
+        assert_eq!(txentry.rbf.and_then(|rbf| rbf.replaces), expected);
+
+        let persisted = ops
+            .get_tx_entry_by_id_async(replacement_txid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.rbf.and_then(|rbf| rbf.replaces), expected);
+    }
 
     #[tokio::test]
     async fn replacement_chain_hop_exhaustion_is_typed() {
