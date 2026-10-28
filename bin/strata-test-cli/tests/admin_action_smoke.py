@@ -88,7 +88,9 @@ def exercise(binary, root, rpc_base, password):
         context = ["--update", target, "--seq-no", "4", "--network", "regtest", *full]
         message = run([binary, "print-signing-message", *context]).stdout
         expected = rpc("signmessagewithprivkey", test_wif(secrets_by_index[2]), message)
-        assert run([binary, "sign-admin-action", *context], key=secrets_by_index[2].hex()).stdout.strip() == expected
+        signed = run([binary, "sign-admin-action", *context], key=secrets_by_index[2].hex())
+        assert signed.stderr == message + "\n"
+        assert signed.stdout.strip() == expected
     run([binary, "sign-admin-action", *action, *full], success=False)
     run([binary, "sign-admin-action", *action, *full], key="invalid-key", success=False)
 
