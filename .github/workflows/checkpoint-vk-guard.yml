@@ -25,7 +25,6 @@ on:
       - "crates/acct-types/**"
       - "crates/bridge-params/**"
       - "crates/bridge-types/**"
-      - "crates/codec-utils/**"
       - "crates/da-framework/**"
       - "crates/ol/chain-types-v1/**"
       - "crates/ol/da-common/**"
