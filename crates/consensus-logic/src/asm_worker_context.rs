@@ -10,10 +10,10 @@ use strata_asm_worker::{
     AnchorStateStore, AuxDataStore, L1DataProvider, ManifestMmrStore, WorkerError, WorkerResult,
 };
 use strata_btc_types::L1BlockIdBitcoinExt;
-use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_db_types::DbError;
 use strata_identifiers::{Hash, L1_HEIGHT_MMR_PREFILL_LEAF};
 use strata_primitives::prelude::*;
+use strata_retry::{retry_with_backoff_async, ExponentialBackoff};
 use strata_storage::{AsmStateManager, L1BlockManager, MmrIndexHandle};
 use tokio::runtime::Handle;
 use tracing::{self, error};
@@ -52,62 +52,84 @@ impl AsmWorkerCtx {
 impl L1DataProvider for AsmWorkerCtx {
     fn get_l1_block(&self, blockid: &L1BlockId) -> WorkerResult<bitcoin::Block> {
         let hash = blockid.to_block_hash();
-        let backoff = ExponentialBackoff::new(200, 15, 10);
-        retry_with_backoff("asm_get_l1_block", 10, &backoff, || {
-            self.handle
-                .block_on(self.bitcoin_client.get_block(&hash))
-                .map_err(|e| {
+        let backoff = ExponentialBackoff::new(200, 15, 10, None);
+        self.handle.block_on(retry_with_backoff_async(
+            "asm_get_l1_block",
+            10,
+            &backoff,
+            || async {
+                self.bitcoin_client.get_block(&hash).await.map_err(|e| {
                     tracing::warn!(%blockid, ?e, "failed to fetch L1 block for ASM");
                     WorkerError::MissingL1Block(*blockid)
                 })
-        })
+            },
+        ))
     }
 
     fn get_l1_block_header(&self, blockid: &L1BlockId) -> WorkerResult<Header> {
         let hash = blockid.to_block_hash();
-        let backoff = ExponentialBackoff::new(200, 15, 10);
-        retry_with_backoff("asm_get_l1_block_header", 10, &backoff, || {
-            self.handle
-                .block_on(self.bitcoin_client.get_block_header(&hash))
-                .map_err(|e| {
-                    tracing::warn!(%blockid, ?e, "failed to fetch L1 block header for ASM");
-                    WorkerError::MissingL1Block(*blockid)
-                })
-        })
+        let backoff = ExponentialBackoff::new(200, 15, 10, None);
+        self.handle.block_on(retry_with_backoff_async(
+            "asm_get_l1_block_header",
+            10,
+            &backoff,
+            || async {
+                self.bitcoin_client
+                    .get_block_header(&hash)
+                    .await
+                    .map_err(|e| {
+                        tracing::warn!(%blockid, ?e, "failed to fetch L1 block header for ASM");
+                        WorkerError::MissingL1Block(*blockid)
+                    })
+            },
+        ))
     }
 
     fn get_l1_block_header_at_height(&self, height: L1Height) -> WorkerResult<Header> {
-        let backoff = ExponentialBackoff::new(200, 15, 10);
-        retry_with_backoff("asm_get_l1_block_header_at_height", 10, &backoff, || {
-            self.handle
-                .block_on(self.bitcoin_client.get_block_header_at(u64::from(height)))
-                .map_err(|e| {
-                    tracing::warn!(
-                        height,
-                        ?e,
-                        "failed to fetch L1 block header at height for ASM"
-                    );
-                    WorkerError::BtcRpc(anyhow!("get_block_header_at({height}): {e}"))
-                })
-        })
+        let backoff = ExponentialBackoff::new(200, 15, 10, None);
+        self.handle.block_on(retry_with_backoff_async(
+            "asm_get_l1_block_header_at_height",
+            10,
+            &backoff,
+            || async {
+                self.bitcoin_client
+                    .get_block_header_at(u64::from(height))
+                    .await
+                    .map_err(|e| {
+                        tracing::warn!(
+                            height,
+                            ?e,
+                            "failed to fetch L1 block header at height for ASM"
+                        );
+                        WorkerError::BtcRpc(anyhow!("get_block_header_at({height}): {e}"))
+                    })
+            },
+        ))
     }
 
     // TODO(STR-3813): maintain a local L1 block-id -> height index instead of
     // round-tripping to the Bitcoin client for every lookup on the hot path.
     fn get_l1_block_height(&self, blockid: &L1BlockId) -> WorkerResult<L1Height> {
         let hash = blockid.to_block_hash();
-        let backoff = ExponentialBackoff::new(200, 15, 10);
-        retry_with_backoff("asm_get_l1_block_height", 10, &backoff, || {
-            self.handle
-                .block_on(self.bitcoin_client.get_block_height(&hash))
-                .map_err(|e| {
-                    tracing::warn!(%blockid, ?e, "failed to fetch L1 block height for ASM");
-                    WorkerError::MissingL1Block(*blockid)
-                })
-                .and_then(|height| {
-                    L1Height::try_from(height).map_err(|_| WorkerError::HeightOutOfRange { height })
-                })
-        })
+        let backoff = ExponentialBackoff::new(200, 15, 10, None);
+        self.handle.block_on(retry_with_backoff_async(
+            "asm_get_l1_block_height",
+            10,
+            &backoff,
+            || async {
+                self.bitcoin_client
+                    .get_block_height(&hash)
+                    .await
+                    .map_err(|e| {
+                        tracing::warn!(%blockid, ?e, "failed to fetch L1 block height for ASM");
+                        WorkerError::MissingL1Block(*blockid)
+                    })
+                    .and_then(|height| {
+                        L1Height::try_from(height)
+                            .map_err(|_| WorkerError::HeightOutOfRange { height })
+                    })
+            },
+        ))
     }
 
     fn get_network(&self) -> WorkerResult<bitcoin::Network> {
