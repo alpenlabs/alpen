@@ -7,6 +7,7 @@ use std::{
 
 use metrics::{counter, gauge};
 use strata_identifiers::{Epoch, Slot};
+use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_state_container::OLStateContainer;
 use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, OLBlockCommitment, OLBlockId};
@@ -111,6 +112,11 @@ impl<C: FcmContext> FcmServiceState<C> {
         self.inner_state.cur_best_block
     }
 
+    /// Returns the latest completed epoch on the selected tip's branch.
+    pub(crate) fn latest_completed_epoch(&self) -> EpochCommitment {
+        self.inner_state.latest_completed_epoch
+    }
+
     /// Collects ancestors of the current tip, including the tip, oldest first.
     ///
     /// Excludes the finalized anchor.
@@ -161,13 +167,52 @@ impl<C: FcmContext> FcmServiceState<C> {
         &mut self.inner_state.chain_tracker
     }
 
-    pub(crate) async fn update_tip_block(
+    /// Advances to a child of the selected tip and updates its completed epoch.
+    pub(crate) async fn extend_tip_block(
         &mut self,
         block: OLBlockCommitment,
         state: Arc<OLStateContainer>,
+        header: &OLBlockHeaderV1,
+    ) -> anyhow::Result<()> {
+        validate_tip_header(block, header)?;
+        let current_tip = self.cur_best_block();
+        let actual_parent = *header.parent_blkid();
+        if actual_parent != *current_tip.blkid() {
+            return Err(
+                Error::OLApplyBlockParentMismatch(block, current_tip, actual_parent).into(),
+            );
+        }
+        let latest_completed_epoch = if header.is_terminal() {
+            EpochCommitment::from_terminal(header.epoch(), block)
+        } else {
+            self.latest_completed_epoch()
+        };
+        self.set_tip_block(block, state, latest_completed_epoch)
+            .await
+    }
+
+    /// Restores an earlier tip and resolves its completed epoch from that branch.
+    pub(crate) async fn restore_tip_block(
+        &mut self,
+        block: OLBlockCommitment,
+        state: Arc<OLStateContainer>,
+        header: &OLBlockHeaderV1,
+    ) -> anyhow::Result<()> {
+        let latest_completed_epoch =
+            resolve_latest_completed_epoch(self.ctx(), block, header).await?;
+        self.set_tip_block(block, state, latest_completed_epoch)
+            .await
+    }
+
+    async fn set_tip_block(
+        &mut self,
+        block: OLBlockCommitment,
+        state: Arc<OLStateContainer>,
+        latest_completed_epoch: EpochCommitment,
     ) -> anyhow::Result<()> {
         self.inner_state.cur_best_block = block;
         self.inner_state.cur_olstate = state;
+        self.inner_state.latest_completed_epoch = latest_completed_epoch;
         gauge!("strata_ol_tip_slot").set(block.slot() as f64);
         self.ctx().update_safe_tip(block).await
     }
@@ -297,6 +342,8 @@ pub(crate) struct FcmInnerState {
     chain_tracker: UnfinalizedBlockTracker,
     cur_best_block: OLBlockCommitment,
     cur_olstate: Arc<OLStateContainer>,
+    /// Latest completed epoch on `cur_best_block`'s branch.
+    latest_completed_epoch: EpochCommitment,
     startup_replay_candidates: Vec<OLBlockId>,
     epochs_pending_finalization: VecDeque<EpochCommitment>,
     /// Blocks left unchecked because they or an ancestor run an OL spec this
@@ -313,17 +360,43 @@ impl FcmInnerState {
         chain_tracker: UnfinalizedBlockTracker,
         cur_best_block: OLBlockCommitment,
         cur_olstate: Arc<OLStateContainer>,
+        latest_completed_epoch: EpochCommitment,
         startup_replay_candidates: Vec<OLBlockId>,
     ) -> Self {
         Self {
             chain_tracker,
             cur_best_block,
             cur_olstate,
+            latest_completed_epoch,
             startup_replay_candidates,
             epochs_pending_finalization: VecDeque::new(),
             upgrade_blocked: HashSet::new(),
         }
     }
+}
+
+/// Resolves the latest completed epoch on `tip`'s branch.
+///
+/// A terminal tip completes its own epoch. A nonterminal tip resolves its preceding epoch by
+/// ancestry. The supplied header must compute to `tip` before either field is used.
+pub(crate) async fn resolve_latest_completed_epoch(
+    storage: &(impl FcmStorage + ?Sized),
+    tip: OLBlockCommitment,
+    tip_header: &OLBlockHeaderV1,
+) -> anyhow::Result<EpochCommitment> {
+    validate_tip_header(tip, tip_header)?;
+    if tip_header.is_terminal() {
+        return Ok(EpochCommitment::from_terminal(tip_header.epoch(), tip));
+    }
+    Ok(storage.find_previous_epoch_commitment(tip_header).await?)
+}
+
+fn validate_tip_header(expected: OLBlockCommitment, header: &OLBlockHeaderV1) -> Result<(), Error> {
+    let actual = header.compute_block_commitment();
+    if actual != expected {
+        return Err(Error::OLTipHeaderCommitmentMismatch { expected, actual });
+    }
+    Ok(())
 }
 
 /// Creates the forkchoice manager state from the FCM context and sequencer
@@ -366,6 +439,8 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         .get_ol_header(*tip_commitment.blkid())
         .await?
         .ok_or(Error::MissingOLBlock(*tip_commitment.blkid()))?;
+    let latest_completed_epoch =
+        resolve_latest_completed_epoch(fcm_ctx.as_ref(), tip_commitment, &tip_header).await?;
     let tip_epoch = tip_header.epoch();
     let ol_state = fcm_ctx
         .get_toplevel_ol_state(tip_commitment)
@@ -393,6 +468,7 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
         chain_tracker,
         cur_tip_block,
         ol_state,
+        latest_completed_epoch,
         startup_replay_candidates,
     );
     gauge!("strata_ol_tip_slot").set(cur_tip_block.slot() as f64);

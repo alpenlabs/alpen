@@ -3,6 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use strata_db_types::{ol_block::BlockStatus, DbResult};
 use strata_identifiers::{Epoch, Slot};
+use strata_ol_block_ancestry_provider::BlockAncestryError;
+use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_state_container::OLStateContainer;
 use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_status::OLSyncStatus;
@@ -68,10 +70,13 @@ pub trait FcmStorage: UnfinalizedOLBlockSource {
         block_ids: Vec<OLBlockId>,
     ) -> DbResult<()>;
 
-    async fn get_canonical_epoch_commitment_at(
+    /// Finds the preceding epoch on `start`'s branch, excluding `start`.
+    ///
+    /// Missing or inconsistent ancestry and epoch-zero starts return an error.
+    async fn find_previous_epoch_commitment(
         &self,
-        epoch: Epoch,
-    ) -> DbResult<Option<EpochCommitment>>;
+        start: &OLBlockHeaderV1,
+    ) -> Result<EpochCommitment, BlockAncestryError>;
 }
 
 /// Startup reconciliation operations required by FCM.
