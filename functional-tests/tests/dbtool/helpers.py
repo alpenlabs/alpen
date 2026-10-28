@@ -136,41 +136,6 @@ def submit_generic_account_message(
     return submit_rpc.strata_submitTransaction(tx)
 
 
-def run_dbtool_ee(ee_datadir: str, *args: str, timeout: int = 60) -> tuple[int, str, str]:
-    """Run strata-dbtool against an alpen-client datadir.
-
-    `ee-*` subcommands open a separate sled at `<datadir>/sled`; the
-    dbtool uses the same `-d` flag for both surfaces — callers just point
-    it at the alpen-client's `--datadir`.
-    """
-    cmd = ["strata-dbtool", "-d", ee_datadir, *args]
-    logger.info("Running command: %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        cwd=str(Path(ee_datadir).parent),
-        timeout=timeout,
-    )
-    if result.returncode == 0:
-        if result.stdout:
-            logger.info("Stdout: %s", result.stdout.strip())
-    else:
-        if result.stderr:
-            logger.info("Stderr: %s", result.stderr.strip())
-    return result.returncode, result.stdout, result.stderr
-
-
-def run_dbtool_ee_json(ee_datadir: str, *args: str, timeout: int = 60) -> dict[str, Any]:
-    """Run strata-dbtool ee-* command with JSON output and parse response."""
-    code, stdout, stderr = run_dbtool_ee(ee_datadir, *args, "-o", "json", timeout=timeout)
-    if code != 0:
-        raise RuntimeError(
-            f"strata-dbtool ee command failed ({' '.join(args)}): {stderr or stdout}"
-        )
-    return extract_json_from_output(stdout)
-
-
 def _load_asm_params(datadir: str) -> dict[str, Any]:
     """Load ASM params from asm-params.json in the node datadir."""
     asm_path = Path(datadir) / "asm-params.json"
