@@ -299,7 +299,6 @@ fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     if let Some(sequencer_deps) = deps.seq_deps.as_ref() {
         let ol_seq_listener = OLSeqRpcServer::new(
             deps.storage.clone(),
-            deps.status_channel.clone(),
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
             sequencer_deps.fcm_handle().clone(),

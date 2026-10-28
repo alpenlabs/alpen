@@ -24,23 +24,20 @@ use strata_primitives::{
     HexBytes32, HexBytes64,
     buf::{Buf32, Buf64},
 };
-use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, OLCheckpointManager};
 use tracing::{info, warn};
 
-use crate::{
-    rpc::errors::{db_error, internal_error, not_found_error},
-    sequencer::tip::resolve_canonical_tip,
-};
+use crate::rpc::errors::{db_error, internal_error, not_found_error};
 
 /// Rpc handler for sequencer.
 pub(crate) struct OLSeqRpcServer {
     /// Storage backend.
     storage: Arc<NodeStorage>,
 
-    /// Status channel for resolving the current canonical tip.
-    status_channel: Arc<StatusChannel>,
+    /// Resolves the canonical tip for sequencer duties.
+    canonical_chain_provider: OLCanonicalChainProviderImpl,
 
+    /// Checkpoint duty lookup and submission.
     checkpoint_ctx: CheckpointRpcContext,
 
     /// Block assembly handle.
@@ -57,16 +54,15 @@ impl OLSeqRpcServer {
     /// Creates a new [`OLSeqRpcServer`] instance.
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
         signing_mode_provider: Arc<dyn EnvelopeSigningModeProvider>,
     ) -> Self {
         Self {
+            canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
             checkpoint_ctx: CheckpointRpcContext::new(&storage, envelope_handle),
             storage,
-            status_channel,
             blockasm_handle,
             fcm_handle,
             signing_mode_provider,
@@ -86,7 +82,9 @@ fn current_pubkey(
 #[async_trait]
 impl OLSequencerRpcServer for OLSeqRpcServer {
     async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcDuty>> {
-        let Some(tip_commitment) = resolve_canonical_tip(&self.status_channel, &self.storage)
+        let Some(tip_commitment) = self
+            .canonical_chain_provider
+            .get_canonical_tip_async()
             .await
             .map_err(db_error)?
         else {

@@ -46,7 +46,6 @@ pub(crate) fn start_block_producer(
     let context = Arc::new(NodeSequencerContext::new(
         handles.blockasm_handle().clone(),
         runctx.storage().clone(),
-        runctx.status_channel().clone(),
         ol_block_interval_ms,
     ));
 
