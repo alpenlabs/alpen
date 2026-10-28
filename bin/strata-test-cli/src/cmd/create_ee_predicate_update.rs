@@ -5,33 +5,24 @@
 //! the deployed signer config, and funding from a `bitcoind` wallet.
 
 use std::{
-    collections::HashMap,
-    fmt,
     io::{self, Write},
     path::PathBuf,
     slice,
     str::FromStr,
-    thread,
-    time::Duration,
 };
 
 use anyhow::{anyhow, bail, ensure, Context};
 use argh::FromArgs;
-use bdk_bitcoind_rpc::bitcoincore_rpc::{json::FundRawTransactionOptions, Auth, Client, RpcApi};
-use bdk_wallet::{
-    bitcoin::{
-        absolute::LockTime,
-        blockdata::script,
-        consensus::serialize,
-        key::UntweakedKeypair,
-        secp256k1::{schnorr::Signature, Message, SecretKey, XOnlyPublicKey, SECP256K1},
-        sighash::{Prevouts, SighashCache, TapSighashType},
-        taproot::{ControlBlock, LeafVersion, TapLeafHash, TaprootBuilder, TaprootSpendInfo},
-        transaction::Version,
-        Address, Amount, FeeRate, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-        Witness,
-    },
-    KeychainKind, TxOrdering,
+use bdk_wallet::bitcoin::{
+    absolute::LockTime,
+    blockdata::script,
+    consensus::serialize,
+    key::UntweakedKeypair,
+    secp256k1::{schnorr::Signature, Message, SecretKey, XOnlyPublicKey, SECP256K1},
+    sighash::{Prevouts, SighashCache, TapSighashType},
+    taproot::{ControlBlock, LeafVersion, TapLeafHash, TaprootBuilder, TaprootSpendInfo},
+    transaction::Version,
+    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use rand::RngCore;
 use serde_json::{json, Value};
@@ -55,8 +46,8 @@ use crate::{
         parse_secret_key, predicate_hash_signing_message, signing_message,
         threshold_config_from_addresses, threshold_config_from_asm_params, verify_signatures,
     },
+    admin_bitcoin::{BitcoinFunding, BitcoinFundingConfig},
     constants::{MAGIC_BYTES, NETWORK},
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
 /// Create and broadcast an EE predicate admin update (role: AlpenAdministrator).
@@ -431,8 +422,6 @@ pub(crate) fn parse_target(value: &str) -> Result<PredicateUpdateTarget, String>
 
 /// Minimum non-dust value for the reveal output.
 const MIN_REVEAL_OUTPUT_SATS: u64 = 546;
-const DEFAULT_RETRY_COUNT: usize = 5;
-const RETRY_SLEEP_MS: u64 = 200;
 
 /// Which predicate an admin update targets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -484,23 +473,6 @@ struct PredicateUpdateRequest {
     cancel_target_id: Option<UpdateId>,
 }
 
-/// Bitcoin settings supplied separately from the admin authorization.
-struct BitcoinFundingConfig {
-    rpc_url: String,
-    rpc_user: String,
-    rpc_password: String,
-    wallet: Option<String>,
-    fee_rate: u64,
-    commit_output_sats: u64,
-}
-
-impl fmt::Debug for BitcoinFundingConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BitcoinFundingConfig")
-            .finish_non_exhaustive()
-    }
-}
-
 pub(crate) fn create_ee_predicate_update(
     args: CreateEePredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
@@ -523,10 +495,10 @@ pub(crate) fn create_ee_predicate_update(
         rpc_user: args.btc_user,
         rpc_password: args.btc_password,
         wallet: args.btc_wallet,
-        fee_rate: args.fee_rate,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
     };
-    create_predicate_update(request, &bitcoin, args.dry_run)
+    create_predicate_update(request, bitcoin, args.dry_run)
 }
 
 pub(crate) fn create_checkpoint_predicate_update(
@@ -551,10 +523,10 @@ pub(crate) fn create_checkpoint_predicate_update(
         rpc_user: args.btc_user,
         rpc_password: args.btc_password,
         wallet: args.btc_wallet,
-        fee_rate: args.fee_rate,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
     };
-    create_predicate_update(request, &bitcoin, args.dry_run)
+    create_predicate_update(request, bitcoin, args.dry_run)
 }
 
 pub(crate) fn create_asm_predicate_update(
@@ -579,10 +551,10 @@ pub(crate) fn create_asm_predicate_update(
         rpc_user: args.btc_user,
         rpc_password: args.btc_password,
         wallet: args.btc_wallet,
-        fee_rate: args.fee_rate,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
     };
-    create_predicate_update(request, &bitcoin, args.dry_run)
+    create_predicate_update(request, bitcoin, args.dry_run)
 }
 
 pub(crate) fn create_admin_cancel(args: CreateAdminCancelArgs) -> Result<(), DisplayedError> {
@@ -605,10 +577,10 @@ pub(crate) fn create_admin_cancel(args: CreateAdminCancelArgs) -> Result<(), Dis
         rpc_user: args.btc_user,
         rpc_password: args.btc_password,
         wallet: args.btc_wallet,
-        fee_rate: args.fee_rate,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
     };
-    create_predicate_update(request, &bitcoin, args.dry_run)
+    create_predicate_update(request, bitcoin, args.dry_run)
 }
 
 pub(crate) fn print_signing_message(args: PrintSigningMessageArgs) -> Result<(), DisplayedError> {
@@ -664,13 +636,14 @@ pub(crate) fn prepare_signing_message(
 
 fn create_predicate_update(
     args: PredicateUpdateRequest,
-    bitcoin: &BitcoinFundingConfig,
+    bitcoin: BitcoinFundingConfig,
     dry_run: bool,
 ) -> Result<(), DisplayedError> {
     let signed = sign_and_verify(&args).user_error("admin signature check failed")?;
-    let (commit_tx, reveal_tx) =
-        build_admin_commit_reveal_pair(bitcoin, args.magic, args.network, &signed)
-            .internal_error("failed to build admin tx pair")?;
+    let bitcoin = BitcoinFunding::connect(bitcoin, args.network)
+        .internal_error("failed to create Bitcoin funding client")?;
+    let (commit_tx, reveal_tx) = build_admin_commit_reveal_pair(&bitcoin, args.magic, &signed)
+        .internal_error("failed to build admin tx pair")?;
 
     let decoded = decode_reveal_tx(&reveal_tx, args.magic, &signed.payload)
         .internal_error("built reveal tx does not decode to the signed payload")?;
@@ -702,17 +675,11 @@ fn create_predicate_update(
         return Ok(());
     }
 
-    let client = new_bitcoind_client(
-        &bitcoin.rpc_url,
-        None,
-        Some(&bitcoin.rpc_user),
-        Some(&bitcoin.rpc_password),
-    )
-    .internal_error("failed to create bitcoind RPC client")?;
-
-    let commit_txid =
-        broadcast_tx(&client, &commit_tx).internal_error("failed to broadcast commit tx")?;
-    let reveal_txid = broadcast_reveal_with_retry(&client, &reveal_tx)
+    let commit_txid = bitcoin
+        .broadcast_tx(&commit_tx)
+        .internal_error("failed to broadcast commit tx")?;
+    let reveal_txid = bitcoin
+        .broadcast_reveal_with_retry(&reveal_tx)
         .internal_error("failed to broadcast reveal tx")?;
 
     println!(
@@ -810,34 +777,18 @@ fn load_signer_config(
 
 // TODO(STR-3191): deduplicate envelope commit/reveal transaction
 fn build_admin_commit_reveal_pair(
-    bitcoin: &BitcoinFundingConfig,
+    bitcoin: &BitcoinFunding,
     magic: MagicBytes,
-    network: Network,
     signed: &SignedAdminPayload,
 ) -> anyhow::Result<(Transaction, Transaction)> {
-    if bitcoin.commit_output_sats <= MIN_REVEAL_OUTPUT_SATS {
-        bail!("commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}");
-    }
-
-    let reveal = RevealParts::new(&signed.payload, magic, network)?;
-
-    let fee_rate_sat_per_vb =
-        u32::try_from(bitcoin.fee_rate).context("fee rate exceeds u32 range")?;
-    let (commit_tx, recipient) = match &bitcoin.wallet {
-        Some(wallet) => {
-            fund_commit_with_bitcoind_wallet(bitcoin, network, wallet, &reveal.address)?
-        }
-        None => {
-            ensure!(
-                network == Network::Regtest,
-                "--btc-wallet is required on {} (built-in test wallet is regtest-only)",
-                network
-            );
-            fund_commit_with_test_wallet(bitcoin, &reveal.address, fee_rate_sat_per_vb)?
-        }
-    };
-
-    let reveal_tx = reveal.build_signed_reveal_tx(&commit_tx, recipient, bitcoin.fee_rate)?;
+    ensure!(
+        bitcoin.commit_output_sats() > MIN_REVEAL_OUTPUT_SATS,
+        "commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}"
+    );
+    let reveal = RevealParts::new(&signed.payload, magic, bitcoin.network())?;
+    let (commit_tx, recipient) = bitcoin.fund_commit(&reveal.address)?;
+    let reveal_tx =
+        reveal.build_signed_reveal_tx(&commit_tx, recipient, bitcoin.fee_rate_sat_vb())?;
     Ok((commit_tx, reveal_tx))
 }
 
@@ -916,114 +867,6 @@ impl RevealParts {
         )?;
         Ok(reveal_tx)
     }
-}
-
-/// Funds and signs the commit tx with the hardcoded regtest test wallet (functional tests).
-fn fund_commit_with_test_wallet(
-    bitcoin: &BitcoinFundingConfig,
-    reveal_address: &Address,
-    fee_rate_sat_per_vb: u32,
-) -> anyhow::Result<(Transaction, Address)> {
-    let mut wallet = taproot_wallet()?;
-    let client = new_bitcoind_client(
-        &bitcoin.rpc_url,
-        None,
-        Some(&bitcoin.rpc_user),
-        Some(&bitcoin.rpc_password),
-    )?;
-    sync_wallet(&mut wallet, &client)?;
-
-    let fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate_sat_per_vb);
-    let mut psbt = {
-        let mut builder = wallet.build_tx();
-        builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(
-            reveal_address.script_pubkey(),
-            Amount::from_sat(bitcoin.commit_output_sats),
-        );
-        builder.fee_rate(fee_rate);
-        builder.finish().context("failed to build commit tx")?
-    };
-
-    let finalized = wallet
-        .sign(&mut psbt, Default::default())
-        .context("failed to sign commit tx")?;
-    ensure!(finalized, "test wallet could not finalize commit tx");
-
-    let commit_tx = psbt.extract_tx().context("failed to finalize commit tx")?;
-    let recipient = wallet.peek_address(KeychainKind::External, 0).address;
-    Ok((commit_tx, recipient))
-}
-
-/// Funds and signs the commit tx with a `bitcoind` wallet
-/// (`createrawtransaction` -> `fundrawtransaction` -> `signrawtransactionwithwallet`).
-/// Nothing is broadcast and no UTXOs are locked.
-fn fund_commit_with_bitcoind_wallet(
-    bitcoin: &BitcoinFundingConfig,
-    network: Network,
-    wallet: &str,
-    reveal_address: &Address,
-) -> anyhow::Result<(Transaction, Address)> {
-    let url = format!("{}/wallet/{wallet}", bitcoin.rpc_url.trim_end_matches('/'));
-    let client = Client::new(
-        &url,
-        Auth::UserPass(bitcoin.rpc_user.clone(), bitcoin.rpc_password.clone()),
-    )
-    .context("failed to create bitcoind wallet RPC client")?;
-
-    let chain = client
-        .get_blockchain_info()
-        .context("getblockchaininfo failed")?
-        .chain;
-    ensure!(
-        chain == network,
-        "bitcoind is on {chain}, but --network is {}",
-        network
-    );
-
-    let outs = HashMap::from([(
-        reveal_address.to_string(),
-        Amount::from_sat(bitcoin.commit_output_sats),
-    )]);
-    let raw = client
-        .create_raw_transaction_hex(&[], &outs, None, Some(true))
-        .context("createrawtransaction failed")?;
-
-    // `feeRate` is BTC per kvB: sat/vB * 1000 = sat/kvB.
-    let fee_rate_per_kvb = bitcoin
-        .fee_rate
-        .checked_mul(1000)
-        .context("fee rate overflow")?;
-    let options = FundRawTransactionOptions {
-        fee_rate: Some(Amount::from_sat(fee_rate_per_kvb)),
-        replaceable: Some(true),
-        ..Default::default()
-    };
-    // Zero-input txs are ambiguous with the segwit marker; createrawtransaction emits legacy.
-    let funded = client
-        .fund_raw_transaction(raw, Some(&options), Some(false))
-        .context("fundrawtransaction failed")?;
-
-    let signed = client
-        .sign_raw_transaction_with_wallet(&funded.hex, None, None)
-        .context("signrawtransactionwithwallet failed")?;
-    if !signed.complete {
-        bail!(
-            "wallet could not fully sign commit tx: {:?}",
-            signed.errors.unwrap_or_default()
-        );
-    }
-    let commit_tx = signed
-        .transaction()
-        .context("failed to decode signed commit tx")?;
-
-    let recipient = client
-        .get_raw_change_address(None)
-        .context("getrawchangeaddress failed")?
-        .require_network(network)
-        .context("wallet change address is on the wrong network")?;
-
-    Ok((commit_tx, recipient))
 }
 
 fn random_secret_key() -> anyhow::Result<SecretKey> {
@@ -1172,32 +1015,6 @@ fn compute_reveal_signature(
         Message::from_digest_slice(sighash.as_ref()).context("invalid reveal sighash message")?;
 
     Ok(SECP256K1.sign_schnorr_no_aux_rand(&msg, keypair))
-}
-
-fn broadcast_tx(client: &Client, tx: &Transaction) -> anyhow::Result<String> {
-    let raw_hex = hex::encode(serialize(tx));
-    client
-        .call("sendrawtransaction", &[serde_json::Value::String(raw_hex)])
-        .context("failed to broadcast transaction")
-}
-
-fn broadcast_reveal_with_retry(client: &Client, reveal_tx: &Transaction) -> anyhow::Result<String> {
-    for attempt in 0..DEFAULT_RETRY_COUNT {
-        match broadcast_tx(client, reveal_tx) {
-            Ok(txid) => return Ok(txid),
-            Err(err) => {
-                let msg = err.to_string().to_lowercase();
-                let should_retry = msg.contains("missing") || msg.contains("invalid input");
-                if should_retry && attempt + 1 < DEFAULT_RETRY_COUNT {
-                    thread::sleep(Duration::from_millis(RETRY_SLEEP_MS));
-                    continue;
-                }
-                return Err(err);
-            }
-        }
-    }
-
-    bail!("exhausted reveal broadcast retries")
 }
 
 #[cfg(test)]
