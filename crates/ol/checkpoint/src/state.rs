@@ -11,6 +11,8 @@ use strata_service::ServiceState;
 use tracing::{debug, info};
 
 use crate::context::CheckpointWorkerContext;
+#[cfg(feature = "debug-utils")]
+use crate::debug_faults::apply_requested_proof_corruption;
 use crate::errors::CheckpointNotReady;
 
 /// Service state for OL checkpoint builder.
@@ -200,6 +202,8 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
 
     let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
     let proof = ctx.get_proof(&commitment)?;
+    #[cfg(feature = "debug-utils")]
+    let proof = apply_requested_proof_corruption(commitment, proof);
 
     Ok(CheckpointPayload::new(new_tip, sidecar, proof)?)
 }

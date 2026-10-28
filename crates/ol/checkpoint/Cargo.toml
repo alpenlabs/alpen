@@ -38,6 +38,9 @@ tracing.workspace = true
 [lints]
 workspace = true
 
+[features]
+debug-utils = []
+
 [dev-dependencies]
 strata-acct-types.workspace = true
 strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
