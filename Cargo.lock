@@ -9535,6 +9535,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-block-ancestry-provider"
+version = "0.1.0"
+dependencies = [
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ol-chain-types-v1",
+ "strata-storage",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "strata-ol-block-assembly"
 version = "0.1.0"
 dependencies = [
