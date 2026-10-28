@@ -95,6 +95,21 @@ Their existing `--dry-run` builds and prints the signed transaction pair without
 broadcasting; it still uses the funding wallet. It is separate from the new
 offline signing and verification commands.
 
+## Bitcoin configuration boundary
+
+`PredicateUpdateRequest` contains authorization fields and the protocol chain
+context. It carries no RPC URL/credentials, fee rate, funding wallet, commit output
+amount or dry-run setting.
+
+At the CLI boundary, the existing Bitcoin flags populate `BitcoinFundingConfig`
+in `admin_bitcoin.rs`. The execution function receives that configuration
+separately, verifies the admin signatures, and only then constructs a
+`BitcoinFunding` runtime context. Funding and broadcast functions live behind
+that context; signing never receives it. `dry_run` is a separate execution choice.
+The Bitcoin network remains in the action request because it is part of the
+signed protocol message. No environment or configuration-file source is imposed;
+those can supply the same funding configuration independently of the action.
+
 ## Compatibility and validation
 
 The signing text covers protocol version, action, required role, network,

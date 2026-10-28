@@ -4,25 +4,20 @@
 //! signatures), any network/magic, a local dry-run of the on-chain threshold check against
 //! the deployed signer config, and funding from a `bitcoind` wallet.
 
-use std::{collections::HashMap, path::PathBuf, slice, str::FromStr, thread, time::Duration};
+use std::{path::PathBuf, slice, str::FromStr};
 
 use anyhow::{bail, ensure, Context};
 use argh::FromArgs;
-use bdk_bitcoind_rpc::bitcoincore_rpc::{json::FundRawTransactionOptions, Auth, Client, RpcApi};
-use bdk_wallet::{
-    bitcoin::{
-        absolute::LockTime,
-        blockdata::script,
-        consensus::serialize,
-        key::UntweakedKeypair,
-        secp256k1::{schnorr::Signature, Message, SecretKey, XOnlyPublicKey, SECP256K1},
-        sighash::{Prevouts, SighashCache, TapSighashType},
-        taproot::{ControlBlock, LeafVersion, TapLeafHash, TaprootBuilder, TaprootSpendInfo},
-        transaction::Version,
-        Address, Amount, FeeRate, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-        Witness,
-    },
-    KeychainKind, TxOrdering,
+use bdk_wallet::bitcoin::{
+    absolute::LockTime,
+    blockdata::script,
+    consensus::serialize,
+    key::UntweakedKeypair,
+    secp256k1::{schnorr::Signature, Message, SecretKey, XOnlyPublicKey, SECP256K1},
+    sighash::{Prevouts, SighashCache, TapSighashType},
+    taproot::{ControlBlock, LeafVersion, TapLeafHash, TaprootBuilder, TaprootSpendInfo},
+    transaction::Version,
+    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use rand::RngCore;
 use serde_json::{json, Value};
@@ -47,8 +42,8 @@ use crate::{
         parse_secret_key, signing_message, threshold_config_from_addresses,
         threshold_config_from_asm_params, verify_signatures,
     },
+    admin_bitcoin::{BitcoinFunding, BitcoinFundingConfig},
     constants::{MAGIC_BYTES, NETWORK},
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
 /// Create and broadcast an EE predicate admin update (role: AlpenAdministrator).
@@ -423,8 +418,6 @@ pub(crate) fn parse_target(value: &str) -> Result<PredicateUpdateTarget, String>
 
 /// Minimum non-dust value for the reveal output.
 const MIN_REVEAL_OUTPUT_SATS: u64 = 546;
-const DEFAULT_RETRY_COUNT: usize = 5;
-const RETRY_SLEEP_MS: u64 = 200;
 
 /// Which predicate an admin update targets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -471,13 +464,6 @@ struct PredicateUpdateRequest {
     signer_address: Vec<String>,
     network: Network,
     magic: MagicBytes,
-    btc_wallet: Option<String>,
-    dry_run: bool,
-    btc_url: String,
-    btc_user: String,
-    btc_password: String,
-    fee_rate: u64,
-    commit_output_sats: u64,
     target: PredicateUpdateTarget,
     /// Cancel the queued update with this ID instead of submitting the update.
     cancel_target_id: Option<UpdateId>,
@@ -486,103 +472,123 @@ struct PredicateUpdateRequest {
 pub(crate) fn create_ee_predicate_update(
     args: CreateEePredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
-        seq_no: args.seq_no,
-        predicate: args.predicate,
-        admin_xpriv: args.admin_xpriv,
-        admin_key: args.admin_key,
-        signature: args.signature,
-        signers_config: args.signers_config,
-        threshold: args.threshold,
-        signer_address: args.signer_address,
-        network: args.network,
-        magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
-        target: PredicateUpdateTarget::EeStfVk,
-        cancel_target_id: None,
-    })
+    };
+    create_predicate_update(
+        PredicateUpdateRequest {
+            seq_no: args.seq_no,
+            predicate: args.predicate,
+            admin_xpriv: args.admin_xpriv,
+            admin_key: args.admin_key,
+            signature: args.signature,
+            signers_config: args.signers_config,
+            threshold: args.threshold,
+            signer_address: args.signer_address,
+            network: args.network,
+            magic: args.magic,
+            target: PredicateUpdateTarget::EeStfVk,
+            cancel_target_id: None,
+        },
+        bitcoin,
+        args.dry_run,
+    )
 }
 
 pub(crate) fn create_checkpoint_predicate_update(
     args: CreateCheckpointPredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
-        seq_no: args.seq_no,
-        predicate: args.predicate,
-        admin_xpriv: args.admin_xpriv,
-        admin_key: args.admin_key,
-        signature: args.signature,
-        signers_config: args.signers_config,
-        threshold: args.threshold,
-        signer_address: args.signer_address,
-        network: args.network,
-        magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
-        target: PredicateUpdateTarget::OlStfVk,
-        cancel_target_id: None,
-    })
+    };
+    create_predicate_update(
+        PredicateUpdateRequest {
+            seq_no: args.seq_no,
+            predicate: args.predicate,
+            admin_xpriv: args.admin_xpriv,
+            admin_key: args.admin_key,
+            signature: args.signature,
+            signers_config: args.signers_config,
+            threshold: args.threshold,
+            signer_address: args.signer_address,
+            network: args.network,
+            magic: args.magic,
+            target: PredicateUpdateTarget::OlStfVk,
+            cancel_target_id: None,
+        },
+        bitcoin,
+        args.dry_run,
+    )
 }
 
 pub(crate) fn create_asm_predicate_update(
     args: CreateAsmPredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
-        seq_no: args.seq_no,
-        predicate: args.predicate,
-        admin_xpriv: args.admin_xpriv,
-        admin_key: args.admin_key,
-        signature: args.signature,
-        signers_config: args.signers_config,
-        threshold: args.threshold,
-        signer_address: args.signer_address,
-        network: args.network,
-        magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
-        target: PredicateUpdateTarget::AsmStfVk,
-        cancel_target_id: None,
-    })
+    };
+    create_predicate_update(
+        PredicateUpdateRequest {
+            seq_no: args.seq_no,
+            predicate: args.predicate,
+            admin_xpriv: args.admin_xpriv,
+            admin_key: args.admin_key,
+            signature: args.signature,
+            signers_config: args.signers_config,
+            threshold: args.threshold,
+            signer_address: args.signer_address,
+            network: args.network,
+            magic: args.magic,
+            target: PredicateUpdateTarget::AsmStfVk,
+            cancel_target_id: None,
+        },
+        bitcoin,
+        args.dry_run,
+    )
 }
 
 pub(crate) fn create_admin_cancel(args: CreateAdminCancelArgs) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
-        seq_no: args.seq_no,
-        predicate: args.predicate,
-        admin_xpriv: args.admin_xpriv,
-        admin_key: args.admin_key,
-        signature: args.signature,
-        signers_config: args.signers_config,
-        threshold: args.threshold,
-        signer_address: args.signer_address,
-        network: args.network,
-        magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate_sat_vb: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
-        target: args.update,
-        cancel_target_id: Some(args.target_id),
-    })
+    };
+    create_predicate_update(
+        PredicateUpdateRequest {
+            seq_no: args.seq_no,
+            predicate: args.predicate,
+            admin_xpriv: args.admin_xpriv,
+            admin_key: args.admin_key,
+            signature: args.signature,
+            signers_config: args.signers_config,
+            threshold: args.threshold,
+            signer_address: args.signer_address,
+            network: args.network,
+            magic: args.magic,
+            target: args.update,
+            cancel_target_id: Some(args.target_id),
+        },
+        bitcoin,
+        args.dry_run,
+    )
 }
 
 pub(crate) fn print_signing_message(args: PrintSigningMessageArgs) -> Result<(), DisplayedError> {
@@ -599,15 +605,21 @@ pub(crate) fn print_signing_message(args: PrintSigningMessageArgs) -> Result<(),
     write_message(&message).internal_error("failed to write admin signing message")
 }
 
-fn create_predicate_update(args: PredicateUpdateRequest) -> Result<(), DisplayedError> {
+fn create_predicate_update(
+    args: PredicateUpdateRequest,
+    bitcoin: BitcoinFundingConfig,
+    dry_run: bool,
+) -> Result<(), DisplayedError> {
     let signed = sign_and_verify(&args).user_error("admin signature check failed")?;
-    let (commit_tx, reveal_tx) = build_admin_commit_reveal_pair(&args, &signed)
+    let bitcoin = BitcoinFunding::connect(bitcoin, args.network)
+        .user_error("invalid Bitcoin funding configuration")?;
+    let (commit_tx, reveal_tx) = build_admin_commit_reveal_pair(&bitcoin, args.magic, &signed)
         .internal_error("failed to build admin tx pair")?;
 
     let decoded = decode_reveal_tx(&reveal_tx, args.magic, &signed.payload)
         .internal_error("built reveal tx does not decode to the signed payload")?;
 
-    if args.dry_run {
+    if dry_run {
         println!(
             "{}",
             json!({
@@ -634,17 +646,11 @@ fn create_predicate_update(args: PredicateUpdateRequest) -> Result<(), Displayed
         return Ok(());
     }
 
-    let client = new_bitcoind_client(
-        &args.btc_url,
-        None,
-        Some(&args.btc_user),
-        Some(&args.btc_password),
-    )
-    .internal_error("failed to create bitcoind RPC client")?;
-
-    let commit_txid =
-        broadcast_tx(&client, &commit_tx).internal_error("failed to broadcast commit tx")?;
-    let reveal_txid = broadcast_reveal_with_retry(&client, &reveal_tx)
+    let commit_txid = bitcoin
+        .broadcast_tx(&commit_tx)
+        .internal_error("failed to broadcast commit tx")?;
+    let reveal_txid = bitcoin
+        .broadcast_reveal_with_retry(&reveal_tx)
         .internal_error("failed to broadcast reveal tx")?;
 
     println!(
@@ -742,29 +748,17 @@ fn load_signer_config(
 
 // TODO(STR-3191): deduplicate envelope commit/reveal transaction
 fn build_admin_commit_reveal_pair(
-    args: &PredicateUpdateRequest,
+    bitcoin: &BitcoinFunding,
+    magic: MagicBytes,
     signed: &SignedAdminPayload,
 ) -> anyhow::Result<(Transaction, Transaction)> {
-    if args.commit_output_sats <= MIN_REVEAL_OUTPUT_SATS {
+    if bitcoin.commit_output_sats() <= MIN_REVEAL_OUTPUT_SATS {
         bail!("commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}");
     }
-
-    let reveal = RevealParts::new(&signed.payload, args.magic, args.network)?;
-
-    let fee_rate_sat_per_vb = u32::try_from(args.fee_rate).context("fee rate exceeds u32 range")?;
-    let (commit_tx, recipient) = match &args.btc_wallet {
-        Some(wallet) => fund_commit_with_bitcoind_wallet(args, wallet, &reveal.address)?,
-        None => {
-            ensure!(
-                args.network == Network::Regtest,
-                "--btc-wallet is required on {} (built-in test wallet is regtest-only)",
-                args.network
-            );
-            fund_commit_with_test_wallet(args, &reveal.address, fee_rate_sat_per_vb)?
-        }
-    };
-
-    let reveal_tx = reveal.build_signed_reveal_tx(&commit_tx, recipient, args.fee_rate)?;
+    let reveal = RevealParts::new(&signed.payload, magic, bitcoin.network())?;
+    let (commit_tx, recipient) = bitcoin.fund_commit(&reveal.address)?;
+    let reveal_tx =
+        reveal.build_signed_reveal_tx(&commit_tx, recipient, bitcoin.fee_rate_sat_vb())?;
     Ok((commit_tx, reveal_tx))
 }
 
@@ -843,113 +837,6 @@ impl RevealParts {
         )?;
         Ok(reveal_tx)
     }
-}
-
-/// Funds and signs the commit tx with the hardcoded regtest test wallet (functional tests).
-fn fund_commit_with_test_wallet(
-    args: &PredicateUpdateRequest,
-    reveal_address: &Address,
-    fee_rate_sat_per_vb: u32,
-) -> anyhow::Result<(Transaction, Address)> {
-    let mut wallet = taproot_wallet()?;
-    let client = new_bitcoind_client(
-        &args.btc_url,
-        None,
-        Some(&args.btc_user),
-        Some(&args.btc_password),
-    )?;
-    sync_wallet(&mut wallet, &client)?;
-
-    let fee_rate = FeeRate::from_sat_per_vb_u32(fee_rate_sat_per_vb);
-    let mut psbt = {
-        let mut builder = wallet.build_tx();
-        builder.ordering(TxOrdering::Untouched);
-        builder.add_recipient(
-            reveal_address.script_pubkey(),
-            Amount::from_sat(args.commit_output_sats),
-        );
-        builder.fee_rate(fee_rate);
-        builder.finish().context("failed to build commit tx")?
-    };
-
-    let finalized = wallet
-        .sign(&mut psbt, Default::default())
-        .context("failed to sign commit tx")?;
-    ensure!(finalized, "test wallet could not finalize commit tx");
-
-    let commit_tx = psbt.extract_tx().context("failed to finalize commit tx")?;
-    let recipient = wallet.peek_address(KeychainKind::External, 0).address;
-    Ok((commit_tx, recipient))
-}
-
-/// Funds and signs the commit tx with a `bitcoind` wallet
-/// (`createrawtransaction` -> `fundrawtransaction` -> `signrawtransactionwithwallet`).
-/// Nothing is broadcast and no UTXOs are locked.
-fn fund_commit_with_bitcoind_wallet(
-    args: &PredicateUpdateRequest,
-    wallet: &str,
-    reveal_address: &Address,
-) -> anyhow::Result<(Transaction, Address)> {
-    let url = format!("{}/wallet/{wallet}", args.btc_url.trim_end_matches('/'));
-    let client = Client::new(
-        &url,
-        Auth::UserPass(args.btc_user.clone(), args.btc_password.clone()),
-    )
-    .context("failed to create bitcoind wallet RPC client")?;
-
-    let chain = client
-        .get_blockchain_info()
-        .context("getblockchaininfo failed")?
-        .chain;
-    ensure!(
-        chain == args.network,
-        "bitcoind is on {chain}, but --network is {}",
-        args.network
-    );
-
-    let outs = HashMap::from([(
-        reveal_address.to_string(),
-        Amount::from_sat(args.commit_output_sats),
-    )]);
-    let raw = client
-        .create_raw_transaction_hex(&[], &outs, None, Some(true))
-        .context("createrawtransaction failed")?;
-
-    // `feeRate` is BTC per kvB: sat/vB * 1000 = sat/kvB.
-    let fee_rate_per_kvb = args
-        .fee_rate
-        .checked_mul(1000)
-        .context("fee rate overflow")?;
-    let options = FundRawTransactionOptions {
-        fee_rate: Some(Amount::from_sat(fee_rate_per_kvb)),
-        replaceable: Some(true),
-        ..Default::default()
-    };
-    // Zero-input txs are ambiguous with the segwit marker; createrawtransaction emits legacy.
-    let funded = client
-        .fund_raw_transaction(raw, Some(&options), Some(false))
-        .context("fundrawtransaction failed")?;
-
-    let signed = client
-        .sign_raw_transaction_with_wallet(&funded.hex, None, None)
-        .context("signrawtransactionwithwallet failed")?;
-    if !signed.complete {
-        bail!(
-            "wallet could not fully sign commit tx: {:?}",
-            signed.errors.unwrap_or_default()
-        );
-    }
-    let commit_tx = signed
-        .transaction()
-        .context("failed to decode signed commit tx")?;
-
-    let recipient = client
-        .get_raw_change_address(None)
-        .context("getrawchangeaddress failed")?
-        .require_network(args.network)
-        .context("wallet change address is on the wrong network")?;
-
-    Ok((commit_tx, recipient))
 }
 
 fn random_secret_key() -> anyhow::Result<SecretKey> {
@@ -1100,32 +987,6 @@ fn compute_reveal_signature(
     Ok(SECP256K1.sign_schnorr_no_aux_rand(&msg, keypair))
 }
 
-fn broadcast_tx(client: &Client, tx: &Transaction) -> anyhow::Result<String> {
-    let raw_hex = hex::encode(serialize(tx));
-    client
-        .call("sendrawtransaction", &[serde_json::Value::String(raw_hex)])
-        .context("failed to broadcast transaction")
-}
-
-fn broadcast_reveal_with_retry(client: &Client, reveal_tx: &Transaction) -> anyhow::Result<String> {
-    for attempt in 0..DEFAULT_RETRY_COUNT {
-        match broadcast_tx(client, reveal_tx) {
-            Ok(txid) => return Ok(txid),
-            Err(err) => {
-                let msg = err.to_string().to_lowercase();
-                let should_retry = msg.contains("missing") || msg.contains("invalid input");
-                if should_retry && attempt + 1 < DEFAULT_RETRY_COUNT {
-                    thread::sleep(Duration::from_millis(RETRY_SLEEP_MS));
-                    continue;
-                }
-                return Err(err);
-            }
-        }
-    }
-
-    bail!("exhausted reveal broadcast retries")
-}
-
 #[cfg(test)]
 mod tests {
     use std::num::NonZero;
@@ -1140,6 +1001,43 @@ mod tests {
 
     use super::*;
     use crate::admin::predicate_hash_signing_message;
+
+    #[test]
+    fn authorization_request_requires_no_bitcoin_funding_configuration() {
+        let keys = [1u8, 2].map(|b| SecretKey::from_slice(&[b; 32]).expect("synthetic key"));
+        let request = PredicateUpdateRequest {
+            seq_no: 5,
+            predicate: PredicateKey::always_accept(),
+            admin_xpriv: None,
+            admin_key: keys
+                .iter()
+                .enumerate()
+                .map(|(i, key)| format!("{i}:{}", hex::encode(key.secret_bytes())))
+                .collect(),
+            signature: vec![],
+            signers_config: None,
+            threshold: Some(2),
+            signer_address: keys
+                .iter()
+                .map(|key| {
+                    P2wpkhAddress::from_pubkey(&PublicKey::from_secret_key(SECP256K1, key))
+                        .to_address(Network::Signet)
+                        .to_string()
+                })
+                .collect(),
+            network: Network::Signet,
+            magic: MagicBytes::new(*b"ALPN"),
+            target: PredicateUpdateTarget::EeStfVk,
+            cancel_target_id: None,
+        };
+        let signed = sign_and_verify(&request).expect("authorization is entirely offline");
+        assert!(signed.verified);
+        assert_eq!(signed.payload.seqno, 5);
+        assert_eq!(
+            signed.payload.action.required_role(),
+            Role::AlpenAdministrator
+        );
+    }
 
     /// Builds the real reveal tx (on a stub commit tx, no RPC) for signet with a 2-of-3
     /// signature set and checks ASM's own parser recovers a payload that passes the
