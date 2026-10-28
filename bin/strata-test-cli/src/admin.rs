@@ -9,76 +9,24 @@ use std::{fs, num::NonZero, path::Path, slice, str::FromStr};
 use anyhow::{anyhow, bail, ensure, Context};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use bitcoin::{
-    address::NetworkUnchecked, bip32::Xpriv, hashes::Hash as _, secp256k1::SecretKey,
-    sign_message::signed_msg_hash, Address, Network, Transaction,
+    address::NetworkUnchecked, bip32::Xpriv, secp256k1::SecretKey, Address, Network, Transaction,
 };
 use strata_asm_admin_threshold_sig::{
     verify_threshold_signatures, IndexedSignature, ThresholdConfig,
 };
-use strata_asm_admin_types::{AdminTxType, Role, UncheckedThresholdConfig, UpdateTxType};
+use strata_asm_admin_types::{Role, UncheckedThresholdConfig};
 use strata_asm_common::TxInputRef;
 use strata_asm_params::AsmParams;
 use strata_asm_proto_admin_txs::{
     actions::MultisigAction,
     parser::{parse_tx, SignedPayload},
-    signing_message::{SigningMessage, ADMIN_SUBPROTOCOL_VERSION},
+    signing_message::SigningMessage,
     test_utils::sign_ecdsa_bip137,
 };
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
-use strata_predicate::PredicateTypeId;
 
 /// Length of a BIP-137 recoverable signature (`header || r || s`).
 const BIP137_SIG_LEN: usize = 65;
-
-/// Canonical message projection for a large predicate whose condition is unavailable.
-///
-/// ASM v1 exposes only a full-action renderer. Keep this narrow adapter byte-identical
-/// to that renderer (including cancel metadata); parity tests use real full predicates.
-/// It never substitutes a hash for the predicate carried in a transaction.
-pub(crate) fn predicate_hash_signing_message(
-    update_type: UpdateTxType,
-    cancel_target_id: Option<u32>,
-    predicate_type: PredicateTypeId,
-    predicate_hash: [u8; 32],
-    seqno: u64,
-    network: Network,
-) -> anyhow::Result<(String, [u8; 32])> {
-    // A protocol message version change requires a reviewed adapter, not silent reuse.
-    const { assert!(ADMIN_SUBPROTOCOL_VERSION == 1) };
-    ensure!(
-        matches!(
-            update_type,
-            UpdateTxType::EeStfVkUpdate
-                | UpdateTxType::OlStfVkUpdate
-                | UpdateTxType::AsmStfVkUpdate
-        ),
-        "hash-only signing is limited to predicate updates and their cancellations"
-    );
-    ensure!(predicate_type == PredicateTypeId::Sp1Groth16,
-        "hash-only signing supports Sp1Groth16 conditions longer than 32 bytes; use --predicate for other types");
-    let action_type = if cancel_target_id.is_some() {
-        AdminTxType::Cancel
-    } else {
-        AdminTxType::Update(update_type)
-    };
-    let mut lines = vec![
-        format!("Strata ASM Administration v{ADMIN_SUBPROTOCOL_VERSION}"),
-        format!("Network: {network}"),
-        format!("Action: {action_type}"),
-        format!("Authorized By: {}", update_type.authorized_role()),
-        format!("Sequence: {seqno}"),
-        "Action Details:".to_owned(),
-    ];
-    if let Some(target_id) = cancel_target_id {
-        lines.push(format!("  Target Id: {target_id}"));
-        lines.push(format!("  Target Update: {update_type}"));
-    }
-    lines.push(format!("  Predicate Type: {predicate_type}"));
-    lines.push(format!("  Predicate Hash: {}", hex::encode(predicate_hash)));
-    let text = lines.join("\n");
-    let digest = signed_msg_hash(&text).to_byte_array();
-    Ok((text, digest))
-}
 
 /// Renders the canonical signing message for `action` and returns it with its
 /// BIP-137 `signMessage` digest.
@@ -286,6 +234,7 @@ pub(crate) fn decode_reveal_tx(
 #[cfg(test)]
 mod tests {
     use bitcoin::{
+        hashes::Hash as _,
         secp256k1::{Message, PublicKey, SECP256K1},
         sign_message::{signed_msg_hash, MessageSignature},
     };
@@ -294,7 +243,6 @@ mod tests {
         updates::{EeStfVkUpdate, OlStfVkUpdate},
         UpdateAction,
     };
-    use strata_crypto::hash;
     use strata_predicate::PredicateKey;
 
     use super::*;
@@ -317,52 +265,6 @@ mod tests {
         MultisigAction::Update(UpdateAction::EeStfVk(EeStfVkUpdate::new(
             PredicateKey::always_accept(),
         )))
-    }
-
-    #[test]
-    fn predicate_commitment_matches_protocol_and_rejects_changed_context() {
-        let predicate = PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![7; 64]).unwrap();
-        let hash = hash::raw(predicate.condition()).0;
-        let action = MultisigAction::Update(UpdateAction::EeStfVk(EeStfVkUpdate::new(predicate)));
-        let (text, digest) = predicate_hash_signing_message(
-            UpdateTxType::EeStfVkUpdate,
-            None,
-            PredicateTypeId::Sp1Groth16,
-            hash,
-            7,
-            Network::Bitcoin,
-        )
-        .unwrap();
-        let (canonical, expected) = signing_message(&action, 7, Network::Bitcoin);
-        assert_eq!(text, canonical.as_str());
-        assert_eq!(digest, expected);
-        assert!(!text.ends_with('\n'));
-        let keys = keys();
-        let config = config_2_of_3(&keys);
-        let signatures =
-            assemble_signatures(&[(0, keys[0]), (2, keys[2])], vec![], &digest).unwrap();
-        verify_signatures(&config, &signatures, &expected, Network::Bitcoin).unwrap();
-        for (seqno, network, condition) in [
-            (8, Network::Bitcoin, vec![7; 64]),
-            (7, Network::Signet, vec![7; 64]),
-            (7, Network::Bitcoin, vec![8; 64]),
-            (7, Network::Bitcoin, vec![7; 32]),
-        ] {
-            let changed = MultisigAction::Update(UpdateAction::EeStfVk(EeStfVkUpdate::new(
-                PredicateKey::try_new(PredicateTypeId::Sp1Groth16, condition).unwrap(),
-            )));
-            let (_, changed_digest) = signing_message(&changed, seqno, network);
-            assert!(verify_signatures(&config, &signatures, &changed_digest, network).is_err());
-        }
-        assert!(predicate_hash_signing_message(
-            UpdateTxType::EeStfVkUpdate,
-            None,
-            PredicateTypeId::Bip340Schnorr,
-            hash,
-            7,
-            Network::Bitcoin
-        )
-        .is_err());
     }
 
     #[test]

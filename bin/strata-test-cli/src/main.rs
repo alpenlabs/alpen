@@ -10,7 +10,6 @@
 use std::process;
 
 mod admin;
-mod admin_bitcoin;
 mod bridge;
 pub mod cmd;
 mod constants;

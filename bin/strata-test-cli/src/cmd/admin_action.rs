@@ -1,61 +1,39 @@
 //! Sign admin predicate updates.
 
 use std::{
-    fs,
-    io::{self, Read, Write},
-    path::PathBuf,
+    env,
+    io::{self, Write},
 };
 
-use anyhow::{ensure, Context};
+use anyhow::{anyhow, Context};
 use argh::FromArgs;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use bitcoin::{
-    secp256k1::{PublicKey, SECP256K1},
-    Network,
-};
-use strata_asm_admin_threshold_sig::P2wpkhAddress;
-use strata_asm_params::AsmParams;
+use bitcoin::Network;
 use strata_asm_proto_admin_txs::test_utils::sign_ecdsa_bip137;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_predicate::{PredicateKey, PredicateTypeId};
+use strata_predicate::PredicateKey;
 
 use super::create_ee_predicate_update::{
-    parse_network, parse_predicate_hash, parse_predicate_key, parse_predicate_type, parse_target,
-    prepare_signing_message, PredicateUpdateTarget,
+    build_admin_action, parse_network, parse_predicate_key, parse_target, PredicateUpdateTarget,
 };
-use crate::admin::{parse_secret_key, threshold_config_from_asm_params_json};
+use crate::admin::{parse_secret_key, signing_message};
 
-/// Sign an admin predicate commitment; read the key from stdin and emit <index>:<base64>.
+/// Sign an admin predicate update with STRATA_ADMIN_KEY and print a base64 signature.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "sign-admin-action")]
 pub struct SignAdminActionArgs {
     /// update kind: ee-stf-vk, ol-stf-vk or asm-stf-vk
     #[argh(option, from_str_fn(parse_target))]
     pub update: PredicateUpdateTarget,
-    /// current valid authority sequence number
+    /// authority sequence number
     #[argh(option)]
     pub seq_no: u64,
-    /// complete predicate; mutually exclusive with --predicate-hash
+    /// full predicate key
     #[argh(option, from_str_fn(parse_predicate_key))]
-    pub predicate: Option<PredicateKey>,
-    /// SHA-256 of predicate condition bytes, not the predicate file
-    #[argh(option, from_str_fn(parse_predicate_hash))]
-    pub predicate_hash: Option<[u8; 32]>,
-    /// predicate type (Sp1Groth16 with a condition longer than 32 bytes)
-    #[argh(option, from_str_fn(parse_predicate_type))]
-    pub predicate_type: Option<PredicateTypeId>,
-    /// bitcoin network, required explicitly
+    pub predicate: PredicateKey,
+    /// bitcoin network
     #[argh(option, from_str_fn(parse_network))]
     pub network: Network,
-    /// cancel this queued update instead of authorizing the update
-    #[argh(option)]
-    pub cancel_target_id: Option<u32>,
-    /// trusted ASM params supplying the authority's ordered signer set
-    #[argh(option)]
-    pub signers_config: PathBuf,
-    /// read an xpriv or 32-byte hex secret from stdin, never argv
-    #[argh(switch)]
-    pub key_stdin: bool,
 }
 
 pub(crate) fn sign_admin_action(args: SignAdminActionArgs) -> Result<(), DisplayedError> {
@@ -63,44 +41,12 @@ pub(crate) fn sign_admin_action(args: SignAdminActionArgs) -> Result<(), Display
 }
 
 fn sign(args: SignAdminActionArgs) -> anyhow::Result<()> {
-    ensure!(
-        args.key_stdin,
-        "provide the signing key through --key-stdin"
-    );
-    let (text, digest) = prepare_signing_message(
-        args.predicate,
-        args.predicate_hash,
-        args.predicate_type,
-        args.update,
-        args.cancel_target_id,
-        args.seq_no,
-        args.network,
-    )?;
-    let raw = fs::read_to_string(&args.signers_config).context("read signer configuration")?;
-    let params: AsmParams = serde_json::from_str(&raw).context("parse ASM params")?;
-    let config = threshold_config_from_asm_params_json(
-        &raw,
-        args.update.update_type().authorized_role(),
-        args.network,
-        params.magic,
-    )?;
-    writeln!(io::stderr().lock(), "{text}").context("display action to sign")?;
-    let mut input = String::new();
-    io::stdin()
-        .take(4097)
-        .read_to_string(&mut input)
-        .context("read signing key")?;
-    ensure!(
-        input.len() <= 4096,
-        "signing key exceeds maximum input size"
-    );
-    let key = parse_secret_key(input.trim())?;
-    let address = P2wpkhAddress::from_pubkey(&PublicKey::from_secret_key(SECP256K1, &key));
-    let index = config
-        .signers()
-        .iter()
-        .position(|signer| *signer == address)
-        .context("key is not a signer for this action's authority")?;
+    let secret = env::var("STRATA_ADMIN_KEY")
+        .map_err(|_| anyhow!("set STRATA_ADMIN_KEY to an xpriv or 32-byte hex secret"))?;
+    let key = parse_secret_key(&secret).context("invalid STRATA_ADMIN_KEY")?;
+    let action = build_admin_action(args.predicate, args.update, None);
+    let (message, digest) = signing_message(&action, args.seq_no, args.network);
+    writeln!(io::stderr().lock(), "{}", message.as_str()).context("display signing message")?;
     let signature = BASE64.encode(sign_ecdsa_bip137(&digest, &key));
-    writeln!(io::stdout().lock(), "{index}:{signature}").context("write signature")
+    writeln!(io::stdout().lock(), "{signature}").context("write signature")
 }

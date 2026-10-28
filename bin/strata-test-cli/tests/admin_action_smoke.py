@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise admin action signatures and Bitcoin Core mempool checks on regtest.
+"""Exercise admin action signing and Bitcoin Core mempool checks on regtest.
 
 Requires a built strata-test-cli, bitcoin-cli and bitcoind. All keys are synthetic;
 all node state/artifacts live in a TemporaryDirectory removed after the node exits.
@@ -9,6 +9,7 @@ No transaction is broadcast. This does not start an ASM node or test admin activ
 import argparse
 import hashlib
 import json
+import os
 import secrets
 import shutil
 import socket
@@ -18,8 +19,12 @@ import time
 from pathlib import Path
 
 
-def run(command, *, input_text=None, success=True):
-    result = subprocess.run(command, input=input_text, text=True, capture_output=True, timeout=45)
+def run(command, *, key=None, success=True):
+    env = os.environ.copy()
+    env.pop("STRATA_ADMIN_KEY", None)
+    if key is not None:
+        env["STRATA_ADMIN_KEY"] = key
+    result = subprocess.run(command, env=env, text=True, capture_output=True, timeout=45)
     if success and result.returncode:
         raise RuntimeError(f"{Path(command[0]).name} failed: {result.stderr}")
     if not success and result.returncode == 0:
@@ -68,32 +73,24 @@ def exercise(binary, root, rpc_base, password):
     params_path = root / "params.json"
     params_path.write_text(json.dumps(params))
     condition = bytes([7]) * 64
-    condition_hash = hashlib.sha256(condition).hexdigest()
     action = ["--update", "ee-stf-vk", "--seq-no", "4", "--network", "regtest"]
-    commitment = ["--predicate-type", "Sp1Groth16", "--predicate-hash", condition_hash]
     full = ["--predicate", "Sp1Groth16:" + condition.hex()]
     config = ["--signers-config", str(params_path)]
-    text = run([binary, "print-signing-message", *action, *commitment]).stdout
-    assert text == run([binary, "print-signing-message", *action, *full]).stdout
+    text = run([binary, "print-signing-message", *action, *full]).stdout
     assert not text.endswith("\n")
 
     # An actual Core signmessage signature, independently produced from the canonical text.
     external = rpc("signmessagewithprivkey", test_wif(secrets_by_index[0]), text)
     assert isinstance(external, str)
-    local = run([binary, "sign-admin-action", *action, *commitment, *config, "--key-stdin"], input_text=secrets_by_index[2].hex()).stdout.strip()
-    assert local.startswith("2:")
+    local = run([binary, "sign-admin-action", *action, *full], key=secrets_by_index[2].hex()).stdout.strip()
+    normalized = [f"0:{external}", f"2:{local}"]
     for target in ("ee-stf-vk", "ol-stf-vk", "asm-stf-vk"):
-        for cancel in ([], ["--cancel-target-id", "2"]):
-            context = ["--update", target, "--seq-no", "4", "--network", "regtest", *cancel]
-            messages = [run([binary, "print-signing-message", *context, *p]).stdout for p in (full, commitment)]
-            assert messages[0] == messages[1]
-            signatures = [run([binary, "sign-admin-action", *context, *p, *config, "--key-stdin"], input_text=secrets_by_index[2].hex()).stdout for p in (full, commitment)]
-            assert signatures[0] == signatures[1]
-    for invalid in ([], full + commitment, commitment[:2], ["--predicate", "not-a-predicate"]):
-        run([binary, "print-signing-message", *action, *invalid], success=False)
-        run([binary, "sign-admin-action", *action, *invalid, *config, "--key-stdin"], input_text=secrets_by_index[2].hex(), success=False)
-    normalized = [f"0:{external}", local]
-    run([binary, "sign-admin-action", *action, *commitment, *config, "--key-stdin"], input_text=(bytes([9]) * 32).hex(), success=False)
+        context = ["--update", target, "--seq-no", "4", "--network", "regtest", *full]
+        message = run([binary, "print-signing-message", *context]).stdout
+        expected = rpc("signmessagewithprivkey", test_wif(secrets_by_index[2]), message)
+        assert run([binary, "sign-admin-action", *context], key=secrets_by_index[2].hex()).stdout.strip() == expected
+    run([binary, "sign-admin-action", *action, *full], success=False)
+    run([binary, "sign-admin-action", *action, *full], key="invalid-key", success=False)
 
     rpc("createwallet", "admin-test-funding")
     wallet_rpc = [*rpc_base, "-rpcwallet=admin-test-funding"]
