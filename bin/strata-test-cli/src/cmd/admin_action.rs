@@ -46,7 +46,17 @@ fn sign(args: SignAdminActionArgs) -> anyhow::Result<()> {
     let key = parse_secret_key(&secret).context("invalid STRATA_ADMIN_KEY")?;
     let action = build_admin_action(args.predicate, args.update, None);
     let (message, digest) = signing_message(&action, args.seq_no, args.network);
-    writeln!(io::stderr().lock(), "{}", message.as_str()).context("display signing message")?;
+    writeln!(
+        io::stderr().lock(),
+        "Message to sign:\n{}\n",
+        message.as_str()
+    )
+    .context("display signing message")?;
     let signature = BASE64.encode(sign_ecdsa_bip137(&digest, &key));
+    writeln!(
+        io::stderr().lock(),
+        "Send the base64 signature printed on stdout to the coordinator."
+    )
+    .context("display signature instructions")?;
     writeln!(io::stdout().lock(), "{signature}").context("write signature")
 }
