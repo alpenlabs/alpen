@@ -1,4 +1,4 @@
-# Admin action signing (DO NOT MERGE)
+# Admin action signing
 
 The offline commands extend `feat/admin-tx-multisig-cli`. They take command-line
 values and return signature strings; no proposal or signature file is required.
@@ -143,5 +143,5 @@ transaction construction. Core accepted the commit/reveal pair through
 node and removes its temporary state after shutdown. It does not test live ASM
 sequence state or activation.
 
-No protocol or dependency changes are needed. This branch is for review and must
-not be merged or used for a mainnet ceremony before that review.
+No protocol or dependency changes are needed. Review the effective signer
+configuration, current sequence and chosen release before a mainnet ceremony.
