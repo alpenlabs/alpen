@@ -4,9 +4,9 @@
 //! signatures), any network/magic, a local dry-run of the on-chain threshold check against
 //! the deployed signer config, and funding from a `bitcoind` wallet.
 
-use std::{collections::HashMap, path::PathBuf, slice, str::FromStr, thread, time::Duration};
+use std::{collections::HashMap, fmt, path::PathBuf, slice, str::FromStr, thread, time::Duration};
 
-use anyhow::{bail, ensure, Context};
+use anyhow::{anyhow, bail, ensure, Context};
 use argh::FromArgs;
 use bdk_bitcoind_rpc::bitcoincore_rpc::{json::FundRawTransactionOptions, Auth, Client, RpcApi};
 use bdk_wallet::{
@@ -384,11 +384,11 @@ pub struct PrintSigningMessageArgs {
     pub cancel_target_id: Option<UpdateId>,
 }
 
-fn parse_predicate_key(value: &str) -> Result<PredicateKey, String> {
+pub(crate) fn parse_predicate_key(value: &str) -> Result<PredicateKey, String> {
     serde_json::from_value(Value::String(value.to_owned())).map_err(|e| e.to_string())
 }
 
-fn parse_network(value: &str) -> Result<Network, String> {
+pub(crate) fn parse_network(value: &str) -> Result<Network, String> {
     Network::from_str(value).map_err(|e| e.to_string())
 }
 
@@ -399,7 +399,7 @@ fn parse_magic(value: &str) -> Result<MagicBytes, String> {
     MagicBytes::from_str(value).map_err(|e| e.to_string())
 }
 
-fn parse_target(value: &str) -> Result<PredicateUpdateTarget, String> {
+pub(crate) fn parse_target(value: &str) -> Result<PredicateUpdateTarget, String> {
     match value {
         "ee-stf-vk" => Ok(PredicateUpdateTarget::EeStfVk),
         "ol-stf-vk" => Ok(PredicateUpdateTarget::OlStfVk),
@@ -438,22 +438,32 @@ struct PredicateUpdateRequest {
     signer_address: Vec<String>,
     network: Network,
     magic: MagicBytes,
-    btc_wallet: Option<String>,
-    dry_run: bool,
-    btc_url: String,
-    btc_user: String,
-    btc_password: String,
-    fee_rate: u64,
-    commit_output_sats: u64,
     target: PredicateUpdateTarget,
     /// Cancel the queued update with this ID instead of submitting the update.
     cancel_target_id: Option<UpdateId>,
 }
 
+/// Bitcoin settings supplied separately from the admin authorization.
+struct BitcoinFundingConfig {
+    rpc_url: String,
+    rpc_user: String,
+    rpc_password: String,
+    wallet: Option<String>,
+    fee_rate: u64,
+    commit_output_sats: u64,
+}
+
+impl fmt::Debug for BitcoinFundingConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BitcoinFundingConfig")
+            .finish_non_exhaustive()
+    }
+}
+
 pub(crate) fn create_ee_predicate_update(
     args: CreateEePredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
+    let request = PredicateUpdateRequest {
         seq_no: args.seq_no,
         predicate: args.predicate,
         admin_xpriv: args.admin_xpriv,
@@ -464,22 +474,24 @@ pub(crate) fn create_ee_predicate_update(
         signer_address: args.signer_address,
         network: args.network,
         magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
-        commit_output_sats: args.commit_output_sats,
         target: PredicateUpdateTarget::EeStfVk,
         cancel_target_id: None,
-    })
+    };
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate: args.fee_rate,
+        commit_output_sats: args.commit_output_sats,
+    };
+    create_predicate_update(request, &bitcoin, args.dry_run)
 }
 
 pub(crate) fn create_checkpoint_predicate_update(
     args: CreateCheckpointPredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
+    let request = PredicateUpdateRequest {
         seq_no: args.seq_no,
         predicate: args.predicate,
         admin_xpriv: args.admin_xpriv,
@@ -490,22 +502,24 @@ pub(crate) fn create_checkpoint_predicate_update(
         signer_address: args.signer_address,
         network: args.network,
         magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
-        commit_output_sats: args.commit_output_sats,
         target: PredicateUpdateTarget::OlStfVk,
         cancel_target_id: None,
-    })
+    };
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate: args.fee_rate,
+        commit_output_sats: args.commit_output_sats,
+    };
+    create_predicate_update(request, &bitcoin, args.dry_run)
 }
 
 pub(crate) fn create_asm_predicate_update(
     args: CreateAsmPredicateUpdateArgs,
 ) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
+    let request = PredicateUpdateRequest {
         seq_no: args.seq_no,
         predicate: args.predicate,
         admin_xpriv: args.admin_xpriv,
@@ -516,20 +530,22 @@ pub(crate) fn create_asm_predicate_update(
         signer_address: args.signer_address,
         network: args.network,
         magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
-        commit_output_sats: args.commit_output_sats,
         target: PredicateUpdateTarget::AsmStfVk,
         cancel_target_id: None,
-    })
+    };
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate: args.fee_rate,
+        commit_output_sats: args.commit_output_sats,
+    };
+    create_predicate_update(request, &bitcoin, args.dry_run)
 }
 
 pub(crate) fn create_admin_cancel(args: CreateAdminCancelArgs) -> Result<(), DisplayedError> {
-    create_predicate_update(PredicateUpdateRequest {
+    let request = PredicateUpdateRequest {
         seq_no: args.seq_no,
         predicate: args.predicate,
         admin_xpriv: args.admin_xpriv,
@@ -540,16 +556,18 @@ pub(crate) fn create_admin_cancel(args: CreateAdminCancelArgs) -> Result<(), Dis
         signer_address: args.signer_address,
         network: args.network,
         magic: args.magic,
-        btc_wallet: args.btc_wallet,
-        dry_run: args.dry_run,
-        btc_url: args.btc_url,
-        btc_user: args.btc_user,
-        btc_password: args.btc_password,
-        fee_rate: args.fee_rate,
-        commit_output_sats: args.commit_output_sats,
         target: args.update,
         cancel_target_id: Some(args.target_id),
-    })
+    };
+    let bitcoin = BitcoinFundingConfig {
+        rpc_url: args.btc_url,
+        rpc_user: args.btc_user,
+        rpc_password: args.btc_password,
+        wallet: args.btc_wallet,
+        fee_rate: args.fee_rate,
+        commit_output_sats: args.commit_output_sats,
+    };
+    create_predicate_update(request, &bitcoin, args.dry_run)
 }
 
 pub(crate) fn print_signing_message(args: PrintSigningMessageArgs) -> Result<(), DisplayedError> {
@@ -566,15 +584,20 @@ pub(crate) fn print_signing_message(args: PrintSigningMessageArgs) -> Result<(),
     Ok(())
 }
 
-fn create_predicate_update(args: PredicateUpdateRequest) -> Result<(), DisplayedError> {
+fn create_predicate_update(
+    args: PredicateUpdateRequest,
+    bitcoin: &BitcoinFundingConfig,
+    dry_run: bool,
+) -> Result<(), DisplayedError> {
     let signed = sign_and_verify(&args).user_error("admin signature check failed")?;
-    let (commit_tx, reveal_tx) = build_admin_commit_reveal_pair(&args, &signed)
-        .internal_error("failed to build admin tx pair")?;
+    let (commit_tx, reveal_tx) =
+        build_admin_commit_reveal_pair(bitcoin, args.magic, args.network, &signed)
+            .internal_error("failed to build admin tx pair")?;
 
     let decoded = decode_reveal_tx(&reveal_tx, args.magic, &signed.payload)
         .internal_error("built reveal tx does not decode to the signed payload")?;
 
-    if args.dry_run {
+    if dry_run {
         println!(
             "{}",
             json!({
@@ -602,10 +625,10 @@ fn create_predicate_update(args: PredicateUpdateRequest) -> Result<(), Displayed
     }
 
     let client = new_bitcoind_client(
-        &args.btc_url,
+        &bitcoin.rpc_url,
         None,
-        Some(&args.btc_user),
-        Some(&args.btc_password),
+        Some(&bitcoin.rpc_user),
+        Some(&bitcoin.rpc_password),
     )
     .internal_error("failed to create bitcoind RPC client")?;
 
@@ -709,29 +732,34 @@ fn load_signer_config(
 
 // TODO(STR-3191): deduplicate envelope commit/reveal transaction
 fn build_admin_commit_reveal_pair(
-    args: &PredicateUpdateRequest,
+    bitcoin: &BitcoinFundingConfig,
+    magic: MagicBytes,
+    network: Network,
     signed: &SignedAdminPayload,
 ) -> anyhow::Result<(Transaction, Transaction)> {
-    if args.commit_output_sats <= MIN_REVEAL_OUTPUT_SATS {
+    if bitcoin.commit_output_sats <= MIN_REVEAL_OUTPUT_SATS {
         bail!("commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}");
     }
 
-    let reveal = RevealParts::new(&signed.payload, args.magic, args.network)?;
+    let reveal = RevealParts::new(&signed.payload, magic, network)?;
 
-    let fee_rate_sat_per_vb = u32::try_from(args.fee_rate).context("fee rate exceeds u32 range")?;
-    let (commit_tx, recipient) = match &args.btc_wallet {
-        Some(wallet) => fund_commit_with_bitcoind_wallet(args, wallet, &reveal.address)?,
+    let fee_rate_sat_per_vb =
+        u32::try_from(bitcoin.fee_rate).context("fee rate exceeds u32 range")?;
+    let (commit_tx, recipient) = match &bitcoin.wallet {
+        Some(wallet) => {
+            fund_commit_with_bitcoind_wallet(bitcoin, network, wallet, &reveal.address)?
+        }
         None => {
             ensure!(
-                args.network == Network::Regtest,
+                network == Network::Regtest,
                 "--btc-wallet is required on {} (built-in test wallet is regtest-only)",
-                args.network
+                network
             );
-            fund_commit_with_test_wallet(args, &reveal.address, fee_rate_sat_per_vb)?
+            fund_commit_with_test_wallet(bitcoin, &reveal.address, fee_rate_sat_per_vb)?
         }
     };
 
-    let reveal_tx = reveal.build_signed_reveal_tx(&commit_tx, recipient, args.fee_rate)?;
+    let reveal_tx = reveal.build_signed_reveal_tx(&commit_tx, recipient, bitcoin.fee_rate)?;
     Ok((commit_tx, reveal_tx))
 }
 
@@ -814,16 +842,16 @@ impl RevealParts {
 
 /// Funds and signs the commit tx with the hardcoded regtest test wallet (functional tests).
 fn fund_commit_with_test_wallet(
-    args: &PredicateUpdateRequest,
+    bitcoin: &BitcoinFundingConfig,
     reveal_address: &Address,
     fee_rate_sat_per_vb: u32,
 ) -> anyhow::Result<(Transaction, Address)> {
     let mut wallet = taproot_wallet()?;
     let client = new_bitcoind_client(
-        &args.btc_url,
+        &bitcoin.rpc_url,
         None,
-        Some(&args.btc_user),
-        Some(&args.btc_password),
+        Some(&bitcoin.rpc_user),
+        Some(&bitcoin.rpc_password),
     )?;
     sync_wallet(&mut wallet, &client)?;
 
@@ -833,7 +861,7 @@ fn fund_commit_with_test_wallet(
         builder.ordering(TxOrdering::Untouched);
         builder.add_recipient(
             reveal_address.script_pubkey(),
-            Amount::from_sat(args.commit_output_sats),
+            Amount::from_sat(bitcoin.commit_output_sats),
         );
         builder.fee_rate(fee_rate);
         builder.finish().context("failed to build commit tx")?
@@ -853,14 +881,15 @@ fn fund_commit_with_test_wallet(
 /// (`createrawtransaction` -> `fundrawtransaction` -> `signrawtransactionwithwallet`).
 /// Nothing is broadcast and no UTXOs are locked.
 fn fund_commit_with_bitcoind_wallet(
-    args: &PredicateUpdateRequest,
+    bitcoin: &BitcoinFundingConfig,
+    network: Network,
     wallet: &str,
     reveal_address: &Address,
 ) -> anyhow::Result<(Transaction, Address)> {
-    let url = format!("{}/wallet/{wallet}", args.btc_url.trim_end_matches('/'));
+    let url = format!("{}/wallet/{wallet}", bitcoin.rpc_url.trim_end_matches('/'));
     let client = Client::new(
         &url,
-        Auth::UserPass(args.btc_user.clone(), args.btc_password.clone()),
+        Auth::UserPass(bitcoin.rpc_user.clone(), bitcoin.rpc_password.clone()),
     )
     .context("failed to create bitcoind wallet RPC client")?;
 
@@ -869,21 +898,21 @@ fn fund_commit_with_bitcoind_wallet(
         .context("getblockchaininfo failed")?
         .chain;
     ensure!(
-        chain == args.network,
+        chain == network,
         "bitcoind is on {chain}, but --network is {}",
-        args.network
+        network
     );
 
     let outs = HashMap::from([(
         reveal_address.to_string(),
-        Amount::from_sat(args.commit_output_sats),
+        Amount::from_sat(bitcoin.commit_output_sats),
     )]);
     let raw = client
         .create_raw_transaction_hex(&[], &outs, None, Some(true))
         .context("createrawtransaction failed")?;
 
     // `feeRate` is BTC per kvB: sat/vB * 1000 = sat/kvB.
-    let fee_rate_per_kvb = args
+    let fee_rate_per_kvb = bitcoin
         .fee_rate
         .checked_mul(1000)
         .context("fee rate overflow")?;
@@ -913,7 +942,7 @@ fn fund_commit_with_bitcoind_wallet(
     let recipient = client
         .get_raw_change_address(None)
         .context("getrawchangeaddress failed")?
-        .require_network(args.network)
+        .require_network(network)
         .context("wallet change address is on the wrong network")?;
 
     Ok((commit_tx, recipient))
@@ -935,7 +964,7 @@ fn build_update_action(key: PredicateKey, target: PredicateUpdateTarget) -> Upda
 
 /// Builds the predicate update, or a cancel of it when `cancel_target_id` names the queued
 /// update. A cancel embeds the update so its role and signing message match the update's.
-fn build_admin_action(
+pub(crate) fn build_admin_action(
     key: PredicateKey,
     target: PredicateUpdateTarget,
     cancel_target_id: Option<UpdateId>,
@@ -971,7 +1000,7 @@ fn build_reveal_script_and_address(
         .add_leaf(0, reveal_script.clone())
         .context("failed to add taproot leaf")?
         .finalize(SECP256K1, xonly_pubkey)
-        .map_err(|e| anyhow::anyhow!("failed to finalize taproot tree: {e:?}"))?;
+        .map_err(|e| anyhow!("failed to finalize taproot tree: {e:?}"))?;
 
     let reveal_address = Address::p2tr(
         SECP256K1,
