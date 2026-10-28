@@ -1,3 +1,4 @@
+pub mod admin_action;
 pub mod args;
 pub mod build_snark_withdrawal;
 pub mod compute_drt_output;

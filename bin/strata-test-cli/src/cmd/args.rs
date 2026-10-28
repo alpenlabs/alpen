@@ -1,6 +1,7 @@
 use argh::FromArgs;
 
 use super::{
+    admin_action::{SignAdminActionArgs, VerifyAdminSignaturesArgs},
     build_snark_withdrawal::BuildSnarkWithdrawalArgs,
     compute_drt_output::ComputeDrtOutputArgs,
     convert_to_xonly_pk::ConvertToXonlyPkArgs,
@@ -31,6 +32,12 @@ pub struct TopLevel {
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum Commands {
+    /// Sign one admin authorization without Bitcoin RPC or funding
+    SignAdminAction(SignAdminActionArgs),
+
+    /// Verify collected admin signatures without constructing a transaction
+    VerifyAdminSignatures(VerifyAdminSignaturesArgs),
+
     /// Create a deposit transaction (DT) from a deposit request transaction (DRT)
     CreateDepositTx(CreateDepositTxArgs),
 
