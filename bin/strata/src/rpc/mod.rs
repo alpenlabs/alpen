@@ -1,5 +1,7 @@
 //! OL RPC server implementation.
 
+#[cfg(test)]
+mod assembly_tests;
 mod auth;
 pub(crate) mod errors;
 mod node;
@@ -23,6 +25,9 @@ use strata_consensus_logic::FcmServiceHandle;
 use strata_identifiers::L1BlockCommitment;
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
+use strata_ol_canonical_chain_provider::{
+    FinalizedOLChainProvider, OLCanonicalChainProvider, OLCanonicalChainProviderImpl,
+};
 #[cfg(feature = "debug-utils")]
 use strata_ol_checkpoint::corrupt_next_checkpoint_proof;
 use strata_ol_mempool::MempoolHandle;
@@ -204,9 +209,17 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
 fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     let mut module = build_public_static_rpc_module();
 
-    register_client_rpc(&mut module, deps)?;
-    if deps.node_role.serves_fullnode_rpc() {
-        register_fullnode_rpc(&mut module, deps)?;
+    match deps.node_role {
+        NodeRole::CheckpointSync => register_client_rpc(
+            &mut module,
+            deps,
+            FinalizedOLChainProvider::new(&deps.storage),
+        )?,
+        NodeRole::Sequencer | NodeRole::FullNode => {
+            let provider = OLCanonicalChainProviderImpl::new(&deps.storage);
+            register_client_rpc(&mut module, deps, provider.clone())?;
+            register_fullnode_rpc(&mut module, deps, provider)?;
+        }
     }
 
     Ok(module)
@@ -221,9 +234,14 @@ fn ol_block_data_access(node_role: NodeRole) -> OLBlockDataAccess {
     }
 }
 
-fn register_client_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()> {
+fn register_client_rpc(
+    module: &mut RpcModule<()>,
+    deps: &RpcDeps,
+    canonical_chain_provider: impl OLCanonicalChainProvider,
+) -> Result<()> {
     let client_provider = NodeRpcProvider::new(
         deps.storage.clone(),
+        canonical_chain_provider,
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
@@ -239,9 +257,14 @@ fn register_client_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()>
         .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))
 }
 
-fn register_fullnode_rpc(module: &mut RpcModule<()>, deps: &RpcDeps) -> Result<()> {
+fn register_fullnode_rpc(
+    module: &mut RpcModule<()>,
+    deps: &RpcDeps,
+    canonical_chain_provider: impl OLCanonicalChainProvider,
+) -> Result<()> {
     let fullnode_provider = NodeRpcProvider::new(
         deps.storage.clone(),
+        canonical_chain_provider,
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
@@ -313,9 +336,11 @@ fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     Ok(module)
 }
 
-fn build_submit_rpc_module(deps: &RpcDeps) -> Result<RpcModule<OLRpcServer<NodeRpcProvider>>> {
+fn build_submit_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
+    // Submit RPC is started only for sequencer nodes, which use the canonical index.
     let submit_provider = NodeRpcProvider::new(
         deps.storage.clone(),
+        OLCanonicalChainProviderImpl::new(&deps.storage),
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
@@ -326,7 +351,7 @@ fn build_submit_rpc_module(deps: &RpcDeps) -> Result<RpcModule<OLRpcServer<NodeR
         ol_block_data_access(deps.node_role),
     );
 
-    Ok(<OLRpcServer<NodeRpcProvider> as OLSubmitRpcServer>::into_rpc(submit_listener))
+    Ok(OLSubmitRpcServer::into_rpc(submit_listener).remove_context())
 }
 
 /// Spawns the public RPC server.

@@ -15,6 +15,7 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
+use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
@@ -25,25 +26,28 @@ use strata_primitives::{L1BlockId, OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
 use strata_storage::NodeStorage;
 
-/// Production provider that delegates to [`NodeStorage`], [`StatusChannel`],
-/// and [`MempoolHandle`].
+/// Production provider that resolves canonical reads through `P` and delegates
+/// other reads to [`NodeStorage`], [`StatusChannel`], and [`MempoolHandle`].
 ///
 /// `mempool_handle` is [`None`] on checkpoint-sync nodes; calls that need it
 /// (currently [`Self::submit_transaction`]) return an unavailable error.
-pub(crate) struct NodeRpcProvider {
+pub(crate) struct NodeRpcProvider<P> {
     storage: Arc<NodeStorage>,
+    canonical_chain_provider: P,
     status_channel: Arc<StatusChannel>,
     mempool_handle: Option<Arc<MempoolHandle>>,
 }
 
-impl NodeRpcProvider {
+impl<P: OLCanonicalChainProvider> NodeRpcProvider<P> {
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
+        canonical_chain_provider: P,
         status_channel: Arc<StatusChannel>,
         mempool_handle: Option<Arc<MempoolHandle>>,
     ) -> Self {
         Self {
             storage,
+            canonical_chain_provider,
             status_channel,
             mempool_handle,
         }
@@ -70,10 +74,9 @@ fn decode_inbox_messages(
 }
 
 #[async_trait]
-impl OLRpcProvider for NodeRpcProvider {
+impl<P: OLCanonicalChainProvider> OLRpcProvider for NodeRpcProvider<P> {
     async fn get_canonical_block_at(&self, height: u64) -> DbResult<Option<OLBlockCommitment>> {
-        self.storage
-            .ol_block()
+        self.canonical_chain_provider
             .get_canonical_block_at_async(height)
             .await
     }
@@ -114,8 +117,7 @@ impl OLRpcProvider for NodeRpcProvider {
         &self,
         epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>> {
-        self.storage
-            .ol_checkpoint()
+        self.canonical_chain_provider
             .get_canonical_epoch_commitment_at_async(epoch)
             .await
     }
