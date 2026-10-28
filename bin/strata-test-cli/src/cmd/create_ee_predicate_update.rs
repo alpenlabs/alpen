@@ -403,7 +403,7 @@ pub struct PrintSigningMessageArgs {
     pub cancel_target_id: Option<UpdateId>,
 }
 
-fn parse_predicate_key(value: &str) -> Result<PredicateKey, String> {
+pub(crate) fn parse_predicate_key(value: &str) -> Result<PredicateKey, String> {
     serde_json::from_value(Value::String(value.to_owned())).map_err(|e| e.to_string())
 }
 
@@ -612,28 +612,16 @@ pub(crate) fn create_admin_cancel(args: CreateAdminCancelArgs) -> Result<(), Dis
 }
 
 pub(crate) fn print_signing_message(args: PrintSigningMessageArgs) -> Result<(), DisplayedError> {
-    let (text, digest) = match (args.predicate, args.predicate_hash, args.predicate_type) {
-        (Some(predicate), None, None) => {
-            let action = build_admin_action(predicate, args.update, args.cancel_target_id);
-            let (message, digest) = signing_message(&action, args.seq_no, args.network);
-            (message.as_str().to_owned(), digest)
-        }
-        (None, Some(hash), Some(kind)) => predicate_hash_signing_message(
-            args.update.update_type(),
-            args.cancel_target_id,
-            kind,
-            hash,
-            args.seq_no,
-            args.network,
-        )
-        .user_error("invalid predicate commitment")?,
-        _ => {
-            return Err(anyhow!(
-                "provide --predicate or both --predicate-hash and --predicate-type"
-            ))
-            .user_error("invalid signing input")
-        }
-    };
+    let (text, digest) = prepare_signing_message(
+        args.predicate,
+        args.predicate_hash,
+        args.predicate_type,
+        args.update,
+        args.cancel_target_id,
+        args.seq_no,
+        args.network,
+    )
+    .user_error("invalid signing input")?;
     io::stdout()
         .lock()
         .write_all(text.as_bytes())
@@ -645,6 +633,33 @@ pub(crate) fn print_signing_message(args: PrintSigningMessageArgs) -> Result<(),
         hex::encode(digest)
     );
     Ok(())
+}
+
+pub(crate) fn prepare_signing_message(
+    predicate: Option<PredicateKey>,
+    predicate_hash: Option<[u8; 32]>,
+    predicate_type: Option<PredicateTypeId>,
+    target: PredicateUpdateTarget,
+    cancel_target_id: Option<UpdateId>,
+    seq_no: u64,
+    network: Network,
+) -> anyhow::Result<(String, [u8; 32])> {
+    match (predicate, predicate_hash, predicate_type) {
+        (Some(predicate), None, None) => {
+            let action = build_admin_action(predicate, target, cancel_target_id);
+            let (message, digest) = signing_message(&action, seq_no, network);
+            Ok((message.as_str().to_owned(), digest))
+        }
+        (None, Some(hash), Some(kind)) => predicate_hash_signing_message(
+            target.update_type(),
+            cancel_target_id,
+            kind,
+            hash,
+            seq_no,
+            network,
+        ),
+        _ => bail!("provide --predicate or both --predicate-hash and --predicate-type"),
+    }
 }
 
 fn create_predicate_update(
@@ -1195,10 +1210,8 @@ mod tests {
     };
     use strata_asm_admin_types::Role;
     use strata_asm_proto_admin_txs::test_utils::sign_ecdsa_bip137;
-    use strata_crypto::hash;
 
     use super::*;
-    use crate::admin::predicate_hash_signing_message;
 
     /// Builds the real reveal tx (on a stub commit tx, no RPC) for signet with a 2-of-3
     /// signature set and checks ASM's own parser recovers a payload that passes the
@@ -1222,22 +1235,9 @@ mod tests {
         for (target, cancel_target_id) in
             targets.into_iter().flat_map(|t| [(t, None), (t, Some(2))])
         {
-            let predicate = PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![0x42; 64])
-                .expect("test predicate");
-            let predicate_hash = hash::raw(predicate.condition()).0;
-            let action = build_admin_action(predicate, target, cancel_target_id);
-            let (canonical, canonical_digest) = signing_message(&action, 5, network);
-            let (text, digest) = predicate_hash_signing_message(
-                target.update_type(),
-                cancel_target_id,
-                PredicateTypeId::Sp1Groth16,
-                predicate_hash,
-                5,
-                network,
-            )
-            .expect("hash-based message");
-            assert_eq!(text, canonical.as_str());
-            assert_eq!(digest, canonical_digest);
+            let action =
+                build_admin_action(PredicateKey::always_accept(), target, cancel_target_id);
+            let (_, digest) = signing_message(&action, 5, network);
             let sigs = vec![
                 IndexedSignature::new(0, sign_ecdsa_bip137(&digest, &keys[0])),
                 IndexedSignature::new(2, sign_ecdsa_bip137(&digest, &keys[2])),

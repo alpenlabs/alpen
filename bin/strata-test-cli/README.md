@@ -1,10 +1,6 @@
-# Offline admin signing
+# Admin action signing
 
-No proposal file is needed. Agree on the action, network, current valid sequence,
-predicate type and condition hash. For cancellations, also agree on the target ID.
-`--predicate-hash` is SHA-256 of the decoded condition bytes, not the predicate file
-or necessarily the program VK. Hash-only input supports Sp1Groth16 conditions >32
-bytes; the existing `--predicate` input still prints messages for other predicates.
+Print the canonical Bitcoin `signmessage` text for an admin predicate update:
 
 ```bash
 strata-test-cli print-signing-message \
@@ -12,20 +8,24 @@ strata-test-cli print-signing-message \
   --predicate-type Sp1Groth16 --predicate-hash "$CONDITION_HASH"
 ```
 
-Sign that exact text with the authority's address in your existing wallet. Stdout
-has LF line endings and no trailing newline; the digest on stderr is a cross-check.
-For local keys, pipe the xpriv or 32-byte hex secret into `sign-admin-action` with
-those same action arguments plus `--signers-config "$ASM_PARAMS" --key-stdin`.
-It verifies key membership and emits `<index>:<base64>` without Bitcoin RPC.
+Both `print-signing-message` and `sign-admin-action` accept either `--predicate`
+with the full predicate or `--predicate-type` with `--predicate-hash`. The hash is
+SHA-256 of the decoded condition bytes; hash input supports Sp1Groth16 conditions
+longer than 32 bytes. Use `--cancel-target-id` to sign a cancellation.
 
-Give the collected indexed signatures to the existing transaction command through
-repeated `--signature` options. That command requires the full `--predicate` and
-verifies its canonical message and quorum **before funding**. Its `--dry-run`
-constructs the signed transaction pair without broadcasting. Bitcoin RPC, wallet,
-fees and commit amount are passed separately through `BitcoinFundingConfig`;
-`PredicateUpdateRequest` contains no funding settings. Existing CLI flags remain.
-Check current on-chain authority/sequence state separately; a params file may be
-stale. The message signs the protocol action, not funding inputs, fees or an expiry.
+Sign the exact stdout text with the authority's address in a wallet. It has no
+trailing newline. To use a local key, pipe its xpriv or 32-byte hex secret into
+`sign-admin-action` with the same action arguments and
+`--signers-config "$ASM_PARAMS" --key-stdin`. The command checks membership and
+prints `<index>:<base64>`.
 
-Validation: `cargo test -p strata-test-cli --locked`, package Clippy with
-`--all-targets --locked -- -D warnings`, and `cargo fmt --all --check`.
+Pass indexed signatures through repeated `--signature` options to the transaction
+command. It requires the full `--predicate` and verifies quorum before funding.
+Use `--dry-run` to construct the commit/reveal pair without broadcasting.
+
+Run the Bitcoin Core integration check with:
+
+```bash
+python3 bin/strata-test-cli/tests/admin_action_smoke.py \
+  --binary target/debug/strata-test-cli
+```

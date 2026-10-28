@@ -32,7 +32,7 @@ pub struct TopLevel {
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum Commands {
-    /// Sign one admin authorization without Bitcoin RPC or funding
+    /// Sign an admin action
     SignAdminAction(SignAdminActionArgs),
 
     /// Create a deposit transaction (DT) from a deposit request transaction (DRT)
@@ -53,7 +53,7 @@ pub enum Commands {
     /// Cancel a queued admin predicate update before it activates
     CreateAdminCancel(CreateAdminCancelArgs),
 
-    /// Print the admin signing message for offline (hardware wallet) signing
+    /// Print the admin signing message
     PrintSigningMessage(PrintSigningMessageArgs),
 
     /// Compute the bridge_in P2TR address and SPS-50 OP_RETURN script for a DRT
