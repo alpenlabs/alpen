@@ -27,6 +27,7 @@ use strata_ol_chain_types_v1::{
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLRuntimeParams;
+use strata_ol_spec_selection::select_spec_after_epoch;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
@@ -36,8 +37,7 @@ use strata_ol_state_types::{
 };
 use strata_ol_state_types_v1::{IStateBatchApplicable, OLStateV1, WriteBatch};
 use strata_ol_stf::{
-    BlockInfo, EpochDaReplayError, EpochInfo, EpochSpecSelectionError, OLSpecId, apply_da_epoch,
-    select_next_epoch_spec, verify_block,
+    BlockInfo, EpochDaReplayError, EpochInfo, OLSpecId, apply_da_epoch, verify_block,
 };
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
@@ -634,7 +634,8 @@ pub(crate) fn apply_checkpoint_epoch(
     // `ol_logs`, which records the changes made during the epoch.
     let pre_cursors = collect_pre_snark_account_cursors(&base_state, &ol_logs)?;
 
-    let spec = select_checkpoint_epoch_spec(ctx, epoch, &base_state)?;
+    let parent = EpochCommitment::from_terminal(epoch.epoch() - 1, prev_terminal);
+    let spec = select_checkpoint_epoch_spec(ctx, epoch, parent, &base_state)?;
 
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
     // run apply_da_epoch, then extract the batch and indexer writes.
@@ -722,47 +723,56 @@ pub(crate) fn apply_checkpoint_epoch(
 }
 
 /// Selects the spec of the checkpoint epoch `epoch`, which starts from
-/// `parent_state`, the previous epoch's terminal state, with
-/// [`select_next_epoch_spec`].
+/// `parent_state`, the terminal state of `parent`, the previous epoch.
 fn select_checkpoint_epoch_spec(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
+    parent: EpochCommitment,
     parent_state: &MemoryStateBaseLayer<OLStateV1>,
 ) -> WorkerResult<OLSpecId> {
-    let parent_versions = parent_state.spec_versions();
-    let parent_last_l1 =
-        L1BlockCommitment::new(parent_state.last_l1_height(), *parent_state.last_l1_blkid());
-    let spec = select_next_epoch_spec(
-        parent_versions,
-        parent_last_l1,
-        ctx.genesis_l1_block(),
-        |height| ctx.fetch_l1_manifest(height),
-    )
-    .map_err(|err| match err {
-        EpochSpecSelectionError::ManifestLookup { source, .. } => source,
-        EpochSpecSelectionError::MissingLastManifest { height } => {
-            WorkerError::MissingLastManifest { height }
-        }
-        EpochSpecSelectionError::LastManifestMismatch {
-            height,
-            expected,
-            found,
-        } => WorkerError::LastManifestMismatch {
-            height,
-            expected,
-            found,
-        },
-        EpochSpecSelectionError::Exec(source) => WorkerError::StfExecution(source),
-    })?;
-
-    if parent_versions.cur_spec() == OLSpecId::V0 && spec == OLSpecId::V1 {
+    let parent_spec = parent_state.spec_versions().cur_spec();
+    let spec = select_spec_after(ctx, parent, parent_state)?;
+    if spec != parent_spec {
         info!(
             %epoch,
-            enactment_l1_height = parent_last_l1.height(),
-            "switching checkpoint sync from V0 to V1 rules after the checkpoint predicate enactment"
+            ?parent_spec,
+            ?spec,
+            enactment_l1_height = parent_state.last_l1_height(),
+            "switching checkpoint sync rules after the checkpoint predicate enactment"
         );
     }
     Ok(spec)
+}
+
+/// Selects the spec of the epoch after `parent`, whose terminal state is
+/// `parent_state`, with [`select_spec_after_epoch`].
+///
+/// The epoch's L1 range starts at the epoch `parent`'s own summary links to.
+/// A stored summary's link is checked when the summary is stored: block sync
+/// merges the epoch's blocks from that terminal, and checkpoint sync applies
+/// the epoch on it. So the range follows `parent`'s chain, not the canonical
+/// one.
+///
+/// # Errors
+///
+/// Returns [`WorkerError::UpgradeRequired`] if the epoch runs a spec this
+/// binary does not implement, and an error if the parent epoch's summaries or
+/// last manifest are missing or inconsistent.
+pub(crate) fn select_spec_after<S: IStateAccessor>(
+    ctx: &impl ChainWorkerContext,
+    parent: EpochCommitment,
+    parent_state: &S,
+) -> WorkerResult<OLSpecId> {
+    let parent_epoch_last_l1_block =
+        L1BlockCommitment::new(parent_state.last_l1_height(), *parent_state.last_l1_blkid());
+    Ok(select_spec_after_epoch(
+        parent,
+        parent_state.spec_versions(),
+        parent_epoch_last_l1_block,
+        ctx.genesis_l1_block(),
+        |epoch| ctx.fetch_summary(epoch),
+        |block| ctx.fetch_l1_block_manifest(&block),
+    )?)
 }
 
 /// Validates the epoch's L1 range and builds the manifest list and [`EpochInfo`]

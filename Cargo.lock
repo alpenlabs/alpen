@@ -8408,6 +8408,7 @@ dependencies = [
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
+ "strata-ol-spec-selection",
  "strata-ol-state-container",
  "strata-ol-state-provider",
  "strata-ol-state-support-types",
@@ -8958,6 +8959,7 @@ dependencies = [
  "strata-ol-da-types-v1",
  "strata-ol-genesis",
  "strata-ol-params",
+ "strata-ol-spec-selection",
  "strata-ol-state-container",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
@@ -9631,6 +9633,7 @@ dependencies = [
  "metrics",
  "proptest",
  "serde",
+ "ssz",
  "strata-acct-types",
  "strata-asm-checkpoint-types",
  "strata-asm-common",
@@ -9947,6 +9950,20 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-ol-spec-selection"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "strata-checkpoint-types",
+ "strata-identifiers",
+ "strata-ol-chain-types-v1",
+ "strata-ol-state-types",
+ "strata-ol-stf",
+ "strata-ol-stf-v1",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

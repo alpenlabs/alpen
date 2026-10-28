@@ -41,8 +41,11 @@ use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{IndexerWrites, MemoryStateBaseLayer};
 use strata_ol_state_types::{IStateAccessor, OLSpecId, OLSpecVersions};
 
-use super::fixture::{
-    BlockPlan, BuiltEpoch, EpochPlan, MARKER_STAGED_SPEC_VERSION, UpdateEffect, build_epoch,
+use super::{
+    fixture::{
+        BlockPlan, BuiltEpoch, EpochPlan, MARKER_STAGED_SPEC_VERSION, UpdateEffect, build_epoch,
+    },
+    manifests::MockManifests,
 };
 use crate::{
     WorkerError, WorkerResult,
@@ -64,8 +67,8 @@ pub(super) struct MockChainWorkerContext {
     pub(super) epoch_summaries: HashMap<Epoch, Vec<EpochSummary>>,
     /// OL states keyed by block commitment.
     pub(super) ol_states: HashMap<OLBlockCommitment, OLStateContainer>,
-    /// ASM manifests keyed by L1 height.
-    pub(super) manifests: HashMap<u32, AsmManifest>,
+    /// Stored ASM manifests, by block and by canonical height.
+    pub(super) manifests: MockManifests,
 }
 
 impl MockChainWorkerContext {
@@ -76,7 +79,7 @@ impl MockChainWorkerContext {
             checkpoint_payloads: HashMap::new(),
             epoch_summaries: HashMap::new(),
             ol_states: HashMap::new(),
-            manifests: HashMap::new(),
+            manifests: MockManifests::default(),
         }
     }
 }
@@ -125,7 +128,14 @@ impl ChainWorkerContext for MockChainWorkerContext {
     }
 
     fn fetch_l1_manifest(&self, height: u32) -> WorkerResult<Option<AsmManifest>> {
-        Ok(self.manifests.get(&height).cloned())
+        Ok(self.manifests.canonical_at(height).cloned())
+    }
+
+    fn fetch_l1_block_manifest(
+        &self,
+        block: &L1BlockCommitment,
+    ) -> WorkerResult<Option<AsmManifest>> {
+        Ok(self.manifests.of_block(block).cloned())
     }
 
     fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {
@@ -133,7 +143,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
         for height in from..=to {
             let manifest = self
                 .manifests
-                .get(&height)
+                .canonical_at(height)
                 .cloned()
                 .ok_or(WorkerError::MissingDependency("mock l1 manifest"))?;
             out.push(manifest);
@@ -225,12 +235,12 @@ fn mock_for(built: &BuiltEpoch) -> (MockChainWorkerContext, EpochCommitment) {
         .insert(built.prev_terminal, built.pre_epoch_state.clone());
 
     // Manifests over the previous epoch's and this epoch's L1 height ranges.
-    for (height, manifest) in built
+    for (_, manifest) in built
         .prev_manifests_by_height
         .iter()
         .chain(&built.manifests_by_height)
     {
-        ctx.manifests.insert(*height, manifest.clone());
+        ctx.manifests.insert_canonical(manifest.clone());
     }
 
     let epoch = built.epoch_commitment;
@@ -508,7 +518,9 @@ fn test_apply_checkpoint_missing_manifest_still_errors() {
     let built = build_epoch(EpochPlan::new().add_block(BlockPlan::new().empty_manifests(2)));
     let missing_height = built.manifests_by_height[1].0;
     let (mut ctx, epoch) = mock_for(&built);
-    ctx.manifests.remove(&missing_height);
+    ctx.manifests
+        .remove_canonical_at(missing_height)
+        .expect("stored manifest");
 
     let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("missing manifest should fail");
     assert!(

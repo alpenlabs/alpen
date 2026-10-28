@@ -73,12 +73,12 @@ strata-ol-params.workspace = true
 strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
+strata-ol-spec-selection.workspace = true
 strata-ol-state-container.workspace = true
 strata-ol-state-provider = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
-strata-ol-stf.workspace = true
 strata-ol-tx-types-v1.workspace = true
 strata-paas = { workspace = true, optional = true }
 strata-predicate.workspace = true
