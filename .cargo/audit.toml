@@ -4,9 +4,34 @@ ignore = [
   # through object 0.37.3, which sp1-core-executor 6.8.1 depends on with default
   # features, turning on object's `compression` feature. No SP1 release has moved
   # to object 0.40, the first version on ruzstd 0.9, so the lockfile cannot pick
-  # up the fix. No code in the dependency graph decompresses zstd data:
-  # sp1-core-executor uses object only to write ELF files, and backtrace leaves
+  # up the fix. No code in the dependency graph decompresses zstd data through
+  # ruzstd: sp1-core-executor uses object only to write ELF files, and backtrace leaves
   # its own `ruzstd` feature off. Remove this entry once SP1 depends on
   # object >= 0.40 or turns off object's default features.
   "RUSTSEC-2026-0344",
+  # crypto-bigint 0.5.5 timing variability in operations meant to be
+  # constant-time, fixed only in crypto-bigint 0.7.6. crypto-bigint 0.5 comes in
+  # through elliptic-curve 0.13, which k256 0.13, alloy 1.x and SP1 6.x use in
+  # the node and in the SP1 checkpoint guest. Reaching 0.7 needs the
+  # elliptic-curve 0.14 stack, which neither alloy nor SP1 has adopted. Our own
+  # k256 calls sign only with test keys, and the sequencer, signer and btcio
+  # sign through libsecp256k1. The one secret that reaches the affected
+  # arithmetic is the SP1 prover network key: sp1-sdk signs network requests
+  # with alloy-signer-local, whose k256 scalars are crypto-bigint integers. The
+  # guest holds no secrets. Remove this entry once neither audited lockfile
+  # holds crypto-bigint below 0.7.6, which also needs our own k256 and the
+  # guest's patched k256 on the elliptic-curve 0.14 stack.
+  "RUSTSEC-2026-0387",
+  # zstd 0.13.3 and zstd-safe 7.2.4 advisories, fixed in zstd 0.14.3 and
+  # zstd-safe 8.2.0, which the rest of the graph uses. sp1-sdk requires zstd
+  # 0.13 up to its latest release, 6.10.0, and calls it only to compress prover
+  # network requests with `zstd::encode_all`, which creates a fresh context per
+  # call. That path reaches none of the affected functions: RUSTSEC-2026-0391
+  # covers the `with_context` stream constructors, RUSTSEC-2026-0398 the
+  # `seekable` feature, which is off, and RUSTSEC-2026-0403
+  # `DCtx::decompress_stream`. Remove these entries once SP1 depends on
+  # zstd >= 0.14.3.
+  "RUSTSEC-2026-0391",
+  "RUSTSEC-2026-0398",
+  "RUSTSEC-2026-0403",
 ]
