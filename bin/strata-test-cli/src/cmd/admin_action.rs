@@ -8,7 +8,10 @@ use std::{
 use anyhow::{anyhow, Context};
 use argh::FromArgs;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use bitcoin::Network;
+use bitcoin::{
+    secp256k1::{PublicKey, SECP256K1},
+    Network,
+};
 use strata_asm_proto_admin_txs::test_utils::sign_ecdsa_bip137;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_predicate::PredicateKey;
@@ -53,9 +56,10 @@ fn sign(args: SignAdminActionArgs) -> anyhow::Result<()> {
     )
     .context("display signing message")?;
     let signature = BASE64.encode(sign_ecdsa_bip137(&digest, &key));
+    let pubkey = PublicKey::from_secret_key(SECP256K1, &key);
     writeln!(
         io::stderr().lock(),
-        "Send the base64 signature printed on stdout to the coordinator."
+        "Signed with public key: {pubkey}\nSend this public key and the base64 signature printed on stdout to the coordinator."
     )
     .context("display signature instructions")?;
     writeln!(io::stdout().lock(), "{signature}").context("write signature")
