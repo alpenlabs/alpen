@@ -31,9 +31,7 @@ from common.services.strata import StrataService
 from common.test_cli import create_checkpoint_predicate_update
 from common.wait import wait_until_with_value
 from envconfigs.strata import StrataEnvConfig
-from tests.checkpoint.helpers import (
-    mine_until_finalized_epoch,
-)
+from tests.checkpoint.helpers import mine_until_finalized_epoch, tx_block_height
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +132,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
 
         # The transition is enacted `ADMIN_CONFIRMATION_DEPTH` blocks after the
         # reveal confirms, and the enactment height *is* the handover boundary.
-        reveal_height = self._tx_block_height(btc_rpc, result["reveal_txid"])
+        reveal_height = tx_block_height(btc_rpc, result["reveal_txid"])
         boundary = reveal_height + ADMIN_CONFIRMATION_DEPTH
         logger.info(
             "predicate update reveal confirmed at L1 height %s; handover boundary=%s",
@@ -347,14 +345,6 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 f"finalized epoch moved off {epoch}, the epoch ending at the enactment: "
                 f"finalized={status['finalized']}"
             )
-
-    @staticmethod
-    def _tx_block_height(btc_rpc, txid: str) -> int:
-        tx = btc_rpc.proxy.getrawtransaction(txid, 1)
-        blockhash = tx.get("blockhash")
-        if not blockhash:
-            raise AssertionError(f"tx {txid} is not confirmed yet, cannot derive its height")
-        return int(btc_rpc.proxy.getblock(blockhash)["height"])
 
     @staticmethod
     def _coverage_end(checkpoint_info: dict | None) -> int | None:
