@@ -9,16 +9,21 @@ cargo +nightly-2026-09-01 install --locked \
 ```
 
 Each signer supplies the agreed full predicate, network, update type and authority
-sequence number. Set `STRATA_ADMIN_KEY` to the signer's xpriv or 32-byte hex secret:
+sequence number. Enter the signer's xpriv or 32-byte hex secret at the prompt:
 
 ```bash
-read -r -s STRATA_ADMIN_KEY
-export STRATA_ADMIN_KEY
-strata-test-cli sign-admin-action \
-  --update ee-stf-vk --network bitcoin --seq-no "$SEQNO" \
-  --predicate "$PREDICATE"
-unset STRATA_ADMIN_KEY
+(
+  set +x
+  read -r -s -p "Admin key: " strata_signing_key </dev/tty || exit 1
+  printf '\n' >&2
+  STRATA_ADMIN_KEY="$strata_signing_key" strata-test-cli sign-admin-action \
+    --update ee-stf-vk --network bitcoin --seq-no "$SEQNO" \
+    --predicate "$PREDICATE"
+)
 ```
+
+The prompt runs in a subshell, and the key's environment assignment applies only
+to the signing command.
 
 The command prints the signing message to stderr and a base64 signature to stdout.
 Send that signature to the coordinator. The coordinator prefixes each signature
