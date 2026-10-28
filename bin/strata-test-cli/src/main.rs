@@ -10,7 +10,6 @@
 use std::process;
 
 mod admin;
-mod admin_bitcoin;
 mod bridge;
 pub mod cmd;
 mod constants;
@@ -22,7 +21,7 @@ mod taproot;
 mod utils;
 
 use cmd::{
-    admin_action::{sign_admin_action, verify_admin_signatures},
+    admin_action::sign_admin_action,
     build_snark_withdrawal::build_snark_withdrawal,
     compute_drt_output::compute_drt_output,
     convert_to_xonly_pk::convert_to_xonly_pk,
@@ -46,7 +45,6 @@ fn main() {
 
     let result = match cmd {
         Commands::SignAdminAction(args) => sign_admin_action(args),
-        Commands::VerifyAdminSignatures(args) => verify_admin_signatures(args),
         Commands::CreateDepositTx(args) => create_deposit_tx(args),
         Commands::CreateWithdrawalFulfillment(args) => create_withdrawal_fulfillment(args),
         Commands::CreateEePredicateUpdate(args) => create_ee_predicate_update(args),

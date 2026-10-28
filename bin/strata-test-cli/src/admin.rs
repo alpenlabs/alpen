@@ -294,6 +294,7 @@ mod tests {
         updates::{EeStfVkUpdate, OlStfVkUpdate},
         UpdateAction,
     };
+    use strata_crypto::hash;
     use strata_predicate::PredicateKey;
 
     use super::*;
@@ -316,6 +317,52 @@ mod tests {
         MultisigAction::Update(UpdateAction::EeStfVk(EeStfVkUpdate::new(
             PredicateKey::always_accept(),
         )))
+    }
+
+    #[test]
+    fn predicate_commitment_matches_protocol_and_rejects_changed_context() {
+        let predicate = PredicateKey::try_new(PredicateTypeId::Sp1Groth16, vec![7; 64]).unwrap();
+        let hash = hash::raw(predicate.condition()).0;
+        let action = MultisigAction::Update(UpdateAction::EeStfVk(EeStfVkUpdate::new(predicate)));
+        let (text, digest) = predicate_hash_signing_message(
+            UpdateTxType::EeStfVkUpdate,
+            None,
+            PredicateTypeId::Sp1Groth16,
+            hash,
+            7,
+            Network::Bitcoin,
+        )
+        .unwrap();
+        let (canonical, expected) = signing_message(&action, 7, Network::Bitcoin);
+        assert_eq!(text, canonical.as_str());
+        assert_eq!(digest, expected);
+        assert!(!text.ends_with('\n'));
+        let keys = keys();
+        let config = config_2_of_3(&keys);
+        let signatures =
+            assemble_signatures(&[(0, keys[0]), (2, keys[2])], vec![], &digest).unwrap();
+        verify_signatures(&config, &signatures, &expected, Network::Bitcoin).unwrap();
+        for (seqno, network, condition) in [
+            (8, Network::Bitcoin, vec![7; 64]),
+            (7, Network::Signet, vec![7; 64]),
+            (7, Network::Bitcoin, vec![8; 64]),
+            (7, Network::Bitcoin, vec![7; 32]),
+        ] {
+            let changed = MultisigAction::Update(UpdateAction::EeStfVk(EeStfVkUpdate::new(
+                PredicateKey::try_new(PredicateTypeId::Sp1Groth16, condition).unwrap(),
+            )));
+            let (_, changed_digest) = signing_message(&changed, seqno, network);
+            assert!(verify_signatures(&config, &signatures, &changed_digest, network).is_err());
+        }
+        assert!(predicate_hash_signing_message(
+            UpdateTxType::EeStfVkUpdate,
+            None,
+            PredicateTypeId::Bip340Schnorr,
+            hash,
+            7,
+            Network::Bitcoin
+        )
+        .is_err());
     }
 
     #[test]
