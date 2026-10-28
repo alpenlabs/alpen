@@ -62,6 +62,7 @@ type SubmitFn = Box<dyn Fn(OLTransactionV1) -> OLMempoolResult<OLTxId> + Send + 
 type InboxFetchFn = Box<dyn Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync>;
 type UpdateRecordsFetchFn =
     Box<dyn Fn(Epoch, AccountId) -> DbResult<Option<Vec<AccountUpdateRecord>>> + Send + Sync>;
+type EpochCommitmentFetchFn = Box<dyn Fn(Epoch) -> DbResult<Option<EpochCommitment>> + Send + Sync>;
 
 fn update_record(
     update_meta: Option<AccountUpdateMeta>,
@@ -95,6 +96,7 @@ struct MockProvider {
     states: HashMap<OLBlockCommitment, Arc<OLStateContainer>>,
     write_batches: HashMap<OLBlockCommitment, WriteBatch>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
+    epoch_commitment_fetch_fn: Option<EpochCommitmentFetchFn>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
     rejected_checkpoints: Vec<RejectedCheckpointEntry>,
@@ -119,6 +121,7 @@ impl MockProvider {
             states: HashMap::new(),
             write_batches: HashMap::new(),
             epoch_commitments: HashMap::new(),
+            epoch_commitment_fetch_fn: None,
             epoch_summaries: HashMap::new(),
             checkpoint_l1_refs: HashMap::new(),
             rejected_checkpoints: Vec::new(),
@@ -162,6 +165,11 @@ impl MockProvider {
 
     fn with_epoch_commitment(mut self, epoch: Epoch, commitment: EpochCommitment) -> Self {
         self.epoch_commitments.insert(epoch, commitment);
+        self
+    }
+
+    fn with_epoch_commitment_fetch_fn(mut self, fetch: EpochCommitmentFetchFn) -> Self {
+        self.epoch_commitment_fetch_fn = Some(fetch);
         self
     }
 
@@ -422,6 +430,9 @@ impl OLRpcProvider for MockProvider {
         &self,
         epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>> {
+        if let Some(fetch) = &self.epoch_commitment_fetch_fn {
+            return fetch(epoch);
+        }
         Ok(self.epoch_commitments.get(&epoch).copied())
     }
 
@@ -2461,6 +2472,7 @@ async fn summaries_match_manifest_operation_seqno_by_root() {
         .with_account_creation_epoch(account_id, epoch)
         .with_epoch_commitment(0, prev_epoch_commitment)
         .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_block_and_state(&genesis_block, genesis_ol_state())
         .with_block_and_state(
             &block,
@@ -3138,6 +3150,16 @@ proptest! {
 
 // ── get_acct_epoch_summary ──
 
+fn make_epoch_summary(commitment: EpochCommitment, previous: EpochCommitment) -> EpochSummary {
+    EpochSummary::new(
+        commitment.epoch(),
+        commitment.to_block_commitment(),
+        previous.to_block_commitment(),
+        L1BlockCommitment::new(100, fixed_l1_block_id(0x30)),
+        fixed_buf32(0x40),
+    )
+}
+
 #[tokio::test]
 async fn epoch_summary_nonexistent_epoch_errors() {
     let provider = MockProvider::new().with_sync_status(make_sync_status(
@@ -3228,7 +3250,8 @@ async fn epoch_summary_valid_snark_account() {
             ol_state_with_snark_account(account_id, 20, 5, DEFAULT_NEXT_INBOX_MSG_IDX),
         )
         .with_epoch_commitment(1, epoch1_commit)
-        .with_epoch_commitment(0, epoch0_commit);
+        .with_epoch_commitment(0, epoch0_commit)
+        .with_epoch_summary(make_epoch_summary(epoch1_commit, epoch0_commit));
     let rpc = make_rpc(provider);
 
     let summary = rpc
@@ -3239,6 +3262,76 @@ async fn epoch_summary_valid_snark_account() {
     assert_eq!(summary.epoch_commitment().epoch(), 1);
     assert_eq!(summary.prev_epoch_commitment().epoch(), 0);
     assert_eq!(summary.final_balance(), 0);
+}
+
+#[tokio::test]
+async fn epoch_summary_keeps_selected_predecessor_when_canonical_branch_changes() {
+    let account_id = test_account_id(1);
+    let genesis = make_terminal_block(0, 0, null_blkid());
+    let pivot = make_block(1, 1, genesis.header().compute_blkid());
+    let previous_a = make_terminal_block(10, 1, pivot.header().compute_blkid());
+    let previous_b = make_terminal_block(11, 1, pivot.header().compute_blkid());
+    let terminal_a = make_terminal_block(20, 2, previous_a.header().compute_blkid());
+    let terminal_b = make_terminal_block(21, 2, previous_b.header().compute_blkid());
+    let previous_a =
+        EpochCommitment::from_terminal(1, previous_a.header().compute_block_commitment());
+    let previous_b =
+        EpochCommitment::from_terminal(1, previous_b.header().compute_block_commitment());
+    let epoch_a = EpochCommitment::from_terminal(2, terminal_a.header().compute_block_commitment());
+    let epoch_b = EpochCommitment::from_terminal(2, terminal_b.header().compute_block_commitment());
+    let reads = AtomicUsize::new(0);
+    let provider = MockProvider::new()
+        .with_epoch_commitment_fetch_fn(Box::new(move |epoch| {
+            // Fork choice moves to B immediately after returning A to the first request.
+            if reads.fetch_add(1, Ordering::SeqCst) == 0 {
+                assert_eq!(epoch, 2);
+                return Ok(Some(epoch_a));
+            }
+            Ok(match epoch {
+                1 => Some(previous_b),
+                2 => Some(epoch_b),
+                _ => None,
+            })
+        }))
+        .with_epoch_summary(make_epoch_summary(epoch_a, previous_a))
+        .with_epoch_summary(make_epoch_summary(epoch_b, previous_b))
+        .with_snark_state_at_terminal(epoch_a, account_id, 1, 0)
+        .with_snark_state_at_terminal(epoch_b, account_id, 1, 0);
+    let rpc = make_rpc(provider);
+
+    let selected_a = rpc.get_acct_epoch_summary(account_id, 2).await.unwrap();
+    assert_eq!(selected_a.epoch_commitment(), epoch_a);
+    assert_eq!(selected_a.prev_epoch_commitment(), previous_a);
+
+    let selected_b = rpc.get_acct_epoch_summary(account_id, 2).await.unwrap();
+    assert_eq!(selected_b.epoch_commitment(), epoch_b);
+    assert_eq!(selected_b.prev_epoch_commitment(), previous_b);
+}
+
+#[tokio::test]
+async fn epoch_summary_requires_exact_local_summary() {
+    let account_id = test_account_id(1);
+    let selected = test_epoch_commitment(2, 20, 0x31);
+    let other = test_epoch_commitment(2, 21, 0x32);
+    let previous = test_epoch_commitment(1, 10, 0x30);
+    // Finality/state availability cannot substitute for the selected epoch's local summary.
+    // A summary from another branch must not be used either.
+    for other_summary_available in [false, true] {
+        let mut provider = MockProvider::new()
+            .with_epoch_commitment(2, selected)
+            .with_epoch_commitment(1, previous)
+            .with_snark_state_at_terminal(selected, account_id, 1, 0);
+        if other_summary_available {
+            provider = provider.with_epoch_summary(make_epoch_summary(other, previous));
+        }
+        let rpc = make_rpc_checkpoint_sync(provider);
+        let error = rpc.get_acct_epoch_summary(account_id, 2).await.unwrap_err();
+        assert_eq!(error.code(), INVALID_PARAMS_CODE);
+        assert_eq!(
+            error.message(),
+            format!("No epoch summary found for commitment {selected}")
+        );
+    }
 }
 
 #[tokio::test]
@@ -3323,6 +3416,7 @@ async fn epoch_summary_returns_messages_from_mmr_range() {
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch, epoch_commitment)
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_snark_state_at_terminal(
             epoch_commitment,
             account_id,
@@ -3421,6 +3515,7 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch, epoch_commitment)
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_snark_state_at_terminal(epoch_commitment, account_id, 12, 7)
         .with_snark_state_at_terminal(
             prev_epoch_commitment,
@@ -3485,11 +3580,12 @@ async fn epoch_summary_checkpoint_sync_populates_terminal_root_only() {
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch, epoch_commitment)
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_snark_state_at_terminal(epoch_commitment, account_id, 11, 2)
         .with_snark_state_at_terminal(prev_epoch_commitment, account_id, 9, 2)
         .with_account_update_records(account_id, epoch, records)
         .with_inbox_fetch_fn(inbox_fetch_expect_success(account_id, 2, 2, vec![]));
-    let rpc = make_rpc(provider);
+    let rpc = make_rpc_checkpoint_sync(provider);
 
     let summary = rpc
         .get_acct_epoch_summary(account_id, epoch)
@@ -3561,6 +3657,7 @@ async fn epoch_summary_no_idx_delta_returns_empty_messages() {
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch, epoch_commitment)
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_snark_state_at_terminal(
             epoch_commitment,
             account_id,
@@ -3613,6 +3710,7 @@ async fn epoch_summary_account_missing_in_prev_state_starts_from_zero() {
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch, epoch_commitment)
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_snark_state_at_terminal(epoch_commitment, account_id, 4, cur_next_inbox_msg_idx)
         .with_genesis_state_at_terminal(prev_epoch_commitment)
         .with_account_extra_data_at_terminal(
@@ -3660,6 +3758,7 @@ async fn epoch_summary_without_extra_data_skips_inbox_fetch() {
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch, epoch_commitment)
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_snark_state_at_terminal(epoch_commitment, account_id, 8, cur_next_inbox_msg_idx)
         .with_snark_state_at_terminal(
             prev_epoch_commitment,
@@ -3692,6 +3791,7 @@ async fn epoch_summary_mmr_fetch_error_propagates() {
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch, epoch_commitment)
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_epoch_summary(make_epoch_summary(epoch_commitment, prev_epoch_commitment))
         .with_snark_state_at_terminal(epoch_commitment, account_id, 4, cur_next_inbox_msg_idx)
         .with_snark_state_at_terminal(
             prev_epoch_commitment,

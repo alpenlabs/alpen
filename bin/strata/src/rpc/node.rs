@@ -312,18 +312,29 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         )))
     }
 
-    async fn get_prev_epoch_commitment(&self, epoch: Epoch) -> RpcResult<EpochCommitment> {
-        if epoch == 0 {
+    async fn get_prev_epoch_commitment(
+        &self,
+        commitment: EpochCommitment,
+    ) -> RpcResult<EpochCommitment> {
+        if commitment.epoch() == 0 {
             return Ok(EpochCommitment::null());
         }
 
-        self.provider
-            .get_canonical_epoch_commitment_at(epoch - 1)
+        // Keep the predecessor on the selected branch even if fork choice changes.
+        let summary = self
+            .provider
+            .get_epoch_summary(commitment)
             .await
             .map_err(db_error)?
             .ok_or_else(|| {
-                not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
-            })
+                not_found_error(format!(
+                    "No epoch summary found for commitment {commitment}"
+                ))
+            })?;
+        Ok(EpochCommitment::from_terminal(
+            commitment.epoch() - 1,
+            *summary.prev_terminal(),
+        ))
     }
 
     /// Resolves an [`OLBlockTag`] to a concrete [`OLBlockCommitment`].
@@ -737,7 +748,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         })?;
         let final_state_root: HexBytes32 = snark_state.inner_state_root().0.into();
 
-        let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
+        let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch_commitment).await?;
 
         let updates = if let Some(records) = self
             .provider
