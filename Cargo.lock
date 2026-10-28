@@ -8398,6 +8398,7 @@ dependencies = [
  "strata-metrics",
  "strata-node-context",
  "strata-ol-block-assembly",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-checkpoint",
  "strata-ol-checkpoint-artifacts",
@@ -9600,7 +9601,9 @@ dependencies = [
 name = "strata-ol-canonical-chain-provider"
 version = "0.1.0"
 dependencies = [
+ "strata-asm-checkpoint-types",
  "strata-checkpoint-types",
+ "strata-csm-types",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",

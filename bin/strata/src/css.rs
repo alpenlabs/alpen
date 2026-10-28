@@ -13,14 +13,16 @@ use strata_consensus_logic::{
 };
 use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
-use strata_db_types::DbResult;
+use strata_db_types::{DbError, DbResult};
 use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
+use strata_ol_canonical_chain_provider::resolve_observed_epoch_blocking;
 use strata_ol_params::OLParams;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
+use tokio::task::spawn_blocking;
 
 use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
 
@@ -85,50 +87,22 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
             .await
     }
 
-    /// Resolves the canonical checkpoint observed for `ep`.
-    ///
-    /// The index may hold several candidates, but only after a reorg: ASM accepts
-    /// one checkpoint per epoch per chain. Keeping the one whose L1 block is still
-    /// canonical leaves exactly the survivor on the current chain. Two survivors
-    /// would be two checkpoints for one epoch on-chain, which can't happen, so it
-    /// errors with [`CheckpointSyncError::AmbiguousObservation`].
+    /// Reports ambiguous observations as [`CheckpointSyncError::AmbiguousObservation`].
     async fn get_observed_checkpoint_for_epoch(
         &self,
         ep: Epoch,
     ) -> CheckpointSyncResult<Option<EpochCommitment>> {
-        let ol_checkpoint = self.storage.ol_checkpoint();
-        let l1 = self.storage.l1();
-
-        let mut canonical: Option<EpochCommitment> = None;
-        for commitment in ol_checkpoint
-            .get_observed_checkpoint_commitments_for_epoch_async(ep)
-            .await?
-        {
-            let Some(l1_ref) = ol_checkpoint
-                .get_checkpoint_l1_ref_async(commitment)
-                .await?
-            else {
-                continue;
-            };
-
-            // Drop observations recorded on an orphaned L1 block, matching CSM's
-            // read-time filtering; a reorg can leave stale observations behind.
-            let l1_block = l1_ref.l1_commitment;
-            if l1
-                .get_canonical_blockid_at_height_async(l1_block.height())
-                .await?
-                != Some(*l1_block.blkid())
-            {
-                continue;
-            }
-
-            if canonical.is_some() {
-                return Err(CheckpointSyncError::AmbiguousObservation(ep));
-            }
-            canonical = Some(commitment);
-        }
-
-        Ok(canonical)
+        let checkpoints = self.storage.ol_checkpoint().clone();
+        let l1 = self.storage.l1().clone();
+        spawn_blocking(move || resolve_observed_epoch_blocking(&checkpoints, &l1, ep))
+            .await
+            .map_err(DbError::from)?
+            .map_err(|error| match error {
+                DbError::OLCheckpointHistoryAmbiguous { epoch } => {
+                    CheckpointSyncError::AmbiguousObservation(epoch)
+                }
+                error => error.into(),
+            })
     }
 
     async fn get_genesis_epoch_commitment(&self) -> DbResult<Option<EpochCommitment>> {
