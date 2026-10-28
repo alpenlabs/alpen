@@ -11,6 +11,7 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::ol_block::BlockAvailability;
+use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
 use strata_db_types::ol_state_index::{AccountUpdateRecord, InboxMessageRecord};
 use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
@@ -67,6 +68,10 @@ pub trait OLRpcProvider: Send + Sync + 'static {
         &self,
         commitment: EpochCommitment,
     ) -> DbResult<Option<CheckpointL1Ref>>;
+
+    /// Get every recorded checkpoint transaction that was mined on L1 but not accepted by the
+    /// ASM, ordered by epoch.
+    async fn get_rejected_checkpoints(&self) -> DbResult<Vec<RejectedCheckpointEntry>>;
 
     /// Get the per-(account, epoch) update records from the indexing store.
     async fn get_account_update_records(
