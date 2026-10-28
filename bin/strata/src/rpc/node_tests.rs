@@ -50,10 +50,11 @@ use strata_snark_acct_types::{
 use strata_status::OLSyncStatus;
 use tokio::runtime::Builder;
 
-use super::{OLBlockDataAccess, OLRpcServer, REJECTED_CHECKPOINTS_PAGE_SIZE};
+use super::{OLBlockDataAccess, OLLocalStateCoverage, OLRpcServer, REJECTED_CHECKPOINTS_PAGE_SIZE};
 use crate::rpc::errors::{
-    BLOCK_HISTORY_UNAVAILABLE_CODE, INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE,
-    MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE, mempool_error_to_rpc,
+    BLOCK_HISTORY_UNAVAILABLE_CODE, FINALIZED_CLIENT_STATE_UNAVAILABLE_CODE, INTERNAL_ERROR_CODE,
+    INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE, NOT_AVAILABLE_ON_NODE_CODE,
+    canonical_chain_db_error_to_rpc, mempool_error_to_rpc,
 };
 
 // -- Mock provider --
@@ -729,16 +730,19 @@ fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
         L1BlockCommitment::new(TEST_GENESIS_L1_HEIGHT, L1BlockId::default()),
         TEST_MAX_HEADERS_RANGE,
         OLBlockDataAccess::Available,
+        OLLocalStateCoverage::Complete,
     )
 }
 
-/// Server for a checkpoint-sync node: no OL block bodies stored.
+/// Server for a checkpoint-sync node: no OL block bodies stored, and the finalized view
+/// can be ahead of locally applied state.
 fn make_rpc_checkpoint_sync(provider: MockProvider) -> OLRpcServer<MockProvider> {
     OLRpcServer::new(
         provider,
         L1BlockCommitment::new(TEST_GENESIS_L1_HEIGHT, L1BlockId::default()),
         TEST_MAX_HEADERS_RANGE,
         OLBlockDataAccess::Unavailable,
+        OLLocalStateCoverage::MayLag,
     )
 }
 
@@ -3203,6 +3207,46 @@ async fn epoch_summary_rejects_canonical_epoch_without_terminal_state() {
         .expect_err("canonical epoch without terminal state should be rejected");
 
     assert_eq!(err.code(), INTERNAL_ERROR_CODE);
+}
+
+#[tokio::test]
+async fn epoch_summary_reports_finalized_epoch_not_applied_locally_as_not_found() {
+    // On checkpoint-sync, L1 finality can resolve an epoch before its checkpoint is applied.
+    let epoch_commitment = test_epoch_commitment(1, 10, 0x35);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            epoch_commitment.to_block_commitment(),
+            1,
+            true,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_epoch_commitment(1, epoch_commitment);
+    let rpc = make_rpc_checkpoint_sync(provider);
+
+    let err = rpc
+        .get_acct_epoch_summary(test_account_id(1), 1)
+        .await
+        .expect_err("finalized epoch without local state should not be served");
+
+    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+}
+
+#[test]
+fn canonical_chain_db_error_reports_unavailable_client_state_as_retryable() {
+    let unavailable = DbError::OLFinalizedClientStateUnavailable {
+        block: test_l1_commitment(),
+    };
+    assert_eq!(
+        canonical_chain_db_error_to_rpc(unavailable).code(),
+        FINALIZED_CLIENT_STATE_UNAVAILABLE_CODE
+    );
+    // Other storage failures remain database errors.
+    assert_eq!(
+        canonical_chain_db_error_to_rpc(DbError::InvalidArgument).code(),
+        INTERNAL_ERROR_CODE
+    );
 }
 
 #[tokio::test]

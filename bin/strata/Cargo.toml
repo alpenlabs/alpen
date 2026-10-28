@@ -123,6 +123,9 @@ strata-btc-verification.workspace = true
 strata-l1-txfmt.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-ol-block-assembly = { workspace = true, features = ["test-utils"] }
+strata-ol-canonical-chain-provider = { workspace = true, features = [
+  "test-utils",
+] }
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 strata-ol-genesis = { workspace = true, features = ["test-utils"] }
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
