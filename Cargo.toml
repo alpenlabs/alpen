@@ -18,6 +18,7 @@ members = [
   "crates/db/tests",
   "crates/key-derivation",
   "crates/node-context",
+  "crates/ol/block-ancestry-provider",
   "crates/ol/block-assembly",
   "crates/ol/canonical-chain-provider",
   "crates/ol/chain-types-v1",
@@ -114,6 +115,7 @@ strata-db-tests = { path = "crates/db/tests" }
 strata-db-types = { path = "crates/db/types" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-node-context = { path = "crates/node-context" }
+strata-ol-block-ancestry-provider = { path = "crates/ol/block-ancestry-provider" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
 strata-ol-canonical-chain-provider = { path = "crates/ol/canonical-chain-provider" }
