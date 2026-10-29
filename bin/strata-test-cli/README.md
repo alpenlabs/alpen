@@ -37,23 +37,9 @@ signed commit/reveal transactions. Omit `--dry-run` to broadcast. Use
 `create-checkpoint-predicate-update` or `create-asm-predicate-update` for OL or ASM
 updates, with the corresponding `--update` value when signing.
 
-To cancel an update, look up its reveal transaction through Bitcoin RPC:
-
-```bash
-strata-test-cli lookup-admin-update \
-  --txid "$REVEAL_TXID" --asm-params "$GENESIS_ASM_PARAMS" \
-  --btc-url "$BTC_URL" --btc-user "$BTC_USER" --btc-password "$BTC_PASSWORD"
-```
-
-The tool replays admin history from the deployed genesis ASM parameters to the
-Bitcoin node's tip. It needs unpruned blocks since the ASM anchor and the matching
-ASM rules; it stops if history enacts an ASM STF change. No OL RPC is needed.
-The result includes `update_id`, full `predicate`, `status`, `activation_height`,
-the authority's `last_seq_no`, and the scanned Bitcoin height and block ID.
-Only cancel an update whose status is `pending`. Set `UPDATE_ID` and `PREDICATE`
-from the result. Cancellation must confirm before activation.
-
-Each signer signs the cancellation with the authority's next valid sequence number:
+To cancel a pending update, supply its `UPDATE_ID`, original update type and
+`PREDICATE`, and a new valid authority sequence number. Cancellation must confirm
+before the update activates. Each signer runs:
 
 ```bash
 STRATA_ADMIN_KEY="$(cat "$KEY_FILE")" strata-test-cli sign-admin-action \

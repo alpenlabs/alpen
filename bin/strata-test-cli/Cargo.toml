@@ -16,12 +16,9 @@ strata-acct-types.workspace = true
 strata-asm-admin-threshold-sig.workspace = true
 strata-asm-admin-types.workspace = true
 strata-asm-common.workspace = true
-strata-asm-logs.workspace = true
 strata-asm-params.workspace = true
-strata-asm-proto-admin.workspace = true
 strata-asm-proto-admin-txs = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-bridge-txs = { workspace = true, features = ["test-utils"] }
-strata-asm-stf.workspace = true
 strata-btcio.workspace = true
 strata-cli-common.workspace = true
 strata-codec.workspace = true
