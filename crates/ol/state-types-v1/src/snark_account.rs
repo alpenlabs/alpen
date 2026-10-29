@@ -103,7 +103,7 @@ impl ProofStateV1 {
 mod tests {
     use ssz::{Decode, Encode};
     use strata_identifiers::Buf32;
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use super::*;
     use crate::test_utils::proof_state_strategy;

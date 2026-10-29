@@ -8453,7 +8453,7 @@ dependencies = [
  "strata-codec",
  "strata-identifiers",
  "strata-merkle",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
@@ -9620,7 +9620,7 @@ dependencies = [
  "strata-ol-logs",
  "strata-ol-tx-types-v1",
  "strata-predicate",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
@@ -10059,7 +10059,7 @@ dependencies = [
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-types",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -10135,7 +10135,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-logs",
  "strata-predicate",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -10418,7 +10418,7 @@ dependencies = [
  "strata-acct-types",
  "strata-identifiers",
  "strata-predicate",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
@@ -10437,6 +10437,16 @@ dependencies = [
  "strata-ol-params",
  "strata-ol-state-types",
  "zkaleido-sp1-groth16-verifier",
+]
+
+[[package]]
+name = "strata-ssz-tests"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0#fc71f121d8990af0e56c2da436754b0b1fd304e0"
+dependencies = [
+ "proptest",
+ "ssz",
+ "tree_hash",
 ]
 
 [[package]]
@@ -10626,15 +10636,6 @@ dependencies = [
  "strata-primitives",
  "strata-test-utils",
  "strata-test-utils-btc",
-]
-
-[[package]]
-name = "strata-test-utils-ssz"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "ssz",
- "tree_hash",
 ]
 
 [[package]]

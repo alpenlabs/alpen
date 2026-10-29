@@ -317,7 +317,6 @@ Worker patterns and service infrastructure.
 |-------|-------------|
 | `test-utils/test-utils` | Shared test helpers |
 | `test-utils/l2` | OL component test utilities |
-| `test-utils/ssz` | SSZ test utilities |
 | `db/tests` | Database-focused test fixtures and helpers |
 | `benches` | Criterion benchmarks for database paths |
 

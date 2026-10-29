@@ -67,7 +67,7 @@ mod tests {
     use ssz::Encode as _;
     use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
     use strata_predicate::{PredicateKey, PredicateTypeId};
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use super::*;
     use crate::{AccumulatorClaim, OutputMessage, OutputTransfer, Seqno};

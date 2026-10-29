@@ -410,7 +410,7 @@ mod tests {
     use ssz::{Decode, Encode};
     use strata_acct_types::AccountId;
     use strata_predicate::PredicateKey;
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use crate::test_utils::{
         gam_tx_payload_strategy, ol_transaction_strategy, transaction_payload_strategy,

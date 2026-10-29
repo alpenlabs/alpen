@@ -72,7 +72,7 @@ impl ProofSatisfierListV1 {
 mod tests {
     use proptest::prelude::*;
     use strata_acct_types::RawMerkleProof;
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use super::*;
     use crate::test_utils::accumulator_claim_strategy;

@@ -130,7 +130,7 @@ mod tests {
     use ssz::{Decode, Encode};
     use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_ol_state_types::IAccountState;
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use super::*;
     use crate::ssz_generated::ssz::state::OLAccountTypeStateV1;
