@@ -167,6 +167,10 @@ impl L1BroadcastHandle {
 
     /// Inserts `replacement` and supersedes `original_txid` with it, atomically.
     ///
+    /// For a replacement carrying RBF metadata, which ancestor recovery requires, sets its
+    /// `replaces` link to `original_txid` on both the stored row and the copy sent to the
+    /// broadcaster, overriding any link the caller set.
+    ///
     /// Returns `false` when the original was no longer in a publishable state, in which case
     /// nothing was written and the replacement must be discarded.
     ///
@@ -183,10 +187,11 @@ impl L1BroadcastHandle {
             "invalid replacement entry {replacement:?}"
         );
 
-        // The DB writes this link on its own copy, but the service tracks the copy sent below. A
-        // replacement rejected because its original was mined walks the link to adopt that
-        // original. Without it the rejection stands and the writer re-signs the envelope, which
-        // posts the same payload to L1 a second time.
+        // The DB sets this link on its own copy, but the service tracks the copy sent below and
+        // writes it back over the stored row, so that copy needs the link too. Every rescue of a
+        // replacement chain walks it back to the original. Without it, a replacement rejected
+        // because its original was mined stays `InvalidInputs`, and the writer re-signs the
+        // envelope and posts the same payload to L1 a second time.
         replacement.set_replaces(L1TxId::from(original_txid.0));
 
         let Some(idx) = self
