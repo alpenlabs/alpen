@@ -74,8 +74,8 @@ impl ProofSpec for CheckpointSpec {
 /// Reads the spec used by the task's epoch from its terminal OL state.
 ///
 /// The chain worker stores this state before publishing the epoch summary. Its
-/// current spec identifies the completed epoch; its staged spec is for the next
-/// epoch. No transition rule needs to be repeated here.
+/// current spec identifies the completed epoch, so no transition rule needs to
+/// be repeated here.
 ///
 /// Performs blocking storage reads. Missing terminal state remains retryable;
 /// neither ASM state nor a different OL state supplies a fallback.

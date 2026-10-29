@@ -26,7 +26,7 @@ impl OLRootState {
         self.cur_spec_version
     }
 
-    /// Returns the raw spec version the next epoch runs under.
+    /// Returns the raw spec version the state stages for the next epoch.
     pub fn staged_spec_version(&self) -> u32 {
         self.staged_spec_version
     }

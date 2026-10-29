@@ -29,14 +29,12 @@ pub trait IStateAccessor {
         self.spec_versions().cur_spec_version()
     }
 
-    /// Gets the raw version of the spec the next epoch runs under.
+    /// Gets the raw version of the spec the state stages for the next epoch.
     ///
     /// This is [`OLRootState::staged_spec_version`](crate::OLRootState::staged_spec_version).
-    /// It differs from [`Self::cur_spec_version`] only between the terminal
-    /// block of an epoch that processes a checkpoint predicate enactment and
-    /// the first block of the next epoch, which runs under it. The value may
-    /// name a spec this binary does not know; executing the next epoch must
-    /// then halt.
+    /// No rule set stages a spec, so in every state the rules produce it
+    /// equals [`Self::cur_spec_version`]. Nodes select the next epoch's spec
+    /// from the L1 manifests the epoch processed instead.
     fn staged_spec_version(&self) -> u32 {
         self.spec_versions().staged_spec_version()
     }

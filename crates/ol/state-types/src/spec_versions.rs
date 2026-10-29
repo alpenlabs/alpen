@@ -6,13 +6,17 @@ use thiserror::Error;
 use crate::spec_id::{OLSpecId, UnknownOLSpecId};
 
 /// Spec versions of an OL state: the spec its chainstate was produced under and
-/// the raw spec version the next epoch runs under.
+/// the raw spec version the state stages for the next epoch.
+///
+/// No rule set stages a spec, so the rules only produce versions whose staged
+/// version equals the current one. Nodes select the next epoch's spec from the
+/// L1 manifests the epoch processed instead.
 ///
 /// A V0 state's root is its bare chainstate root, which commits no staged
 /// spec. This type therefore holds a V0 current spec only with V0 staged, so no
 /// uncommitted value can vary under one root. From V1 on, the root commits
-/// both versions and the staged version may name a spec this binary does not
-/// know.
+/// both versions, and the staged version is a raw value that need not name a
+/// spec this binary knows.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct OLSpecVersions {
     cur_spec: OLSpecId,
@@ -59,7 +63,7 @@ impl OLSpecVersions {
         self.cur_spec.into()
     }
 
-    /// Returns the raw spec version the next epoch runs under.
+    /// Returns the raw spec version the state stages for the next epoch.
     pub fn staged_spec_version(&self) -> u32 {
         self.staged_spec_version
     }
