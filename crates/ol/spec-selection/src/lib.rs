@@ -21,6 +21,68 @@ use strata_ol_stf::{
 };
 use thiserror::Error;
 
+/// Re-exported because [`SelectedSpec::Unsupported`] carries it, so a driver can
+/// name it without depending on `strata-ol-stf`.
+pub use strata_ol_stf::UpgradeRequired;
+
+/// A selected spec, and whether this binary implements it.
+///
+/// Drivers that keep running when the next epoch needs an upgrade, such as
+/// the mempool and the sequencer's startup check, take
+/// [`Unsupported`](Self::Unsupported) as an expected outcome, not an error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedSpec {
+    /// This binary implements the selected spec.
+    Supported(OLSpecId),
+
+    /// The selected spec follows a checkpoint predicate enactment, and this
+    /// binary does not implement it.
+    Unsupported(UpgradeRequired),
+}
+
+impl SelectedSpec {
+    /// Takes [`EpochSpecSelectionError::UpgradeRequired`] out of a
+    /// selection's errors as the [`Unsupported`](Self::Unsupported) outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns every other error of `selected` unchanged.
+    pub fn from_selection<E>(
+        selected: Result<OLSpecId, SelectSpecAfterEpochError<E>>,
+    ) -> Result<Self, SelectSpecAfterEpochError<E>> {
+        match selected {
+            Ok(spec) => Ok(Self::Supported(spec)),
+            Err(SelectSpecAfterEpochError::Selection(
+                EpochSpecSelectionError::UpgradeRequired(upgrade),
+            )) => Ok(Self::Unsupported(upgrade)),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Returns the upgrade the selected spec requires, if this binary does
+    /// not implement it.
+    pub fn upgrade_required(&self) -> Option<&UpgradeRequired> {
+        match self {
+            Self::Supported(_) => None,
+            Self::Unsupported(upgrade) => Some(upgrade),
+        }
+    }
+
+    /// Returns the selected spec, for a caller that cannot continue without
+    /// one this binary implements.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UpgradeRequired`] if this binary does not implement the
+    /// selected spec.
+    pub fn require_supported(self) -> Result<OLSpecId, UpgradeRequired> {
+        match self {
+            Self::Supported(spec) => Ok(spec),
+            Self::Unsupported(upgrade) => Err(upgrade),
+        }
+    }
+}
+
 /// Errors returned by [`select_spec_after_epoch`] and
 /// [`select_spec_after_epoch_async`].
 #[derive(Debug, Error)]
@@ -831,5 +893,57 @@ mod tests {
         ));
 
         assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    #[test]
+    fn test_selected_spec_takes_an_upgrade_out_of_the_errors() {
+        let fork = Fork::new();
+        let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
+
+        let selected =
+            SelectedSpec::from_selection(select_after_epoch_2(&fork, OLSpecId::V1, enactment))
+                .expect("an upgrade is an outcome");
+
+        let upgrade = selected.upgrade_required().expect("V1 has no successor");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        assert_eq!(upgrade.enactment_l1_height(), 9);
+        assert_eq!(selected.require_supported(), Err(*upgrade));
+    }
+
+    #[test]
+    fn test_selected_spec_keeps_a_supported_spec() {
+        let fork = Fork::new();
+
+        let selected = SelectedSpec::from_selection(select_after_epoch_2(
+            &fork,
+            OLSpecId::V1,
+            make_empty_manifest(9, 3),
+        ))
+        .expect("selects");
+
+        assert_eq!(selected, SelectedSpec::Supported(OLSpecId::V1));
+        assert_eq!(selected.upgrade_required(), None);
+        assert_eq!(selected.require_supported(), Ok(OLSpecId::V1));
+    }
+
+    #[test]
+    fn test_selected_spec_returns_other_errors() {
+        let fork = Fork::new();
+        let missing = EpochCommitment::from_terminal(3, block(30, 4));
+
+        let err = SelectedSpec::from_selection(select_spec_after_epoch(
+            missing,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            l1_block(9, 3),
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch),
+            |_| Ok(None),
+        ))
+        .unwrap_err();
+
+        assert!(
+            matches!(err, SelectSpecAfterEpochError::MissingEpochSummary(epoch) if epoch == missing),
+            "{err:?}"
+        );
     }
 }

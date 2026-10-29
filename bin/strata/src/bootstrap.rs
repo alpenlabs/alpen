@@ -6,6 +6,7 @@ use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_checkpoint_types::reconstruct_terminal_header;
 use strata_identifiers::{EpochCommitment, L1BlockCommitment};
 use strata_node_context::NodeContext;
+use strata_ol_spec_selection::SelectedSpec;
 use strata_ol_state_container::OLStateContainer;
 use strata_primitives::l1::compute_confirmation_depth;
 use strata_storage::NodeStorage;
@@ -271,12 +272,12 @@ fn verify_anchor_successor_is_buildable(
                 )
             })?;
     match next_spec {
-        Ok(spec) if builds_blocks_under(spec) => Ok(()),
+        SelectedSpec::Supported(spec) if builds_blocks_under(spec) => Ok(()),
         // Only V0 is a spec this binary knows but builds no blocks under.
-        Ok(_) => bail!(
+        SelectedSpec::Supported(_) => bail!(
             "checkpoint promotion: anchor {anchor} is a V0 epoch before the switch to V1, and this release builds no V0 blocks. Keep running in checkpoint-sync mode until the epoch that ends at the checkpoint predicate enactment is finalized, then retry"
         ),
-        Err(upgrade) => bail!(
+        SelectedSpec::Unsupported(upgrade) => bail!(
             "checkpoint promotion: the epoch after anchor {anchor} runs OL spec version {}, which this binary does not implement ({upgrade}). Upgrade the node before promoting",
             upgrade.spec_version()
         ),

@@ -12,11 +12,11 @@ use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_spec_selection::{
-    SelectSpecAfterEpochError, select_block_spec, select_spec_after_unsummarized_epoch,
+    SelectSpecAfterEpochError, SelectedSpec, select_block_spec,
+    select_spec_after_unsummarized_epoch,
 };
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
-use strata_ol_stf::{EpochSpecSelectionError, UpgradeRequired};
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
@@ -728,15 +728,15 @@ fn verify_tip_from_history_base(
 /// [`select_spec_after_unsummarized_epoch`] describes. The sequencer checks its
 /// tip before FCM repairs a summary that a crash left missing.
 ///
-/// Returns [`UpgradeRequired`] as a value when the next epoch runs a spec
-/// this binary does not implement, and an error only when the stored chain
-/// data is missing or inconsistent.
+/// Returns [`SelectedSpec::Unsupported`] when the next epoch runs a spec this
+/// binary does not implement, and an error only when the stored chain data is
+/// missing or inconsistent.
 pub(crate) fn select_spec_after_epoch_terminal_block(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
     terminal: EpochCommitment,
     state: &OLStateContainer,
-) -> Result<Result<OLSpecId, UpgradeRequired>> {
+) -> Result<SelectedSpec> {
     select_spec_after_parent(storage, genesis_l1_block, Some(terminal), state)
 }
 
@@ -751,7 +751,7 @@ pub(crate) fn select_spec_after_block(
     genesis_l1_block: L1BlockCommitment,
     block: OLBlockCommitment,
     state: &OLStateContainer,
-) -> Result<Result<OLSpecId, UpgradeRequired>> {
+) -> Result<SelectedSpec> {
     let header = storage
         .ol_block()
         .get_ol_header_blocking(*block.blkid())
@@ -771,7 +771,7 @@ fn select_spec_after_parent(
     genesis_l1_block: L1BlockCommitment,
     parent_ended_epoch: Option<EpochCommitment>,
     state: &OLStateContainer,
-) -> Result<Result<OLSpecId, UpgradeRequired>> {
+) -> Result<SelectedSpec> {
     let spec_versions = state.spec_versions();
     let parent_last_l1_block = state.chainstate().last_l1_block();
     let get_manifest = |block: L1BlockCommitment| storage.l1().get_block_manifest(block.blkid());
@@ -796,13 +796,7 @@ fn select_spec_after_parent(
         }
         selected => selected,
     };
-    match selected {
-        Ok(spec) => Ok(Ok(spec)),
-        Err(SelectSpecAfterEpochError::Selection(EpochSpecSelectionError::UpgradeRequired(
-            upgrade,
-        ))) => Ok(Err(upgrade)),
-        Err(err) => Err(err.into()),
-    }
+    Ok(SelectedSpec::from_selection(selected)?)
 }
 
 /// Returns the canonical summary of `epoch`.
@@ -847,8 +841,7 @@ pub(crate) fn builds_blocks_under(spec: OLSpecId) -> bool {
 /// This binary stores V0 states only from V0 genesis and checkpoint replay,
 /// and both store terminal states alone. Block execution runs V1 rules, which
 /// wrap a V0 state at the first block of an epoch and reject it anywhere else
-/// with
-/// [`ExecError::ContinuesV0Epoch`](strata_ol_stf::ExecError::ContinuesV0Epoch).
+/// with `ExecError::ContinuesV0Epoch` from `strata-ol-stf`.
 ///
 /// It runs once genesis exists, before the block producer starts.
 pub(crate) fn verify_sequencer_tip_spec(
@@ -867,12 +860,12 @@ pub(crate) fn verify_sequencer_tip_spec(
             format!("startup: failed to select the spec of the block after tip {tip_commitment}")
         })?;
     match next_spec {
-        Ok(spec) if builds_blocks_under(spec) => {}
+        SelectedSpec::Supported(spec) if builds_blocks_under(spec) => {}
         // Only V0 is a spec this binary knows but builds no blocks under.
-        Ok(_) => bail!(
+        SelectedSpec::Supported(_) => bail!(
             "startup: the sequencer cannot build on the V0 tip {tip_commitment}: the epoch after it runs V0, and this release builds no V0 blocks. On a network launched on 0.3.0, run this node in checkpoint-sync mode until the epoch that ends at the checkpoint predicate enactment is finalized, then restart it with --sequencer --bootstrap-from-checkpoint"
         ),
-        Err(upgrade) => warn!(
+        SelectedSpec::Unsupported(upgrade) => warn!(
             %tip_commitment,
             enactment_l1_height = upgrade.enactment_l1_height(),
             cur_spec = ?upgrade.prev_spec(),
@@ -1645,9 +1638,8 @@ mod tests {
             .get_toplevel_ol_state_blocking(tip)
             .unwrap()
             .unwrap();
-        let upgrade = select_spec_after_block(&storage, genesis_l1, tip, &state)
-            .expect("selects")
-            .expect_err("the next epoch runs V2");
+        let selected = select_spec_after_block(&storage, genesis_l1, tip, &state).expect("selects");
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V2");
         assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
         assert_eq!(upgrade.enactment_l1_height(), 1);
     }
@@ -1673,9 +1665,9 @@ mod tests {
             .get_toplevel_ol_state_blocking(tip)
             .unwrap()
             .unwrap();
-        let upgrade = select_spec_after_block(&storage, genesis_l1, tip, &state)
-            .expect("selects without the tip's summary")
-            .expect_err("the next epoch runs V2");
+        let selected = select_spec_after_block(&storage, genesis_l1, tip, &state)
+            .expect("selects without the tip's summary");
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V2");
         assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
         assert_eq!(upgrade.enactment_l1_height(), 1);
     }

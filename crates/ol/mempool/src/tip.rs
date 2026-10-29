@@ -3,10 +3,10 @@
 
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
 use strata_ol_spec_selection::{
-    SelectSpecAfterEpochError, select_block_spec_async, select_spec_after_unsummarized_epoch_async,
+    SelectSpecAfterEpochError, SelectedSpec, select_block_spec_async,
+    select_spec_after_unsummarized_epoch_async,
 };
 use strata_ol_state_types::IStateAccessor;
-use strata_ol_stf::{EpochSpecSelectionError, OLSpecId, UpgradeRequired};
 use strata_status::OLSyncStatus;
 use strata_storage::NodeStorage;
 
@@ -54,8 +54,9 @@ impl MempoolTip {
 /// then starts at the canonical summary of the epoch before, as
 /// [`select_spec_after_unsummarized_epoch_async`] describes.
 ///
-/// Returns the [`UpgradeRequired`] outcome as a value, since the mempool keeps
-/// running and only stops admitting transactions.
+/// Returns [`SelectedSpec::Unsupported`] when the block runs a spec this binary
+/// does not implement, since the mempool keeps running and only stops
+/// admitting transactions.
 ///
 /// # Errors
 ///
@@ -66,7 +67,7 @@ pub(crate) async fn select_tip_spec(
     genesis_l1_block: L1BlockCommitment,
     tip: MempoolTip,
     tip_state: &impl IStateAccessor,
-) -> OLMempoolResult<Result<OLSpecId, UpgradeRequired>> {
+) -> OLMempoolResult<SelectedSpec> {
     let tip_versions = tip_state.spec_versions();
     let tip_last_l1 =
         L1BlockCommitment::new(tip_state.last_l1_height(), *tip_state.last_l1_blkid());
@@ -113,14 +114,8 @@ pub(crate) async fn select_tip_spec(
         }
         selected => selected,
     };
-    match selected {
-        Ok(spec) => Ok(Ok(spec)),
-        Err(err) => match err.into_lookup_error() {
-            Ok(lookup) => Err(lookup.into()),
-            Err(SelectSpecAfterEpochError::Selection(
-                EpochSpecSelectionError::UpgradeRequired(upgrade),
-            )) => Ok(Err(upgrade)),
-            Err(err) => Err(OLMempoolError::SpecSelection(err)),
-        },
-    }
+    SelectedSpec::from_selection(selected).map_err(|err| match err.into_lookup_error() {
+        Ok(lookup) => lookup.into(),
+        Err(err) => OLMempoolError::SpecSelection(err),
+    })
 }

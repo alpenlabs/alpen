@@ -13,6 +13,7 @@ use strata_db_types::mempool::MempoolTxData;
 use strata_identifiers::{L1BlockCommitment, OLBlockCommitment, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_log_budget::check_tx_log_budget;
+use strata_ol_spec_selection::SelectedSpec;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_types::{IStateAccessor, OLSpecId};
 use strata_ol_stf::UpgradeRequired;
@@ -143,7 +144,7 @@ pub(crate) struct MempoolServiceState<P: StateProvider> {
     state_accessor: P::State,
 
     /// Spec of the block after the tip, selected with the tip state.
-    tip_spec: Result<OLSpecId, UpgradeRequired>,
+    tip_spec: SelectedSpec,
 
     /// Whether loading the stored transactions waits for a tip whose next
     /// block this binary can run.
@@ -208,7 +209,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     pub(crate) async fn load_from_db(&mut self) -> OLMempoolResult<()> {
         let all_txs = self.ctx.storage.mempool().get_all_txs()?;
         let total_in_db = all_txs.len();
-        if let Err(upgrade) = &self.tip_spec {
+        if let SelectedSpec::Unsupported(upgrade) = &self.tip_spec {
             // Admission cannot run, so keep the stored transactions instead of
             // dropping them, and load them once a tip's next block runs a spec
             // this binary implements.
@@ -421,7 +422,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Returns [`OLMempoolError::UpgradeRequired`] if that block runs a spec
     /// this binary does not implement.
     fn select_spec(&self) -> OLMempoolResult<OLSpecId> {
-        Ok(self.tip_spec?)
+        Ok(self.tip_spec.require_supported()?)
     }
 
     /// Checks whether a submitted or restored transaction can enter the mempool.
@@ -740,7 +741,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// When the next block needs an upgrade, nothing is revalidated and every
     /// transaction stays for a binary that implements the next spec.
     fn revalidate_all_transactions(&self) -> Vec<OLTxId> {
-        let Ok(spec) = self.tip_spec else {
+        let SelectedSpec::Supported(spec) = self.tip_spec else {
             return Vec::new();
         };
         self.entries
@@ -852,10 +853,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Load the new tip's state and the spec of the block after it, and
         // install them together so admission never mixes two tips.
         let (new_state, tip_spec) = load_tip(&self.ctx, new_tip).await?;
-        log_upgrade_required(new_tip.block(), self.tip_spec.as_ref().err(), &tip_spec);
+        log_upgrade_required(new_tip.block(), self.tip_spec.upgrade_required(), &tip_spec);
         self.state_accessor = new_state;
         self.tip_spec = tip_spec;
-        if self.deferred_load && self.tip_spec.is_ok() {
+        if self.deferred_load && matches!(self.tip_spec, SelectedSpec::Supported(_)) {
             self.load_from_db().await?;
         }
 
@@ -884,7 +885,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
 async fn load_tip<P: StateProvider>(
     ctx: &MempoolContext<P>,
     tip: MempoolTip,
-) -> OLMempoolResult<(P::State, Result<OLSpecId, UpgradeRequired>)> {
+) -> OLMempoolResult<(P::State, SelectedSpec)> {
     let block = tip.block();
     let state = ctx
         .provider
@@ -910,9 +911,9 @@ async fn load_tip<P: StateProvider>(
 fn log_upgrade_required(
     block: OLBlockCommitment,
     prev: Option<&UpgradeRequired>,
-    tip_spec: &Result<OLSpecId, UpgradeRequired>,
+    tip_spec: &SelectedSpec,
 ) {
-    if let Err(upgrade) = tip_spec
+    if let SelectedSpec::Unsupported(upgrade) = tip_spec
         && prev != Some(upgrade)
     {
         warn!(
