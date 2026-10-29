@@ -75,9 +75,8 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
 
         signer.stop()
         strata.stop()
-        datadir = strata.props["datadir"]
-        proof = run_dbtool_json(datadir, "get-checkpoint-proof", str(unaccepted_epoch))
-        tasks = run_dbtool_json(datadir, "get-prover-tasks-summary", "--limit", "100")
+        proof = run_dbtool_json(strata, "get-checkpoint-proof", str(unaccepted_epoch))
+        tasks = run_dbtool_json(strata, "get-prover-tasks-summary", "--limit", "100")
         log_offset = log_path.stat().st_size
         strata.start()
         strata.wait_for_down(timeout=30)
@@ -94,8 +93,8 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
         assert "checkpoint prover services started" not in startup_log, startup_log
         # A configuration error must not destroy work while the operator fixes
         # the missing artifact, even when its epoch is ahead of ASM acceptance.
-        assert run_dbtool_json(datadir, "get-checkpoint-proof", str(unaccepted_epoch)) == proof
-        assert run_dbtool_json(datadir, "get-prover-tasks-summary", "--limit", "100") == tasks
+        assert run_dbtool_json(strata, "get-checkpoint-proof", str(unaccepted_epoch)) == proof
+        assert run_dbtool_json(strata, "get-prover-tasks-summary", "--limit", "100") == tasks
         assert btc_rpc.proxy.getblockcount() == boundary
         return True
 

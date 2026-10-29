@@ -1,8 +1,10 @@
-//! Backfill checkpoint terminal headers in pre-eager-persistence datadirs.
+//! Backfills checkpoint terminal headers in pre-eager-persistence checkpoint-sync
+//! datadirs, resolving epochs through the L1-finalized view.
 
 use argh::FromArgs;
 use strata_checkpoint_types::reconstruct_terminal_header;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_ol_canonical_chain_provider::{FinalizedOLChainProvider, OLCanonicalChainProvider};
 use strata_storage::NodeStorage;
 
 use crate::{
@@ -12,7 +14,7 @@ use crate::{
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "backfill-terminal-headers")]
-/// Backfill terminal headers from stored L1-observed checkpoints.
+/// Backfill terminal headers of L1-finalized epochs in a checkpoint-sync datadir.
 pub(crate) struct BackfillTerminalHeadersArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -20,6 +22,8 @@ pub(crate) struct BackfillTerminalHeadersArgs {
 }
 
 /// Backfills missing terminal-header records and reports all unavailable payloads.
+///
+/// Fails if a locally summarized epoch has not been finalized on L1 yet.
 pub(crate) fn backfill_terminal_headers(
     storage: &NodeStorage,
     args: BackfillTerminalHeadersArgs,
@@ -51,18 +55,18 @@ fn build_terminal_header_backfill_report(
         return Ok(report);
     };
 
+    let canonical_chain_provider = FinalizedOLChainProvider::new(storage);
     for epoch in 1..=latest_epoch {
         report.epochs_scanned += 1;
 
-        let commitment = storage
-            .ol_checkpoint()
+        let commitment = canonical_chain_provider
             .get_canonical_epoch_commitment_at_blocking(epoch)
             .internal_error(format!(
-                "Failed to get canonical OL epoch commitment at epoch {epoch}"
+                "Failed to resolve finalized OL epoch commitment at epoch {epoch}"
             ))?
             .ok_or_else(|| {
                 DisplayedError::UserError(
-                    "Missing canonical OL epoch commitment at applied epoch".to_string(),
+                    "Missing finalized OL epoch commitment at applied epoch".to_string(),
                     Box::new(epoch),
                 )
             })?;
@@ -72,7 +76,7 @@ fn build_terminal_header_backfill_report(
             .internal_error(format!("Failed to get OL epoch summary at epoch {epoch}"))?
             .ok_or_else(|| {
                 DisplayedError::UserError(
-                    "Missing OL epoch summary for canonical commitment".to_string(),
+                    "Missing OL epoch summary for finalized commitment".to_string(),
                     Box::new(commitment),
                 )
             })?;
@@ -159,7 +163,7 @@ mod tests {
         CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
     };
     use strata_checkpoint_types::EpochSummary;
-    use strata_csm_types::CheckpointL1Ref;
+    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
         Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
@@ -238,24 +242,36 @@ mod tests {
             .ol_checkpoint()
             .insert_epoch_summary_blocking(fixture.summary)
             .expect("insert epoch summary");
+        let block = L1BlockCommitment::new(
+            200 + fixture.summary.epoch(),
+            L1BlockId::from(Buf32::from([fixture.summary.epoch() as u8; 32])),
+        );
+        storage
+            .l1()
+            .extend_canonical_chain(block.blkid(), block.height())
+            .expect("extend canonical L1 history");
+        let l1_ref = CheckpointL1Ref::new(block, [0x66; 32].into(), [0x77; 32].into());
         if observed {
-            let l1_ref = CheckpointL1Ref::new(
-                L1BlockCommitment::new(
-                    200 + fixture.summary.epoch(),
-                    L1BlockId::from(Buf32::from([0x55; 32])),
-                ),
-                [0x66; 32].into(),
-                [0x77; 32].into(),
-            );
             storage
                 .ol_checkpoint()
                 .put_checkpoint_l1_observation_blocking(
                     fixture.commitment,
                     fixture.payload.clone(),
-                    l1_ref,
+                    l1_ref.clone(),
                 )
                 .expect("insert observed checkpoint payload");
         }
+        let checkpoint = L1Checkpoint::new(*fixture.payload.new_tip(), l1_ref);
+        storage
+            .client_state()
+            .put_update_blocking(
+                &block,
+                ClientUpdateOutput::new_state(ClientState::new(
+                    Some(checkpoint.clone()),
+                    Some(checkpoint),
+                )),
+            )
+            .expect("persist L1 finality");
     }
 
     #[test]
@@ -299,14 +315,115 @@ mod tests {
     }
 
     #[test]
+    fn backfill_ignores_fork_summary_and_orphaned_observation() {
+        let storage = storage();
+        let first = epoch_fixture(1, 10, 1);
+        let second = epoch_fixture(2, 20, 2);
+        insert_fixture(&storage, &first, true);
+        insert_fixture(&storage, &second, true);
+        let fork = epoch_fixture(1, 9, 3);
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(fork.summary)
+            .expect("insert fork summary");
+        let orphaned_ref = CheckpointL1Ref::new(
+            L1BlockCommitment::new(201, Buf32::from([0xff; 32]).into()),
+            [0x66; 32].into(),
+            [0x77; 32].into(),
+        );
+        storage
+            .ol_checkpoint()
+            .put_checkpoint_l1_observation_blocking(fork.commitment, fork.payload, orphaned_ref)
+            .expect("insert orphaned observation");
+
+        let report =
+            build_terminal_header_backfill_report(&storage).expect("backfill canonical headers");
+        assert_eq!(report.headers_written, 2);
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_terminal_header_blocking(fork.terminal_blkid)
+                .expect("read fork header"),
+            None
+        );
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_tip_blocking()
+                .expect("read untouched OL index"),
+            None
+        );
+    }
+
+    #[test]
+    fn backfill_rejects_ambiguous_l1_observations_before_writing() {
+        let storage = storage();
+        let first = epoch_fixture(1, 10, 1);
+        let second = epoch_fixture(2, 20, 2);
+        insert_fixture(&storage, &first, true);
+        insert_fixture(&storage, &second, true);
+        let fork = epoch_fixture(1, 9, 3);
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(fork.summary)
+            .expect("insert competing summary");
+        let reference = storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_blocking(first.commitment)
+            .expect("read canonical observation reference")
+            .expect("reference exists");
+        storage
+            .ol_checkpoint()
+            .put_checkpoint_l1_observation_blocking(fork.commitment, fork.payload, reference)
+            .expect("insert conflicting canonical observation");
+
+        let error = build_terminal_header_backfill_report(&storage)
+            .expect_err("ambiguous observations must fail");
+        assert!(error
+            .to_string()
+            .contains("OLCheckpointHistoryAmbiguous { epoch: 1 }"));
+        for fixture in [&first, &second] {
+            assert_eq!(
+                storage
+                    .ol_block()
+                    .get_terminal_header_blocking(fixture.terminal_blkid)
+                    .expect("read unwritten terminal header"),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn missing_earlier_observation_does_not_fall_back_to_summary() {
+        let storage = storage();
+        let first = epoch_fixture(1, 10, 1);
+        let second = epoch_fixture(2, 20, 2);
+        insert_fixture(&storage, &first, false);
+        insert_fixture(&storage, &second, true);
+
+        let error = build_terminal_header_backfill_report(&storage)
+            .expect_err("missing canonical history must fail");
+        assert!(error
+            .to_string()
+            .contains("OLFinalizedHistoryUnavailable { epoch: 1 }"));
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_terminal_header_blocking(first.terminal_blkid)
+                .expect("read unwritten terminal header"),
+            None
+        );
+    }
+
+    #[test]
     fn missing_observed_payload_is_listed_after_other_epochs_are_processed() {
         let storage = storage();
         let first = epoch_fixture(1, 10, 1);
-        let missing = epoch_fixture(2, 20, 2);
-        let last = epoch_fixture(3, 30, 3);
+        let last = epoch_fixture(2, 20, 2);
+        let missing = epoch_fixture(3, 30, 3);
         insert_fixture(&storage, &first, true);
-        insert_fixture(&storage, &missing, false);
         insert_fixture(&storage, &last, true);
+        insert_fixture(&storage, &missing, false);
 
         let err = backfill_terminal_headers(
             &storage,
@@ -316,7 +433,7 @@ mod tests {
         )
         .expect_err("missing payload must fail the command");
 
-        assert!(err.to_string().contains("epochs: [2]"));
+        assert!(err.to_string().contains("epochs: [3]"));
         assert!(storage
             .ol_block()
             .get_terminal_header_blocking(first.terminal_blkid)

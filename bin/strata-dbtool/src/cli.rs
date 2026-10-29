@@ -29,10 +29,7 @@ use crate::cmd::{
 #[derive(FromArgs)]
 /// Inspect, repair and roll back an Strata node's database while the node is offline.
 pub(crate) struct Cli {
-    /// data directory of the node whose DB is being inspected. For
-    /// `ee-*` subcommands, point this at the alpen-client's `--datadir`
-    /// instead of the strata node's — each invocation is standalone and
-    /// opens exactly one sled.
+    /// data directory of the node whose DB is being inspected
     #[argh(option, short = 'd', default = "PathBuf::from(\"data\")")]
     pub(crate) datadir: PathBuf,
 
@@ -74,6 +71,25 @@ pub(crate) enum Command {
     DeleteCheckpointProof(DeleteCheckpointProofArgs),
     BackfillCheckpointProofTask(BackfillCheckpointProofTaskArgs),
     BackfillProverTaskRaw(BackfillProverTaskRawArgs),
+}
+
+/// The role of the offline node whose database is being inspected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NodeRole {
+    Sequencer,
+    CheckpointSync,
+}
+
+impl FromStr for NodeRole {
+    type Err = &'static str;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "sequencer" => Ok(Self::Sequencer),
+            "checkpoint-sync" => Ok(Self::CheckpointSync),
+            _ => Err("node role must be 'sequencer' or 'checkpoint-sync'"),
+        }
+    }
 }
 
 /// Output format

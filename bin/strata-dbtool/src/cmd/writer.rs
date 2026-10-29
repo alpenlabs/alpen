@@ -1,10 +1,11 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{backend::DatabaseBackend, common::L1TxId, l1_writer::L1WriterDatabase};
+use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
 
 use super::checkpoint::{get_checkpoint_at_epoch, get_checkpoint_epoch_range};
 use crate::{
-    cli::OutputFormat,
+    cli::{NodeRole, OutputFormat},
     output::{
         output,
         writer::{WriterPayloadInfo, WriterSummary},
@@ -15,6 +16,10 @@ use crate::{
 #[argh(subcommand, name = "get-writer-summary")]
 /// Get a summary of writer database contents
 pub(crate) struct GetWriterSummaryArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
@@ -36,6 +41,7 @@ pub(crate) struct GetWriterPayloadArgs {
 /// Get a summary of L1 writer database contents
 pub(crate) fn get_writer_summary(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: GetWriterSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let writer_db = db.writer_db();
@@ -57,7 +63,9 @@ pub(crate) fn get_writer_summary(
 
             // Iterate through all checkpoint epochs
             for epoch in start_epoch..=end_epoch {
-                if let Some(checkpoint) = get_checkpoint_at_epoch(db, epoch)? {
+                if let Some(checkpoint) =
+                    get_checkpoint_at_epoch(db, canonical_chain_provider, epoch)?
+                {
                     if let Some(intent_idx) = checkpoint.signing {
                         if writer_db
                             .get_intent_by_idx(intent_idx)

@@ -55,24 +55,25 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
         signer_service.stop()
         seq_service.stop()
 
-        datadir = seq_service.props["datadir"]
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(seq_service)
         latest_epoch_before_revert = int(latest_checkpoint["checkpoint_epoch"])
         target_finalized_epoch = latest_epoch_before_revert + 1
         target_block_id, target_slot = target_end_of_checkpointed_epoch(latest_checkpoint)
-        target_before = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_before = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         assert int(target_before["current_slot"]) == target_slot
         logger.info("Target slot: %s, target block ID: %s", target_slot, target_block_id)
         logger.info("Testing revert-ol-state to %s with -d flag", target_block_id)
 
-        code, stdout, stderr = revert_ol_state(datadir, target_block_id, delete_blocks=True)
+        code, stdout, stderr = revert_ol_state(seq_service, target_block_id, delete_blocks=True)
         assert code == 0, stderr or stdout
-        target_after = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_after = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         assert int(target_after["current_slot"]) == target_slot
         logger.info("target OL state preserved after revert")
-        assert verify_checkpoint_preserved(datadir, latest_epoch_before_revert)
+        assert verify_checkpoint_preserved(seq_service, latest_epoch_before_revert)
         logger.info("checkpoint and epoch summary are preserved")
-        deleted_code, _, _ = run_dbtool(datadir, "get-ol-block", old_live_tip_blkid, "-o", "json")
+        deleted_code, _, _ = run_dbtool(
+            seq_service, "get-ol-block", old_live_tip_blkid, "-o", "json"
+        )
         assert deleted_code != 0
         logger.info("Confirmed reverted tip block was deleted: %s", old_live_tip_blkid)
 

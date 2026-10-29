@@ -9,9 +9,24 @@ from typing import Any
 import toml
 
 from common.services.bitcoin import BitcoinService
+from common.services.strata import StrataService
 from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
+
+_DBTOOL_COMMANDS_REQUIRING_NODE_ROLE = {
+    "backfill-checkpoint-proof-task",
+    "delete-checkpoint-proof",
+    "get-checkpoint",
+    "get-checkpoint-proof",
+    "get-checkpoints-summary",
+    "get-epoch-summary",
+    "get-ol-state",
+    "get-syncinfo",
+    "get-writer-summary",
+    "revert-ol-state",
+}
+
 
 _DBTOOL_COMMANDS_REQUIRING_L1_REORG_SAFE_DEPTH = {
     "get-syncinfo",
@@ -34,9 +49,13 @@ def _inject_l1_reorg_safe_depth(datadir: str, args: list[str]) -> list[str]:
     return [*args, "--l1-reorg-safe-depth", str(l1_reorg_safe_depth)]
 
 
-def run_dbtool(datadir: str, *args: str, timeout: int = 60) -> tuple[int, str, str]:
-    """Run strata-dbtool against a datadir and return (code, stdout, stderr)."""
+def run_dbtool(node: StrataService, *args: str, timeout: int = 60) -> tuple[int, str, str]:
+    """Run strata-dbtool for the stopped node and return (code, stdout, stderr)."""
+    datadir = node.props["datadir"]
     arg_list = _inject_l1_reorg_safe_depth(datadir, list(args))
+    if arg_list and arg_list[0] in _DBTOOL_COMMANDS_REQUIRING_NODE_ROLE:
+        node_role = {"sequencer": "sequencer", "fullnode": "checkpoint-sync"}[node.props["mode"]]
+        arg_list.extend(["--node-role", node_role])
     cmd = ["strata-dbtool", "-d", datadir, *arg_list]
     logger.info("Running command: %s", " ".join(cmd))
     result = subprocess.run(
@@ -85,17 +104,17 @@ def extract_json_from_output(output: str) -> dict[str, Any]:
             continue
 
 
-def run_dbtool_json(datadir: str, *args: str, timeout: int = 60) -> dict[str, Any]:
+def run_dbtool_json(node: StrataService, *args: str, timeout: int = 60) -> dict[str, Any]:
     """Run strata-dbtool with JSON output and parse response."""
-    code, stdout, stderr = run_dbtool(datadir, *args, "-o", "json", timeout=timeout)
+    code, stdout, stderr = run_dbtool(node, *args, "-o", "json", timeout=timeout)
     if code != 0:
         raise RuntimeError(f"strata-dbtool command failed ({' '.join(args)}): {stderr or stdout}")
     return extract_json_from_output(stdout)
 
 
-def get_mmr_summary(datadir: str) -> dict[str, Any]:
+def get_mmr_summary(node: StrataService) -> dict[str, Any]:
     """Return the JSON MMR summary for a Strata datadir."""
-    return run_dbtool_json(datadir, "get-mmr-summary")
+    return run_dbtool_json(node, "get-mmr-summary")
 
 
 def find_mmr(summary: dict[str, Any], mmr_id: str) -> dict[str, Any] | None:
@@ -106,13 +125,13 @@ def find_mmr(summary: dict[str, Any], mmr_id: str) -> dict[str, Any] | None:
     )
 
 
-def get_mmr_leaf_count(datadir: str, mmr_id: str) -> int:
+def get_mmr_leaf_count(node: StrataService, mmr_id: str) -> int:
     """Return one MMR namespace leaf count from `get-mmr-summary`.
 
     Empty namespaces are omitted from summary output, so absence is interpreted
     as zero leaves.
     """
-    entry = find_mmr(get_mmr_summary(datadir), mmr_id)
+    entry = find_mmr(get_mmr_summary(node), mmr_id)
     return 0 if entry is None else int(entry["leaf_count"])
 
 
@@ -163,7 +182,7 @@ def ol_genesis_slot() -> int:
 
 
 def _target_start_of_epoch_from_tip(
-    datadir: str, tip_block_id: str, prev_terminal_slot: int, slots_per_epoch: int
+    node: StrataService, tip_block_id: str, prev_terminal_slot: int, slots_per_epoch: int
 ) -> tuple[str, int]:
     """
     Return (block_id, slot) for the first OL block in the target epoch.
@@ -172,7 +191,7 @@ def _target_start_of_epoch_from_tip(
     where checkpoint details expose tip commitment and epoch summary exposes prev terminal.
     """
     target_slot = prev_terminal_slot + 1
-    tip_block = run_dbtool_json(datadir, "get-ol-block", tip_block_id)
+    tip_block = run_dbtool_json(node, "get-ol-block", tip_block_id)
     tip_slot = int(tip_block["header_slot"])
     if tip_slot < target_slot:
         raise AssertionError(
@@ -184,7 +203,7 @@ def _target_start_of_epoch_from_tip(
     max_steps = max((tip_slot - target_slot) + 2, slots_per_epoch + 2)
     cur = tip_block_id
     for _ in range(max_steps):
-        block = run_dbtool_json(datadir, "get-ol-block", cur)
+        block = run_dbtool_json(node, "get-ol-block", cur)
         slot = int(block["header_slot"])
         if slot == target_slot:
             return cur, target_slot
@@ -250,7 +269,7 @@ def wait_for_completed_epoch(
 
 
 def target_start_of_checkpointed_epoch(
-    datadir: str,
+    node: StrataService,
     checkpoint: dict[str, Any],
     slots_per_epoch: int,
 ) -> tuple[str, int]:
@@ -261,11 +280,11 @@ def target_start_of_checkpointed_epoch(
             "Invalid get-checkpoint JSON: missing/invalid checkpoint_epoch "
             f"(got {checkpoint_epoch!r})"
         )
-    epoch_summary = run_dbtool_json(datadir, "get-epoch-summary", str(checkpoint_epoch))
+    epoch_summary = run_dbtool_json(node, "get-epoch-summary", str(checkpoint_epoch))
     prev_terminal_slot = epoch_summary["epoch_summary"]["prev_terminal"]["slot"]
     tip_blkid, _ = parse_checkpoint_tip_block_and_slot(checkpoint)
     return _target_start_of_epoch_from_tip(
-        datadir,
+        node,
         tip_blkid,
         prev_terminal_slot,
         slots_per_epoch,
@@ -302,9 +321,9 @@ def parse_finalized_epoch_from_syncinfo(syncinfo: dict[str, Any]) -> tuple[str, 
     return last_blkid, parsed_last_slot
 
 
-def get_ol_blocks_at_slot(datadir: str, slot: int) -> dict[str, Any]:
+def get_ol_blocks_at_slot(node: StrataService, slot: int) -> dict[str, Any]:
     """Return the dbtool output for OL blocks indexed at a slot."""
-    return run_dbtool_json(datadir, "get-ol-blocks-at-slot", str(slot))
+    return run_dbtool_json(node, "get-ol-blocks-at-slot", str(slot))
 
 
 def parse_ol_block_parent_blkid(ol_block: dict[str, Any]) -> str:
@@ -331,7 +350,7 @@ def parse_ol_block_slot(ol_block: dict[str, Any]) -> int:
 
 
 def revert_ol_state(
-    datadir: str,
+    node: StrataService,
     target_block_id: str,
     *,
     force: bool = True,
@@ -347,24 +366,26 @@ def revert_ol_state(
         args.append("-d")
     if revert_checkpointed:
         args.append("-c")
-    return run_dbtool(datadir, *args, timeout=timeout)
+    return run_dbtool(node, *args, timeout=timeout)
 
 
-def assert_checkpoint_present(datadir: str, epoch: int) -> None:
+def assert_checkpoint_present(node: StrataService, epoch: int) -> None:
     """Assert checkpoint entry is present for epoch."""
-    checkpoint = run_dbtool_json(datadir, "get-checkpoint", str(epoch))
+    checkpoint = run_dbtool_json(node, "get-checkpoint", str(epoch))
     assert checkpoint.get("checkpoint_epoch") is not None
 
 
-def assert_epoch_summary_present(datadir: str, epoch: int) -> None:
+def assert_epoch_summary_present(node: StrataService, epoch: int) -> None:
     """Assert epoch summary entry is present for epoch."""
-    epoch_summary = run_dbtool_json(datadir, "get-epoch-summary", str(epoch))
+    epoch_summary = run_dbtool_json(node, "get-epoch-summary", str(epoch))
     assert epoch_summary.get("epoch_summary") is not None
 
 
-def assert_ol_block_status(datadir: str, block_id: str, expected_status: str) -> dict[str, Any]:
+def assert_ol_block_status(
+    node: StrataService, block_id: str, expected_status: str
+) -> dict[str, Any]:
     """Assert OL block status for a known block ID."""
-    block = run_dbtool_json(datadir, "get-ol-block", block_id)
+    block = run_dbtool_json(node, "get-ol-block", block_id)
     status = block["status"]
 
     assert status == expected_status, (
@@ -373,15 +394,15 @@ def assert_ol_block_status(datadir: str, block_id: str, expected_status: str) ->
     return block
 
 
-def assert_checkpoint_deleted(datadir: str, epoch: int) -> None:
+def assert_checkpoint_deleted(node: StrataService, epoch: int) -> None:
     """Assert checkpoint entry is deleted for epoch."""
-    code, _, _ = run_dbtool(datadir, "get-checkpoint", str(epoch), "-o", "json")
+    code, _, _ = run_dbtool(node, "get-checkpoint", str(epoch), "-o", "json")
     assert code != 0
 
 
-def assert_epoch_summary_deleted(datadir: str, epoch: int) -> None:
+def assert_epoch_summary_deleted(node: StrataService, epoch: int) -> None:
     """Assert epoch summary entry is deleted for epoch."""
-    code, _, _ = run_dbtool(datadir, "get-epoch-summary", str(epoch), "-o", "json")
+    code, _, _ = run_dbtool(node, "get-epoch-summary", str(epoch), "-o", "json")
     assert code != 0
 
 
@@ -521,10 +542,10 @@ def setup_revert_ol_state_test_fullnode(
     }
 
 
-def get_latest_checkpoint(datadir: str) -> dict[str, Any]:
+def get_latest_checkpoint(node: StrataService) -> dict[str, Any]:
     """Fetch latest checkpoint."""
-    genesis_height = load_genesis_height(datadir)
-    checkpoints_summary = run_dbtool_json(datadir, "get-checkpoints-summary", str(genesis_height))
+    genesis_height = load_genesis_height(node.props["datadir"])
+    checkpoints_summary = run_dbtool_json(node, "get-checkpoints-summary", str(genesis_height))
     checkpoints_found = int(checkpoints_summary["checkpoints_found_in_db"])
     expected_checkpoints = checkpoints_summary.get("expected_checkpoints_count")
     if isinstance(expected_checkpoints, int) and int(expected_checkpoints) != checkpoints_found:
@@ -540,7 +561,7 @@ def get_latest_checkpoint(datadir: str) -> dict[str, Any]:
     # Under that invariant, count of checkpoints in DB equals latest checkpoint epoch.
     latest_checkpoint_epoch = checkpoints_found
 
-    return run_dbtool_json(datadir, "get-checkpoint", str(latest_checkpoint_epoch))
+    return run_dbtool_json(node, "get-checkpoint", str(latest_checkpoint_epoch))
 
 
 def target_end_of_checkpointed_epoch(checkpoint: dict[str, Any]) -> tuple[str, int]:
@@ -566,21 +587,21 @@ def parse_checkpoint_tip_block_and_slot(checkpoint: dict[str, Any]) -> tuple[str
     return tip_blkid, parsed_slot
 
 
-def verify_checkpoint_preserved(datadir: str, epoch: int) -> bool:
+def verify_checkpoint_preserved(node: StrataService, epoch: int) -> bool:
     """Verify checkpoint and epoch summary are present for epoch."""
     try:
-        assert_checkpoint_present(datadir, epoch)
-        assert_epoch_summary_present(datadir, epoch)
+        assert_checkpoint_present(node, epoch)
+        assert_epoch_summary_present(node, epoch)
     except Exception:
         return False
     return True
 
 
-def verify_checkpoint_deleted(datadir: str, epoch: int) -> bool:
+def verify_checkpoint_deleted(node: StrataService, epoch: int) -> bool:
     """Verify checkpoint and epoch summary are deleted for epoch."""
     try:
-        assert_checkpoint_deleted(datadir, epoch)
-        assert_epoch_summary_deleted(datadir, epoch)
+        assert_checkpoint_deleted(node, epoch)
+        assert_epoch_summary_deleted(node, epoch)
     except Exception:
         return False
     return True

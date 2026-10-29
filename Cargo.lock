@@ -9375,6 +9375,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-merkle",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-mmr-index",
  "strata-ol-params",

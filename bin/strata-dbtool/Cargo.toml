@@ -26,6 +26,7 @@ strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
+strata-ol-canonical-chain-provider.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-mmr-index.workspace = true
 strata-ol-state-container.workspace = true
@@ -40,9 +41,11 @@ zkaleido.workspace = true
 [dev-dependencies]
 ciborium.workspace = true
 sled.workspace = true
+strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-merkle.workspace = true
 strata-ol-params = { workspace = true, features = ["test-defaults"] }
 strata-ol-state-container = { workspace = true, features = ["test-utils"] }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
 typed-sled.workspace = true

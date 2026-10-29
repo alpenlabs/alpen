@@ -33,9 +33,8 @@ class TestCheckpointTerminalHeaderBackfill(BaseTest):
         checkpoint_node: StrataService = self.get_service(ServiceType.StrataCheckpointNode)
         checkpoint_node.stop()
 
-        datadir = checkpoint_node.props["datadir"]
-        first = self._run_backfill(datadir)
-        second = self._run_backfill(datadir)
+        first = self._run_backfill(checkpoint_node)
+        second = self._run_backfill(checkpoint_node)
         for report in (first, second):
             assert report["epochs_scanned"] >= anchor.epoch
             assert report["headers_written"] == 0
@@ -49,9 +48,9 @@ class TestCheckpointTerminalHeaderBackfill(BaseTest):
         return True
 
     @staticmethod
-    def _run_backfill(datadir: str) -> dict:
+    def _run_backfill(node: StrataService) -> dict:
         code, stdout, stderr = run_dbtool(
-            datadir,
+            node,
             "backfill-terminal-headers",
             "-o",
             "json",
