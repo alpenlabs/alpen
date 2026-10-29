@@ -16,7 +16,7 @@ use strata_config::{
     SequencerRuntimeConfig,
 };
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
-use strata_identifiers::{Epoch, L1Height};
+use strata_identifiers::{Epoch, EpochCommitment, L1Height};
 use strata_node_context::NodeContext;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
@@ -562,13 +562,8 @@ pub(crate) fn ensure_genesis(
 
     // Genesis (epoch 0) commitment carries the real genesis block id. Use it as the
     // fallback before any checkpoint is seen so the status never reports the null
-    // (zeroed-blkid) epoch, which consumers would read as a chain mismatch. It is
-    // always present because `ensure_ol_genesis` above wrote the genesis summary;
-    // its absence is a constraint violation.
-    let genesis_epoch = storage
-        .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(0)?
-        .ok_or(InitError::MissingGenesisEpochCommitment)?;
+    // (zeroed-blkid) epoch, which consumers would read as a chain mismatch.
+    let genesis_epoch = olgen_out.genesis_epoch;
 
     // Create sync status and update status channel
     let sync_status = OLSyncStatus::new(
@@ -614,6 +609,7 @@ fn ensure_client_state_genesis(
 /// OL Chain tip information after ensuring genesis.
 #[derive(Clone, Debug)]
 pub(crate) struct EnsureOLGenesisOutput {
+    pub(crate) genesis_epoch: EpochCommitment,
     pub(crate) epoch: Epoch,
     pub(crate) tip_blk: OLBlockCommitment,
     pub(crate) is_terminal: bool,
@@ -631,6 +627,7 @@ fn ensure_ol_genesis(
                 .inspect(|blkid| info!(%blkid, "Done genesis with block"))
                 .map_err(|e| InitError::StorageCreation(e.to_string()))?;
             Ok(EnsureOLGenesisOutput {
+                genesis_epoch: EpochCommitment::from_terminal(0, commitment),
                 epoch: 0,
                 tip_blk: commitment,
                 is_terminal: true,
@@ -648,6 +645,7 @@ fn ensure_ol_genesis(
                 .get_ol_header_blocking(*tip.blkid())?
                 .ok_or(InitError::MissingOLTipHeader(tip))?;
             Ok(EnsureOLGenesisOutput {
+                genesis_epoch: EpochCommitment::from_terminal(0, commitment),
                 epoch: header.epoch(),
                 tip_blk: tip,
                 is_terminal: header.is_terminal(),
@@ -667,7 +665,7 @@ mod tests {
 
     use strata_config::{Config, SequencerConfig};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_identifiers::{Buf32, Buf64, OLBlockId};
+    use strata_identifiers::{Buf32, Buf64, EpochCommitment, OLBlockId};
     use strata_ol_chain_types_v1::{
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
         SignedOLBlockHeaderV1,
@@ -840,6 +838,7 @@ mod tests {
         let output = ensure_ol_genesis(&storage, &OLParams::test_default())
             .expect("header-only tip should satisfy OL genesis check");
         assert_eq!(output.tip_blk, tip_commitment);
+        assert_eq!(output.genesis_epoch, EpochCommitment::new(0, 0, genesis_id));
         assert_eq!(output.epoch, 1);
         assert!(output.is_terminal);
     }
