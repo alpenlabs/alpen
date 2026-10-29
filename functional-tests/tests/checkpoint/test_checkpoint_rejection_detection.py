@@ -1,15 +1,20 @@
 """STR-4084: a checkpoint mined on L1 but rejected by the ASM is reported.
 
-Rotating the OL checkpoint predicate to `NeverAccept` makes the ASM reject every
-checkpoint whose L1 coverage crosses the handover boundary, while the sequencer
-keeps posting them and the broadcaster sees them confirm. The ASM only logs a
+The test asks the sequencer, through the `debug_corruptNextCheckpointProof`
+debug RPC, to flip a byte of the next checkpoint proof it builds. The ASM
+rejects that checkpoint under the active predicate, while the sequencer keeps
+posting checkpoints and the broadcaster sees them confirm. The ASM only logs a
 tracing warning for a rejection and emits no ASM log, so this is the case the
 submission tracker exists for.
 
-With every service running, the test pushes L1 past the boundary and asserts
-that once the first rejected checkpoint's block is buried at the reorg-safe
-depth, `strata_getRejectedCheckpoints` reports it with the ASM's verified tip,
-the node logs it exactly once, and `strata_getCheckpointInfo` still calls it
+A checkpoint predicate rotation cannot produce this case. Its enactment ends
+the spec this binary runs, so the node builds nothing past the handover
+boundary and never posts a checkpoint the incoming predicate governs.
+
+With every service running, the test pushes L1 on and asserts that once the
+corrupted checkpoint's block is buried at the reorg-safe depth,
+`strata_getRejectedCheckpoints` reports it with the ASM's verified tip, the
+node logs it exactly once, and `strata_getCheckpointInfo` still calls it
 pending (detection changes no acceptance semantics).
 """
 
@@ -20,32 +25,26 @@ from pathlib import Path
 import flexitest
 
 from common.base_test import StrataNodeTest
-from common.bridge import read_operator_xprivs
 from common.config import EpochSealingConfig, ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
-from common.test_cli import create_checkpoint_predicate_update
 from envconfigs.strata import StrataEnvConfig
-from tests.checkpoint.helpers import mine_until_finalized_epoch, strip_ansi, tx_block_height
+from tests.checkpoint.helpers import mine_until_finalized_epoch, strip_ansi
 
 logger = logging.getLogger(__name__)
 
 # Pinned so the test knows how deep a reported rejection must be buried.
 L1_REORG_SAFE_DEPTH = 4
 
-# The rotation is enacted this many blocks after the admin update confirms, at
-# the handover boundary. Small, since only checkpoints past it matter here.
-ADMIN_CONFIRMATION_DEPTH = 8
-
-# Budget for reaching the boundary, getting a checkpoint past it mined, and
-# burying that checkpoint at the reorg-safe depth. Mining is paced so epochs
-# keep sealing while L1 advances.
+# Budget for building and posting the corrupted checkpoint and burying it at
+# the reorg-safe depth. Mining is paced so epochs keep sealing while L1 advances.
 REJECTION_TIMEOUT_SECONDS = 360
 MINE_STEP_SECONDS = 1.5
 
 # Blocks mined after detection to check the report is not repeated.
 EXTRA_L1_BLOCKS = 3
 
+CORRUPTION_LOG = "corrupted checkpoint proof on request"
 REJECTION_LOG = "checkpoint confirmed on L1 but rejected by ASM"
 EPOCH_FIELD_RE = re.compile(r"\bepoch=(\d+)\b")
 
@@ -59,8 +58,6 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
             StrataEnvConfig(
                 pre_generate_blocks=110,
                 epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
-                fund_test_cli_wallet=True,
-                admin_confirmation_depth=ADMIN_CONFIRMATION_DEPTH,
                 l1_reorg_safe_depth=L1_REORG_SAFE_DEPTH,
             )
         )
@@ -81,25 +78,18 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
         )
         reported = strata_rpc.strata_getRejectedCheckpoints(0)
         if reported != []:
-            raise AssertionError(f"rejections reported under AlwaysAccept: {reported}")
-
-        result = create_checkpoint_predicate_update(
-            seq_no=1,
-            predicate="NeverAccept",
-            admin_xpriv=read_operator_xprivs(strata)[0],
-            btc_url=bitcoin.props["rpc_url"],
-            btc_user=bitcoin.props["rpc_user"],
-            btc_password=bitcoin.props["rpc_password"],
-        )
-        logger.info("submitted NeverAccept checkpoint predicate update: %s", result)
+            raise AssertionError(f"rejections reported before any proof was corrupted: {reported}")
 
         log_path = Path(strata.props["datadir"]) / "service.log"
         log_offset = log_path.stat().st_size if log_path.exists() else 0
 
+        strata_rpc.debug_corruptNextCheckpointProof()
+        logger.info("requested a corrupted proof for the next checkpoint")
+
         reported = bitcoin.mine_until(
             check=lambda: strata_rpc.strata_getRejectedCheckpoints(0),
             predicate=lambda entries: len(entries) > 0,
-            error_with="no rejected checkpoint reported after rotating to NeverAccept",
+            error_with="no rejected checkpoint reported after corrupting a proof",
             timeout=REJECTION_TIMEOUT_SECONDS,
             step=MINE_STEP_SECONDS,
         )
@@ -107,6 +97,13 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
         epoch = rejected["epoch"]
         txid = rejected["txid"]
         logger.info("tracker reported rejected checkpoint: %s", rejected)
+
+        # It is the checkpoint whose proof was corrupted, the only one.
+        corrupted = self._corrupted_epochs(log_path, log_offset)
+        if corrupted != [epoch]:
+            raise AssertionError(
+                f"rejected epoch {epoch} reported, but proofs were corrupted for epochs {corrupted}"
+            )
 
         # Every earlier epoch was accepted, and the ASM stopped right before this one.
         verified_tip = rejected["asm_verified_tip"]
@@ -129,16 +126,8 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
                 f"below the reorg-safe depth {L1_REORG_SAFE_DEPTH}"
             )
 
-        # It is a checkpoint the rotated predicate governs, which the ASM never accepted.
-        reveal_height = tx_block_height(btc_rpc, result["reveal_txid"])
-        boundary = reveal_height + ADMIN_CONFIRMATION_DEPTH
+        # The ASM never accepted it.
         info = strata_rpc.strata_getCheckpointInfo(epoch)
-        coverage_end = int(info["l1_range"][1]["height"])
-        if coverage_end <= boundary:
-            raise AssertionError(
-                f"rejected epoch {epoch} covers L1 up to {coverage_end}, "
-                f"not past the handover boundary {boundary}"
-            )
         status = info["confirmation_status"]["status"]
         if status != "pending":
             raise AssertionError(f"rejected epoch {epoch} has checkpoint status {status!r}")
@@ -155,7 +144,11 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
         ]
         if records != [rejected]:
             raise AssertionError(f"expected one unchanged record for {txid}, got {records}")
-        logged = self._rejection_log_lines(log_path, log_offset, txid)
+        logged = [
+            line
+            for line in self._log_lines_since(log_path, log_offset)
+            if REJECTION_LOG in line and f"txid={txid}" in line
+        ]
         if len(logged) != 1:
             raise AssertionError(
                 f"expected one {REJECTION_LOG!r} line for {txid}, got {len(logged)}: {logged}"
@@ -169,11 +162,22 @@ class TestCheckpointRejectionDetection(StrataNodeTest):
         )
         return True
 
+    @classmethod
+    def _corrupted_epochs(cls, log_path: Path, offset: int) -> list[int]:
+        """Epochs the sequencer logged a corrupted proof for since `offset`."""
+        epochs = []
+        for line in cls._log_lines_since(log_path, offset):
+            if CORRUPTION_LOG not in line:
+                continue
+            match = EPOCH_FIELD_RE.search(line)
+            if match is None:
+                raise AssertionError(f"proof corruption log line lacks an epoch: {line}")
+            epochs.append(int(match.group(1)))
+        return epochs
+
     @staticmethod
-    def _rejection_log_lines(log_path: Path, offset: int, txid: str) -> list[str]:
+    def _log_lines_since(log_path: Path, offset: int) -> list[str]:
         with log_path.open("r", errors="replace") as handle:
             handle.seek(offset)
             plain = strip_ansi(handle.read())
-        return [
-            line for line in plain.splitlines() if REJECTION_LOG in line and f"txid={txid}" in line
-        ]
+        return plain.splitlines()

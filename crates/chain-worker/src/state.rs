@@ -27,7 +27,7 @@ use strata_ol_chain_types_v1::{
     SNARK_ACCOUNT_UPDATE_LOG_TYPE_ID, SnarkAccountUpdateLogData,
 };
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_spec_selection::select_spec_after_epoch;
+use strata_ol_spec_selection::{select_block_spec, select_spec_after_epoch};
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, SnarkAcctStateUpdate, WriteTrackingState,
@@ -271,13 +271,9 @@ pub(crate) fn exec_block(
     let (block, parent_header, parent_commitment) = fetch_block_with_parent(ctx, block_commitment)?;
     check_canonical_manifests(ctx, &block)?;
 
-    // TODO(STR-4086): use the spec scheduled for the block's header epoch.
-    let spec = OLSpecId::V1;
-
     // Execute STF and get output and new state
     let (output, new_state) = execute_stf(
         ctx,
-        spec,
         runtime_params,
         &block,
         parent_header.as_ref(),
@@ -346,12 +342,12 @@ fn check_canonical_manifests(ctx: &impl ChainWorkerContext, block: &OLBlockV1) -
 
 /// Executes the STF on a block and returns the execution output.
 ///
-/// This fetches parent state, builds the state stack, runs verification,
-/// and extracts the resulting write batch and indexer writes.
+/// This fetches parent state, selects the block's spec, builds the state
+/// stack, runs verification, and extracts the resulting write batch and
+/// indexer writes. It stores nothing.
 #[instrument(
     skip_all,
     fields(
-        ?spec,
         slot = block.header().slot(),
         epoch = block.header().epoch(),
         is_terminal = block.header().is_terminal(),
@@ -361,7 +357,6 @@ fn check_canonical_manifests(ctx: &impl ChainWorkerContext, block: &OLBlockV1) -
 )]
 fn execute_stf(
     ctx: &impl ChainWorkerContext,
-    spec: OLSpecId,
     runtime_params: OLRuntimeParams,
     block: &OLBlockV1,
     parent_header: Option<&OLBlockHeaderV1>,
@@ -373,10 +368,18 @@ fn execute_stf(
         .fetch_ol_state(parent_commitment)?
         .ok_or(WorkerError::MissingPreState(parent_commitment))?;
     let parent_state = MemoryStateBaseLayer::from_container(parent_state_raw);
+    let parent_header = parent_header.ok_or(WorkerError::MissingPreState(parent_commitment))?;
+    let spec = select_spec_after_block(ctx, parent_commitment, parent_header, &parent_state)?;
+    debug!(?spec, "selected the block's spec");
 
     // Execute and extract outputs
-    let (write_batch, indexer_writes, logs) =
-        run_stf_verification(spec, &parent_state, block, parent_header, &runtime_params)?;
+    let (write_batch, indexer_writes, logs) = run_stf_verification(
+        spec,
+        &parent_state,
+        block,
+        Some(parent_header),
+        &runtime_params,
+    )?;
 
     // Apply write batch to parent state to get new state
     let mut new_state = parent_state;
@@ -742,6 +745,39 @@ fn select_checkpoint_epoch_spec(
         );
     }
     Ok(spec)
+}
+
+/// Returns the spec of the block after `parent`, whose header is
+/// `parent_header` and whose state is `parent_state`, with
+/// [`select_block_spec`], as block assembly selects it.
+///
+/// After a terminal block it reads the summaries and manifest
+/// [`select_spec_after`] reads.
+///
+/// # Errors
+///
+/// Returns [`WorkerError::UpgradeRequired`] if the block runs a spec this
+/// binary does not implement, and an error if the parent epoch's summaries or
+/// last manifest are missing or inconsistent.
+pub(crate) fn select_spec_after_block<S: IStateAccessor>(
+    ctx: &impl ChainWorkerContext,
+    parent: OLBlockCommitment,
+    parent_header: &OLBlockHeaderV1,
+    parent_state: &S,
+) -> WorkerResult<OLSpecId> {
+    let parent_ended_epoch = parent_header
+        .is_terminal()
+        .then(|| EpochCommitment::from_terminal(parent_header.epoch(), parent));
+    let parent_last_l1_block =
+        L1BlockCommitment::new(parent_state.last_l1_height(), *parent_state.last_l1_blkid());
+    Ok(select_block_spec(
+        parent_ended_epoch,
+        parent_state.spec_versions(),
+        parent_last_l1_block,
+        ctx.genesis_l1_block(),
+        |epoch| ctx.fetch_summary(epoch),
+        |block| ctx.fetch_l1_block_manifest(&block),
+    )?)
 }
 
 /// Selects the spec of the epoch after `parent`, whose terminal state is

@@ -9,6 +9,7 @@
 //! The checkpoint guest does not compile this crate, so changing it leaves the
 //! checkpoint verifying key unchanged.
 
+use std::convert::Infallible;
 use std::future::Future;
 
 use strata_checkpoint_types::EpochSummary;
@@ -19,6 +20,68 @@ use strata_ol_stf::{
     EpochL1Range, EpochSpecSelectionError, InvalidEpochL1Range, select_next_epoch_spec,
 };
 use thiserror::Error;
+
+/// Re-exported because [`SelectedSpec::Unsupported`] carries it, so a driver can
+/// name it without depending on `strata-ol-stf`.
+pub use strata_ol_stf::UpgradeRequired;
+
+/// A selected spec, and whether this binary implements it.
+///
+/// Drivers that keep running when the next epoch needs an upgrade, such as
+/// the mempool and the sequencer's startup check, take
+/// [`Unsupported`](Self::Unsupported) as an expected outcome, not an error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SelectedSpec {
+    /// This binary implements the selected spec.
+    Supported(OLSpecId),
+
+    /// The selected spec follows a checkpoint predicate enactment, and this
+    /// binary does not implement it.
+    Unsupported(UpgradeRequired),
+}
+
+impl SelectedSpec {
+    /// Takes [`EpochSpecSelectionError::UpgradeRequired`] out of a
+    /// selection's errors as the [`Unsupported`](Self::Unsupported) outcome.
+    ///
+    /// # Errors
+    ///
+    /// Returns every other error of `selected` unchanged.
+    pub fn from_selection<E>(
+        selected: Result<OLSpecId, SelectSpecAfterEpochError<E>>,
+    ) -> Result<Self, SelectSpecAfterEpochError<E>> {
+        match selected {
+            Ok(spec) => Ok(Self::Supported(spec)),
+            Err(SelectSpecAfterEpochError::Selection(
+                EpochSpecSelectionError::UpgradeRequired(upgrade),
+            )) => Ok(Self::Unsupported(upgrade)),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Returns the upgrade the selected spec requires, if this binary does
+    /// not implement it.
+    pub fn upgrade_required(&self) -> Option<&UpgradeRequired> {
+        match self {
+            Self::Supported(_) => None,
+            Self::Unsupported(upgrade) => Some(upgrade),
+        }
+    }
+
+    /// Returns the selected spec, for a caller that cannot continue without
+    /// one this binary implements.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UpgradeRequired`] if this binary does not implement the
+    /// selected spec.
+    pub fn require_supported(self) -> Result<OLSpecId, UpgradeRequired> {
+        match self {
+            Self::Supported(spec) => Ok(spec),
+            Self::Unsupported(upgrade) => Err(upgrade),
+        }
+    }
+}
 
 /// Errors returned by [`select_spec_after_epoch`] and
 /// [`select_spec_after_epoch_async`].
@@ -44,6 +107,38 @@ pub enum SelectSpecAfterEpochError<E> {
     /// epoch runs a spec this binary does not implement.
     #[error(transparent)]
     Selection(#[from] EpochSpecSelectionError<E>),
+}
+
+impl<E> SelectSpecAfterEpochError<E> {
+    /// Separates a failed lookup from an error in the stored data.
+    ///
+    /// Returns the lookup's own error as `Ok`, and any other error as `Err`
+    /// with the lookup error type made [`Infallible`]. The `Err` side is a
+    /// [`std::error::Error`] even when `E` is not, as with `anyhow::Error`.
+    pub fn into_lookup_error(self) -> Result<E, SelectSpecAfterEpochError<Infallible>> {
+        match self {
+            Self::SummaryLookup { source, .. } => Ok(source),
+            Self::MissingEpochSummary(epoch) => {
+                Err(SelectSpecAfterEpochError::MissingEpochSummary(epoch))
+            }
+            Self::InvalidL1Range(err) => Err(SelectSpecAfterEpochError::InvalidL1Range(err)),
+            Self::Selection(err) => match err {
+                EpochSpecSelectionError::ManifestLookup { source, .. } => Ok(source),
+                EpochSpecSelectionError::MissingLastManifest { block } => {
+                    Err(EpochSpecSelectionError::MissingLastManifest { block }.into())
+                }
+                EpochSpecSelectionError::LastManifestMismatch { expected, found } => {
+                    Err(EpochSpecSelectionError::LastManifestMismatch { expected, found }.into())
+                }
+                EpochSpecSelectionError::Exec(err) => {
+                    Err(EpochSpecSelectionError::Exec(err).into())
+                }
+                EpochSpecSelectionError::UpgradeRequired(upgrade) => {
+                    Err(EpochSpecSelectionError::UpgradeRequired(upgrade).into())
+                }
+            },
+        }
+    }
 }
 
 /// Selects the spec of the epoch after `terminal`, the last block of an epoch,
@@ -127,6 +222,94 @@ where
         get_manifest,
     )
     .await
+}
+
+/// Selects the spec of the block after a parent block whose state has
+/// `parent_spec_versions` and last L1 block `parent_last_l1_block`.
+///
+/// `parent_ended_epoch` is the epoch the parent ends if it is an epoch's
+/// terminal block, and `None` otherwise. A block after a terminal block starts
+/// the next epoch, whose spec [`select_spec_after_epoch`] selects. Any other
+/// block continues its parent's epoch and runs the spec the parent state was
+/// produced under: every rule set leaves the state's current spec at its own
+/// identifier from the first block of its epoch on. So a terminal block, drain
+/// included, runs under the spec of the epoch it ends.
+///
+/// Block assembly, block execution and the mempool all select a block's spec
+/// here, so they agree on it.
+///
+/// `genesis_l1_block`, `get_summary` and `get_manifest` are those
+/// [`select_spec_after_epoch`] takes. They are used only after a terminal
+/// block.
+///
+/// # Errors
+///
+/// Returns the errors [`select_spec_after_epoch`] returns, which only a block
+/// after a terminal block can get.
+///
+/// # Panics
+///
+/// Panics if `get_summary` returns a genesis summary for an epoch after
+/// genesis.
+pub fn select_block_spec<E>(
+    parent_ended_epoch: Option<EpochCommitment>,
+    parent_spec_versions: OLSpecVersions,
+    parent_last_l1_block: L1BlockCommitment,
+    genesis_l1_block: L1BlockCommitment,
+    get_summary: impl FnMut(EpochCommitment) -> Result<Option<EpochSummary>, E>,
+    get_manifest: impl FnOnce(L1BlockCommitment) -> Result<Option<AsmManifest>, E>,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>> {
+    match parent_ended_epoch {
+        Some(parent_epoch) => select_spec_after_epoch(
+            parent_epoch,
+            parent_spec_versions,
+            parent_last_l1_block,
+            genesis_l1_block,
+            get_summary,
+            get_manifest,
+        ),
+        None => Ok(parent_spec_versions.cur_spec()),
+    }
+}
+
+/// [`select_block_spec`] for callers whose lookups are async.
+///
+/// # Errors
+///
+/// Returns the errors [`select_block_spec`] returns.
+///
+/// # Panics
+///
+/// Panics if `get_summary` returns a genesis summary for an epoch after
+/// genesis.
+pub async fn select_block_spec_async<E, S, SFut, M, MFut>(
+    parent_ended_epoch: Option<EpochCommitment>,
+    parent_spec_versions: OLSpecVersions,
+    parent_last_l1_block: L1BlockCommitment,
+    genesis_l1_block: L1BlockCommitment,
+    get_summary: S,
+    get_manifest: M,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>>
+where
+    S: FnMut(EpochCommitment) -> SFut,
+    SFut: Future<Output = Result<Option<EpochSummary>, E>>,
+    M: FnOnce(L1BlockCommitment) -> MFut,
+    MFut: Future<Output = Result<Option<AsmManifest>, E>>,
+{
+    match parent_ended_epoch {
+        Some(parent_epoch) => {
+            select_spec_after_epoch_async(
+                parent_epoch,
+                parent_spec_versions,
+                parent_last_l1_block,
+                genesis_l1_block,
+                get_summary,
+                get_manifest,
+            )
+            .await
+        }
+        None => Ok(parent_spec_versions.cur_spec()),
+    }
 }
 
 /// Selects the spec of the epoch after one whose terminal block's summary is
@@ -472,6 +655,44 @@ mod tests {
     }
 
     #[test]
+    fn test_into_lookup_error_separates_lookups_from_data_errors() {
+        let fork = Fork::new();
+        let last = l1_block(9, 3);
+        let manifest_lookup = select_spec_after_epoch(
+            fork.epoch_2,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            last,
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch).map_err(|()| "unreachable"),
+            |_| Err("lookup failed"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            manifest_lookup.into_lookup_error().unwrap(),
+            "lookup failed"
+        );
+
+        let missing = select_spec_after_epoch(
+            fork.epoch_2,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            last,
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch).map_err(|()| "unreachable"),
+            |_| Ok(None),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                missing.into_lookup_error(),
+                Err(SelectSpecAfterEpochError::Selection(
+                    EpochSpecSelectionError::MissingLastManifest { block }
+                )) if block == last
+            ),
+            "missing manifest is a data error"
+        );
+    }
+
+    #[test]
     fn test_async_genesis_epoch_selects_without_lookups() {
         let genesis = EpochCommitment::from_terminal(0, block(0, 0));
         let anchor = l1_block(3, 9);
@@ -591,5 +812,138 @@ mod tests {
         ));
 
         assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    /// A block after a non-terminal parent continues its epoch, so selection
+    /// reads no summary or manifest, even one that would require an upgrade.
+    #[test]
+    fn test_block_after_a_non_terminal_parent_keeps_its_spec() {
+        let spec = select_block_spec(
+            None,
+            OLSpecVersions::uniform(OLSpecId::V0),
+            l1_block(9, 1),
+            l1_block(0, 0),
+            |epoch| -> Result<Option<EpochSummary>, ()> {
+                panic!("looked up the summary of {epoch} inside an epoch")
+            },
+            |block| panic!("looked up the manifest of {block} inside an epoch"),
+        );
+
+        assert_eq!(spec.unwrap(), OLSpecId::V0);
+    }
+
+    #[test]
+    fn test_block_after_a_terminal_parent_selects_the_next_epochs_spec() {
+        let fork = Fork::new();
+        let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
+        let expected = manifest_block(&enactment);
+
+        let spec = select_block_spec(
+            Some(fork.epoch_2),
+            OLSpecVersions::uniform(OLSpecId::V0),
+            expected,
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch),
+            |block| {
+                assert_eq!(block, expected, "looked up another block's manifest");
+                Ok(Some(enactment))
+            },
+        );
+
+        assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    #[test]
+    fn test_async_block_after_a_non_terminal_parent_keeps_its_spec() {
+        let spec = block_on(select_block_spec_async(
+            None,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            l1_block(9, 1),
+            l1_block(0, 0),
+            |epoch| -> Ready<Result<Option<EpochSummary>, ()>> {
+                panic!("looked up the summary of {epoch} inside an epoch")
+            },
+            |block| -> Ready<Result<Option<AsmManifest>, ()>> {
+                panic!("looked up the manifest of {block} inside an epoch")
+            },
+        ));
+
+        assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    #[test]
+    fn test_async_block_after_a_terminal_parent_selects_the_next_epochs_spec() {
+        let fork = Fork::new();
+        let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
+        let expected = manifest_block(&enactment);
+
+        let spec = block_on(select_block_spec_async(
+            Some(fork.epoch_2),
+            OLSpecVersions::uniform(OLSpecId::V0),
+            expected,
+            l1_block(0, 0),
+            |epoch| {
+                let summary = fork.summary(epoch);
+                async move { summary }
+            },
+            |block| {
+                assert_eq!(block, expected, "looked up another block's manifest");
+                async move { Ok(Some(enactment)) }
+            },
+        ));
+
+        assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    #[test]
+    fn test_selected_spec_takes_an_upgrade_out_of_the_errors() {
+        let fork = Fork::new();
+        let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
+
+        let selected =
+            SelectedSpec::from_selection(select_after_epoch_2(&fork, OLSpecId::V1, enactment))
+                .expect("an upgrade is an outcome");
+
+        let upgrade = selected.upgrade_required().expect("V1 has no successor");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        assert_eq!(upgrade.enactment_l1_height(), 9);
+        assert_eq!(selected.require_supported(), Err(*upgrade));
+    }
+
+    #[test]
+    fn test_selected_spec_keeps_a_supported_spec() {
+        let fork = Fork::new();
+
+        let selected = SelectedSpec::from_selection(select_after_epoch_2(
+            &fork,
+            OLSpecId::V1,
+            make_empty_manifest(9, 3),
+        ))
+        .expect("selects");
+
+        assert_eq!(selected, SelectedSpec::Supported(OLSpecId::V1));
+        assert_eq!(selected.upgrade_required(), None);
+        assert_eq!(selected.require_supported(), Ok(OLSpecId::V1));
+    }
+
+    #[test]
+    fn test_selected_spec_returns_other_errors() {
+        let fork = Fork::new();
+        let missing = EpochCommitment::from_terminal(3, block(30, 4));
+
+        let err = SelectedSpec::from_selection(select_spec_after_epoch(
+            missing,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            l1_block(9, 3),
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch),
+            |_| Ok(None),
+        ))
+        .unwrap_err();
+
+        assert!(
+            matches!(err, SelectSpecAfterEpochError::MissingEpochSummary(epoch) if epoch == missing),
+            "{err:?}"
+        );
     }
 }

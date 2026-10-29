@@ -5,7 +5,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use strata_bridge_params::BridgeParams;
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::L1BlockCommitment;
 use strata_service::{AsyncServiceInput, ServiceBuilder, ServiceInput};
 use strata_status::{OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
@@ -16,7 +16,7 @@ use tracing::info;
 use crate::service::MempoolService;
 use crate::state::{MempoolContext, MempoolServiceState};
 use crate::types::OLMempoolConfig;
-use crate::{MempoolCommand, MempoolHandle};
+use crate::{MempoolCommand, MempoolHandle, MempoolTip};
 
 /// Builder for creating and launching mempool service.
 ///
@@ -26,7 +26,8 @@ pub struct MempoolBuilder {
     bridge_params: BridgeParams,
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
-    current_tip: OLBlockCommitment,
+    genesis_l1_block: L1BlockCommitment,
+    current_tip: MempoolTip,
 }
 
 impl Debug for MempoolBuilder {
@@ -41,18 +42,24 @@ impl Debug for MempoolBuilder {
 
 impl MempoolBuilder {
     /// Create a new mempool builder.
+    ///
+    /// `genesis_l1_block` is the L1 block OL genesis anchors to, and
+    /// `current_tip` the chain tip the mempool starts admitting transactions
+    /// for.
     pub fn new(
         config: OLMempoolConfig,
         bridge_params: BridgeParams,
         storage: Arc<NodeStorage>,
         status_channel: StatusChannel,
-        current_tip: OLBlockCommitment,
+        genesis_l1_block: L1BlockCommitment,
+        current_tip: MempoolTip,
     ) -> Self {
         Self {
             config,
             bridge_params,
             storage,
             status_channel,
+            genesis_l1_block,
             current_tip,
         }
     }
@@ -62,7 +69,7 @@ impl MempoolBuilder {
     /// Creates the service with FCM chain sync integration via tokio::select!.
     pub async fn launch(self, texec: &TaskExecutor) -> anyhow::Result<MempoolHandle> {
         info!(
-            tip_slot = %self.current_tip.slot(),
+            tip_slot = %self.current_tip.block().slot(),
             max_tx_count = %self.config.max_tx_count,
             max_mempool_bytes = %self.config.max_mempool_bytes,
             "launching ol mempool service"
@@ -75,6 +82,7 @@ impl MempoolBuilder {
             self.config.clone(),
             self.bridge_params,
             self.storage.clone(),
+            self.genesis_l1_block,
         ));
 
         // Create mempool state with context and current tip

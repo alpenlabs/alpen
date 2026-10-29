@@ -23,6 +23,8 @@ use strata_consensus_logic::FcmServiceHandle;
 use strata_identifiers::L1Height;
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
+#[cfg(feature = "debug-utils")]
+use strata_ol_checkpoint::corrupt_next_checkpoint_proof;
 use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
@@ -276,6 +278,13 @@ fn build_public_static_rpc_module() -> RpcModule<()> {
         // mirror of the Rust constants in `strata_common::bail_tags`.
         let _ = module.register_method("debug_listBailTags", |_, _, _| {
             Ok::<Vec<&'static str>, ErrorObjectOwned>(KNOWN_BAIL_TAGS.to_vec())
+        });
+
+        // Corrupts the proof of the next checkpoint this sequencer builds, so functional
+        // tests can post a checkpoint the ASM rejects.
+        let _ = module.register_method("debug_corruptNextCheckpointProof", |_, _, _| {
+            corrupt_next_checkpoint_proof();
+            Ok::<(), ErrorObjectOwned>(())
         });
     }
 

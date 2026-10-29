@@ -25,16 +25,16 @@
 //! a checkpoint predicate enactment itself, its spec otherwise. The switch is
 //! read from the L1 manifests every node stores, so no rule set stages or
 //! promotes a spec, and the rule is the same from V0 to V1 and from each later
-//! spec to the next. Checkpoint sync and the sequencer's boot checks select
-//! with it.
+//! spec to the next. Every node-side driver selects with it: block assembly,
+//! its mempool, block execution, checkpoint DA and sync, and boot checks.
 //!
 //! # Unknown and unimplemented specs
 //!
 //! Decoding rejects unknown identifiers, and dispatch matches every variant,
 //! so a node never runs an epoch under older rules because it lacks newer
 //! ones. When an enactment activates a spec this binary does not know,
-//! selection returns [`UpgradeRequired`], and a driver that selects with it
-//! runs nothing for the new epoch.
+//! selection returns [`UpgradeRequired`], and every driver runs nothing for
+//! the new epoch.
 //!
 //! [`OLSpecId::V0`] names the 0.3.0 rules, which networks launched on that
 //! release run from genesis. This binary implements V0 only for building

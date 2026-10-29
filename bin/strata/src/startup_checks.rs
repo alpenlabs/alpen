@@ -12,7 +12,8 @@ use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_spec_selection::{
-    SelectSpecAfterEpochError, select_spec_after_epoch, select_spec_after_unsummarized_epoch,
+    SelectSpecAfterEpochError, SelectedSpec, select_block_spec,
+    select_spec_after_unsummarized_epoch,
 };
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
@@ -715,7 +716,8 @@ fn verify_tip_from_history_base(
 
 /// Returns the spec of the epoch after `terminal`, an epoch's terminal block
 /// whose state is `state`, by the rule checkpoint sync applies,
-/// [`select_spec_after_epoch`], from the summaries and manifests in `storage`.
+/// [`select_spec_after_epoch`](strata_ol_spec_selection::select_spec_after_epoch),
+/// from the summaries and manifests in `storage`.
 ///
 /// The manifest is read by L1 block: the epoch's own last L1 block's manifest
 /// is read even after a reorg replaced that block, and never another block's
@@ -725,35 +727,76 @@ fn verify_tip_from_history_base(
 /// at the canonical summary of the epoch before, as
 /// [`select_spec_after_unsummarized_epoch`] describes. The sequencer checks its
 /// tip before FCM repairs a summary that a crash left missing.
+///
+/// Returns [`SelectedSpec::Unsupported`] when the next epoch runs a spec this
+/// binary does not implement, and an error only when the stored chain data is
+/// missing or inconsistent.
 pub(crate) fn select_spec_after_epoch_terminal_block(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
     terminal: EpochCommitment,
     state: &OLStateContainer,
-) -> Result<OLSpecId> {
+) -> Result<SelectedSpec> {
+    select_spec_after_parent(storage, genesis_l1_block, Some(terminal), state)
+}
+
+/// Returns the spec of the block after `block`, whose state is `state`, with
+/// [`select_block_spec`], as block assembly selects it.
+///
+/// After a terminal block it reads what
+/// [`select_spec_after_epoch_terminal_block`] reads, and returns what it
+/// returns.
+pub(crate) fn select_spec_after_block(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+    block: OLBlockCommitment,
+    state: &OLStateContainer,
+) -> Result<SelectedSpec> {
+    let header = storage
+        .ol_block()
+        .get_ol_header_blocking(*block.blkid())
+        .context("failed to query the OL header")?
+        .ok_or_else(|| anyhow!("missing the OL header of {block}"))?;
+    let ended_epoch = header
+        .is_terminal()
+        .then(|| EpochCommitment::from_terminal(header.epoch(), block));
+    select_spec_after_parent(storage, genesis_l1_block, ended_epoch, state)
+}
+
+/// Selects the spec of the block after a parent whose state is `state`, and
+/// which ends `parent_ended_epoch` if it is a terminal block, as
+/// [`select_spec_after_epoch_terminal_block`] describes.
+fn select_spec_after_parent(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+    parent_ended_epoch: Option<EpochCommitment>,
+    state: &OLStateContainer,
+) -> Result<SelectedSpec> {
     let spec_versions = state.spec_versions();
-    let epoch_last_l1_block = state.chainstate().last_l1_block();
+    let parent_last_l1_block = state.chainstate().last_l1_block();
     let get_manifest = |block: L1BlockCommitment| storage.l1().get_block_manifest(block.blkid());
-    let selected = match select_spec_after_epoch(
-        terminal,
+    let selected = match select_block_spec(
+        parent_ended_epoch,
         spec_versions,
-        epoch_last_l1_block,
+        parent_last_l1_block,
         genesis_l1_block,
         |epoch| storage.ol_checkpoint().get_epoch_summary_blocking(epoch),
         get_manifest,
     ) {
-        Err(SelectSpecAfterEpochError::MissingEpochSummary(missing)) if missing == terminal => {
-            let prev_epoch_summary = fetch_canonical_epoch_summary(storage, terminal.epoch() - 1)?;
+        Err(SelectSpecAfterEpochError::MissingEpochSummary(missing))
+            if Some(missing) == parent_ended_epoch =>
+        {
+            let prev_epoch_summary = fetch_canonical_epoch_summary(storage, missing.epoch() - 1)?;
             select_spec_after_unsummarized_epoch(
                 spec_versions,
-                epoch_last_l1_block,
+                parent_last_l1_block,
                 &prev_epoch_summary,
                 get_manifest,
             )
         }
         selected => selected,
     };
-    Ok(selected?)
+    Ok(SelectedSpec::from_selection(selected)?)
 }
 
 /// Returns the canonical summary of `epoch`.
@@ -770,39 +813,30 @@ fn fetch_canonical_epoch_summary(storage: &NodeStorage, epoch: Epoch) -> Result<
         .ok_or_else(|| anyhow!("missing the epoch summary of {commitment}"))
 }
 
-/// Returns the spec of the block after `block`, whose state is `state`.
+/// Returns whether this binary builds blocks under `spec`.
 ///
-/// A block that ends its epoch is followed by the next epoch, whose spec
-/// [`select_spec_after_epoch_terminal_block`] selects. Any other block is followed by a block of
-/// its own epoch, which runs the spec the block's state was produced under.
-fn select_spec_after_block(
-    storage: &NodeStorage,
-    genesis_l1_block: L1BlockCommitment,
-    block: OLBlockCommitment,
-    state: &OLStateContainer,
-) -> Result<OLSpecId> {
-    let header = storage
-        .ol_block()
-        .get_ol_header_blocking(*block.blkid())
-        .context("failed to query the OL header")?
-        .ok_or_else(|| anyhow!("missing the OL header of {block}"))?;
-    if header.is_terminal() {
-        let terminal = EpochCommitment::from_terminal(header.epoch(), block);
-        select_spec_after_epoch_terminal_block(storage, genesis_l1_block, terminal, state)
-    } else {
-        Ok(state.cur_spec())
+/// It implements V0 only for genesis and checkpoint DA replay, never for
+/// building or executing blocks. A spec added later must decide here.
+pub(crate) fn builds_blocks_under(spec: OLSpecId) -> bool {
+    match spec {
+        OLSpecId::V0 => false,
+        OLSpecId::V1 => true,
     }
 }
 
 /// Checks that a sequencer can build on the canonical OL tip.
 ///
-/// This release builds only V1 blocks, so the block after the tip must run V1
-/// by the rule checkpoint sync applies, [`select_spec_after_block`]. A V1 tip passes
-/// unless it ends an epoch that processed a checkpoint predicate enactment. A
-/// V0 tip passes only if it is the last V0 epoch, the one that ends at the
-/// checkpoint predicate enactment, which a promoted checkpoint-sync datadir
-/// anchors on. The genesis of a fresh datadir on a network launched on 0.3.0
-/// does not: V1 blocks on it would fork the network at slot 1.
+/// The block after the tip must run a spec this binary builds blocks under,
+/// by the rule checkpoint sync applies, [`select_spec_after_block`]. A V0 tip passes
+/// only if it is the last V0 epoch, the one that ends at the checkpoint
+/// predicate enactment, which a promoted checkpoint-sync datadir anchors on.
+/// The genesis of a fresh datadir on a network launched on 0.3.0 does not:
+/// V1 blocks on it would fork the network at slot 1.
+///
+/// A tip after which the next epoch runs a spec this binary does not
+/// implement passes with a warning. The node must keep running to prove and
+/// post the checkpoint of the epoch that ends at the tip, and block assembly
+/// builds nothing after it.
 ///
 /// This binary stores V0 states only from V0 genesis and checkpoint replay,
 /// and both store terminal states alone. Block execution runs V1 rules, which
@@ -821,16 +855,23 @@ pub(crate) fn verify_sequencer_tip_spec(
         .context("startup: failed to query OL state for tip block")?
         .ok_or_else(|| anyhow!("startup: missing OL state for tip block {tip_commitment}"))?;
 
-    // TODO(STR-4086): accept any spec this binary builds blocks under, and
-    // let the sequencer start and halt when the next spec needs an upgrade.
     let next_spec = select_spec_after_block(storage, genesis_l1_block, tip_commitment, &tip_state)
         .with_context(|| {
             format!("startup: failed to select the spec of the block after tip {tip_commitment}")
         })?;
-    if next_spec != OLSpecId::V1 {
-        bail!(
-            "startup: the sequencer cannot build on the V0 tip {tip_commitment}: the epoch after it runs V0, and this release builds only V1 blocks. On a network launched on 0.3.0, run this node in checkpoint-sync mode until the epoch that ends at the checkpoint predicate enactment is finalized, then restart it with --sequencer --bootstrap-from-checkpoint"
-        );
+    match next_spec {
+        SelectedSpec::Supported(spec) if builds_blocks_under(spec) => {}
+        // Only V0 is a spec this binary knows but builds no blocks under.
+        SelectedSpec::Supported(_) => bail!(
+            "startup: the sequencer cannot build on the V0 tip {tip_commitment}: the epoch after it runs V0, and this release builds no V0 blocks. On a network launched on 0.3.0, run this node in checkpoint-sync mode until the epoch that ends at the checkpoint predicate enactment is finalized, then restart it with --sequencer --bootstrap-from-checkpoint"
+        ),
+        SelectedSpec::Unsupported(upgrade) => warn!(
+            %tip_commitment,
+            enactment_l1_height = upgrade.enactment_l1_height(),
+            cur_spec = ?upgrade.prev_spec(),
+            next_spec_version = upgrade.spec_version(),
+            "startup: the sequencer builds no block after the tip until this node is upgraded"
+        ),
     }
     Ok(())
 }
@@ -1584,20 +1625,30 @@ mod tests {
     }
 
     /// A V1 tip that ends an epoch which processed a checkpoint predicate
-    /// enactment is followed by V2, which this binary does not implement.
+    /// enactment is followed by V2, which this binary does not implement. The
+    /// sequencer still starts, to prove and post the checkpoint ending at the
+    /// tip, and builds nothing after it.
     #[test]
-    fn test_sequencer_refuses_the_tip_after_a_v1_enactment() {
+    fn test_sequencer_starts_on_the_tip_after_a_v1_enactment() {
         let (storage, genesis_l1) = setup_v1_tip_on_enactment(true);
-        let err =
-            verify_sequencer_tip_spec(&storage, genesis_l1).expect_err("the next epoch runs V2");
-        assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
+        verify_sequencer_tip_spec(&storage, genesis_l1).expect("the sequencer starts");
+        let tip = resolve_tip_ol_block(&storage).expect("tip");
+        let state = storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(tip)
+            .unwrap()
+            .unwrap();
+        let selected = select_spec_after_block(&storage, genesis_l1, tip, &state).expect("selects");
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V2");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        assert_eq!(upgrade.enactment_l1_height(), 1);
     }
 
     /// A crash after FCM marks a terminal tip valid, and before the chain
     /// worker stores its summary, leaves the tip without one. The sequencer
     /// still selects the next epoch's spec from the enactment the epoch
-    /// processed, instead of refusing to start for the missing summary that
-    /// FCM's acceptance replay stores.
+    /// processed and starts, instead of refusing to start for the missing
+    /// summary that FCM's acceptance replay stores.
     #[test]
     fn test_sequencer_selects_after_a_terminal_tip_without_its_summary() {
         let (storage, genesis_l1) = setup_v1_tip_on_enactment(true);
@@ -1608,9 +1659,17 @@ mod tests {
                 .del_epoch_summary_blocking(EpochCommitment::from_terminal(1, tip))
                 .expect("test: delete tip summary")
         );
-        let err =
-            verify_sequencer_tip_spec(&storage, genesis_l1).expect_err("the next epoch runs V2");
-        assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
+        verify_sequencer_tip_spec(&storage, genesis_l1).expect("the sequencer starts");
+        let state = storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(tip)
+            .unwrap()
+            .unwrap();
+        let selected = select_spec_after_block(&storage, genesis_l1, tip, &state)
+            .expect("selects without the tip's summary");
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V2");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        assert_eq!(upgrade.enactment_l1_height(), 1);
     }
 
     /// A node on a network launched on 0.3.0 stores a V0 genesis whose state

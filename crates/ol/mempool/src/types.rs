@@ -236,7 +236,9 @@ impl OLMempoolRejectReason {
             | OLMempoolError::StateProvider(_)
             | OLMempoolError::Serialization(_)
             | OLMempoolError::ServiceClosed(_)
-            | OLMempoolError::NotAvailable => None,
+            | OLMempoolError::NotAvailable
+            | OLMempoolError::UpgradeRequired(_)
+            | OLMempoolError::SpecSelection(_) => None,
         }
     }
 }

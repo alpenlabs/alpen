@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use strata_bridge_params::BridgeParams;
+use strata_identifiers::L1BlockCommitment;
 use strata_node_context::NodeContext;
 use strata_ol_params::OLRuntimeParams;
 use strata_primitives::epoch::EpochCommitment;
@@ -26,6 +27,7 @@ use crate::state::OLCheckpointServiceState;
 pub struct OLCheckpointBuilder {
     storage: Option<Arc<NodeStorage>>,
     runtime_params: Option<OLRuntimeParams>,
+    genesis_l1_block: Option<L1BlockCommitment>,
     epoch_summary_rx: Option<watch::Receiver<Option<EpochCommitment>>>,
     prover: Option<ProverConfig>,
 }
@@ -36,15 +38,18 @@ impl OLCheckpointBuilder {
         Self {
             storage: None,
             runtime_params: None,
+            genesis_l1_block: None,
             epoch_summary_rx: None,
             prover: None,
         }
     }
 
-    /// Set storage and withdrawal params from [`NodeContext`].
+    /// Set storage, withdrawal params and the genesis L1 anchor from
+    /// [`NodeContext`].
     pub fn with_node_context(mut self, nodectx: &NodeContext) -> Self {
         self.storage = Some(nodectx.storage().clone());
         self.runtime_params = Some(nodectx.ol_params().runtime_params());
+        self.genesis_l1_block = Some(nodectx.ol_params().genesis_l1_block());
         self
     }
 
@@ -84,16 +89,22 @@ impl OLCheckpointBuilder {
         let runtime_params = self
             .runtime_params
             .context("missing required dependency: runtime_params")?;
+        let genesis_l1_block = self
+            .genesis_l1_block
+            .context("missing required dependency: genesis_l1_block")?;
 
         let runtime_handle = executor.handle().clone();
         let input = TokioWatchInput::from_receiver(epoch_summary_rx);
         let input = SyncAsyncInput::new(input, runtime_handle);
 
         let ctx = match self.prover {
-            Some(prover) => {
-                CheckpointWorkerContextImpl::with_prover(storage, runtime_params, prover)
-            }
-            None => CheckpointWorkerContextImpl::new(storage, runtime_params),
+            Some(prover) => CheckpointWorkerContextImpl::with_prover(
+                storage,
+                runtime_params,
+                genesis_l1_block,
+                prover,
+            ),
+            None => CheckpointWorkerContextImpl::new(storage, runtime_params, genesis_l1_block),
         };
         let state = OLCheckpointServiceState::new(ctx);
         let builder = ServiceBuilder::<OLCheckpointService<CheckpointWorkerContextImpl>, _>::new()
