@@ -11,7 +11,7 @@ use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_ol_sequencer::{BlockGenerationConfig, SequencerContext, SequencerContextError};
-use strata_ol_stf::UpgradeRequired;
+use strata_ol_spec_selection::UpgradeRequired;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};

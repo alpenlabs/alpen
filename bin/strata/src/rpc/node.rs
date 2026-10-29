@@ -25,10 +25,9 @@ use strata_ol_rpc_types::{
     RpcOLChainStatus, RpcOLSpecStatus, RpcOLTransaction, RpcOLTxDetail, RpcRejectedCheckpoint,
     RpcSnarkAccountState, RpcSnarkAcctUpdateManifest, RpcUpdateInputData, RpcUpgradeRequired,
 };
-use strata_ol_spec_selection::{SelectSpecAfterEpochError, select_spec_after_epoch_async};
+use strata_ol_spec_selection::{SelectedSpec, select_spec_after_epoch_async};
 use strata_ol_state_container::{OLStateContainer, OLStateSeries};
-use strata_ol_state_types::{IAccountState, ISnarkAccountState, OLSpecId};
-use strata_ol_stf::{EpochSpecSelectionError, UpgradeRequired};
+use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
@@ -157,14 +156,14 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     /// block whose state is `state`, with [`select_spec_after_epoch_async`],
     /// as the node's drivers select it.
     ///
-    /// Returns [`UpgradeRequired`] as a value when this binary does not
+    /// Returns [`SelectedSpec::Unsupported`] when this binary does not
     /// implement that spec, and an error only when stored chain data is
     /// missing or inconsistent.
     async fn select_spec_after_epoch_terminal_block(
         &self,
         terminal: EpochCommitment,
         state: &OLStateContainer,
-    ) -> RpcResult<Result<OLSpecId, UpgradeRequired>> {
+    ) -> RpcResult<SelectedSpec> {
         let selected = select_spec_after_epoch_async(
             terminal,
             state.spec_versions(),
@@ -174,16 +173,10 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             |block| self.provider.get_block_manifest(*block.blkid()),
         )
         .await;
-        match selected {
-            Ok(spec) => Ok(Ok(spec)),
-            Err(err) => match err.into_lookup_error() {
-                Ok(lookup) => Err(db_error(lookup)),
-                Err(SelectSpecAfterEpochError::Selection(
-                    EpochSpecSelectionError::UpgradeRequired(upgrade),
-                )) => Ok(Err(upgrade)),
-                Err(err) => Err(internal_error(err.to_string())),
-            },
-        }
+        SelectedSpec::from_selection(selected).map_err(|err| match err.into_lookup_error() {
+            Ok(lookup) => db_error(lookup),
+            Err(err) => internal_error(err.to_string()),
+        })
     }
 
     async fn get_canonical_block_at_height(&self, height: u64) -> RpcResult<Option<OLBlockId>> {
@@ -886,10 +879,10 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 .select_spec_after_epoch_terminal_block(tip_epoch, &state)
                 .await?
             {
-                Ok(spec) => {
+                SelectedSpec::Supported(spec) => {
                     RpcOLSpecStatus::new(tip_info, cur_spec_version, Some(spec.into()), None)
                 }
-                Err(upgrade) => RpcOLSpecStatus::new(
+                SelectedSpec::Unsupported(upgrade) => RpcOLSpecStatus::new(
                     tip_info,
                     cur_spec_version,
                     Some(upgrade.spec_version()),
