@@ -22,7 +22,7 @@ ssz_codegen.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-strata-test-utils-ssz.workspace = true
+strata-ssz-tests.workspace = true
 
 [lints]
 workspace = true

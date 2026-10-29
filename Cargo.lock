@@ -8453,7 +8453,7 @@ dependencies = [
  "strata-codec",
  "strata-identifiers",
  "strata-merkle",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
@@ -8710,7 +8710,7 @@ dependencies = [
  "strata-codec",
  "strata-crypto",
  "strata-l1-txfmt",
- "strata-test-utils-btcio 0.1.0 (git+https://github.com/alpenlabs/asm?tag=v0.5.0-rc.1)",
+ "strata-test-utils-btcio",
  "thiserror 2.0.20",
 ]
 
@@ -9120,6 +9120,7 @@ dependencies = [
  "strata-ol-stf-v1",
  "strata-predicate",
  "strata-primitives",
+ "strata-retry",
  "strata-service",
  "strata-status",
  "strata-storage",
@@ -9610,7 +9611,7 @@ dependencies = [
  "strata-ol-logs",
  "strata-ol-tx-types-v1",
  "strata-predicate",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
@@ -10048,7 +10049,7 @@ dependencies = [
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-types",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -10124,7 +10125,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-logs",
  "strata-predicate",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "tree_hash",
  "tree_hash_derive",
 ]
@@ -10276,6 +10277,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-retry"
+version = "0.3.0-alpha.1"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0#fc71f121d8990af0e56c2da436754b0b1fd304e0"
+dependencies = [
+ "serde",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "strata-rpc-openrpc-spec"
 version = "0.1.0"
 dependencies = [
@@ -10397,7 +10408,7 @@ dependencies = [
  "strata-acct-types",
  "strata-identifiers",
  "strata-predicate",
- "strata-test-utils-ssz",
+ "strata-ssz-tests",
  "thiserror 2.0.20",
  "tree_hash",
  "tree_hash_derive",
@@ -10416,6 +10427,16 @@ dependencies = [
  "strata-ol-params",
  "strata-ol-state-types",
  "zkaleido-sp1-groth16-verifier",
+]
+
+[[package]]
+name = "strata-ssz-tests"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.4.0#fc71f121d8990af0e56c2da436754b0b1fd304e0"
+dependencies = [
+ "proptest",
+ "ssz",
+ "tree_hash",
 ]
 
 [[package]]
@@ -10554,20 +10575,6 @@ dependencies = [
 [[package]]
 name = "strata-test-utils-btcio"
 version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitcoin",
- "bitcoind-async-client 0.15.0",
- "corepc-node",
- "musig2",
- "rand 0.8.7",
- "strata-crypto",
- "tokio",
-]
-
-[[package]]
-name = "strata-test-utils-btcio"
-version = "0.1.0"
 source = "git+https://github.com/alpenlabs/asm?tag=v0.5.0-rc.1#7ada090580ac12af9cd411254415090725efcec1"
 dependencies = [
  "anyhow",
@@ -10619,15 +10626,6 @@ dependencies = [
  "strata-primitives",
  "strata-test-utils",
  "strata-test-utils-btc",
-]
-
-[[package]]
-name = "strata-test-utils-ssz"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "ssz",
- "tree_hash",
 ]
 
 [[package]]

@@ -222,7 +222,7 @@ mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_identifiers::{Buf32, Buf64, OLBlockId};
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use crate::block_flags::BlockFlagsV1;
     use crate::ssz_generated::ssz::block::{

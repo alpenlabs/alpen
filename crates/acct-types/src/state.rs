@@ -111,7 +111,7 @@ pub trait AccountTypeState {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
-    use strata_test_utils_ssz::ssz_proptest;
+    use strata_ssz_tests::ssz_proptest;
 
     use super::*;
 
