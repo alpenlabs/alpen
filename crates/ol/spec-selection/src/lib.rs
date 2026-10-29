@@ -162,6 +162,94 @@ where
     .await
 }
 
+/// Selects the spec of the block after a parent block whose state has
+/// `parent_spec_versions` and last L1 block `parent_last_l1_block`.
+///
+/// `parent_ended_epoch` is the epoch the parent ends if it is an epoch's
+/// terminal block, and `None` otherwise. A block after a terminal block starts
+/// the next epoch, whose spec [`select_spec_after_epoch`] selects. Any other
+/// block continues its parent's epoch and runs the spec the parent state was
+/// produced under: every rule set leaves the state's current spec at its own
+/// identifier from the first block of its epoch on. So a terminal block, drain
+/// included, runs under the spec of the epoch it ends.
+///
+/// Block assembly, block execution and the mempool all select a block's spec
+/// here, so they agree on it.
+///
+/// `genesis_l1_block`, `get_summary` and `get_manifest` are those
+/// [`select_spec_after_epoch`] takes. They are used only after a terminal
+/// block.
+///
+/// # Errors
+///
+/// Returns the errors [`select_spec_after_epoch`] returns, which only a block
+/// after a terminal block can get.
+///
+/// # Panics
+///
+/// Panics if `get_summary` returns a genesis summary for an epoch after
+/// genesis.
+pub fn select_block_spec<E>(
+    parent_ended_epoch: Option<EpochCommitment>,
+    parent_spec_versions: OLSpecVersions,
+    parent_last_l1_block: L1BlockCommitment,
+    genesis_l1_block: L1BlockCommitment,
+    get_summary: impl FnMut(EpochCommitment) -> Result<Option<EpochSummary>, E>,
+    get_manifest: impl FnOnce(L1BlockCommitment) -> Result<Option<AsmManifest>, E>,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>> {
+    match parent_ended_epoch {
+        Some(parent_epoch) => select_spec_after_epoch(
+            parent_epoch,
+            parent_spec_versions,
+            parent_last_l1_block,
+            genesis_l1_block,
+            get_summary,
+            get_manifest,
+        ),
+        None => Ok(parent_spec_versions.cur_spec()),
+    }
+}
+
+/// [`select_block_spec`] for callers whose lookups are async.
+///
+/// # Errors
+///
+/// Returns the errors [`select_block_spec`] returns.
+///
+/// # Panics
+///
+/// Panics if `get_summary` returns a genesis summary for an epoch after
+/// genesis.
+pub async fn select_block_spec_async<E, S, SFut, M, MFut>(
+    parent_ended_epoch: Option<EpochCommitment>,
+    parent_spec_versions: OLSpecVersions,
+    parent_last_l1_block: L1BlockCommitment,
+    genesis_l1_block: L1BlockCommitment,
+    get_summary: S,
+    get_manifest: M,
+) -> Result<OLSpecId, SelectSpecAfterEpochError<E>>
+where
+    S: FnMut(EpochCommitment) -> SFut,
+    SFut: Future<Output = Result<Option<EpochSummary>, E>>,
+    M: FnOnce(L1BlockCommitment) -> MFut,
+    MFut: Future<Output = Result<Option<AsmManifest>, E>>,
+{
+    match parent_ended_epoch {
+        Some(parent_epoch) => {
+            select_spec_after_epoch_async(
+                parent_epoch,
+                parent_spec_versions,
+                parent_last_l1_block,
+                genesis_l1_block,
+                get_summary,
+                get_manifest,
+            )
+            .await
+        }
+        None => Ok(parent_spec_versions.cur_spec()),
+    }
+}
+
 /// Selects the spec of the epoch after one whose terminal block's summary is
 /// not stored yet, with [`select_next_epoch_spec`].
 ///
@@ -658,6 +746,87 @@ mod tests {
             |block| {
                 assert_eq!(block, expected, "looked up another block's manifest");
                 async move { Ok::<_, ()>(Some(manifest)) }
+            },
+        ));
+
+        assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    /// A block after a non-terminal parent continues its epoch, so selection
+    /// reads no summary or manifest, even one that would require an upgrade.
+    #[test]
+    fn test_block_after_a_non_terminal_parent_keeps_its_spec() {
+        let spec = select_block_spec(
+            None,
+            OLSpecVersions::uniform(OLSpecId::V0),
+            l1_block(9, 1),
+            l1_block(0, 0),
+            |epoch| -> Result<Option<EpochSummary>, ()> {
+                panic!("looked up the summary of {epoch} inside an epoch")
+            },
+            |block| panic!("looked up the manifest of {block} inside an epoch"),
+        );
+
+        assert_eq!(spec.unwrap(), OLSpecId::V0);
+    }
+
+    #[test]
+    fn test_block_after_a_terminal_parent_selects_the_next_epochs_spec() {
+        let fork = Fork::new();
+        let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
+        let expected = manifest_block(&enactment);
+
+        let spec = select_block_spec(
+            Some(fork.epoch_2),
+            OLSpecVersions::uniform(OLSpecId::V0),
+            expected,
+            l1_block(0, 0),
+            |epoch| fork.summary(epoch),
+            |block| {
+                assert_eq!(block, expected, "looked up another block's manifest");
+                Ok(Some(enactment))
+            },
+        );
+
+        assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    #[test]
+    fn test_async_block_after_a_non_terminal_parent_keeps_its_spec() {
+        let spec = block_on(select_block_spec_async(
+            None,
+            OLSpecVersions::uniform(OLSpecId::V1),
+            l1_block(9, 1),
+            l1_block(0, 0),
+            |epoch| -> Ready<Result<Option<EpochSummary>, ()>> {
+                panic!("looked up the summary of {epoch} inside an epoch")
+            },
+            |block| -> Ready<Result<Option<AsmManifest>, ()>> {
+                panic!("looked up the manifest of {block} inside an epoch")
+            },
+        ));
+
+        assert_eq!(spec.unwrap(), OLSpecId::V1);
+    }
+
+    #[test]
+    fn test_async_block_after_a_terminal_parent_selects_the_next_epochs_spec() {
+        let fork = Fork::new();
+        let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
+        let expected = manifest_block(&enactment);
+
+        let spec = block_on(select_block_spec_async(
+            Some(fork.epoch_2),
+            OLSpecVersions::uniform(OLSpecId::V0),
+            expected,
+            l1_block(0, 0),
+            |epoch| {
+                let summary = fork.summary(epoch);
+                async move { summary }
+            },
+            |block| {
+                assert_eq!(block, expected, "looked up another block's manifest");
+                async move { Ok(Some(enactment)) }
             },
         ));
 

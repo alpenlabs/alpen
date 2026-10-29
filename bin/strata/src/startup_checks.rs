@@ -12,7 +12,7 @@ use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_spec_selection::{
-    SelectSpecAfterEpochError, select_spec_after_epoch, select_spec_after_unsummarized_epoch,
+    SelectSpecAfterEpochError, select_block_spec, select_spec_after_unsummarized_epoch,
 };
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types::OLSpecId;
@@ -716,7 +716,8 @@ fn verify_tip_from_history_base(
 
 /// Returns the spec of the epoch after `terminal`, an epoch's terminal block
 /// whose state is `state`, by the rule checkpoint sync applies,
-/// [`select_spec_after_epoch`], from the summaries and manifests in `storage`.
+/// [`select_spec_after_epoch`](strata_ol_spec_selection::select_spec_after_epoch),
+/// from the summaries and manifests in `storage`.
 ///
 /// The manifest is read by L1 block: the epoch's own last L1 block's manifest
 /// is read even after a reorg replaced that block, and never another block's
@@ -736,22 +737,59 @@ pub(crate) fn select_spec_after_epoch_terminal_block(
     terminal: EpochCommitment,
     state: &OLStateContainer,
 ) -> Result<Result<OLSpecId, UpgradeRequired>> {
+    select_spec_after_parent(storage, genesis_l1_block, Some(terminal), state)
+}
+
+/// Returns the spec of the block after `block`, whose state is `state`, with
+/// [`select_block_spec`], as block assembly selects it.
+///
+/// After a terminal block it reads what
+/// [`select_spec_after_epoch_terminal_block`] reads, and returns what it
+/// returns.
+pub(crate) fn select_spec_after_block(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+    block: OLBlockCommitment,
+    state: &OLStateContainer,
+) -> Result<Result<OLSpecId, UpgradeRequired>> {
+    let header = storage
+        .ol_block()
+        .get_ol_header_blocking(*block.blkid())
+        .context("failed to query the OL header")?
+        .ok_or_else(|| anyhow!("missing the OL header of {block}"))?;
+    let ended_epoch = header
+        .is_terminal()
+        .then(|| EpochCommitment::from_terminal(header.epoch(), block));
+    select_spec_after_parent(storage, genesis_l1_block, ended_epoch, state)
+}
+
+/// Selects the spec of the block after a parent whose state is `state`, and
+/// which ends `parent_ended_epoch` if it is a terminal block, as
+/// [`select_spec_after_epoch_terminal_block`] describes.
+fn select_spec_after_parent(
+    storage: &NodeStorage,
+    genesis_l1_block: L1BlockCommitment,
+    parent_ended_epoch: Option<EpochCommitment>,
+    state: &OLStateContainer,
+) -> Result<Result<OLSpecId, UpgradeRequired>> {
     let spec_versions = state.spec_versions();
-    let epoch_last_l1_block = state.chainstate().last_l1_block();
+    let parent_last_l1_block = state.chainstate().last_l1_block();
     let get_manifest = |block: L1BlockCommitment| storage.l1().get_block_manifest(block.blkid());
-    let selected = match select_spec_after_epoch(
-        terminal,
+    let selected = match select_block_spec(
+        parent_ended_epoch,
         spec_versions,
-        epoch_last_l1_block,
+        parent_last_l1_block,
         genesis_l1_block,
         |epoch| storage.ol_checkpoint().get_epoch_summary_blocking(epoch),
         get_manifest,
     ) {
-        Err(SelectSpecAfterEpochError::MissingEpochSummary(missing)) if missing == terminal => {
-            let prev_epoch_summary = fetch_canonical_epoch_summary(storage, terminal.epoch() - 1)?;
+        Err(SelectSpecAfterEpochError::MissingEpochSummary(missing))
+            if Some(missing) == parent_ended_epoch =>
+        {
+            let prev_epoch_summary = fetch_canonical_epoch_summary(storage, missing.epoch() - 1)?;
             select_spec_after_unsummarized_epoch(
                 spec_versions,
-                epoch_last_l1_block,
+                parent_last_l1_block,
                 &prev_epoch_summary,
                 get_manifest,
             )
@@ -779,30 +817,6 @@ fn fetch_canonical_epoch_summary(storage: &NodeStorage, epoch: Epoch) -> Result<
         .get_epoch_summary_blocking(commitment)
         .context("failed to query the epoch summary")?
         .ok_or_else(|| anyhow!("missing the epoch summary of {commitment}"))
-}
-
-/// Returns the spec of the block after `block`, whose state is `state`.
-///
-/// A block that ends its epoch is followed by the next epoch, whose spec
-/// [`select_spec_after_epoch_terminal_block`] selects. Any other block is followed by a block of
-/// its own epoch, which runs the spec the block's state was produced under.
-pub(crate) fn select_spec_after_block(
-    storage: &NodeStorage,
-    genesis_l1_block: L1BlockCommitment,
-    block: OLBlockCommitment,
-    state: &OLStateContainer,
-) -> Result<Result<OLSpecId, UpgradeRequired>> {
-    let header = storage
-        .ol_block()
-        .get_ol_header_blocking(*block.blkid())
-        .context("failed to query the OL header")?
-        .ok_or_else(|| anyhow!("missing the OL header of {block}"))?;
-    if header.is_terminal() {
-        let terminal = EpochCommitment::from_terminal(header.epoch(), block);
-        select_spec_after_epoch_terminal_block(storage, genesis_l1_block, terminal, state)
-    } else {
-        Ok(Ok(state.cur_spec()))
-    }
 }
 
 /// Returns whether this binary builds blocks under `spec`.
