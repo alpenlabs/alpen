@@ -136,7 +136,7 @@ mod tests {
         }
 
         // (V0, V1) and an unknown current spec.
-        for (cur, staged) in [(0u32, 1u32), (2, 2)] {
+        for (cur, staged) in [(0u32, 1u32), (3, 3)] {
             let mut bytes = encode_to_vec(&cur).unwrap();
             bytes.extend(encode_to_vec(&staged).unwrap());
             assert!(decode_buf_exact::<OLSpecVersions>(&bytes).is_err());

@@ -350,7 +350,7 @@ mod tests {
     fn test_statements_reject_start_state_staging_another_spec() {
         let mut input = prepare_input();
         let (_, chainstate) = input.start_state.clone().into_parts();
-        let versions = OLSpecVersions::new(OLSpecId::V1, 2).expect("V1 may stage any spec");
+        let versions = OLSpecVersions::new(OLSpecId::V1, 3).expect("V1 may stage any spec");
         input.start_state = OLStateContainer::new(versions, chainstate);
         // Authenticate the altered state so that the spec check is what fails.
         input.parent.state_root = input.start_state.compute_state_root();
