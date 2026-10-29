@@ -52,6 +52,13 @@ RUN --mount=type=cache,sharing=locked,target=/usr/local/cargo/git \
       ${CARGO_FEATURES:+--features "$CARGO_FEATURES"} && \
     install -m 0555 /app/target/release/strata /usr/local/bin/strata
 
+# Build the offline database tool separately from the node's feature configuration.
+RUN --mount=type=cache,sharing=locked,target=/usr/local/cargo/git \
+    --mount=type=cache,sharing=locked,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=private,target=/app/target \
+    cargo build --locked --release -p strata-dbtool --bin strata-dbtool && \
+    install -m 0555 /app/target/release/strata-dbtool /usr/local/bin/strata-dbtool
+
 
 # ---- runtime ----
 FROM debian:13-slim AS runtime
@@ -73,9 +80,10 @@ RUN mkdir -p /app/data /app/.cache /app/.local/share && \
     chown -R alpen:alpen /app
 
 COPY --from=builder /usr/local/bin/strata /usr/local/bin/strata
+COPY --from=builder /usr/local/bin/strata-dbtool /usr/local/bin/strata-dbtool
 COPY docker/strata/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/entrypoint.sh
+RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/strata-dbtool /usr/local/bin/entrypoint.sh
 
 USER alpen
 
