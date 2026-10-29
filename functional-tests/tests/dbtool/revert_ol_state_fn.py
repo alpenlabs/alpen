@@ -46,8 +46,7 @@ class RevertOLStateFnTest(BaseTest):
 
         seq_service.stop()
         fn_service.stop()
-        datadir = fn_service.props["datadir"]
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(fn_service)
         latest_epoch_before_revert = int(latest_checkpoint["checkpoint_epoch"])
         post_restart_target_epoch = latest_epoch_before_revert + 1
         target_block_id, target_slot = target_end_of_checkpointed_epoch(latest_checkpoint)
@@ -61,13 +60,13 @@ class RevertOLStateFnTest(BaseTest):
             target_block_id,
         )
 
-        code, stdout, stderr = revert_ol_state(datadir, target_block_id)
+        code, stdout, stderr = revert_ol_state(fn_service, target_block_id)
         assert code == 0, stderr or stdout
 
-        target_after = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_after = run_dbtool_json(fn_service, "get-ol-state", target_block_id)
         assert int(target_after["current_slot"]) == target_slot
         logger.info("Revert verification passed")
-        assert verify_checkpoint_preserved(datadir, latest_epoch_before_revert)
+        assert verify_checkpoint_preserved(fn_service, latest_epoch_before_revert)
         logger.info("Checkpoint and epoch summary are preserved")
 
         # Restart both services and verify resync/progression.

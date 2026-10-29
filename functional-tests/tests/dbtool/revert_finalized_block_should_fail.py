@@ -35,10 +35,9 @@ class RevertFinalizedBlockShouldFailTest(StrataNodeTest):
         setup_revert_ol_state_test(seq_service, btc_service)
         seq_service.stop()
 
-        datadir = seq_service.props["datadir"]
-        syncinfo = run_dbtool_json(datadir, "get-syncinfo")
+        syncinfo = run_dbtool_json(seq_service, "get-syncinfo")
         finalized_block, finalized_slot = parse_finalized_epoch_from_syncinfo(syncinfo)
-        finalized_block_data = run_dbtool_json(datadir, "get-ol-block", finalized_block)
+        finalized_block_data = run_dbtool_json(seq_service, "get-ol-block", finalized_block)
         target_block_id = parse_ol_block_parent_blkid(finalized_block_data)
         target_slot = parse_ol_block_slot(finalized_block_data) - 1
         assert target_slot == finalized_slot - 1
@@ -46,7 +45,7 @@ class RevertFinalizedBlockShouldFailTest(StrataNodeTest):
         logger.info("Targeting slot %s", target_slot)
         logger.info("Attempting revert to finalized parent block_id=%s", target_block_id)
 
-        code, stdout, stderr = revert_ol_state(datadir, target_block_id)
+        code, stdout, stderr = revert_ol_state(seq_service, target_block_id)
         assert code != 0
         logger.info("revert failed as expected for finalized target")
         return True

@@ -173,11 +173,10 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         strata.stop()
         # Dbtool requires the node to be stopped. Snapshot durable records after
         # the crash, then compare them after recovery and further V2 progress.
-        datadir = strata.props["datadir"]
-        checkpoint_before_restart = run_dbtool_json(datadir, "get-checkpoint", str(last_v1_epoch))
-        proof_before_restart = run_dbtool_json(datadir, "get-checkpoint-proof", str(last_v1_epoch))
+        checkpoint_before_restart = run_dbtool_json(strata, "get-checkpoint", str(last_v1_epoch))
+        proof_before_restart = run_dbtool_json(strata, "get-checkpoint-proof", str(last_v1_epoch))
         completed_tasks = run_dbtool_json(
-            datadir, "get-prover-tasks-summary", "--status", "completed", "--limit", "100"
+            strata, "get-prover-tasks-summary", "--status", "completed", "--limit", "100"
         )["entries"]
         assert "intent_index" in checkpoint_before_restart, checkpoint_before_restart
         assert proof_before_restart["proof_len"] > 0, proof_before_restart
@@ -244,7 +243,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         logger.info("V1 to V2 rotation replayed through epoch %s on both followers", target_epoch)
 
         strata.stop()
-        checkpoint_after_restart = run_dbtool_json(datadir, "get-checkpoint", str(last_v1_epoch))
+        checkpoint_after_restart = run_dbtool_json(strata, "get-checkpoint", str(last_v1_epoch))
         # Confirmation fields legitimately change when L1 accepts the checkpoint;
         # its epoch, terminal block, and payload must remain the same.
         for field in (
@@ -258,11 +257,11 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         ):
             assert checkpoint_after_restart[field] == checkpoint_before_restart[field], field
         assert (
-            run_dbtool_json(datadir, "get-checkpoint-proof", str(last_v1_epoch))
+            run_dbtool_json(strata, "get-checkpoint-proof", str(last_v1_epoch))
             == proof_before_restart
         )
         for task in completed_tasks:
-            assert run_dbtool_json(datadir, "get-prover-task", task["key_hex"]) == task
+            assert run_dbtool_json(strata, "get-prover-task", task["key_hex"]) == task
         return True
 
     def _pace_l1_to(

@@ -39,7 +39,6 @@ class TestMmrIndexReconcileRestart(StrataNodeTest):
     def main(self, ctx):
         strata = self.get_service(ServiceType.Strata)
         signer = self.get_service(ServiceType.StrataSigner)
-        datadir = strata.props["datadir"]
         rpc = strata.wait_for_rpc_ready(timeout=20)
         submit_rpc = strata.create_submit_rpc()
 
@@ -74,7 +73,7 @@ class TestMmrIndexReconcileRestart(StrataNodeTest):
                     f"expected {target_block_id}, got {pre_tip['blkid']}"
                 )
 
-            inbox_count = get_mmr_leaf_count(datadir, INBOX_MMR_ID)
+            inbox_count = get_mmr_leaf_count(strata, INBOX_MMR_ID)
             assert inbox_count > target_inbox_count, (
                 f"expected crashed MMR index to be ahead of target inbox count "
                 f"({inbox_count} <= {target_inbox_count})"
@@ -105,10 +104,10 @@ class TestMmrIndexReconcileRestart(StrataNodeTest):
         signer.stop()
         strata.stop()
 
-        post_state = run_dbtool_json(datadir, "get-ol-state", post_block_id)
+        post_state = run_dbtool_json(strata, "get-ol-state", post_block_id)
         post_l1_count = int(post_state["l1_next_expected_height"])
-        assert get_mmr_leaf_count(datadir, INBOX_MMR_ID) == post_inbox_count
-        assert get_mmr_leaf_count(datadir, L1_BLOCK_REFS_MMR_ID) == post_l1_count
+        assert get_mmr_leaf_count(strata, INBOX_MMR_ID) == post_inbox_count
+        assert get_mmr_leaf_count(strata, L1_BLOCK_REFS_MMR_ID) == post_l1_count
 
         logger.info(
             "MMR index is consistent after restart: slot=%s inbox_count=%s l1_count=%s",
