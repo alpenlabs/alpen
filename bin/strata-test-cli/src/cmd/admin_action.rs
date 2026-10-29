@@ -1,4 +1,4 @@
-//! Sign admin predicate updates.
+//! Sign admin predicate updates and cancellations.
 
 use std::{
     env,
@@ -21,7 +21,7 @@ use super::create_ee_predicate_update::{
 };
 use crate::admin::{parse_secret_key, signing_message};
 
-/// Sign an admin predicate update with STRATA_ADMIN_KEY and print a base64 signature.
+/// Sign an admin action with STRATA_ADMIN_KEY and print a base64 signature.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "sign-admin-action")]
 pub struct SignAdminActionArgs {
@@ -31,6 +31,9 @@ pub struct SignAdminActionArgs {
     /// authority sequence number
     #[argh(option)]
     pub seq_no: u64,
+    /// cancel the queued update with this ID instead of proposing an update
+    #[argh(option)]
+    pub cancel_target_id: Option<u32>,
     /// full predicate key
     #[argh(option, from_str_fn(parse_predicate_key))]
     pub predicate: PredicateKey,
@@ -47,7 +50,7 @@ fn sign(args: SignAdminActionArgs) -> anyhow::Result<()> {
     let secret = env::var("STRATA_ADMIN_KEY")
         .map_err(|_| anyhow!("set STRATA_ADMIN_KEY to an xpriv or 32-byte hex secret"))?;
     let key = parse_secret_key(&secret).context("invalid STRATA_ADMIN_KEY")?;
-    let action = build_admin_action(args.predicate, args.update, None);
+    let action = build_admin_action(args.predicate, args.update, args.cancel_target_id);
     let (message, digest) = signing_message(&action, args.seq_no, args.network);
     writeln!(
         io::stderr().lock(),

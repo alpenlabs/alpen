@@ -13,6 +13,7 @@ use super::{
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
     extract_p2tr_pubkey::ExtractP2trPubkeyArgs,
     get_address::GetAddressArgs,
+    lookup_admin_update::LookupAdminUpdateArgs,
     musig_aggregate_pks::MusigAggregatePksArgs,
     post_ee_da_envelope::PostEeDaEnvelopeArgs,
     sign_schnorr_sig::SignSchnorrSigArgs,
@@ -32,6 +33,8 @@ pub struct TopLevel {
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand)]
 pub enum Commands {
+    /// Look up an admin update through Bitcoin RPC
+    LookupAdminUpdate(LookupAdminUpdateArgs),
     /// Sign an admin action
     SignAdminAction(SignAdminActionArgs),
 

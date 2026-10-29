@@ -33,6 +33,7 @@ use cmd::{
     create_withdrawal_fulfillment::create_withdrawal_fulfillment,
     extract_p2tr_pubkey::extract_p2tr_pubkey,
     get_address::get_address,
+    lookup_admin_update::lookup_admin_update,
     musig_aggregate_pks::musig_aggregate_pks,
     post_ee_da_envelope::post_ee_da_envelope,
     sign_schnorr_sig::sign_schnorr_sig,
@@ -44,6 +45,7 @@ fn main() {
     let TopLevel { cmd } = argh::from_env();
 
     let result = match cmd {
+        Commands::LookupAdminUpdate(args) => lookup_admin_update(args),
         Commands::SignAdminAction(args) => sign_admin_action(args),
         Commands::CreateDepositTx(args) => create_deposit_tx(args),
         Commands::CreateWithdrawalFulfillment(args) => create_withdrawal_fulfillment(args),

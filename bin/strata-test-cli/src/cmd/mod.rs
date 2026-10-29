@@ -8,6 +8,7 @@ pub mod create_ee_predicate_update;
 pub mod create_withdrawal_fulfillment;
 pub mod extract_p2tr_pubkey;
 pub mod get_address;
+pub mod lookup_admin_update;
 pub mod musig_aggregate_pks;
 pub mod post_ee_da_envelope;
 pub mod sign_schnorr_sig;
