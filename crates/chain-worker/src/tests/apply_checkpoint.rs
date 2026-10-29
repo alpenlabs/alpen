@@ -1074,7 +1074,7 @@ mod db_idempotency {
         toplevel_state_root: Option<strata_identifiers::Buf32>,
         terminal_header: Option<super::OLBlockHeaderV1>,
         summary: Option<strata_checkpoint_types::EpochSummary>,
-        canonical_epoch_commitment: Option<EpochCommitment>,
+        epoch_commitments: Vec<EpochCommitment>,
         per_account: Vec<(
             AccountId,
             Vec<AccountUpdateRecord>,
@@ -1198,10 +1198,11 @@ mod db_idempotency {
                 .ol_checkpoint
                 .get_epoch_summary_blocking(epoch)
                 .expect("get_epoch_summary");
-            let canonical = self
+            let mut epoch_commitments = self
                 .ol_checkpoint
-                .get_canonical_epoch_commitment_at_blocking(epoch.epoch())
-                .expect("get_canonical_epoch_commitment");
+                .get_epoch_commitments_at_blocking(epoch.epoch())
+                .expect("get_epoch_commitments");
+            epoch_commitments.sort();
             let mut per_account = Vec::new();
             for &acct in accounts {
                 let updates = self
@@ -1247,7 +1248,7 @@ mod db_idempotency {
                 toplevel_state_root,
                 terminal_header,
                 summary,
-                canonical_epoch_commitment: canonical,
+                epoch_commitments,
                 per_account,
                 l1_block_refs_leaf_count,
                 l1_block_refs,

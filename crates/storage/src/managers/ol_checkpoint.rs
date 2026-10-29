@@ -57,7 +57,7 @@ impl OLCheckpointManager {
         self.ops.get_epoch_summary_blocking(epoch)
     }
 
-    /// Gets all commitments for an epoch.
+    /// Gets all commitments for an epoch, with no ordering guarantee.
     pub async fn get_epoch_commitments_at_async(
         &self,
         epoch: Epoch,
@@ -65,34 +65,12 @@ impl OLCheckpointManager {
         self.ops.get_epoch_commitments_at_async(epoch).await
     }
 
-    /// Gets all commitments for an epoch.
+    /// Gets all commitments for an epoch, with no ordering guarantee.
     pub fn get_epoch_commitments_at_blocking(
         &self,
         epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>> {
         self.ops.get_epoch_commitments_at_blocking(epoch)
-    }
-
-    /// Gets the canonical commitment for an epoch index, if any.
-    ///
-    /// Returns the first commitment for the epoch, which is treated as canonical.
-    pub async fn get_canonical_epoch_commitment_at_async(
-        &self,
-        epoch: Epoch,
-    ) -> DbResult<Option<EpochCommitment>> {
-        let commitments = self.get_epoch_commitments_at_async(epoch).await?;
-        Ok(commitments.first().copied())
-    }
-
-    /// Gets the canonical commitment for an epoch index, if any.
-    ///
-    /// Returns the first commitment for the epoch, which is treated as canonical.
-    pub fn get_canonical_epoch_commitment_at_blocking(
-        &self,
-        epoch: Epoch,
-    ) -> DbResult<Option<EpochCommitment>> {
-        let commitments = self.get_epoch_commitments_at_blocking(epoch)?;
-        Ok(commitments.first().copied())
     }
 
     /// Gets the index of the last epoch that we have a summary for, if any.
@@ -638,7 +616,7 @@ mod tests {
         }
 
         #[test]
-        fn proptest_canonical_commitment_is_first_for_epoch(
+        fn proptest_epoch_commitments_include_both_branches(
             epoch in epoch_strategy(),
             terminal_a in ol_block_commitment_strategy(),
             terminal_b in ol_block_commitment_strategy(),
@@ -651,7 +629,8 @@ mod tests {
 
             let summary_a = EpochSummary::new(epoch, terminal_a, prev_terminal, new_l1, final_state);
             let summary_b = EpochSummary::new(epoch, terminal_b, prev_terminal, new_l1, final_state);
-            let expected = EpochCommitment::from_terminal(epoch, terminal_a.min(terminal_b));
+            let mut expected = vec![summary_a.get_epoch_commitment(), summary_b.get_epoch_commitment()];
+            expected.sort();
 
             manager
                 .insert_epoch_summary_blocking(summary_a)
@@ -660,11 +639,11 @@ mod tests {
                 .insert_epoch_summary_blocking(summary_b)
                 .expect("insert summary b");
 
-            let canonical = manager
-                .get_canonical_epoch_commitment_at_blocking(epoch)
-                .expect("get canonical commitment")
-                .expect("canonical commitment missing");
-            prop_assert_eq!(canonical, expected);
+            let mut commitments = manager
+                .get_epoch_commitments_at_blocking(epoch)
+                .expect("get epoch commitments");
+            commitments.sort();
+            prop_assert_eq!(commitments, expected);
         }
 
         #[test]
