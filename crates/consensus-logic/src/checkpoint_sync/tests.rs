@@ -1,26 +1,34 @@
 //! Unit tests for the Checkpoint Sync Service (CSS).
 
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
+    collections::{HashMap, VecDeque},
+    future::{poll_fn, Future},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    task::Poll,
 };
 
 use strata_chain_worker::WorkerError;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{CheckpointL1Ref, CheckpointState};
 use strata_csm_worker::CsmWorkerStatus;
-use strata_db_types::DbResult;
+use strata_db_types::{DbError, DbResult};
 use strata_identifiers::{Epoch, OLBlockCommitment};
 use strata_ol_stf::{next_epoch_spec, OLSpecId};
 use strata_primitives::{EpochCommitment, L1Height};
 use strata_service::{AsyncService, Response};
 use strata_status::OLSyncStatus;
+use tokio::sync::watch;
 
 use crate::{
     checkpoint_sync::{
         context::CheckpointSyncCtx,
         errors::{CheckpointSyncError, CheckpointSyncResult},
-        service::{initialize_css_inner_state, CheckpointSyncService},
+        service::{
+            initialize_css_inner_state, reconcile_before_start, CheckpointSyncService, CssResume,
+        },
         state::{find_and_apply_unapplied_epochs, scan_unapplied_epochs, CheckpointSyncState},
     },
     test_utils::{make_buf32, make_epoch_commitment as make_epoch, make_l1_block_commitment},
@@ -56,6 +64,9 @@ fn make_epoch_summary(
 /// mirroring how the real chain worker writes an [`EpochSummary`] after
 /// reconstructing the epoch's state.
 struct MockCtx {
+    reconcile_results: Mutex<VecDeque<CheckpointSyncResult<()>>>,
+    reconcile_calls: AtomicUsize,
+    update_during_reconcile: Mutex<Option<watch::Sender<CheckpointState>>>,
     /// L1 reorg-safe depth used to compute reorg-safety of checkpoints.
     l1_reorg_safe_depth: u32,
     /// Simulated L1 tip; used to compute reorg-safety of checkpoints.
@@ -88,6 +99,9 @@ struct MockCtx {
 impl MockCtx {
     fn new(reorg_safe_depth: u32, l1_tip_height: L1Height) -> Self {
         Self {
+            reconcile_results: Mutex::new(VecDeque::new()),
+            reconcile_calls: AtomicUsize::new(0),
+            update_during_reconcile: Mutex::new(None),
             l1_reorg_safe_depth: reorg_safe_depth,
             l1_tip_height: Mutex::new(l1_tip_height),
             csm_status: CsmWorkerStatus {
@@ -254,8 +268,130 @@ impl CheckpointSyncCtx for MockCtx {
     }
 
     async fn reconcile_ol_mmr_index(&self) -> CheckpointSyncResult<()> {
-        Ok(())
+        self.reconcile_calls.fetch_add(1, Ordering::SeqCst);
+        if let Some(sender) = self.update_during_reconcile.lock().unwrap().take() {
+            sender
+                .send(CheckpointState::default())
+                .expect("test: publish client-state update");
+        }
+        self.reconcile_results
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(()))
     }
+}
+
+fn stale_client_state_error() -> CheckpointSyncError {
+    DbError::OLFinalizedClientStateUnavailable {
+        block: make_l1_block_commitment(100, 1),
+    }
+    .into()
+}
+
+#[tokio::test]
+async fn startup_waits_for_client_state_before_recovery_and_catchup() {
+    let genesis = make_epoch(0, 0, 1);
+    let epoch = make_epoch(1, 10, 2);
+    let ctx = MockCtx::new(3, 200)
+        .add_genesis(genesis)
+        .add_observed_epoch(epoch, make_l1_ref(100))
+        .with_csm_finalized(Some(epoch));
+    ctx.reconcile_results
+        .lock()
+        .unwrap()
+        .push_back(Err(stale_client_state_error()));
+    let (sender, mut receiver) = watch::channel(CheckpointState::default());
+    let recovery = async {
+        reconcile_before_start(&ctx, &mut receiver)
+            .await
+            .expect("test: reconcile after CSM catches up");
+        initialize_css_inner_state(&ctx)
+            .await
+            .expect("test: initialize after recovery")
+    };
+    tokio::pin!(recovery);
+    poll_fn(|cx| {
+        assert!(recovery.as_mut().poll(cx).is_pending());
+        Poll::Ready(())
+    })
+    .await;
+    assert_eq!(ctx.reconcile_calls.load(Ordering::SeqCst), 1);
+    assert!(ctx.applied_epochs.lock().unwrap().is_empty());
+    assert!(ctx.finalized_epochs.lock().unwrap().is_empty());
+    assert!(ctx.published_statuses.lock().unwrap().is_empty());
+    assert_eq!(
+        ctx.get_genesis_epoch_commitment().await.unwrap(),
+        Some(genesis)
+    );
+
+    sender
+        .send(CheckpointState::default())
+        .expect("test: publish canonical client state");
+    assert_eq!(
+        recovery.await,
+        CssResume {
+            last_applied: Some(epoch),
+            stopped_before: None,
+        }
+    );
+    assert_eq!(ctx.reconcile_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(*ctx.applied_epochs.lock().unwrap(), vec![epoch]);
+}
+
+#[tokio::test]
+async fn startup_recovery_does_not_miss_update_during_read() {
+    let ctx = MockCtx::new(3, 200);
+    ctx.reconcile_results
+        .lock()
+        .unwrap()
+        .push_back(Err(stale_client_state_error()));
+    let (sender, mut receiver) = watch::channel(CheckpointState::default());
+    *ctx.update_during_reconcile.lock().unwrap() = Some(sender);
+    // The only update arrives inside the failing read. A lost update would leave
+    // recovery waiting on a closed channel instead of completing the retry.
+    reconcile_before_start(&ctx, &mut receiver)
+        .await
+        .expect("test: consume update during read");
+    assert_eq!(ctx.reconcile_calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn startup_recovery_propagates_corruption_without_retry() {
+    let ctx = MockCtx::new(3, 200);
+    ctx.reconcile_results
+        .lock()
+        .unwrap()
+        .push_back(Err(
+            DbError::OLCheckpointHistoryAmbiguous { epoch: 1 }.into()
+        ));
+    let (_sender, mut receiver) = watch::channel(CheckpointState::default());
+    let error = reconcile_before_start(&ctx, &mut receiver)
+        .await
+        .expect_err("test: corruption must fail");
+    assert!(matches!(
+        error.downcast_ref::<CheckpointSyncError>(),
+        Some(CheckpointSyncError::Db(
+            DbError::OLCheckpointHistoryAmbiguous { epoch: 1 }
+        ))
+    ));
+    assert_eq!(ctx.reconcile_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn startup_recovery_stops_when_client_state_channel_closes() {
+    let ctx = MockCtx::new(3, 200);
+    ctx.reconcile_results
+        .lock()
+        .unwrap()
+        .push_back(Err(stale_client_state_error()));
+    let (sender, mut receiver) = watch::channel(CheckpointState::default());
+    drop(sender);
+    let error = reconcile_before_start(&ctx, &mut receiver)
+        .await
+        .expect_err("test: closed channel must stop recovery");
+    assert!(error.downcast_ref::<watch::error::RecvError>().is_some());
+    assert_eq!(ctx.reconcile_calls.load(Ordering::SeqCst), 1);
 }
 
 // ---- scan_unapplied_epochs ----

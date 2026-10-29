@@ -16,7 +16,9 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{DbError, DbResult};
 use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
-use strata_ol_canonical_chain_provider::resolve_observed_epoch_blocking;
+use strata_ol_canonical_chain_provider::{
+    FinalizedOLChainProvider, OLCanonicalChainProvider, resolve_observed_epoch_blocking,
+};
 use strata_ol_params::OLParams;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_service::ServiceMonitor;
@@ -31,6 +33,8 @@ use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
 struct StrataCheckpointSyncContext {
     /// Node storage for checkpoint and L1 lookups.
     storage: Arc<NodeStorage>,
+    /// Canonical OL view derived from L1-finalized checkpoints.
+    canonical_chain_provider: FinalizedOLChainProvider,
     /// OL parameters used to seed MMR sentinel leaves.
     ol_params: Arc<OLParams>,
     /// Chain worker handle used to apply, advance and finalize epochs.
@@ -53,6 +57,7 @@ impl StrataCheckpointSyncContext {
         l1_reorg_safe_depth: u32,
     ) -> Self {
         Self {
+            canonical_chain_provider: FinalizedOLChainProvider::new(&storage),
             storage,
             ol_params,
             chain_worker,
@@ -106,8 +111,7 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
     }
 
     async fn get_genesis_epoch_commitment(&self) -> DbResult<Option<EpochCommitment>> {
-        self.storage
-            .ol_checkpoint()
+        self.canonical_chain_provider
             .get_canonical_epoch_commitment_at_async(0)
             .await
     }
@@ -154,7 +158,12 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
     }
 
     async fn reconcile_ol_mmr_index(&self) -> CheckpointSyncResult<()> {
-        let Some(target) = resolve_latest_summarized_epoch_mmr_target(&self.storage).await? else {
+        let Some(target) = resolve_latest_summarized_epoch_mmr_target(
+            &self.storage,
+            &self.canonical_chain_provider,
+        )
+        .await?
+        else {
             return Ok(());
         };
 
@@ -169,6 +178,7 @@ impl CheckpointSyncCtx for StrataCheckpointSyncContext {
 #[expect(clippy::result_large_err, reason = "No need to box the service error")]
 async fn resolve_latest_summarized_epoch_mmr_target(
     storage: &NodeStorage,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
 ) -> CheckpointSyncResult<Option<OLMmrReconcileTarget>> {
     let Some(epoch) = storage
         .ol_checkpoint()
@@ -178,8 +188,10 @@ async fn resolve_latest_summarized_epoch_mmr_target(
         return Ok(None);
     };
 
-    let epoch_commitment = storage
-        .ol_checkpoint()
+    // L1 finality can be ahead of local application. Select the canonical
+    // commitment at the persisted frontier, not the provider tip. This also
+    // recovers an application interrupted before local finalization.
+    let epoch_commitment = canonical_chain_provider
         .get_canonical_epoch_commitment_at_async(epoch)
         .await?
         .ok_or(CheckpointSyncError::MissingCanonicalEpochCommitment(epoch))?;
@@ -228,9 +240,14 @@ pub(crate) fn start(
 
 #[cfg(test)]
 mod tests {
+    use strata_asm_checkpoint_types::{
+        CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
+    };
+    use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId};
     use strata_ol_params::{BridgeParams, OLParams, OLRuntimeParams};
+    use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types_v1::{IStateBatchApplicable, WriteBatch};
     use strata_primitives::{L1BlockCommitment, OLBlockId};
@@ -260,14 +277,16 @@ mod tests {
         let storage = setup_storage();
 
         let target = strata_storage::test_runtime_handle()
-            .block_on(resolve_latest_summarized_epoch_mmr_target(&storage))
+            .block_on(resolve_latest_summarized_epoch_mmr_target(
+                &storage,
+                &FinalizedOLChainProvider::new(&storage),
+            ))
             .expect("test: resolve target");
 
         assert!(target.is_none());
     }
 
-    #[test]
-    fn test_latest_summarized_epoch_sets_mmr_target() {
+    fn setup_applied_epoch() -> (NodeStorage, EpochSummary, OLStateContainer) {
         let (storage, genesis_commitment) = setup_storage_with_genesis();
         let genesis_epoch_commitment = EpochCommitment::new(0, 0, *genesis_commitment.blkid());
         let genesis_summary = storage
@@ -302,14 +321,111 @@ mod tests {
             .put_toplevel_ol_state_blocking(next_commitment, next_state.clone())
             .expect("test: insert epoch 1 state");
 
-        let target = strata_storage::test_runtime_handle()
-            .block_on(resolve_latest_summarized_epoch_mmr_target(&storage))
+        record_finalized_checkpoint(&storage, next_summary.get_epoch_commitment());
+        (storage, next_summary, next_state)
+    }
+
+    fn record_finalized_checkpoint(storage: &NodeStorage, epoch: EpochCommitment) {
+        let block = L1BlockCommitment::new(
+            100 + epoch.epoch(),
+            L1BlockId::from(Buf32::from([epoch.epoch() as u8; 32])),
+        );
+        storage
+            .l1()
+            .extend_canonical_chain(block.blkid(), block.height())
+            .expect("test: extend L1 chain");
+        let reference = CheckpointL1Ref::new(block, [1; 32].into(), [2; 32].into());
+        let tip = CheckpointTip::new(epoch.epoch(), block.height(), epoch.to_block_commitment());
+        let sidecar = CheckpointSidecar::new(
+            Vec::new(),
+            Vec::new(),
+            TerminalHeaderComplement::new(
+                1000 + u64::from(epoch.epoch()),
+                OLBlockId::null(),
+                Buf32::zero(),
+                Buf32::zero(),
+            ),
+        )
+        .expect("test: create sidecar");
+        let payload =
+            CheckpointPayload::new(tip, sidecar, Vec::new()).expect("test: create checkpoint");
+        storage
+            .ol_checkpoint()
+            .put_checkpoint_l1_observation_blocking(epoch, payload, reference.clone())
+            .expect("test: record L1 observation");
+        let checkpoint = L1Checkpoint::new(tip, reference);
+        storage
+            .client_state()
+            .put_update_blocking(
+                &block,
+                ClientUpdateOutput::new_state(ClientState::new(
+                    Some(checkpoint.clone()),
+                    Some(checkpoint),
+                )),
+            )
+            .expect("test: record L1 finality");
+    }
+
+    #[expect(
+        clippy::result_large_err,
+        reason = "Test helper preserves the service error"
+    )]
+    fn resolve_target(storage: &NodeStorage) -> CheckpointSyncResult<Option<OLMmrReconcileTarget>> {
+        strata_storage::test_runtime_handle().block_on(resolve_latest_summarized_epoch_mmr_target(
+            storage,
+            &FinalizedOLChainProvider::new(storage),
+        ))
+    }
+
+    #[test]
+    fn test_applied_epoch_is_recovered_before_local_finalization() {
+        let (storage, summary, state) = setup_applied_epoch();
+        let target = resolve_target(&storage)
             .expect("test: resolve target")
             .expect("test: target exists");
+        assert_eq!(target.block, *summary.terminal());
+        assert_eq!(target.epoch, summary.epoch());
+        assert_eq!(target.state.as_ref(), &state);
+    }
 
-        assert_eq!(target.block, next_commitment);
-        assert_eq!(target.epoch, next_summary.epoch());
-        assert_eq!(target.state.as_ref(), &next_state);
+    #[test]
+    fn test_mmr_target_uses_local_frontier_and_canonical_summary() {
+        let (storage, summary, state) = setup_applied_epoch();
+        // L1 has finalized epoch two, but only epoch one has been applied locally.
+        record_finalized_checkpoint(
+            &storage,
+            EpochCommitment::new(2, 2, Buf32::from([3; 32]).into()),
+        );
+        let fork_summary = EpochSummary::new(
+            summary.epoch(),
+            OLBlockCommitment::new(1, Buf32::from([4; 32]).into()),
+            *summary.prev_terminal(),
+            *summary.new_l1(),
+            *summary.final_state(),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(fork_summary)
+            .expect("test: store fork summary");
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear OL index");
+        let target = resolve_target(&storage)
+            .expect("test: resolve target")
+            .expect("test: target exists");
+        assert_eq!(target.block, *summary.terminal());
+        assert_eq!(target.epoch, summary.epoch());
+        assert_eq!(target.state.as_ref(), &state);
+
+        storage
+            .ol_checkpoint()
+            .del_epoch_summary_blocking(summary.get_epoch_commitment())
+            .expect("test: remove selected summary");
+        assert!(
+            matches!(resolve_target(&storage), Err(CheckpointSyncError::MissingEpochSummary(epoch))
+            if epoch == summary.get_epoch_commitment())
+        );
     }
 
     #[test]
@@ -321,7 +437,10 @@ mod tests {
             .expect("test: delete genesis state");
 
         let err = strata_storage::test_runtime_handle()
-            .block_on(resolve_latest_summarized_epoch_mmr_target(&storage))
+            .block_on(resolve_latest_summarized_epoch_mmr_target(
+                &storage,
+                &FinalizedOLChainProvider::new(&storage),
+            ))
             .expect_err("test: missing state should error");
 
         assert!(matches!(
