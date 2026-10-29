@@ -28,11 +28,10 @@ pub(crate) struct NodeSequencerContext {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     ol_block_time_ms: u64,
-    /// Tips whose upgrade-required stop was logged, so each stop is logged
-    /// once rather than on every generation tick.
-    ///
-    /// Only tips that no block of this binary extends enter the set, so it
-    /// stays as small as the number of such tips the node sees.
+    /// Tip IDs already reported as blocked by an unsupported upgrade.
+    /// Prevents repeating the warning on every block-generation tick.
+    
+    /// Ideally this will hold 1 block id. In case of reorgs it may have multiple.
     logged_upgrade_tips: Mutex<HashSet<OLBlockId>>,
 }
 
