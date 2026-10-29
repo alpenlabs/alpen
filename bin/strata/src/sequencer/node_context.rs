@@ -30,7 +30,7 @@ pub(crate) struct NodeSequencerContext {
     ol_block_time_ms: u64,
     /// Tip IDs already reported as blocked by an unsupported upgrade.
     /// Prevents repeating the warning on every block-generation tick.
-    
+    ///
     /// Ideally this will hold 1 block id. In case of reorgs it may have multiple.
     logged_upgrade_tips: Mutex<HashSet<OLBlockId>>,
 }
