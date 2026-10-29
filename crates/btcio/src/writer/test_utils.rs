@@ -33,6 +33,6 @@ pub(crate) fn get_broadcast_handle() -> Arc<L1BroadcastHandle> {
     let backend = SledBackend::new(sdb.into(), sconf).unwrap();
     let db = backend.broadcast_db();
     let ops = BroadcastDbOps::new(test_runtime_handle(), db);
-    let handle = L1BroadcastHandle::new_for_test(Arc::new(ops));
+    let (handle, _) = L1BroadcastHandle::new_for_test(Arc::new(ops));
     Arc::new(handle)
 }
