@@ -999,11 +999,14 @@ mod tests {
     }
 
     #[test]
-    fn summary_and_canonical_index_inconsistency_fails_distinctly() {
+    fn promotion_uses_finalized_anchor_with_competing_epoch_summary() {
         let fixture = PromotionFixture::new();
+        let mut fork_header = fixture.header.clone();
+        fork_header.parent_blkid = *fixture.summary.prev_terminal().blkid();
+        fork_header.timestamp += 1;
         let conflicting = EpochSummary::new(
             fixture.anchor.epoch(),
-            OLBlockCommitment::new(0, OLBlockId::from(Buf32::zero())),
+            fork_header.compute_block_commitment(),
             *fixture.summary.prev_terminal(),
             *fixture.summary.new_l1(),
             *fixture.summary.final_state(),
@@ -1013,7 +1016,17 @@ mod tests {
             .ol_checkpoint()
             .insert_epoch_summary_blocking(conflicting)
             .expect("insert conflicting summary");
-        fixture.assert_failure("canonical OL history anchor epoch commitment mismatch");
+        fixture
+            .promote()
+            .expect("promote the exact finalized anchor");
+        assert_eq!(
+            fixture
+                .storage
+                .ol_block()
+                .get_history_base_blocking()
+                .expect("read history base"),
+            Some(fixture.anchor)
+        );
     }
 
     #[test]
