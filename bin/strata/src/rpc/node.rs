@@ -22,9 +22,10 @@ use strata_ol_rpc_types::{
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
-    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcRejectedCheckpoint, RpcSnarkAccountState,
-    RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
+    RpcOLChainStatus, RpcOLSpecStatus, RpcOLTransaction, RpcOLTxDetail, RpcRejectedCheckpoint,
+    RpcSnarkAccountState, RpcSnarkAcctUpdateManifest, RpcUpdateInputData, RpcUpgradeRequired,
 };
+use strata_ol_spec_selection::{SelectedSpec, select_spec_after_epoch_async};
 use strata_ol_state_container::{OLStateContainer, OLStateSeries};
 use strata_ol_state_types::{IAccountState, ISnarkAccountState};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
@@ -66,7 +67,9 @@ struct ChainBlock {
 /// OL RPC server implementation, generic over a provider.
 pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     provider: P,
-    genesis_l1_height: L1Height,
+    /// L1 block OL genesis anchors to, where the genesis epoch's L1 range
+    /// starts.
+    genesis_l1_block: L1BlockCommitment,
     // Maximum number of headers/block-data that can be queried
     max_headers_range: usize,
     // Indicates whether or not the server has access to block data.
@@ -137,16 +140,43 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     /// Creates a new [`OLRpcServer`].
     pub(crate) fn new(
         provider: P,
-        genesis_l1_height: L1Height,
+        genesis_l1_block: L1BlockCommitment,
         max_headers_range: usize,
         block_data_access: OLBlockDataAccess,
     ) -> Self {
         Self {
             provider,
-            genesis_l1_height,
+            genesis_l1_block,
             max_headers_range,
             block_data_access,
         }
+    }
+
+    /// Selects the spec of the epoch after `terminal`, an epoch's terminal
+    /// block whose state is `state`, with [`select_spec_after_epoch_async`],
+    /// as the node's drivers select it.
+    ///
+    /// Returns [`SelectedSpec::Unsupported`] when this binary does not
+    /// implement that spec, and an error only when stored chain data is
+    /// missing or inconsistent.
+    async fn select_spec_after_epoch_terminal_block(
+        &self,
+        terminal: EpochCommitment,
+        state: &OLStateContainer,
+    ) -> RpcResult<SelectedSpec> {
+        let selected = select_spec_after_epoch_async(
+            terminal,
+            state.spec_versions(),
+            state.chainstate().last_l1_block(),
+            self.genesis_l1_block,
+            |epoch| self.provider.get_epoch_summary(epoch),
+            |block| self.provider.get_block_manifest(*block.blkid()),
+        )
+        .await;
+        SelectedSpec::from_selection(selected).map_err(|err| match err.into_lookup_error() {
+            Ok(lookup) => db_error(lookup),
+            Err(err) => internal_error(err.to_string()),
+        })
     }
 
     async fn get_canonical_block_at_height(&self, height: u64) -> RpcResult<Option<OLBlockId>> {
@@ -819,6 +849,52 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         Ok(RpcOLChainStatus::new(tip, confirmed, finalized, latest))
     }
 
+    async fn get_spec_status(&self) -> RpcResult<RpcOLSpecStatus> {
+        // Read the tip once, so the spec and tip below describe one block.
+        let sync_status = self
+            .provider
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?;
+        let tip = sync_status.tip();
+        let tip_info = RpcOLBlockInfo::new(
+            *tip.blkid(),
+            tip.slot(),
+            sync_status.tip_epoch(),
+            sync_status.tip_is_terminal(),
+        );
+        let state = self
+            .provider
+            .get_toplevel_ol_state(tip)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| internal_error(format!("missing the OL state of tip {tip}")))?;
+        let cur_spec_version = state.spec_versions().cur_spec_version();
+        if !sync_status.tip_is_terminal() {
+            return Ok(RpcOLSpecStatus::new(tip_info, cur_spec_version, None, None));
+        }
+
+        let tip_epoch = EpochCommitment::from_terminal(sync_status.tip_epoch(), tip);
+        Ok(
+            match self
+                .select_spec_after_epoch_terminal_block(tip_epoch, &state)
+                .await?
+            {
+                SelectedSpec::Supported(spec) => {
+                    RpcOLSpecStatus::new(tip_info, cur_spec_version, Some(spec.into()), None)
+                }
+                SelectedSpec::Unsupported(upgrade) => RpcOLSpecStatus::new(
+                    tip_info,
+                    cur_spec_version,
+                    Some(upgrade.spec_version()),
+                    Some(RpcUpgradeRequired::new(
+                        upgrade.enactment_l1_height(),
+                        upgrade.spec_version(),
+                    )),
+                ),
+            },
+        )
+    }
+
     async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>> {
         let Some((commitment, epoch_summary)) = self.get_canonical_epoch_summary(epoch).await?
         else {
@@ -851,10 +927,10 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
         let cur_l1 = *epoch_summary.new_l1();
         let l1_start = if epoch == 0 {
-            if cur_l1.height() <= self.genesis_l1_height {
+            if cur_l1.height() <= self.genesis_l1_block.height() {
                 cur_l1
             } else {
-                let l1_start_height = self.genesis_l1_height.saturating_add(1);
+                let l1_start_height = self.genesis_l1_block.height().saturating_add(1);
                 let l1_start_manifest = self
                     .provider
                     .get_block_manifest_at_height(l1_start_height)
