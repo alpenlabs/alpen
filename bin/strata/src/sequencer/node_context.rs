@@ -276,6 +276,7 @@ mod tests {
     use strata_ol_params::OLParams;
     use strata_ol_sequencer::SequencerBuilder;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
+    use strata_ol_state_types::OLSpecId;
     use strata_predicate::PredicateKey;
     use strata_service::AsyncServiceInput;
     use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
@@ -642,14 +643,19 @@ mod tests {
         assert_eq!(template.header().parent_blkid(), parent_commitment.blkid());
     }
 
-    /// A tip that ends a V1 epoch which processed a checkpoint predicate
-    /// enactment is the last block this binary builds on: generation stops
-    /// without an error and leaves no template, on every tick.
-    #[tokio::test]
-    async fn generation_stops_after_a_v1_enactment() {
+    /// Builds a sequencer context on a genesis tip that ends a `spec` epoch
+    /// which processed a checkpoint predicate enactment.
+    async fn sequencer_on_genesis_enactment(
+        spec: OLSpecId,
+    ) -> (
+        TaskManager,
+        Arc<BlockasmHandle>,
+        NodeSequencerContext,
+        OLBlockCommitment,
+    ) {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_genesis_parent_and_l1_manifest_count(0)
-            .with_v1_genesis_enactment()
+            .with_genesis_enactment(spec)
             .build_fixture()
             .await;
         let storage = fixture.storage().clone();
@@ -659,7 +665,7 @@ mod tests {
             .await
             .expect("test: fetch parent header")
             .expect("test: parent header exists");
-        let (_task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
+        let (task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
         let status_channel =
             test_status_channel(test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32]))));
         let safe_l1 = status_channel.get_cur_checkpoint_state().block;
@@ -674,6 +680,49 @@ mod tests {
         )));
         let sequencer_context =
             NodeSequencerContext::new(blockasm_handle.clone(), storage, status_channel, 1);
+        (
+            task_manager,
+            blockasm_handle,
+            sequencer_context,
+            parent_commitment,
+        )
+    }
+
+    /// A tip that ends a V1 epoch which processed a checkpoint predicate
+    /// enactment is followed by V2, which this binary builds blocks under.
+    #[tokio::test]
+    async fn generation_continues_after_a_v1_enactment() {
+        let (_task_manager, blockasm_handle, sequencer_context, parent_commitment) =
+            sequencer_on_genesis_enactment(OLSpecId::V1).await;
+
+        assert_eq!(
+            sequencer_context
+                .generate_template_for_tip()
+                .await
+                .expect("test: generate after a V1 enactment"),
+            Some(*parent_commitment.blkid())
+        );
+        assert!(
+            sequencer_context
+                .logged_upgrade_tips
+                .lock()
+                .unwrap()
+                .is_empty()
+        );
+        let template = blockasm_handle
+            .get_block_template(*parent_commitment.blkid())
+            .await
+            .expect("test: pending template");
+        assert_eq!(template.header().parent_blkid(), parent_commitment.blkid());
+    }
+
+    /// A tip that ends a V2 epoch which processed a checkpoint predicate
+    /// enactment is the last block this binary builds on: generation stops
+    /// without an error and leaves no template, on every tick.
+    #[tokio::test]
+    async fn generation_stops_after_a_v2_enactment() {
+        let (_task_manager, blockasm_handle, sequencer_context, parent_commitment) =
+            sequencer_on_genesis_enactment(OLSpecId::V2).await;
 
         for _ in 0..2 {
             assert_eq!(

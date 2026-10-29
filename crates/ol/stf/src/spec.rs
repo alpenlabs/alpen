@@ -119,9 +119,11 @@ pub(crate) trait OLStfSpec {
 ///
 /// This is the only mapping from spec identifiers to implementations. Every
 /// predicate rotation advances the spec, including rotations that change no
-/// rules, so several specs can map to one implementation. A spec that reuses
-/// earlier rules adds an arm naming an existing implementation; a spec with new
-/// rules also adds an [`OLStfSpec`] implementation.
+/// rules. From V1 on, each spec records its own identifier in the state root
+/// from the first block of its epoch on, where spec selection reads it. So
+/// every spec has its own implementation, even one that changes no rules:
+/// [`StfV2`](crate::v2::StfV2) runs the V1 code and only takes over the V1
+/// state.
 ///
 /// An implementation returns
 /// [`ExecError::UnimplementedSpec`](strata_ol_state_types::ExecError::UnimplementedSpec)
@@ -134,6 +136,7 @@ macro_rules! dispatch_spec {
         match $spec {
             OLSpecId::V0 => <StfV0 as OLStfSpec>::$op($($arg),*),
             OLSpecId::V1 => <StfV1 as OLStfSpec>::$op($($arg),*),
+            OLSpecId::V2 => <StfV2 as OLStfSpec>::$op($($arg),*),
         }
     };
 }

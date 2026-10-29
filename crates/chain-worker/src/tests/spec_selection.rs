@@ -109,18 +109,14 @@ fn test_selection_ignores_an_enactment_the_linked_predecessor_processed() {
 }
 
 /// The parent epoch's own predecessor ends before `B`, so the parent
-/// processed the enactment and V1 ends, even though the canonical predecessor
-/// already ends on `B`.
+/// processed the enactment and V2 follows V1, even though the canonical
+/// predecessor already ends on `B`.
 #[test]
 fn test_selection_counts_an_enactment_the_parent_processed() {
     let b = commitment(&make_checkpoint_predicate_enactment_manifest(B, 1));
     let before_b = commitment(&make_empty_manifest(B - 1, 0));
-    let err = select_after_fork(before_b, b).expect_err("V1 ends at B");
-    let WorkerError::UpgradeRequired(upgrade) = err else {
-        panic!("expected an upgrade-required error, got {err}");
-    };
-    assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
-    assert_eq!(upgrade.enactment_l1_height(), B);
+    let spec = select_after_fork(before_b, b).expect("V1 ends at B");
+    assert_eq!(spec, OLSpecId::V2);
 }
 
 /// After a reorg replaced `B`, the parent epoch's last L1 block, selection
@@ -135,17 +131,14 @@ fn test_selection_reads_the_parents_block_after_a_reorg() {
     assert_ne!(commitment(&replacing), b, "the replacing block differs");
     ctx.manifests.insert_canonical(replacing);
 
-    let err = select_spec_after(&ctx, parent, &parent_state).expect_err("V1 ends at B");
-    let WorkerError::UpgradeRequired(upgrade) = err else {
-        panic!("expected an upgrade-required error, got {err}");
-    };
-    assert_eq!(upgrade.enactment_l1_height(), B);
+    let spec = select_spec_after(&ctx, parent, &parent_state).expect("V1 ends at B");
+    assert_eq!(spec, OLSpecId::V2);
 }
 
 /// A reorg replaces the terminal block of epoch 2 with a sibling. Selection
 /// reads each terminal's own state and summary, so building on either
-/// selects again from that block: the terminal that processed `B` ends V1,
-/// the sibling that stopped before it does not.
+/// selects again from that block: the terminal that processed `B` ends V1, so
+/// V2 follows it, and the sibling that stopped before it keeps V1.
 #[test]
 fn test_selection_follows_each_terminal_of_a_fork() {
     let manifests: Vec<AsmManifest> = (1..B)
@@ -177,8 +170,8 @@ fn test_selection_follows_each_terminal_of_a_fork() {
     let state_without_b = state_ending_on(&manifests[..manifests.len() - 1]);
 
     for _ in 0..2 {
-        let err = select_spec_after(&ctx, with_b, &state_with_b).expect_err("V1 ends at B");
-        assert!(matches!(err, WorkerError::UpgradeRequired(_)), "{err}");
+        let spec = select_spec_after(&ctx, with_b, &state_with_b).expect("V1 ends at B");
+        assert_eq!(spec, OLSpecId::V2);
         let spec = select_spec_after(&ctx, without_b, &state_without_b).expect("selects");
         assert_eq!(spec, OLSpecId::V1);
     }

@@ -532,7 +532,7 @@ mod tests {
         let previous_predicate = PredicateKey::always_accept();
         let mut registry = CheckpointArtifactRegistry::empty();
         // Unit hosts exercise artifact checks without claiming executable V0 proving
-        // support or adding a production V2 variant. Bundle integrity has separate tests.
+        // support. Bundle integrity has separate tests.
         registry
             .insert(CheckpointArtifact::new(
                 OLSpecId::V0,

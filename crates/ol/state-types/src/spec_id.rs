@@ -30,8 +30,15 @@ pub enum OLSpecId {
     /// started.
     V0 = 0,
 
-    /// Rules of this release, under which networks launched on it start.
+    /// Rules that follow V0, under which networks launched on this release
+    /// start.
     V1 = 1,
+
+    /// Rules that follow V1.
+    ///
+    /// So far they are V1's rules, except that the state root records V2 from
+    /// the first block of the first V2 epoch on.
+    V2 = 2,
 }
 
 impl OLSpecId {
@@ -42,7 +49,8 @@ impl OLSpecId {
     pub fn successor(self) -> Option<Self> {
         match self {
             Self::V0 => Some(Self::V1),
-            Self::V1 => None,
+            Self::V1 => Some(Self::V2),
+            Self::V2 => None,
         }
     }
 }
@@ -66,6 +74,7 @@ impl TryFrom<u32> for OLSpecId {
         match value {
             0 => Ok(Self::V0),
             1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
             _ => Err(UnknownOLSpecId(value)),
         }
     }
@@ -101,7 +110,8 @@ mod tests {
     use super::OLSpecId;
 
     // Append each spec and its fixed wire value in activation order.
-    const KNOWN_SPECS: &[(OLSpecId, u8)] = &[(OLSpecId::V0, 0), (OLSpecId::V1, 1)];
+    const KNOWN_SPECS: &[(OLSpecId, u8)] =
+        &[(OLSpecId::V0, 0), (OLSpecId::V1, 1), (OLSpecId::V2, 2)];
 
     proptest! {
         #[test]

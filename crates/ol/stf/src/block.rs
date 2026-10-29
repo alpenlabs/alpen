@@ -10,6 +10,7 @@ use strata_ol_stf_v1::{
 use crate::spec::{OLStfSpec, dispatch_spec};
 use crate::v0::StfV0;
 use crate::v1::StfV1;
+use crate::v2::StfV2;
 
 /// Verifies a block end to end under `spec`, returning the block's logs.
 ///

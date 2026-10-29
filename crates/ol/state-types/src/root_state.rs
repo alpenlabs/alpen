@@ -59,7 +59,9 @@ impl OLRootState {
     pub fn compute_state_root(&self) -> Buf32 {
         match self.cur_spec() {
             Ok(OLSpecId::V0) => self.chainstate_root(),
-            Ok(OLSpecId::V1) | Err(_) => TreeHash::tree_hash_root::<Sha256Hasher>(self).into(),
+            Ok(OLSpecId::V1 | OLSpecId::V2) | Err(_) => {
+                TreeHash::tree_hash_root::<Sha256Hasher>(self).into()
+            }
         }
     }
 }

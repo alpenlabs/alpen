@@ -8,7 +8,9 @@
 //! root through both [`apply_da_epoch`] and [`verify_epoch_with_diff`]. The
 //! checkpoint program must prove each epoch from its start state container.
 //! The drivers must also agree on the first V1 epoch after a V0 state, which
-//! wraps it.
+//! wraps it, and on the first V2 epoch after a V1 enactment, which takes over
+//! the V1 state. No checkpoint program proves V2 epochs yet, and the V1
+//! program refuses the first one.
 
 use std::iter;
 
@@ -76,12 +78,25 @@ impl BuiltEpoch {
             .flat_map(|built| built.logs.iter().cloned())
             .collect()
     }
+
+    /// Returns the checkpoint proof input for this epoch with its encoded DA.
+    fn prover_input(&self, da_state_diff_bytes: Vec<u8>) -> CheckpointProverInput {
+        CheckpointProverInput {
+            start_state: self.pre_epoch_state.to_container(),
+            blocks: self.ol_blocks(),
+            parent: self.previous_terminal.clone(),
+            da_state_diff_bytes,
+        }
+    }
 }
 
 /// Builds a chain through [`construct_block`], tracking epoch boundaries.
 struct ChainBuilder {
     state: MemoryStateBaseLayer<OLStateV1>,
     runtime_params: OLRuntimeParams,
+    /// The spec the next block is built under. Genesis is built under
+    /// [`SPEC`].
+    spec: OLSpecId,
     genesis: BuiltBlock,
     epochs: Vec<BuiltEpoch>,
     current: Option<BuiltEpoch>,
@@ -108,6 +123,7 @@ impl ChainBuilder {
         Self {
             state,
             runtime_params,
+            spec: SPEC,
             genesis,
             epochs: Vec::new(),
             current: None,
@@ -142,7 +158,7 @@ impl ChainBuilder {
         );
         let is_terminal = components.is_terminal();
         let output = construct_block(
-            SPEC,
+            self.spec,
             &mut self.state,
             BlockContext::new(&block_info, Some(&parent)),
             components,
@@ -358,14 +374,12 @@ fn test_checkpoint_program_proves_each_epoch() {
         .expect("epoch DA computes")
         .into_parts();
 
-        let input = CheckpointProverInput {
-            start_state: epoch.pre_epoch_state.to_container(),
-            blocks,
-            parent: epoch.previous_terminal.clone(),
-            da_state_diff_bytes,
-        };
-        let claim = CheckpointProgram::execute(&input, SPEC, chain.runtime_params)
-            .expect("checkpoint program proves the epoch");
+        let claim = CheckpointProgram::execute(
+            &epoch.prover_input(da_state_diff_bytes),
+            SPEC,
+            chain.runtime_params,
+        )
+        .expect("checkpoint program proves the epoch");
         assert_eq!(claim.epoch(), terminal.epoch());
         assert_eq!(
             *claim.l2_range().end().blkid(),
@@ -402,14 +416,105 @@ fn build_chain_from_v0_terminal() -> ChainBuilder {
     chain
 }
 
+/// Checks that block verification and checkpoint DA replay agree with block
+/// construction on `epoch`, the chain's last epoch and the first under
+/// `spec`, which takes over the state of the spec before it.
+///
+/// Returns the epoch's encoded DA.
+fn assert_drivers_agree_on_takeover_epoch(
+    chain: &ChainBuilder,
+    epoch: &BuiltEpoch,
+    spec: OLSpecId,
+) -> Vec<u8> {
+    let terminal = epoch.terminal();
+    let taken_over = OLSpecVersions::uniform(spec);
+
+    // Block construction took over the state.
+    assert_eq!(chain.state.spec_versions(), taken_over);
+    assert_eq!(
+        chain.state.compute_state_root().expect("terminal root"),
+        *terminal.state_root()
+    );
+
+    // Node execution verifies each block on a write-tracking overlay and
+    // applies its batch, as the chain worker does, so the takeover travels in
+    // the first block's batch.
+    let mut node_state = epoch.pre_epoch_state.clone();
+    let mut parent = &epoch.previous_terminal;
+    for built in &epoch.blocks {
+        let header = built.block.header();
+        let mut tracking = WriteTrackingState::new_empty(&node_state);
+        let logs = verify_block(
+            spec,
+            &mut tracking,
+            header,
+            Some(parent),
+            built.block.body(),
+            &chain.runtime_params,
+        )
+        .expect("block verifies");
+        assert_eq!(logs, built.logs, "logs differ at slot {}", header.slot());
+        let batch = tracking.into_batch();
+        node_state.apply_write_batch(batch).expect("batch applies");
+        assert_eq!(
+            node_state.compute_state_root().expect("node root"),
+            *header.state_root(),
+            "node root differs at slot {}",
+            header.slot()
+        );
+        parent = header;
+    }
+    assert_eq!(node_state.spec_versions(), taken_over);
+
+    // DA replay from the epoch's start state takes over the state the same
+    // way.
+    let (encoded_da, _) = compute_epoch_da(
+        spec,
+        epoch.pre_epoch_state.clone(),
+        &epoch.ol_blocks(),
+        &epoch.previous_terminal,
+        &chain.runtime_params,
+    )
+    .expect("epoch DA computes")
+    .into_parts();
+    let epoch_info = EpochInfo::new(
+        BlockInfo::from_header(terminal),
+        epoch.previous_terminal.compute_block_commitment(),
+    );
+    let mut replayed = epoch.pre_epoch_state.clone();
+    apply_da_epoch(
+        spec,
+        &mut replayed,
+        &epoch_info,
+        &encoded_da,
+        &epoch.manifests(),
+        &chain.runtime_params,
+    )
+    .expect("epoch DA applies");
+    assert_eq!(replayed.spec_versions(), taken_over);
+    assert_eq!(
+        replayed.compute_state_root().expect("replayed root"),
+        *terminal.state_root()
+    );
+    verify_epoch_with_diff(
+        spec,
+        &mut epoch.pre_epoch_state.clone(),
+        &epoch_info,
+        &encoded_da,
+        &epoch.manifests(),
+        &EpochExecExpectations::new(*terminal.state_root()),
+        &chain.runtime_params,
+    )
+    .expect("epoch DA verifies against the terminal root");
+    encoded_da
+}
+
 #[test]
 fn test_drivers_agree_on_first_v1_epoch_after_v0() {
     let chain = build_chain_from_v0_terminal();
     let [epoch] = chain.epochs.as_slice() else {
         panic!("chain has one epoch after the V0 terminal");
     };
-    let terminal = epoch.terminal();
-    let wrapped = OLSpecVersions::uniform(OLSpecId::V1);
 
     // The epoch starts from the V0 terminal, authenticated by its bare root.
     assert_eq!(
@@ -425,45 +530,88 @@ fn test_drivers_agree_on_first_v1_epoch_after_v0() {
         *epoch.previous_terminal.state_root()
     );
 
-    // Block construction wrapped the state.
-    assert_eq!(chain.state.spec_versions(), wrapped);
+    let encoded_da = assert_drivers_agree_on_takeover_epoch(&chain, epoch, SPEC);
+
+    // The checkpoint program proves the epoch from the V0 start container.
+    let claim =
+        CheckpointProgram::execute(&epoch.prover_input(encoded_da), SPEC, chain.runtime_params)
+            .expect("checkpoint program proves the first V1 epoch");
     assert_eq!(
-        chain.state.compute_state_root().expect("terminal root"),
-        *terminal.state_root()
+        *claim.l2_range().end().blkid(),
+        epoch.terminal().compute_blkid()
+    );
+}
+
+/// Builds genesis and a V1 epoch that processes a checkpoint predicate
+/// enactment at its terminal, then the first V2 epoch, which runs V2 as the
+/// node selects it after that enactment.
+fn build_chain_into_v2() -> ChainBuilder {
+    let mut pre_genesis_state = make_genesis_state();
+    epoch_runner_seed_accounts(&mut pre_genesis_state);
+    let mut chain = ChainBuilder::new(pre_genesis_state);
+
+    chain.push(gam_components(TEST_RECIPIENT_ID, b"last V1 epoch".to_vec()));
+    chain.push(manifest_components(
+        make_checkpoint_predicate_enactment_manifest(2, 1),
+        true,
+    ));
+
+    chain.spec = OLSpecId::V2;
+    chain.push(gam_components(
+        TEST_RECIPIENT_ID,
+        b"first V2 epoch".to_vec(),
+    ));
+    chain.push(BlockComponents::new_empty());
+    chain.push(manifest_components(make_empty_manifest(3, 1), true));
+    chain
+}
+
+#[test]
+fn test_drivers_agree_on_first_v2_epoch_after_v1() {
+    let chain = build_chain_into_v2();
+    let [_, epoch] = chain.epochs.as_slice() else {
+        panic!("chain has the last V1 epoch and the first V2 epoch");
+    };
+
+    // The epoch starts from the V1 terminal that processed the enactment,
+    // which staged no successor.
+    assert_eq!(
+        epoch.pre_epoch_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V1)
+    );
+    assert_eq!(
+        epoch.pre_epoch_state.compute_state_root().expect("V1 root"),
+        *epoch.previous_terminal.state_root()
     );
 
-    // Node execution verifies each block on a write-tracking overlay and
-    // applies its batch, as the chain worker does, so the wrap travels in the
-    // first block's batch.
-    let mut node_state = epoch.pre_epoch_state.clone();
-    let mut parent = &epoch.previous_terminal;
-    for built in &epoch.blocks {
-        let header = built.block.header();
-        let mut tracking = WriteTrackingState::new_empty(&node_state);
-        verify_block(
-            SPEC,
-            &mut tracking,
-            header,
-            Some(parent),
-            built.block.body(),
-            &chain.runtime_params,
-        )
-        .expect("block verifies on the V0 terminal's chain");
-        let batch = tracking.into_batch();
-        node_state.apply_write_batch(batch).expect("batch applies");
-        assert_eq!(
-            node_state.compute_state_root().expect("node root"),
-            *header.state_root(),
-            "node root differs at slot {}",
-            header.slot()
-        );
-        parent = header;
-    }
-    assert_eq!(node_state.spec_versions(), wrapped);
+    assert_drivers_agree_on_takeover_epoch(&chain, epoch, OLSpecId::V2);
+    // TODO(STR-4662): prove the epoch with the V2 checkpoint program from its
+    // V1 start container, as the first V1 epoch is proven from its V0 one.
 
-    // DA replay from the V0 terminal wraps the state the same way.
-    let (encoded_da, _) = compute_epoch_da(
-        SPEC,
+    // The first V2 block commits V2 in its root, so V1 rules do not
+    // reproduce it.
+    let first = &epoch.blocks[0].block;
+    let err = verify_block(
+        OLSpecId::V1,
+        &mut epoch.pre_epoch_state.clone(),
+        first.header(),
+        Some(&epoch.previous_terminal),
+        first.body(),
+        &chain.runtime_params,
+    )
+    .expect_err("V1 rules must not verify the first V2 block");
+    assert!(matches!(err, ExecError::ChainIntegrity), "{err}");
+}
+
+#[test]
+#[should_panic(expected = "computed block header does not match input block header")]
+fn test_v1_program_refuses_the_first_v2_epoch() {
+    let chain = build_chain_into_v2();
+    let [_, epoch] = chain.epochs.as_slice() else {
+        panic!("chain has the last V1 epoch and the first V2 epoch");
+    };
+    let (da_state_diff_bytes, _) = compute_epoch_da(
+        OLSpecId::V2,
         epoch.pre_epoch_state.clone(),
         &epoch.ol_blocks(),
         &epoch.previous_terminal,
@@ -471,47 +619,12 @@ fn test_drivers_agree_on_first_v1_epoch_after_v0() {
     )
     .expect("epoch DA computes")
     .into_parts();
-    let epoch_info = EpochInfo::new(
-        BlockInfo::from_header(terminal),
-        epoch.previous_terminal.compute_block_commitment(),
-    );
-    let mut replayed = epoch.pre_epoch_state.clone();
-    apply_da_epoch(
-        SPEC,
-        &mut replayed,
-        &epoch_info,
-        &encoded_da,
-        &epoch.manifests(),
-        &chain.runtime_params,
-    )
-    .expect("epoch DA applies");
-    assert_eq!(replayed.spec_versions(), wrapped);
-    assert_eq!(
-        replayed.compute_state_root().expect("replayed root"),
-        *terminal.state_root()
-    );
-    verify_epoch_with_diff(
-        SPEC,
-        &mut epoch.pre_epoch_state.clone(),
-        &epoch_info,
-        &encoded_da,
-        &epoch.manifests(),
-        &EpochExecExpectations::new(*terminal.state_root()),
-        &chain.runtime_params,
-    )
-    .expect("epoch DA verifies against the wrapped terminal root");
 
-    // The checkpoint program proves the epoch from the V0 start container.
-    let claim = CheckpointProgram::execute(
-        &CheckpointProverInput {
-            start_state: epoch.pre_epoch_state.to_container(),
-            blocks: epoch.ol_blocks(),
-            parent: epoch.previous_terminal.clone(),
-            da_state_diff_bytes: encoded_da,
-        },
+    // The V1 terminal stages V1, so the program runs the epoch under V1, and
+    // the first block's root, which commits V2, does not match.
+    let _ = CheckpointProgram::execute(
+        &epoch.prover_input(da_state_diff_bytes),
         SPEC,
         chain.runtime_params,
-    )
-    .expect("checkpoint program proves the first V1 epoch");
-    assert_eq!(*claim.l2_range().end().blkid(), terminal.compute_blkid());
+    );
 }

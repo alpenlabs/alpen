@@ -2345,29 +2345,50 @@ mod tests {
         }
     }
 
-    /// The terminal block that processes a checkpoint predicate enactment is
-    /// the last block this binary builds: the next epoch runs V1's successor,
-    /// which it does not implement. Assembly stops before any state
-    /// transition. The stop comes from stored chain data, so a context built
-    /// anew over the same storage, as after a restart, stops too.
+    /// A terminal block that processes a checkpoint predicate enactment ends
+    /// its spec. After the V1 enactment, assembly builds the next epoch under
+    /// V2, which takes over the V1 state. The terminal block that processes
+    /// the V2 enactment is the last block this binary builds: the next epoch
+    /// runs V2's successor, which it does not implement. Assembly stops before
+    /// any state transition. The stop comes from stored chain data, so a
+    /// context built anew over the same storage, as after a restart, stops
+    /// too.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_assembly_seals_at_predicate_boundary_and_stops_after_it() {
+    async fn test_assembly_seals_at_predicate_boundaries_and_stops_after_v2() {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
             .with_l1_manifest_height_range(1..=3)
             .build_fixture()
             .await;
-        let boundary = create_l1_manifest_with_logs(2, vec![checkpoint_enactment_log()]);
-        fixture
-            .storage()
-            .l1()
-            .put_block_data_async(boundary)
-            .await
-            .unwrap();
+        for height in [2, 3] {
+            let boundary = create_l1_manifest_with_logs(height, vec![checkpoint_enactment_log()]);
+            fixture
+                .storage()
+                .l1()
+                .put_block_data_async(boundary)
+                .await
+                .unwrap();
+        }
         let mut env = TestEnv::from_fixture(Arc::clone(&fixture), parent_commitment);
         let output = env.construct_empty_block().await.unwrap();
         check_block_asm_manifests(&output.template, &[2]);
         check_terminal_header(&output.template);
+        assert_eq!(
+            output.post_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V1)
+        );
+        env.persist(&output).await;
+
+        let output = env
+            .construct_empty_block()
+            .await
+            .expect("the epoch after the V1 enactment runs V2");
+        check_block_asm_manifests(&output.template, &[3]);
+        check_terminal_header(&output.template);
+        assert_eq!(
+            output.post_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V2)
+        );
         let terminal = env.persist(&output).await;
 
         let restarted = TestEnv::from_fixture(fixture, terminal);
@@ -2375,10 +2396,10 @@ mod tests {
             let Err(BlockAssemblyError::UpgradeRequired(upgrade)) =
                 env.construct_empty_block().await
             else {
-                panic!("no block may follow the V1 enactment");
+                panic!("no block may follow the V2 enactment");
             };
-            assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
-            assert_eq!(upgrade.enactment_l1_height(), 2);
+            assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
+            assert_eq!(upgrade.enactment_l1_height(), 3);
         }
     }
 

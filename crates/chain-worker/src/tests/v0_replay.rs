@@ -1,5 +1,5 @@
 //! Checkpoint-sync replay of a network launched on 0.3.0, across its switch
-//! from V0 to V1.
+//! from V0 to V1 and a later switch from V1 to V2.
 //!
 //! `testdata/v0_epochs.json` holds a V0 chain that a scratch generator built on
 //! `releases/0.3.0` from MN0-shaped params, with that release's STF, DA
@@ -19,7 +19,7 @@
 //! terminal block ID, state root and limbo balance 0.3.0 computed. The file's
 //! `source` field says how the generator produced them. The epochs after the
 //! enactment are built here with the V1 rules, as the promoted sequencer
-//! builds them.
+//! builds them, and the epochs after a later V1 enactment with the V2 rules.
 
 use serde::Deserialize;
 use strata_acct_types::{AccountId, BitcoinAmount};
@@ -57,7 +57,7 @@ use crate::{
 
 const FIXTURE_JSON: &str = include_str!("testdata/v0_epochs.json");
 
-/// Spacing of the block timestamps the V1 epochs here use, as in the fixture.
+/// Spacing of the block timestamps the epochs built here use, as in the fixture.
 const BLOCK_TIMESTAMP_STEP: u64 = 5_000;
 
 #[derive(Deserialize)]
@@ -275,7 +275,7 @@ impl Node {
     }
 
     /// Adds an epoch built after the fixture's, with its manifests.
-    fn add_epoch(&mut self, built: &BuiltV1Epoch) {
+    fn add_epoch(&mut self, built: &CheckpointedEpoch) {
         for manifest in &built.manifests {
             self.ctx.manifests.insert_canonical(manifest.clone());
         }
@@ -303,8 +303,8 @@ impl Node {
     }
 }
 
-/// A V1 epoch built with block execution, with what its checkpoint carries.
-struct BuiltV1Epoch {
+/// An epoch built with block execution, with what its checkpoint carries.
+struct CheckpointedEpoch {
     epoch_commitment: EpochCommitment,
     manifests: Vec<AsmManifest>,
     checkpoint_payload: CheckpointPayload,
@@ -312,15 +312,16 @@ struct BuiltV1Epoch {
     post_state: OLStateContainer,
 }
 
-/// Builds a V1 epoch on `parent_state` with one empty block and a terminal
-/// carrying `manifests`, and derives its checkpoint payload the way the
-/// checkpoint builder does.
-fn build_v1_epoch(
+/// Builds an epoch under `spec` on `parent_state` with one empty block and a
+/// terminal carrying `manifests`, and derives its checkpoint payload the way
+/// the checkpoint builder does.
+fn build_checkpointed_epoch(
+    spec: OLSpecId,
     params: &OLParams,
     parent_state: &OLStateContainer,
     parent_header: &OLBlockHeaderV1,
     manifests: Vec<AsmManifest>,
-) -> BuiltV1Epoch {
+) -> CheckpointedEpoch {
     let runtime_params = params.runtime_params();
     let pre_epoch_state = MemoryStateBaseLayer::from_container(parent_state.clone());
     let mut state = pre_epoch_state.clone();
@@ -336,27 +337,21 @@ fn build_v1_epoch(
         let slot = parent.slot() + 1;
         let info = BlockInfo::new(parent.timestamp() + BLOCK_TIMESTAMP_STEP, slot, epoch);
         let block = execute_and_complete_block(
-            OLSpecId::V1,
+            spec,
             &mut state,
             BlockContext::new(&info, Some(&parent)),
             components,
             &runtime_params,
         )
-        .expect("V1 block executes");
+        .expect("block executes");
         parent = block.header().clone();
         blocks.push(to_ol_block(&block));
     }
     let terminal_header = parent;
 
     let mut da = DaAccumulatingState::new(pre_epoch_state);
-    let logs = execute_block_batch_predrain(
-        OLSpecId::V1,
-        &mut da,
-        &blocks,
-        parent_header,
-        &runtime_params,
-    )
-    .expect("predrain replay");
+    let logs = execute_block_batch_predrain(spec, &mut da, &blocks, parent_header, &runtime_params)
+        .expect("predrain replay");
     let da_blob = da
         .take_completed_epoch_da_blob()
         .expect("finalize DA")
@@ -377,7 +372,7 @@ fn build_v1_epoch(
     let checkpoint_payload =
         CheckpointPayload::new(tip, sidecar, Vec::new()).expect("checkpoint payload");
 
-    BuiltV1Epoch {
+    CheckpointedEpoch {
         epoch_commitment: EpochCommitment::from_terminal(epoch, terminal),
         manifests,
         checkpoint_payload,
@@ -388,7 +383,7 @@ fn build_v1_epoch(
 
 /// Builds the first V1 epoch on the last V0 epoch: one deposit to the EE
 /// account in the manifest after the enactment.
-fn build_first_v1_epoch(fixture: &Fixture, last_v0: &AppliedEpochArtifacts) -> BuiltV1Epoch {
+fn build_first_v1_epoch(fixture: &Fixture, last_v0: &AppliedEpochArtifacts) -> CheckpointedEpoch {
     let state = MemoryStateBaseLayer::from_container(last_v0.new_state.clone());
     let ee_serial = state
         .get_account_state(fixture.ee_account())
@@ -402,7 +397,8 @@ fn build_first_v1_epoch(fixture: &Fixture, last_v0: &AppliedEpochArtifacts) -> B
         SubjectId::from([0xd4; 32]),
         BitcoinAmount::try_from(200_000_000).expect("amount fits the money supply"),
     );
-    build_v1_epoch(
+    build_checkpointed_epoch(
+        OLSpecId::V1,
         &fixture.params,
         &last_v0.new_state,
         &last_v0.terminal_header,
@@ -539,7 +535,8 @@ fn test_epochs_after_enactment_run_v1() {
         "V1 roots wrap the chainstate root"
     );
 
-    let second_v1 = build_v1_epoch(
+    let second_v1 = build_checkpointed_epoch(
+        OLSpecId::V1,
         &fixture.params,
         &applied.new_state,
         &applied.terminal_header,
@@ -568,7 +565,8 @@ fn test_empty_epochs_after_enactment_run_v1() {
     let enactment_height = fixture.last_v0_epoch().l1_height;
 
     for _ in 0..2 {
-        let built = build_v1_epoch(
+        let built = build_checkpointed_epoch(
+            OLSpecId::V1,
             &fixture.params,
             &parent.new_state,
             &parent.terminal_header,
@@ -595,23 +593,20 @@ fn test_empty_epochs_after_enactment_run_v1() {
     }
 }
 
-/// A V1 epoch that processes a checkpoint predicate enactment ends V1. This
-/// binary implements no later spec, so checkpoint sync applies nothing past
-/// that epoch, before and after a restart, and stores nothing for the epoch
-/// it refuses.
-#[test]
-fn test_epoch_after_a_v1_enactment_requires_an_upgrade() {
-    let fixture = Fixture::load();
-    let mut node = Node::new(&fixture.params, &fixture.epochs);
+/// Applies the first V1 epoch on the replayed V0 chain, then a V1 epoch that
+/// processes a checkpoint predicate enactment, which ends V1, and returns the
+/// latter as checkpoint sync applied it.
+fn apply_through_v1_enactment(fixture: &Fixture, node: &mut Node) -> AppliedEpochArtifacts {
     let last_v0 = node.replay_v0(&fixture.epochs);
-    let first_v1 = build_first_v1_epoch(&fixture, &last_v0);
+    let first_v1 = build_first_v1_epoch(fixture, &last_v0);
     node.add_epoch(&first_v1);
     let first_v1 = node
         .apply(first_v1.epoch_commitment)
         .expect("first V1 epoch applies");
 
     let enactment_height = first_v1.new_state.chainstate().last_l1_block().height() + 1;
-    let last_v1 = build_v1_epoch(
+    let last_v1 = build_checkpointed_epoch(
+        OLSpecId::V1,
         &fixture.params,
         &first_v1.new_state,
         &first_v1.terminal_header,
@@ -628,26 +623,87 @@ fn test_epoch_after_a_v1_enactment_requires_an_upgrade() {
         last_v1.new_state.spec_versions(),
         OLSpecVersions::uniform(OLSpecId::V1)
     );
+    last_v1
+}
 
-    let next = build_v1_epoch(
+/// The epoch after a V1 epoch that processed a checkpoint predicate enactment
+/// runs V2, which takes over the V1 state. Checkpoint sync reproduces the
+/// terminal header and state block execution built for it, before and after a
+/// restart at the last V1 epoch.
+#[test]
+fn test_epoch_after_a_v1_enactment_runs_v2() {
+    let fixture = Fixture::load();
+    let mut node = Node::new(&fixture.params, &fixture.epochs);
+    let last_v1 = apply_through_v1_enactment(&fixture, &mut node);
+
+    let first_v2 = build_checkpointed_epoch(
+        OLSpecId::V2,
         &fixture.params,
         &last_v1.new_state,
         &last_v1.terminal_header,
         Vec::new(),
     );
-    node.add_epoch(&next);
+    node.add_epoch(&first_v2);
     let last_v1_epoch = last_v1.terminal_header.epoch();
     for mut node in [node.restarted_at(last_v1_epoch), node] {
+        let applied = node
+            .apply(first_v2.epoch_commitment)
+            .expect("the epoch after the V1 enactment runs V2");
+        assert_eq!(
+            applied.new_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V2)
+        );
+        assert_eq!(applied.terminal_header, first_v2.terminal_header);
+        assert_eq!(applied.new_state, first_v2.post_state);
+    }
+}
+
+/// A V2 epoch that processes a checkpoint predicate enactment ends V2. This
+/// binary implements no later spec, so checkpoint sync applies nothing past
+/// that epoch, before and after a restart, and stores nothing for the epoch
+/// it refuses.
+#[test]
+fn test_epoch_after_a_v2_enactment_requires_an_upgrade() {
+    let fixture = Fixture::load();
+    let mut node = Node::new(&fixture.params, &fixture.epochs);
+    let last_v1 = apply_through_v1_enactment(&fixture, &mut node);
+
+    let v2_enactment_height = last_v1.new_state.chainstate().last_l1_block().height() + 1;
+    let last_v2 = build_checkpointed_epoch(
+        OLSpecId::V2,
+        &fixture.params,
+        &last_v1.new_state,
+        &last_v1.terminal_header,
+        vec![make_checkpoint_predicate_enactment_manifest(
+            v2_enactment_height,
+            1,
+        )],
+    );
+    node.add_epoch(&last_v2);
+    let last_v2 = node
+        .apply(last_v2.epoch_commitment)
+        .expect("the epoch after the V1 enactment runs V2");
+
+    let next = build_checkpointed_epoch(
+        OLSpecId::V2,
+        &fixture.params,
+        &last_v2.new_state,
+        &last_v2.terminal_header,
+        Vec::new(),
+    );
+    node.add_epoch(&next);
+    let last_v2_epoch = last_v2.terminal_header.epoch();
+    for mut node in [node.restarted_at(last_v2_epoch), node] {
         let err = match node.apply(next.epoch_commitment) {
-            Ok(_) => panic!("the epoch after the V1 enactment must not apply"),
+            Ok(_) => panic!("the epoch after the V2 enactment must not apply"),
             Err(err) => err,
         };
         let WorkerError::UpgradeRequired(upgrade) = err else {
             panic!("expected an upgrade-required error, got {err}");
         };
-        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
-        assert_eq!(upgrade.enactment_l1_height(), enactment_height);
-        assert_eq!(upgrade.spec_version(), 2);
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
+        assert_eq!(upgrade.enactment_l1_height(), v2_enactment_height);
+        assert_eq!(upgrade.spec_version(), 3);
         assert!(
             !node
                 .ctx
