@@ -12,6 +12,7 @@ use strata_db_types::asm::AsmExecOutput;
 use strata_identifiers::{
     Buf32, Buf64, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
 };
+use strata_ol_block_ancestry_provider::BlockAncestryError;
 use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
 use strata_ol_checkpoint::{CanonicalEpochReconcileError, ProofNotify};
 use strata_ol_checkpoint_artifacts::{LoadedCheckpointPredicates, native_checkpoint_registry};
@@ -54,6 +55,10 @@ impl EpochFixture {
     }
 
     fn with_start_spec(start_spec: OLSpecId) -> Self {
+        Self::with_epoch_length(start_spec, 1)
+    }
+
+    fn with_epoch_length(start_spec: OLSpecId, block_count: u32) -> Self {
         let storage =
             Arc::new(create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap());
         let runtime_params = OLRuntimeParams::test_default();
@@ -79,22 +84,41 @@ impl EpochFixture {
                 parent.body().clone(),
             );
         }
+        storage
+            .ol_block()
+            .put_block_data_blocking(parent.clone())
+            .unwrap();
+        let mut canonical_ids = vec![parent.header().compute_blkid()];
         let start_state = state.to_container();
-        let terminal_manifest = make_empty_manifest(2, 0);
-        let block_info = BlockInfo::new(
-            EPOCH_RUNNER_GENESIS_TIMESTAMP + EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
-            1,
-            1,
-        );
-        let output = construct_block(
-            OLSpecId::V1,
-            &mut state,
-            BlockContext::new(&block_info, Some(parent.header())),
-            BlockComponents::new_manifests(vec![terminal_manifest.clone()]).as_terminal(),
-            &runtime_params,
-        )
-        .unwrap();
-        let terminal = to_ol_block(output.completed_block());
+        let terminal_manifest = make_empty_manifest(block_count + 1, 0);
+        let mut terminal = parent.clone();
+        for slot in 1..=block_count {
+            let block_info = BlockInfo::new(
+                EPOCH_RUNNER_GENESIS_TIMESTAMP + u64::from(slot) * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+                u64::from(slot),
+                1,
+            );
+            let components = BlockComponents::new_manifests(vec![make_empty_manifest(slot + 1, 0)]);
+            let components = if slot == block_count {
+                components.as_terminal()
+            } else {
+                components
+            };
+            let output = construct_block(
+                OLSpecId::V1,
+                &mut state,
+                BlockContext::new(&block_info, Some(terminal.header())),
+                components,
+                &runtime_params,
+            )
+            .unwrap();
+            terminal = to_ol_block(output.completed_block());
+            canonical_ids.push(terminal.header().compute_blkid());
+            storage
+                .ol_block()
+                .put_block_data_blocking(terminal.clone())
+                .unwrap();
+        }
         let terminal_state = state.into_container();
         let summary = EpochSummary::new(
             1,
@@ -103,12 +127,6 @@ impl EpochFixture {
             L1BlockCommitment::new(terminal_manifest.height(), *terminal_manifest.blkid()),
             *terminal.header().state_root(),
         );
-        for block in [&parent, &terminal] {
-            storage
-                .ol_block()
-                .put_block_data_blocking(block.clone())
-                .unwrap();
-        }
         storage
             .ol_state()
             .put_toplevel_ol_state_blocking(
@@ -129,13 +147,7 @@ impl EpochFixture {
             .unwrap();
         storage
             .ol_block()
-            .replace_canonical_suffix_from_blocking(
-                0,
-                vec![
-                    parent.header().compute_blkid(),
-                    terminal.header().compute_blkid(),
-                ],
-            )
+            .replace_canonical_suffix_from_blocking(0, canonical_ids)
             .unwrap();
         Self {
             storage,
@@ -250,6 +262,117 @@ impl EpochFixture {
             .put_state_blocking(block, AsmExecOutput::new(anchor, vec![]))
             .unwrap();
     }
+}
+
+#[test]
+fn test_multiblock_epoch_input_preserves_execution_order() {
+    let fixture = EpochFixture::with_epoch_length(OLSpecId::V1, 3);
+    let InputResolution::Ready(input) = fixture.resolve() else {
+        panic!("stored epoch must resolve to proof input");
+    };
+    assert_eq!(
+        input
+            .blocks
+            .iter()
+            .map(|block| block.header().slot())
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    assert_eq!(input.parent, *fixture.parent.header());
+    assert_eq!(input.blocks.last(), Some(&fixture.terminal));
+    CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default()).unwrap();
+}
+
+#[test]
+fn test_input_rejects_summary_with_wrong_terminal_epoch() {
+    let mut fixture = EpochFixture::new();
+    let summary = EpochSummary::new(
+        fixture.terminal.header().epoch() + 1,
+        fixture.terminal.header().compute_block_commitment(),
+        fixture.parent.header().compute_block_commitment(),
+        L1BlockCommitment::new(2, L1BlockId::default()),
+        *fixture.terminal.header().state_root(),
+    );
+    fixture
+        .storage
+        .ol_checkpoint()
+        .insert_epoch_summary_blocking(summary)
+        .unwrap();
+    fixture.task = CheckpointTask(summary.get_epoch_commitment());
+    let expected = ProverError::EpochCommitmentMismatch {
+        expected: fixture.task.0,
+        actual: EpochCommitment::from_terminal(
+            fixture.terminal.header().epoch(),
+            fixture.terminal.header().compute_block_commitment(),
+        ),
+    }
+    .to_string();
+    let result = fixture.resolve();
+    assert!(
+        matches!(&result, InputResolution::Rejected { reason } if reason.contains(&expected)),
+        "expected {expected}, got {result:?}"
+    );
+}
+
+#[test]
+fn test_input_rejects_summary_predecessor_slot_mismatch() {
+    let fixture = EpochFixture::new();
+    let previous = fixture.parent.header().compute_block_commitment();
+    let summary = EpochSummary::new(
+        fixture.task.0.epoch(),
+        fixture.task.0.to_block_commitment(),
+        OLBlockCommitment::new(previous.slot() + 1, *previous.blkid()),
+        L1BlockCommitment::new(2, L1BlockId::default()),
+        *fixture.terminal.header().state_root(),
+    );
+    fixture
+        .storage
+        .ol_checkpoint()
+        .del_epoch_summary_blocking(fixture.task.0)
+        .unwrap();
+    fixture
+        .storage
+        .ol_checkpoint()
+        .insert_epoch_summary_blocking(summary)
+        .unwrap();
+    let expected = ProverError::EpochPredecessorMismatch {
+        expected: *summary.prev_terminal(),
+        actual: previous,
+    }
+    .to_string();
+    let result = fixture.resolve();
+    assert!(
+        matches!(&result, InputResolution::Rejected { reason } if reason.contains(&expected)),
+        "expected {expected}, got {result:?}"
+    );
+}
+
+#[test]
+fn test_input_rejects_missing_intermediate_header() {
+    let fixture = EpochFixture::with_epoch_length(OLSpecId::V1, 3);
+    let missing_id = *fixture.terminal.header().parent_blkid();
+    fixture
+        .storage
+        .ol_block()
+        .del_block_data_blocking(missing_id)
+        .unwrap();
+    // Deletion truncates the index. Restore the terminal row to exercise missing
+    // ancestry for a canonical task rather than failing the eligibility check.
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(
+            fixture.terminal.header().slot(),
+            vec![fixture.terminal.header().compute_blkid()],
+        )
+        .unwrap();
+    let expected =
+        ProverError::BlockAncestry(BlockAncestryError::MissingHeader(missing_id)).to_string();
+    let result = fixture.resolve();
+    assert!(
+        matches!(&result, InputResolution::Rejected { reason } if reason.contains(&expected)),
+        "expected {expected}, got {result:?}"
+    );
 }
 
 fn loaded_predicates() -> LoadedCheckpointPredicates {
