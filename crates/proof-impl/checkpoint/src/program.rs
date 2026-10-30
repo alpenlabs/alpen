@@ -272,6 +272,20 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "epoch runs under spec V1, but this program proves spec V2")]
+    fn test_v2_program_rejects_skipping_v1() {
+        let (input, _) = prepare_v0_input();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V2, OLRuntimeParams::test_default());
+    }
+
+    #[test]
+    #[should_panic(expected = "computed block header does not match input block header")]
+    fn test_v2_program_rejects_v1_blocks_from_v1_state() {
+        let input = prepare_input();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V2, OLRuntimeParams::test_default());
+    }
+
+    #[test]
     #[should_panic(expected = "epoch runs under spec V0, but this program proves spec V1")]
     fn test_statements_reject_v1_start_state_staging_v0() {
         let mut input = prepare_input();
@@ -281,6 +295,17 @@ mod tests {
         // Authenticate the altered state so that the spec check is what fails.
         input.parent.state_root = input.start_state.compute_state_root();
         let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());
+    }
+
+    #[test]
+    #[should_panic(expected = "epoch runs under spec V0, but this program proves spec V2")]
+    fn test_v2_program_rejects_nonuniform_v1_predecessor() {
+        let mut input = prepare_input();
+        let (_, chainstate) = input.start_state.clone().into_parts();
+        let versions = OLSpecVersions::new(OLSpecId::V1, 0).expect("V1 may stage any spec");
+        input.start_state = OLStateContainer::new(versions, chainstate);
+        input.parent.state_root = input.start_state.compute_state_root();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V2, OLRuntimeParams::test_default());
     }
 
     #[test]

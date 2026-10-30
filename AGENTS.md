@@ -730,8 +730,9 @@ Configuration is split by ownership:
   checkpoint verification key. `OLGenesisParams` carries the network's genesis
   `OLSpecId` as a required `genesis.spec`: `0` (V0) for networks launched on 0.3.0, whose
   flat params files must be converted, and `1` (V1) for networks launched from this release.
-  `2` (V2) also parses and starts a network under V2, whose epochs no checkpoint program
-  proves yet.
+  `2` (V2) also parses and starts a network under V2. The current SP1 guest proves V2;
+  V1 epochs keep using the bundle published from `v0.4.0-rc.1`. V2 proving accepts the
+  first V2 epoch's V1 start state and subsequent epochs' V2 start states.
 - **Node configuration** (TOML types under `crates/config`) contains operational settings,
   including `BtcioConfig` and its L1 reader, writer, fee, and reorg policy.
 

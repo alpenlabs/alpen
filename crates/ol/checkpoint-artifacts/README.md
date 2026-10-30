@@ -12,7 +12,7 @@ the OL may be ahead of checkpoint acceptance, or proving older work.
 
 ## Configuration
 
-Native proving uses the supported built-in V1 program. SP1 deployments can
+Native proving uses fixed-spec built-in V1 and V2 programs. SP1 deployments can
 configure independent release bundles:
 
 ```toml
@@ -22,9 +22,13 @@ backend = "sp1"
 [[prover.artifacts]]
 spec = 1
 bundle_dir = "elfs/sp1/v1"
+
+[[prover.artifacts]]
+spec = 2
+bundle_dir = "elfs/sp1/v2"
 ```
 
-Each V1 bundle contains `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
+Each V1 or V2 bundle contains `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
 `guest-checkpoint.artifact-manifest.json`. The schema 1 manifest records `spec`,
 `program_id`, and `runtime_params_hash`. Loading derives the program identity and
 predicate from the ELF and checks both sidecars and the node's runtime parameters
@@ -55,7 +59,7 @@ the new binary. Loading derives the complete predicate from the ELF and requires
 an exact match; the usual startup check then compares loaded predicates with ASM.
 
 V0 loading uses only the ELF and predicate; it does not read a manifest.
-V1 still requires its full manifest, including the matching runtime-parameter hash.
+V1 and V2 require their full manifests, including the matching runtime-parameter hash.
 
 V0 is loaded only for startup validation and never gets a proving service or task
 recovery. The 0.3.x sequencer proves the final V0 epoch; the promoted node starts at

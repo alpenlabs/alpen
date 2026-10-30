@@ -1,6 +1,9 @@
 # SP1 guest builder
 
-Compiles the SP1 guest programs in this directory and exports their artifacts to `generated/`.
+Compiles the V2 SP1 checkpoint guest and exports its artifacts to `generated/`.
+The guest fixes `PROVED_SPEC = OLSpecId::V2`; the builder records the same spec in its manifest.
+V1 epochs continue to use the V1 bundle published from `v0.4.0-rc.1`. Never rebuild or republish
+V1 from this source tree.
 
 Each guest lives in its own `guest-*` directory with its own Cargo workspace, so it can pin the
 SP1 patches it needs without disturbing the main workspace.

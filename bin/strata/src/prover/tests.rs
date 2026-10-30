@@ -51,6 +51,10 @@ impl EpochFixture {
     }
 
     fn with_start_spec(start_spec: OLSpecId) -> Self {
+        Self::with_specs(start_spec, OLSpecId::V1)
+    }
+
+    fn with_specs(start_spec: OLSpecId, epoch_spec: OLSpecId) -> Self {
         let storage =
             Arc::new(create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap());
         let runtime_params = OLRuntimeParams::test_default();
@@ -84,7 +88,7 @@ impl EpochFixture {
             1,
         );
         let output = construct_block(
-            OLSpecId::V1,
+            epoch_spec,
             &mut state,
             BlockContext::new(&block_info, Some(parent.header())),
             BlockComponents::new_manifests(vec![terminal_manifest.clone()]).as_terminal(),
@@ -324,37 +328,41 @@ fn task_uses_its_loaded_artifact_while_its_vk_is_pending_in_asm() {
 }
 
 #[test]
-fn first_v1_checkpoint_after_v0_anchor_uses_v1_after_restart() {
-    let fixture = EpochFixture::with_start_spec(OLSpecId::V0);
-    fixture.put_asm_checkpoint(
-        PredicateKey::never_accept(),
-        Some(CheckpointProgram::test_predicate_key()),
-    );
-    let restarted = Arc::new(
-        create_node_storage(Arc::clone(fixture.storage.db()), test_runtime_handle()).unwrap(),
-    );
-    assert_eq!(
-        checkpoint_task_spec(&restarted, fixture.task).unwrap(),
-        OLSpecId::V1
-    );
-    let spec = CheckpointSpec::new(restarted, OLRuntimeParams::test_default(), OLSpecId::V1);
-    let InputResolution::Ready(input) = test_runtime_handle()
-        .block_on(spec.resolve_input(&fixture.task))
-        .unwrap()
-    else {
-        panic!("the first V1 epoch must resolve from its persisted V0 parent");
-    };
-    assert_eq!(input.start_state.cur_spec(), OLSpecId::V0);
-    CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default()).unwrap();
+fn first_checkpoint_after_upgrade_uses_successor_after_restart() {
+    for (start_spec, epoch_spec) in [(OLSpecId::V0, OLSpecId::V1), (OLSpecId::V1, OLSpecId::V2)] {
+        let fixture = EpochFixture::with_specs(start_spec, epoch_spec);
+        fixture.put_asm_checkpoint(
+            PredicateKey::never_accept(),
+            Some(CheckpointProgram::test_predicate_key()),
+        );
+        let restarted = Arc::new(
+            create_node_storage(Arc::clone(fixture.storage.db()), test_runtime_handle()).unwrap(),
+        );
+        assert_eq!(
+            checkpoint_task_spec(&restarted, fixture.task).unwrap(),
+            epoch_spec
+        );
+        let spec = CheckpointSpec::new(restarted, OLRuntimeParams::test_default(), epoch_spec);
+        let InputResolution::Ready(input) = test_runtime_handle()
+            .block_on(spec.resolve_input(&fixture.task))
+            .unwrap()
+        else {
+            panic!(
+                "the first {epoch_spec:?} epoch must resolve from its persisted {start_spec:?} parent"
+            );
+        };
+        assert_eq!(input.start_state.cur_spec(), start_spec);
+        CheckpointProgram::execute(&input, epoch_spec, OLRuntimeParams::test_default()).unwrap();
+    }
 }
 
 #[test]
 fn fixed_host_service_rejects_an_epoch_assigned_to_another_spec() {
     let fixture = EpochFixture::new();
     fixture.discard_epoch_blocks();
-    // V0 is only an incorrect service assignment. No V0 host is built or executed.
+    // V2 has its own service, but must never claim a V1 epoch's work.
     assert!(matches!(
-        fixture.resolve_on(OLSpecId::V0),
+        fixture.resolve_on(OLSpecId::V2),
         InputResolution::Rejected { .. }
     ));
 }
@@ -507,17 +515,21 @@ fn checkpoint_prover(fixture: &EpochFixture) -> Arc<Prover<CheckpointSpec>> {
         &Arc::new(ProofNotify::new()),
         |builder, host| builder.native(host),
     );
-    assert_eq!(provers.len(), 1);
-    Arc::new(provers.remove(&OLSpecId::V1).unwrap())
+    assert_eq!(provers.len(), 2);
+    Arc::new(provers.remove(&fixture.terminal_state.cur_spec()).unwrap())
 }
 
-fn assert_persisted_task_proving(recovered: bool) {
-    let fixture = EpochFixture::new();
-    let own_store =
-        VersionedTaskStore::new(Arc::clone(fixture.storage.prover_tasks()), OLSpecId::V1);
-    // The other namespace is a storage fixture only; no V0 proving service is created.
+fn assert_persisted_task_proving(recovered: bool, spec: OLSpecId) {
+    let fixture = EpochFixture::with_specs(OLSpecId::V1, spec);
+    let own_store = VersionedTaskStore::new(Arc::clone(fixture.storage.prover_tasks()), spec);
+    // Both services exist, but neither may recover or mutate the other's records.
+    let foreign_spec = if spec == OLSpecId::V1 {
+        OLSpecId::V2
+    } else {
+        OLSpecId::V1
+    };
     let foreign_store =
-        VersionedTaskStore::new(Arc::clone(fixture.storage.prover_tasks()), OLSpecId::V0);
+        VersionedTaskStore::new(Arc::clone(fixture.storage.prover_tasks()), foreign_spec);
     let key = fixture.task.to_key_bytes();
     foreign_store
         .insert(TaskRecord::new(key.clone(), TaskStatus::Pending))
@@ -564,10 +576,14 @@ fn assert_persisted_task_proving(recovered: bool) {
 
 #[test]
 fn fresh_checkpoint_task_proves_in_its_own_store() {
-    assert_persisted_task_proving(false);
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        assert_persisted_task_proving(false, spec);
+    }
 }
 
 #[test]
 fn recovered_checkpoint_task_proves_in_its_own_store() {
-    assert_persisted_task_proving(true);
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        assert_persisted_task_proving(true, spec);
+    }
 }
