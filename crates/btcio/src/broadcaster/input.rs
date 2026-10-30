@@ -14,6 +14,9 @@ pub(crate) enum BroadcasterInputMessage {
     /// in-memory copy: without it the service would keep probing the replaced txid, find it gone
     /// from the mempool, re-publish it against its own replacement, and then write the stale
     /// status back over the persisted one.
+    ///
+    /// The service drops the entry only while its persisted row is still `Replaced`: a pass that
+    /// runs before this message arrives can reverse the replacement and re-admit the entry.
     NotifyReplacedEntry { txid: Buf32 },
 }
 

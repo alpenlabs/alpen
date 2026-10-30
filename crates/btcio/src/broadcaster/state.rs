@@ -72,7 +72,7 @@ where
                 self.handle_notify_new_entry(idx, txentry).await?;
             }
             TickMsg::Msg(BroadcasterInputMessage::NotifyReplacedEntry { txid }) => {
-                self.handle_notify_replaced_entry(txid);
+                self.handle_notify_replaced_entry(txid).await?;
             }
         }
 
@@ -95,11 +95,7 @@ where
             // would resurrect a txid that a broadcast replacement has already superseded, so
             // re-read and leave replaced entries alone. The matching
             // `NotifyReplacedEntry` message drops it from `unfinalized_entries`.
-            let replaced_concurrently =
-                self.io.get_tx_entry(idx).await?.is_some_and(|persisted| {
-                    matches!(persisted.status, L1TxStatus::Replaced { .. })
-                });
-            if replaced_concurrently {
+            if self.is_replaced_in_db(idx).await? {
                 debug!(%idx, "skipping write-back for entry replaced by a fee bump");
                 continue;
             }
@@ -118,26 +114,58 @@ where
         .await
     }
 
-    /// Drops the in-memory copy of an entry that a fee bump superseded.
-    fn handle_notify_replaced_entry(&mut self, txid: Buf32) {
-        let entries = &mut self.inner.unfinalized_entries;
-        let before = entries.len();
+    /// Reports whether the persisted row at `idx` is marked [`L1TxStatus::Replaced`].
+    ///
+    /// The fee bumper writes that status straight to the DB, and an adoption in this service can
+    /// reverse it, so the persisted row rather than the in-memory copy says whether an entry is
+    /// still superseded. A missing row reads as not replaced.
+    async fn is_replaced_in_db(&self, idx: u64) -> BroadcasterResult<bool> {
+        Ok(self
+            .io
+            .get_tx_entry(idx)
+            .await?
+            .is_some_and(|persisted| matches!(persisted.status, L1TxStatus::Replaced { .. })))
+    }
 
-        entries.retain(|entry| {
-            entry
-                .item()
-                .try_to_tx()
-                .map(|tx| Buf32::from(tx.compute_txid().to_byte_array()) != txid)
-                .unwrap_or(true)
-        });
-
-        if entries.len() == before {
-            // Normal when the entry already left the unfinalized set, e.g. it confirmed in the
-            // same tick the replacement was built and was then dropped from tracking.
+    /// Drops the in-memory copies of an entry that a fee bump superseded.
+    ///
+    /// The notice can be stale by the time it is handled. If the replacement is rejected while its
+    /// original is mined or still in the mempool, a pass that runs before this notice reverses
+    /// the replacement and re-admits the original. Dropping it then would leave it untracked
+    /// until a restart: the cursor is already past its index, so it would not reach `Finalized`
+    /// and a reorg on it would go unnoticed. The persisted row decides, and only a row still
+    /// marked `Replaced` is dropped.
+    async fn handle_notify_replaced_entry(&mut self, txid: Buf32) -> BroadcasterResult<()> {
+        let Some(idx) = self
+            .inner
+            .unfinalized_entries
+            .iter()
+            .find(|entry| {
+                entry
+                    .item()
+                    .try_to_tx()
+                    .is_ok_and(|tx| Buf32::from(tx.compute_txid().to_byte_array()) == txid)
+            })
+            .map(|entry| *entry.index())
+        else {
+            // Normal when the entry already left the unfinalized set, e.g. a resync between the
+            // swap and this notice skipped its `Replaced` row.
             debug!(?txid, "replaced entry was not tracked in memory");
-        } else {
-            info!(?txid, "stopped tracking entry superseded by a fee bump");
+            return Ok(());
+        };
+
+        if !self.is_replaced_in_db(idx).await? {
+            info!(?txid, %idx, "persisted row is no longer replaced; keeping entry tracked");
+            return Ok(());
         }
+
+        // An entry admitted by `NotifyNewEntry` is read back by the cursor in the same pass, so it
+        // can be tracked twice. Drop every copy.
+        self.inner
+            .unfinalized_entries
+            .retain(|entry| *entry.index() != idx);
+        info!(?txid, %idx, "stopped tracking entry superseded by a fee bump");
+        Ok(())
     }
 
     /// Inserts or replaces a tracked unfinalized entry by index.
@@ -189,8 +217,11 @@ mod test {
 
     use super::*;
     use crate::{
-        broadcaster::io::BroadcasterIo,
-        test_utils::{gen_l1_tx_entry_with_status, SendRawTransactionMode, TestBitcoinClient},
+        broadcaster::{io::BroadcasterIo, L1BroadcastHandle},
+        test_utils::{
+            compute_entry_txid, gen_l1_tx_entry_with_status, gen_replacement_tx_entry,
+            SendRawTransactionMode, TestBitcoinClient,
+        },
     };
 
     fn get_ops() -> Arc<BroadcastDbOps> {
@@ -384,13 +415,7 @@ mod test {
         };
         ops.put_tx_entry_async(txid, replaced).await.unwrap();
 
-        let entry_txid = Buf32::from(
-            entry
-                .try_to_tx()
-                .expect("test: entry holds a valid tx")
-                .compute_txid()
-                .to_byte_array(),
-        );
+        let entry_txid = compute_entry_txid(&entry);
         service_state
             .process_input(TickMsg::Msg(BroadcasterInputMessage::NotifyReplacedEntry {
                 txid: entry_txid,
@@ -409,6 +434,162 @@ mod test {
             ),
             "persisted Replaced status must survive the processing pass"
         );
+    }
+
+    /// Regression: an original can be mined before its replacement's first broadcast. The pass
+    /// that handles `NotifyNewEntry` then sees the replacement rejected, adopts the original and
+    /// re-admits it, so the `NotifyReplacedEntry` queued behind it must not drop it again. The
+    /// cursor is past the original's index, so nothing would poll it: it would sit at `Confirmed`
+    /// until a restart instead of reaching `Finalized`.
+    #[tokio::test]
+    async fn original_adopted_before_its_replaced_notice_stays_tracked() {
+        assert_adopted_original_reaches_finalized(0).await;
+    }
+
+    /// Regression: ticks can run between the swap and the notices. The first reads the
+    /// replacement in through the cursor and the second adopts the original, so both notices
+    /// arrive stale, and `NotifyReplacedEntry` must still leave the original tracked.
+    #[tokio::test]
+    async fn original_adopted_by_ticks_before_its_notices_stays_tracked() {
+        assert_adopted_original_reaches_finalized(2).await;
+    }
+
+    /// Replaces an original that is already mined, so the replacement's first broadcast is refused
+    /// for spent inputs. Runs `ticks_before_notices` ticks, feeds the service both notices in the
+    /// order the handle queued them, and checks that the adopted original reaches `Finalized`.
+    async fn assert_adopted_original_reaches_finalized(ticks_before_notices: usize) {
+        let ops = get_ops();
+        let original = gen_l1_tx_entry_with_status(L1TxStatus::Published);
+        let original_txid = compute_entry_txid(&original);
+        let original_idx = ops
+            .put_tx_entry_async(original_txid, original.clone())
+            .await
+            .unwrap()
+            .expect("test: original index");
+
+        // One confirmation for every txid: the original is mined, and the replacement's first
+        // broadcast is refused because its inputs are spent.
+        let client = TestBitcoinClient::new(1)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::MissingOrInvalidInput);
+        let mut service_state =
+            BroadcasterServiceState::try_new(make_io(ops.clone(), client), get_test_btcio_params())
+                .await
+                .unwrap();
+
+        let (handle, mut receiver) = L1BroadcastHandle::new_for_test(ops.clone());
+        let (replacement, replacement_txid) = gen_replacement_tx_entry(&original);
+        assert!(handle
+            .put_replacement_tx_entry(original_txid, replacement_txid, replacement)
+            .await
+            .unwrap());
+
+        for _ in 0..ticks_before_notices {
+            service_state.process_input(TickMsg::Tick).await.unwrap();
+        }
+        drop(handle);
+        while let Some(notice) = receiver.recv().await {
+            service_state
+                .process_input(TickMsg::Msg(notice))
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(
+            ops.get_tx_entry_by_id_async(replacement_txid)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            L1TxStatus::Replaced {
+                by: L1TxId::from(original_txid.0)
+            },
+            "the rejected replacement must hand the chain back to the original"
+        );
+        assert_eq!(
+            tracked_copies(&service_state, original_idx),
+            1,
+            "the adopted original must stay tracked"
+        );
+
+        // The original reaches reorg-safe depth.
+        service_state.io = make_io(ops.clone(), TestBitcoinClient::new(6));
+        service_state.process_input(TickMsg::Tick).await.unwrap();
+
+        assert_eq!(
+            ops.get_tx_entry_async(original_idx)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            L1TxStatus::Finalized {
+                confirmations: 6,
+                block_hash: Buf32::zero(),
+                block_height: 100,
+            }
+        );
+    }
+
+    /// Regression: an entry admitted through `NotifyNewEntry` is also read back by the cursor in
+    /// the same pass, so it is tracked twice. A replaced notice that drops only one copy leaves the
+    /// superseded transaction polled, and possibly re-published against its own replacement, until
+    /// a restart.
+    #[tokio::test]
+    async fn accepted_replacement_drops_every_tracked_copy_of_the_original() {
+        let ops = get_ops();
+        let mut service_state = BroadcasterServiceState::try_new(
+            make_io(ops.clone(), TestBitcoinClient::new(0)),
+            get_test_btcio_params(),
+        )
+        .await
+        .unwrap();
+        let (handle, mut receiver) = L1BroadcastHandle::new_for_test(ops.clone());
+
+        let original = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
+        let original_txid = compute_entry_txid(&original);
+        let original_idx = handle
+            .put_tx_entry(original_txid, original.clone())
+            .await
+            .unwrap();
+        let notice = receiver.recv().await.expect("test: original notice");
+        service_state
+            .process_input(TickMsg::Msg(notice))
+            .await
+            .unwrap();
+        assert_eq!(
+            tracked_copies(&service_state, original_idx),
+            2,
+            "test: the notice and the cursor should both admit the original"
+        );
+
+        // The replacement is accepted, so no adoption resyncs the tracked set from the DB.
+        let (replacement, replacement_txid) = gen_replacement_tx_entry(&original);
+        assert!(handle
+            .put_replacement_tx_entry(original_txid, replacement_txid, replacement)
+            .await
+            .unwrap());
+        drop(handle);
+        while let Some(notice) = receiver.recv().await {
+            service_state
+                .process_input(TickMsg::Msg(notice))
+                .await
+                .unwrap();
+        }
+
+        assert_eq!(
+            tracked_copies(&service_state, original_idx),
+            0,
+            "every copy of the superseded original must leave tracking"
+        );
+    }
+
+    /// Counts the in-memory copies of the entry at `idx`.
+    fn tracked_copies<C>(service_state: &BroadcasterServiceState<C>, idx: u64) -> usize {
+        service_state
+            .inner
+            .unfinalized_entries
+            .iter()
+            .filter(|entry| *entry.index() == idx)
+            .count()
     }
 
     /// A superseded ancestor that wins on-chain has to come back into the tracked set.

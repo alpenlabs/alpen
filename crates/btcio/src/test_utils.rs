@@ -44,6 +44,7 @@ use strata_csm_types::L1Payload;
 use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
 use strata_l1_envelope_fmt::build_envelope_script;
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
+use strata_primitives::buf::Buf32;
 use tokio::time::sleep;
 
 use crate::{
@@ -237,6 +238,31 @@ pub fn gen_l1_tx_entry_with_status(status: L1TxStatus) -> L1TxEntry {
     let mut entry = L1TxEntry::from_tx(&tx);
     entry.status = status;
     entry
+}
+
+/// Computes the txid of `entry`'s transaction in the [`Buf32`] form the broadcast handle takes.
+pub fn compute_entry_txid(entry: &L1TxEntry) -> Buf32 {
+    let tx = entry.try_to_tx().expect("test: entry holds a valid tx");
+    Buf32(tx.compute_txid().to_byte_array())
+}
+
+/// Generates a writer-owned fee bump of `original`, returned with its txid.
+///
+/// The replacement spends the same inputs under the next lock time, so it conflicts with
+/// `original` under a different txid. It carries RBF metadata but no `replaces` link yet, which
+/// is how the writer hands it to `put_replacement_tx_entry`.
+pub fn gen_replacement_tx_entry(original: &L1TxEntry) -> (L1TxEntry, Buf32) {
+    let mut tx = original
+        .try_to_tx()
+        .expect("test: original holds a valid tx");
+    tx.lock_time = LockTime::from_consensus(tx.lock_time.to_consensus_u32() + 1);
+    let replacement = L1TxEntry::from_tx_with_fee(
+        &tx,
+        FeeRate::from_sat_per_vb(2).unwrap(),
+        Amount::from_sat(400),
+    );
+    let txid = compute_entry_txid(&replacement);
+    (replacement, txid)
 }
 
 impl Reader for TestBitcoinClient {

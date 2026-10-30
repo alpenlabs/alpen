@@ -53,10 +53,18 @@ impl L1BroadcastHandle {
         }
     }
 
+    /// Builds a handle with no service behind it, returning the receiving end of its channel.
+    ///
+    /// Dropping the receiver makes every notification fail the way it does once the service has
+    /// shut down. A kept receiver must be drained: the channel is bounded, so sends block once it
+    /// fills.
     #[cfg(test)]
-    pub(crate) fn new_for_test(ops: Arc<BroadcastDbOps>) -> Self {
-        let (sender, _) = mpsc::channel::<BroadcasterInputMessage>(64);
-        Self::new(sender, ops, None, FeeRate::from_sat_per_vb(1_000).unwrap())
+    pub(crate) fn new_for_test(
+        ops: Arc<BroadcastDbOps>,
+    ) -> (Self, mpsc::Receiver<BroadcasterInputMessage>) {
+        let (sender, receiver) = mpsc::channel::<BroadcasterInputMessage>(64);
+        let handle = Self::new(sender, ops, None, FeeRate::from_sat_per_vb(1_000).unwrap());
+        (handle, receiver)
     }
 
     /// Returns the per-transaction fee-rate ceiling used by this broadcaster.
@@ -159,6 +167,10 @@ impl L1BroadcastHandle {
 
     /// Inserts `replacement` and supersedes `original_txid` with it, atomically.
     ///
+    /// For a replacement carrying RBF metadata, which ancestor recovery requires, sets its
+    /// `replaces` link to `original_txid` on both the stored row and the copy sent to the
+    /// broadcaster, overriding any link the caller set.
+    ///
     /// Returns `false` when the original was no longer in a publishable state, in which case
     /// nothing was written and the replacement must be discarded.
     ///
@@ -168,12 +180,19 @@ impl L1BroadcastHandle {
         &self,
         original_txid: Buf32,
         replacement_txid: Buf32,
-        replacement: L1TxEntry,
+        mut replacement: L1TxEntry,
     ) -> BroadcasterResult<bool> {
         assert!(
             replacement.try_to_tx().is_ok(),
             "invalid replacement entry {replacement:?}"
         );
+
+        // The DB sets this link on its own copy, but the service tracks the copy sent below and
+        // writes it back over the stored row, so that copy needs the link too. Every rescue of a
+        // replacement chain walks it back to the original. Without it, a replacement rejected
+        // because its original was mined stays `InvalidInputs`, and the writer re-signs the
+        // envelope and posts the same payload to L1 a second time.
+        replacement.set_replaces(L1TxId::from(original_txid.0));
 
         let Some(idx) = self
             .ops
@@ -263,12 +282,54 @@ mod tests {
     use tokio::runtime::Handle;
 
     use super::*;
+    use crate::test_utils::{
+        compute_entry_txid, gen_l1_tx_entry_with_status, gen_replacement_tx_entry,
+    };
+
+    /// Regression: the service tracks the copy of a replacement it is sent and writes it back over
+    /// the stored row. A copy without the `replaces` link leaves the service, and after its first
+    /// write-back the DB too, with no way back to the original. A replacement rejected because its
+    /// original was already mined then stays `InvalidInputs`, and the writer re-signs the envelope
+    /// and posts the same payload to L1 a second time.
+    #[tokio::test]
+    async fn replacement_sent_to_the_service_names_the_tx_it_replaces() {
+        let db = get_test_sled_backend().broadcast_db();
+        let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
+        let (handle, mut receiver) = L1BroadcastHandle::new_for_test(ops.clone());
+
+        let original = gen_l1_tx_entry_with_status(L1TxStatus::Published);
+        let original_txid = compute_entry_txid(&original);
+        let (replacement, replacement_txid) = gen_replacement_tx_entry(&original);
+        ops.put_tx_entry_async(original_txid, original)
+            .await
+            .unwrap();
+
+        assert!(handle
+            .put_replacement_tx_entry(original_txid, replacement_txid, replacement)
+            .await
+            .unwrap());
+
+        let Some(BroadcasterInputMessage::NotifyNewEntry { txentry, .. }) = receiver.recv().await
+        else {
+            panic!("test: the service must be told about the replacement first");
+        };
+        let persisted = ops
+            .get_tx_entry_by_id_async(replacement_txid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(txentry, persisted);
+        assert_eq!(
+            txentry.rbf.and_then(|rbf| rbf.replaces),
+            Some(L1TxId::from(original_txid.0))
+        );
+    }
 
     #[tokio::test]
     async fn replacement_chain_hop_exhaustion_is_typed() {
         let db = get_test_sled_backend().broadcast_db();
         let ops = Arc::new(BroadcastDbOps::new(Handle::current(), db));
-        let handle = L1BroadcastHandle::new_for_test(ops.clone());
+        let (handle, _) = L1BroadcastHandle::new_for_test(ops.clone());
         let start = Buf32([0; 32]);
 
         for hop in 0..MAX_REPLACEMENT_CHAIN_HOPS {

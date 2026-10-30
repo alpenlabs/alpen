@@ -1389,8 +1389,8 @@ mod test {
 
     /// A refused reversal leaves the chain exactly as it was, so the `InvalidInputs` verdict
     /// stands and the caller still reports it. When the refusal was caused by a concurrent pass
-    /// resolving the chain, that verdict never reaches the DB either: the `replaced_concurrently`
-    /// guard in `state.rs` drops the write-back once it re-reads the row as `Replaced`.
+    /// resolving the chain, that verdict never reaches the DB either: the write-back guard in
+    /// `state.rs` (`is_replaced_in_db`) drops the write once it re-reads the row as `Replaced`.
     #[tokio::test(flavor = "multi_thread")]
     async fn negative_confirmations_stay_invalid_when_the_reversal_is_refused() {
         let ReplacementChain {
