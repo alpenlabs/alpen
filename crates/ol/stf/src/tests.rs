@@ -1,6 +1,6 @@
 //! Smoke tests for dispatch under [`OLSpecId::V1`], tests for the
 //! [`OLSpecId::V0`] genesis and epoch replay, for the states [`OLSpecId::V2`]
-//! takes over, and for spec selection.
+//! takes over and the capacities it enforces, and for spec selection.
 //!
 //! The differential tests in `strata-ol-checkpoint` and
 //! `strata-ol-block-assembly` compare the drivers against each other.
@@ -8,13 +8,15 @@
 use std::convert::Infallible;
 use std::{iter, slice};
 
-use strata_acct_types::{BitcoinAmount, Hash};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MAX_MESSAGES, MAX_TRANSFERS};
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_codec::encode_to_vec;
 use strata_da_framework::{DaCounter, DaLinacc, DaRegister};
-use strata_identifiers::{AccountSerial, L1BlockCommitment, OLBlockCommitment, SubjectId};
-use strata_ol_chain_types_v1::{AsmManifest, OLBlockV1};
+use strata_identifiers::{
+    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, L1BlockCommitment, OLBlockCommitment, SubjectId,
+};
+use strata_ol_chain_types_v1::{AsmManifest, MAX_LOGS_PER_BLOCK, OLBlockV1};
 use strata_ol_da_common::{U16LenBytes, U16LenList};
 use strata_ol_da_types_v1::{
     AccountDiffEntryV1, AccountDiffV1, DaProofStateDiffV1, GlobalStateDiffV1, LedgerDiffV1,
@@ -34,11 +36,12 @@ use strata_ol_tx_types_v1::{
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{
-    BasicExecContext, BlockComponents, BlockContext, BlockInfo, CompletedBlock, EpochDaReplayError,
-    EpochExecExpectations, EpochInfo, EpochL1Range, EpochSpecSelectionError, ExecError,
-    ExecOutputBuffer, ExecResult, OLSpecId, TxExecContext, apply_da_epoch, construct_block,
-    execute_and_complete_block, execute_block_batch_predrain, next_epoch_spec,
-    select_next_epoch_spec, sequencer, verify_block, verify_epoch_with_diff,
+    BasicExecContext, BlockComponents, BlockContext, BlockInfo, CompletedBlock,
+    ConstructBlockOutput, EpochDaReplayError, EpochExecExpectations, EpochInfo, EpochL1Range,
+    EpochSpecSelectionError, ExecError, ExecOutputBuffer, ExecResult, OLSpecId, OLSpecLimits,
+    TxEffectsOverflow, TxExecContext, apply_da_epoch, construct_block, execute_and_complete_block,
+    execute_block_batch_predrain, next_epoch_spec, select_next_epoch_spec, sequencer, spec_limits,
+    verify_block, verify_epoch_with_diff,
 };
 
 /// An epoch built with the V1 STF, with its pre-genesis and pre-epoch states.
@@ -1193,4 +1196,392 @@ fn test_epoch_l1_range_must_follow_the_previous_epoch() {
     assert_eq!(range.prev_last(), &at_9);
     assert_eq!(range.last(), &at_10);
     assert_eq!(range.last_processed(), Some(&at_10));
+}
+
+/// Satoshis each test withdrawal sends to the bridge gateway.
+const WITHDRAWAL_SATS: u64 = 100_000_000;
+
+/// A post-genesis state with a funded snark account, and transactions built
+/// against it for the first block of epoch 1.
+struct CapacityFixture {
+    fixture: OLStfFixture,
+    sender: AccountId,
+    recipient: AccountId,
+}
+
+impl CapacityFixture {
+    /// Funds the snark account for `withdrawal_count` withdrawals.
+    fn new(withdrawal_count: usize) -> Self {
+        let sender = make_account_id(TEST_SNARK_ACCOUNT_ID);
+        let recipient = make_account_id(TEST_RECIPIENT_ID);
+        let balance = BitcoinAmount::try_from(WITHDRAWAL_SATS * withdrawal_count as u64)
+            .expect("balance fits the money supply");
+        let mut fixture = OLStfFixture::builder()
+            .with_genesis_snark_account(sender, |account| account.with_balance(balance))
+            .execute_genesis();
+        fixture.insert_empty_account(recipient);
+        Self {
+            fixture,
+            sender,
+            recipient,
+        }
+    }
+
+    /// Builds one snark account update per entry of `effect_counts`, in
+    /// sequence from `first_seq_no`, each sending that many
+    /// `(transfers, withdrawals)`.
+    fn updates(&self, first_seq_no: u64, effect_counts: &[(usize, usize)]) -> Vec<OLTransactionV1> {
+        let account = self.fixture.expect_snark_account(self.sender);
+        effect_counts
+            .iter()
+            .zip(first_seq_no..)
+            .map(|(&(transfers, withdrawals), seq_no)| {
+                let mut update =
+                    SnarkUpdateBuilder::from_snark_state(account.clone()).with_seq_no(seq_no);
+                for _ in 0..transfers {
+                    update = update.with_transfer(self.recipient, 1);
+                }
+                for _ in 0..withdrawals {
+                    update = update.with_output_message(
+                        BRIDGE_GATEWAY_ACCT_ID,
+                        WITHDRAWAL_SATS,
+                        make_withdrawal_payload(make_p2wpkh_bosd_descriptor(0x15)),
+                    );
+                }
+                update.build(
+                    self.sender,
+                    make_state_root((seq_no as u8).wrapping_add(2)),
+                    make_proof(1),
+                )
+            })
+            .collect()
+    }
+
+    /// Returns updates, in sequence from `first_seq_no`, that emit `log_count`
+    /// logs between them: one per update and one per withdrawal, with at most
+    /// 255 withdrawals each.
+    fn updates_emitting(&self, first_seq_no: u64, log_count: usize) -> Vec<OLTransactionV1> {
+        let max_logs_per_update = OLSpecLimits::V2.max_tx_messages() + 1;
+        let effect_counts: Vec<_> = (0..log_count.div_ceil(max_logs_per_update))
+            .map(|index| {
+                let logs = (log_count - index * max_logs_per_update).min(max_logs_per_update);
+                (0, logs - 1)
+            })
+            .collect();
+        self.updates(first_seq_no, &effect_counts)
+    }
+
+    fn block_info(&self) -> BlockInfo {
+        BlockInfo::new(1_001_000, 1, 1)
+    }
+
+    /// Constructs the first block of epoch 1 from `txs` under `spec`.
+    fn construct(
+        &self,
+        spec: OLSpecId,
+        txs: Vec<OLTransactionV1>,
+    ) -> ExecResult<ConstructBlockOutput> {
+        let block_info = self.block_info();
+        construct_block(
+            spec,
+            &mut self.fixture.state().clone(),
+            BlockContext::new(&block_info, Some(self.fixture.parent_header())),
+            BlockComponents::new_txs_from_ol_transactions(txs),
+            &OLRuntimeParams::test_default(),
+        )
+    }
+
+    /// Builds a block from `txs` with the V1 code on a V2 state, so the block
+    /// differs from a valid V2 block only in what V2 caps, and returns it with
+    /// the state to verify it on.
+    fn v2_block_built_by_v1(
+        &self,
+        txs: Vec<OLTransactionV1>,
+    ) -> (OLBlockV1, MemoryStateBaseLayer<OLStateV1>) {
+        let (mut blocks, pre_state) = self.v2_blocks_built_by_v1(vec![txs]);
+        (blocks.remove(0), pre_state)
+    }
+
+    /// Builds consecutive blocks of epoch 1, one from each entry of
+    /// `block_txs`, as [`Self::v2_block_built_by_v1`] builds one.
+    fn v2_blocks_built_by_v1(
+        &self,
+        block_txs: Vec<Vec<OLTransactionV1>>,
+    ) -> (Vec<OLBlockV1>, MemoryStateBaseLayer<OLStateV1>) {
+        let mut state = self.fixture.state().clone();
+        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+        let pre_state = state.clone();
+        let mut parent = self.fixture.parent_header().clone();
+        let mut blocks = Vec::new();
+        for (txs, slot) in block_txs.into_iter().zip(1..) {
+            let block_info = BlockInfo::new(1_000_000 + slot * 1_000, slot, 1);
+            let output = strata_ol_stf_v1::construct_block(
+                &mut state,
+                BlockContext::new(&block_info, Some(&parent)),
+                BlockComponents::new_txs_from_ol_transactions(txs),
+                &OLRuntimeParams::test_default(),
+            )
+            .expect("the V1 code builds the block");
+            parent = output.completed_block().header().clone();
+            blocks.push(to_ol_block(output.completed_block()));
+        }
+        (blocks, pre_state)
+    }
+
+    /// Runs every V2 operation that executes a whole block on `block`.
+    fn v2_block_errors(
+        &self,
+        block: &OLBlockV1,
+        pre_state: &MemoryStateBaseLayer<OLStateV1>,
+    ) -> Vec<(&'static str, ExecError)> {
+        let parent = self.fixture.parent_header();
+        let runtime_params = OLRuntimeParams::test_default();
+        let block_info = BlockInfo::from_header(block.header());
+        vec![
+            (
+                "verify_block",
+                verify_block(
+                    OLSpecId::V2,
+                    &mut pre_state.clone(),
+                    block.header(),
+                    Some(parent),
+                    block.body(),
+                    &runtime_params,
+                )
+                .expect_err("verify_block rejects the block"),
+            ),
+            (
+                "execute_and_complete_block",
+                execute_and_complete_block(
+                    OLSpecId::V2,
+                    &mut pre_state.clone(),
+                    BlockContext::new(&block_info, Some(parent)),
+                    BlockComponents::from_block(block),
+                    &runtime_params,
+                )
+                .expect_err("execute_and_complete_block rejects the block"),
+            ),
+            (
+                "execute_block_batch_predrain",
+                execute_block_batch_predrain(
+                    OLSpecId::V2,
+                    &mut pre_state.clone(),
+                    slice::from_ref(block),
+                    parent,
+                    &runtime_params,
+                )
+                .expect_err("execute_block_batch_predrain rejects the block"),
+            ),
+        ]
+    }
+}
+
+#[test]
+fn test_spec_limits() {
+    assert_eq!(spec_limits(OLSpecId::V1), OLSpecLimits::V1);
+    assert_eq!(OLSpecLimits::V1.max_tx_transfers(), MAX_TRANSFERS as usize);
+    assert_eq!(OLSpecLimits::V1.max_tx_messages(), MAX_MESSAGES as usize);
+    assert_eq!(
+        OLSpecLimits::V1.max_block_logs(),
+        MAX_LOGS_PER_BLOCK as usize
+    );
+
+    let v2 = spec_limits(OLSpecId::V2);
+    assert_eq!(v2, spec_limits(OLSpecId::V0));
+    assert_eq!(v2.max_tx_transfers(), 255);
+    assert_eq!(v2.max_tx_messages(), 255);
+    assert_eq!(v2.max_block_logs(), 4_096);
+}
+
+/// V2 accepts a block whose logs reach its capacity and rejects one more log
+/// in every operation that executes a whole block. V1 accepts both.
+#[test]
+fn test_v2_caps_block_logs() {
+    let max_logs = OLSpecLimits::V2.max_block_logs();
+    let capacity = CapacityFixture::new(max_logs);
+
+    let output = capacity
+        .construct(OLSpecId::V2, capacity.updates_emitting(0, max_logs))
+        .expect("V2 builds a block at its log capacity");
+    assert_eq!(output.outputs().logs().len(), max_logs);
+    let block = output.completed_block();
+    let logs = verify_block(
+        OLSpecId::V2,
+        &mut capacity.fixture.state().clone(),
+        block.header(),
+        Some(capacity.fixture.parent_header()),
+        block.body(),
+        &OLRuntimeParams::test_default(),
+    )
+    .expect("V2 verifies a block at its log capacity");
+    assert_eq!(logs.len(), max_logs);
+
+    let over = capacity.updates_emitting(0, max_logs + 1);
+    let output = capacity
+        .construct(OLSpecId::V1, over.clone())
+        .expect("V1 accepts the extra log");
+    assert_eq!(output.outputs().logs().len(), max_logs + 1);
+
+    let is_overflow = |err: &ExecError| {
+        matches!(err.base(), ExecError::LogsOverflow { count, max }
+            if *count == max_logs + 1 && *max == max_logs)
+    };
+    let err = capacity
+        .construct(OLSpecId::V2, over.clone())
+        .expect_err("V2 rejects the extra log");
+    assert!(is_overflow(&err), "{err}");
+
+    let (block, pre_state) = capacity.v2_block_built_by_v1(over);
+    for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+        assert!(is_overflow(&err), "{operation}: {err}");
+    }
+}
+
+/// V2 accepts a transaction whose transfers and messages reach its
+/// capacities and rejects one more of either, in block execution and in the
+/// sequencer phases that take a single transaction. V1 accepts both.
+#[test]
+fn test_v2_caps_transaction_effects() {
+    let max_transfers = OLSpecLimits::V2.max_tx_transfers();
+    let max_messages = OLSpecLimits::V2.max_tx_messages();
+    let capacity = CapacityFixture::new(max_messages + 1);
+
+    capacity
+        .construct(
+            OLSpecId::V2,
+            capacity.updates(0, &[(max_transfers, max_messages)]),
+        )
+        .expect("V2 accepts a transaction at its effect capacities");
+
+    let runtime_params = OLRuntimeParams::test_default();
+    let block_info = capacity.block_info();
+    let output = ExecOutputBuffer::new_empty();
+    let basic_ctx = BasicExecContext::new(block_info, &output, &runtime_params);
+    let parent = capacity.fixture.parent_header();
+    let sender_state = capacity
+        .fixture
+        .state()
+        .get_account_state(capacity.sender)
+        .expect("read snark account")
+        .expect("snark account exists")
+        .clone();
+
+    for (effect_counts, expected) in [
+        (
+            (max_transfers + 1, 0),
+            TxEffectsOverflow::Transfers {
+                count: max_transfers + 1,
+                max: max_transfers,
+            },
+        ),
+        (
+            (0, max_messages + 1),
+            TxEffectsOverflow::Messages {
+                count: max_messages + 1,
+                max: max_messages,
+            },
+        ),
+    ] {
+        let txs = capacity.updates(0, &[effect_counts]);
+        capacity
+            .construct(OLSpecId::V1, txs.clone())
+            .expect("V1 accepts the extra effect");
+
+        let is_overflow = |err: &ExecError| matches!(err.base(), ExecError::TxEffectsOverflow(err) if *err == expected);
+        let err = capacity
+            .construct(OLSpecId::V2, txs.clone())
+            .expect_err("V2 rejects the extra effect");
+        assert!(is_overflow(&err), "{err}");
+        assert!(
+            matches!(err, ExecError::TxExec(_, 0, _)),
+            "block execution names the transaction: {err}"
+        );
+
+        let (block, pre_state) = capacity.v2_block_built_by_v1(txs.clone());
+        for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+            assert!(is_overflow(&err), "{operation}: {err}");
+        }
+
+        let tx = &txs[0];
+        let TransactionPayloadV1::SnarkAccountUpdate(sau) = tx.data().payload() else {
+            panic!("snark update payload");
+        };
+        let err = sequencer::index_snark_update_proof_requirements(
+            OLSpecId::V2,
+            capacity.sender,
+            &sender_state,
+            sau.operation(),
+            tx.data().effects(),
+        )
+        .expect_err("proof indexing rejects the extra effect");
+        assert!(is_overflow(&err), "{err}");
+
+        let err = sequencer::process_single_tx(
+            OLSpecId::V2,
+            &mut capacity.fixture.state().clone(),
+            tx,
+            &TxExecContext::new(&basic_ctx, Some(parent)),
+        )
+        .expect_err("transaction processing rejects the extra effect");
+        assert!(is_overflow(&err), "{err}");
+    }
+}
+
+/// Batch pre-drain execution caps each block's logs, not the batch's: two
+/// blocks at the cap run as the V1 code runs them, and a second block over
+/// the cap fails after a first block that fits.
+#[test]
+fn test_v2_batch_predrain_caps_each_block() {
+    let max_logs = OLSpecLimits::V2.max_block_logs();
+    let capacity = CapacityFixture::new(3 * max_logs);
+    let runtime_params = OLRuntimeParams::test_default();
+    let parent = capacity.fixture.parent_header();
+    let first = capacity.updates_emitting(0, max_logs);
+    let second_seq_no = first.len() as u64;
+
+    let (blocks, pre_state) = capacity.v2_blocks_built_by_v1(vec![
+        first.clone(),
+        capacity.updates_emitting(second_seq_no, max_logs),
+    ]);
+    let mut v2_state = pre_state.clone();
+    let v2_logs = execute_block_batch_predrain(
+        OLSpecId::V2,
+        &mut v2_state,
+        &blocks,
+        parent,
+        &runtime_params,
+    )
+    .expect("V2 runs two blocks at its log capacity");
+    let mut v1_state = pre_state;
+    let v1_logs = strata_ol_stf_v1::execute_block_batch_predrain(
+        &mut v1_state,
+        &blocks,
+        parent,
+        &runtime_params,
+    )
+    .expect("the V1 code runs the batch");
+    assert_eq!(v2_logs.len(), 2 * max_logs);
+    assert_eq!(v2_logs, v1_logs);
+    assert_eq!(
+        v2_state.compute_state_root().expect("state root"),
+        v1_state.compute_state_root().expect("state root"),
+    );
+
+    let (blocks, pre_state) = capacity.v2_blocks_built_by_v1(vec![
+        first,
+        capacity.updates_emitting(second_seq_no, max_logs + 1),
+    ]);
+    let err = execute_block_batch_predrain(
+        OLSpecId::V2,
+        &mut pre_state.clone(),
+        &blocks,
+        parent,
+        &runtime_params,
+    )
+    .expect_err("V2 rejects the second block");
+    assert!(
+        matches!(err.base(), ExecError::LogsOverflow { count, max }
+            if *count == max_logs + 1 && *max == max_logs),
+        "{err}"
+    );
 }

@@ -14,6 +14,7 @@ use strata_ol_stf_v1::{
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
 use crate::da::EpochDaReplayError;
+use crate::limits::OLSpecLimits;
 use crate::spec::OLStfSpec;
 
 /// The V1 OL rules.
@@ -21,6 +22,10 @@ use crate::spec::OLStfSpec;
 pub(crate) struct StfV1;
 
 impl OLStfSpec for StfV1 {
+    fn limits() -> OLSpecLimits {
+        OLSpecLimits::V1
+    }
+
     fn verify_block<S: IStateAccessorMut>(
         state: &mut S,
         header: &OLBlockHeaderV1,

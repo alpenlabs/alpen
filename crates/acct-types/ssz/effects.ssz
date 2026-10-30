@@ -3,9 +3,10 @@ import messages
 ### Matches the `UpdateOutputs` caps in `snark-acct-types`. Converting
 ### between the two must never drop entries, so the bounds have to agree.
 ###
-### TODO(STR-4402): `MAX_MESSAGES` is not reconciled with the OL block log cap
-### or the per-checkpoint log budget. A tx at this cap emits one log more than
-### `MAX_LOGS_PER_BLOCK` allows.
+### These are the V1 capacities. They also set the depth of the txid's Merkle
+### tree, so they never change. Later specs allow fewer effects as a validity
+### rule: V2 allows 255 transfers and 255 messages (`OLSpecLimits` in
+### `strata-ol-stf`).
 MAX_TRANSFERS = 1 << 16
 MAX_MESSAGES = 1 << 16
 
