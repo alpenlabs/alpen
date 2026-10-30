@@ -417,28 +417,29 @@ fn build_chain_from_v0_terminal() -> ChainBuilder {
 }
 
 /// Checks that block verification and checkpoint DA replay agree with block
-/// construction on `epoch`, the chain's last epoch and the first under
-/// `spec`, which takes over the state of the spec before it.
+/// construction on `epoch`, the chain's last epoch under `spec`.
+///
+/// Covers both an epoch taking over its predecessor's state and an epoch
+/// continuing from a state already produced under `spec`.
 ///
 /// Returns the epoch's encoded DA.
-fn assert_drivers_agree_on_takeover_epoch(
+fn assert_drivers_agree_on_last_epoch(
     chain: &ChainBuilder,
     epoch: &BuiltEpoch,
     spec: OLSpecId,
 ) -> Vec<u8> {
     let terminal = epoch.terminal();
-    let taken_over = OLSpecVersions::uniform(spec);
+    let expected_versions = OLSpecVersions::uniform(spec);
 
-    // Block construction took over the state.
-    assert_eq!(chain.state.spec_versions(), taken_over);
+    // Block construction recorded the epoch spec.
+    assert_eq!(chain.state.spec_versions(), expected_versions);
     assert_eq!(
         chain.state.compute_state_root().expect("terminal root"),
         *terminal.state_root()
     );
 
     // Node execution verifies each block on a write-tracking overlay and
-    // applies its batch, as the chain worker does, so the takeover travels in
-    // the first block's batch.
+    // applies its batch, as the chain worker does, including any version takeover.
     let mut node_state = epoch.pre_epoch_state.clone();
     let mut parent = &epoch.previous_terminal;
     for built in &epoch.blocks {
@@ -464,10 +465,9 @@ fn assert_drivers_agree_on_takeover_epoch(
         );
         parent = header;
     }
-    assert_eq!(node_state.spec_versions(), taken_over);
+    assert_eq!(node_state.spec_versions(), expected_versions);
 
-    // DA replay from the epoch's start state takes over the state the same
-    // way.
+    // DA replay derives the same versions from the epoch's start state.
     let (encoded_da, _) = compute_epoch_da(
         spec,
         epoch.pre_epoch_state.clone(),
@@ -491,7 +491,7 @@ fn assert_drivers_agree_on_takeover_epoch(
         &chain.runtime_params,
     )
     .expect("epoch DA applies");
-    assert_eq!(replayed.spec_versions(), taken_over);
+    assert_eq!(replayed.spec_versions(), expected_versions);
     assert_eq!(
         replayed.compute_state_root().expect("replayed root"),
         *terminal.state_root()
@@ -530,7 +530,7 @@ fn test_drivers_agree_on_first_v1_epoch_after_v0() {
         *epoch.previous_terminal.state_root()
     );
 
-    let encoded_da = assert_drivers_agree_on_takeover_epoch(&chain, epoch, SPEC);
+    let encoded_da = assert_drivers_agree_on_last_epoch(&chain, epoch, SPEC);
 
     // The checkpoint program proves the epoch from the V0 start container.
     let claim =
@@ -584,7 +584,7 @@ fn test_drivers_agree_on_first_v2_epoch_after_v1() {
         *epoch.previous_terminal.state_root()
     );
 
-    let encoded_da = assert_drivers_agree_on_takeover_epoch(&chain, epoch, OLSpecId::V2);
+    let encoded_da = assert_drivers_agree_on_last_epoch(&chain, epoch, OLSpecId::V2);
     let claim = CheckpointProgram::execute(
         &epoch.prover_input(encoded_da),
         OLSpecId::V2,
@@ -654,7 +654,7 @@ fn test_drivers_prove_later_v2_epoch_from_v2_state() {
         epoch.pre_epoch_state.spec_versions(),
         OLSpecVersions::uniform(OLSpecId::V2)
     );
-    let encoded_da = assert_drivers_agree_on_takeover_epoch(&chain, epoch, OLSpecId::V2);
+    let encoded_da = assert_drivers_agree_on_last_epoch(&chain, epoch, OLSpecId::V2);
     let claim = CheckpointProgram::execute(
         &epoch.prover_input(encoded_da),
         OLSpecId::V2,
