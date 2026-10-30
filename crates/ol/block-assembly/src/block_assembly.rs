@@ -23,7 +23,7 @@ use strata_ol_stf::sequencer::{
 };
 use strata_ol_stf::{
     BasicExecContext, BlockContext, BlockExecOutputs, BlockInfo, ExecError, ExecOutputBuffer,
-    OLSpecId, TxExecContext,
+    OLSpecId, OLSpecLimits, TxExecContext, spec_limits,
 };
 use strata_ol_tx_types_v1::*;
 use strata_snark_acct_types as _;
@@ -145,7 +145,8 @@ fn stf_exec_error_to_mempool_reason(err: &ExecError) -> MempoolTxInvalidReason {
         | ExecError::IncorrectTxTargetType
         | ExecError::Codec(_)
         | ExecError::Acct(_)
-        | ExecError::LogsOverflow { .. } => MempoolTxInvalidReason::Invalid,
+        | ExecError::LogsOverflow { .. }
+        | ExecError::TxEffectsOverflow(_) => MempoolTxInvalidReason::Invalid,
 
         // May succeed in future blocks
         ExecError::TransactionNotMature(_, _)
@@ -714,6 +715,7 @@ where
     let mut failed_txs = Vec::new();
     let mut sealing_limit_verdict = EpochSealingLimitVerdict::within_limits();
     let mut blocked_sequences: HashMap<AccountId, u64> = HashMap::new();
+    let limits = spec_limits(spec);
 
     // Track log metrics incrementally for checkpoint size estimation.
     let mut log_usage = LogUsage::from_logs(accumulated_da.logs());
@@ -843,7 +845,7 @@ where
                             ?tentative,
                             "checkpoint size approaching limit, sealing epoch"
                         );
-                        if output_buffer.emit_logs(tx_logs).is_err() {
+                        if !append_tx_logs(limits, output_buffer, tx_logs) {
                             debug!(?txid, "block log cap exceeded, rolling back tx");
                             staging_state = DaAccumulatingState::new_with_accumulator(
                                 WriteTrackingState::new(parent_state, backup_batch),
@@ -857,7 +859,7 @@ where
                         break;
                     }
                     EpochSealingLimitAction::Continue => {
-                        if output_buffer.emit_logs(tx_logs).is_err() {
+                        if !append_tx_logs(limits, output_buffer, tx_logs) {
                             debug!(?txid, "block log cap exceeded, rolling back tx");
                             staging_state = DaAccumulatingState::new_with_accumulator(
                                 WriteTrackingState::new(parent_state, backup_batch),
@@ -924,6 +926,20 @@ where
     }
 }
 
+/// Appends a staged transaction's logs to the block's output buffer if the
+/// block stays within the spec's log capacity.
+///
+/// Returns whether the logs were appended. The output buffer enforces only the
+/// V1 capacity, so a spec that allows fewer logs is checked here first.
+fn append_tx_logs(
+    limits: OLSpecLimits,
+    output_buffer: &ExecOutputBuffer,
+    tx_logs: Vec<OLLog>,
+) -> bool {
+    let count = output_buffer.log_count().saturating_add(tx_logs.len());
+    limits.check_block_log_count(count).is_ok() && output_buffer.emit_logs(tx_logs).is_ok()
+}
+
 /// Builds the final block template from accumulated state and transactions.
 ///
 /// Returns `(template, final_state)` where `final_state` is the post-block state.
@@ -964,11 +980,11 @@ where
     // The single final state root after all of the block's processing.
     let state_root = final_state.compute_state_root()?;
 
-    // Defense-in-depth: per-tx and manifest emission paths enforce the cap at
-    // emit time, and this preserves an explicit terminal assembly invariant
-    // check before finalizing the template.
-    output_buffer
-        .verify_logs_within_block_limit()
+    // Defense-in-depth: the transaction path enforces the spec's cap when it
+    // appends each transaction's logs, and this checks the whole block,
+    // epoch-terminal logs included, before finalizing the template.
+    spec_limits(spec)
+        .check_block_log_count(output_buffer.log_count())
         .map_err(BlockAssemblyError::BlockConstruction)?;
 
     // Extract logs for computing logs root
@@ -3629,63 +3645,121 @@ mod tests {
 
     /// Tests that when two txs are processed and the first fills the remaining
     /// log budget, the second is deferred via soft-break (not included, not
-    /// marked invalid).
+    /// marked invalid), at the block log cap of each spec.
     ///
     /// Uses `process_transactions` directly with a pre-filled output buffer so
     /// that realistic message counts (≤ 255 per tx) can trigger the overflow.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_log_overflow_tx_skipped_not_invalid() {
-        let account_id = test_account_id(8);
-        let env = build_process_tx_env(account_id).await;
+        for spec in [OLSpecId::V1, OLSpecId::V2] {
+            let account_id = test_account_id(8);
+            let env = build_process_tx_env(account_id).await;
 
-        let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
-            build_process_transactions_preamble(&env, 1_000_001, 1).await;
-        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+            let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
+                build_process_transactions_preamble(&env, 1_000_001, 1).await;
+            let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
-        // First tx: 10 withdrawal messages = 10 logs.
-        let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x15);
-        let tx_fill = MempoolSnarkTxBuilder::new(account_id)
-            .with_seq_no(0)
-            .with_withdrawals(10, 100_000_000, withdrawal_dest.clone())
-            .build();
-        let tx_fill_id = tx_fill.compute_txid();
+            // First tx: 10 withdrawal messages = 10 logs.
+            let withdrawal_dest = make_p2wpkh_bosd_descriptor(0x15);
+            let tx_fill = MempoolSnarkTxBuilder::new(account_id)
+                .with_seq_no(0)
+                .with_withdrawals(10, 100_000_000, withdrawal_dest.clone())
+                .build();
+            let tx_fill_id = tx_fill.compute_txid();
 
-        // Second tx: 1 withdrawal message = 1 log.
-        let tx_overflow = MempoolSnarkTxBuilder::new(account_id)
-            .with_seq_no(1)
-            .with_withdrawal(100_000_000, withdrawal_dest)
-            .build();
-        let tx_overflow_id = tx_overflow.compute_txid();
+            // Second tx: 1 withdrawal message = 1 log.
+            let tx_overflow = MempoolSnarkTxBuilder::new(account_id)
+                .with_seq_no(1)
+                .with_withdrawal(100_000_000, withdrawal_dest)
+                .build();
+            let tx_overflow_id = tx_overflow.compute_txid();
 
-        // tx_fill emits 11 logs (10 withdrawals + 1 snark-update); tx_overflow emits 2.
-        let prefill = MAX_LOGS_PER_BLOCK as usize - 11;
-        output_buffer
-            .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
-            .expect("pre-fill should succeed");
+            // tx_fill emits 11 logs (10 withdrawals + 1 snark-update); tx_overflow emits 2.
+            let prefill = spec_limits(spec).max_block_logs() - 11;
+            output_buffer
+                .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
+                .expect("pre-fill should succeed");
 
-        let out = process_transactions(
-            OLSpecId::V1,
-            env.ctx(),
-            env.epoch_sealing_policy(),
-            &block_context,
-            &output_buffer,
-            parent_state.as_ref(),
-            accumulated_batch,
-            vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)].into_iter(),
-            AccumulatedDaData::new_empty(),
-            0,
-            &OLRuntimeParams::test_default(),
-        );
+            let out = process_transactions(
+                spec,
+                env.ctx(),
+                env.epoch_sealing_policy(),
+                &block_context,
+                &output_buffer,
+                parent_state.as_ref(),
+                accumulated_batch,
+                vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)].into_iter(),
+                AccumulatedDaData::new_empty(),
+                0,
+                &OLRuntimeParams::test_default(),
+            );
 
-        assert_eq!(
-            out.successful_txs.len(),
-            1,
-            "only first tx should be included"
-        );
-        assert!(
-            out.failed_txs.is_empty(),
-            "block-full overflow tx should not be reported invalid"
-        );
+            assert_eq!(
+                out.successful_txs.len(),
+                1,
+                "{spec:?}: only first tx should be included"
+            );
+            assert!(
+                out.failed_txs.is_empty(),
+                "{spec:?}: block-full overflow tx should not be reported invalid"
+            );
+            assert_eq!(
+                output_buffer.log_count(),
+                spec_limits(spec).max_block_logs(),
+                "{spec:?}: the first tx fills the block"
+            );
+        }
+    }
+
+    /// Tests that a tx above the V2 effect capacities is reported invalid under
+    /// V2, and included under V1.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_effects_over_spec_capacity_are_invalid() {
+        let message_count = spec_limits(OLSpecId::V2).max_tx_messages() + 1;
+        for (spec, included) in [(OLSpecId::V1, true), (OLSpecId::V2, false)] {
+            let account_id = test_account_id(9);
+            let env = build_process_tx_env(account_id).await;
+
+            let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
+                build_process_transactions_preamble(&env, 1_000_001, 1).await;
+            let block_context = BlockContext::new(&block_info, Some(&parent_header));
+
+            let tx = MempoolSnarkTxBuilder::new(account_id)
+                .with_seq_no(0)
+                .with_withdrawals(
+                    message_count,
+                    100_000_000,
+                    make_p2wpkh_bosd_descriptor(0x17),
+                )
+                .build();
+            let txid = tx.compute_txid();
+
+            let out = process_transactions(
+                spec,
+                env.ctx(),
+                env.epoch_sealing_policy(),
+                &block_context,
+                &output_buffer,
+                parent_state.as_ref(),
+                accumulated_batch,
+                vec![(txid, tx)].into_iter(),
+                AccumulatedDaData::new_empty(),
+                0,
+                &OLRuntimeParams::test_default(),
+            );
+
+            if included {
+                assert_eq!(out.successful_txs.len(), 1, "{spec:?}: tx included");
+                assert!(out.failed_txs.is_empty(), "{spec:?}: no failures");
+            } else {
+                assert!(out.successful_txs.is_empty(), "{spec:?}: tx excluded");
+                assert_eq!(
+                    out.failed_txs,
+                    vec![(txid, MempoolTxInvalidReason::Invalid)],
+                    "{spec:?}: tx reported invalid"
+                );
+            }
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
