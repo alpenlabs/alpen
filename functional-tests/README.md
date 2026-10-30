@@ -301,3 +301,109 @@ self.wait_for_rpc_ready(rpc, timeout=60)
 **Service crashed**: Check `service.log` in datadir
 
 **Timeout errors**: Check exception message for last error and attempt count
+
+## Repeatable OL upgrade test
+
+`test_checkpoint_predicate_rotation` creates a fresh V1 network on every run and
+rotates it to V2. Ordinary functional CI discovers and runs it with native
+checkpoint programs. The programs execute the fixed-spec checkpoint logic and
+sign with different BIP-340 test keys, so stale-key routing cannot pass verification.
+This checks integration and recovery without generating a ZK proof.
+
+```sh
+./run_tests.sh -t test_checkpoint_predicate_rotation
+```
+
+The test keeps an old checkpoint in flight through enactment by mining empty
+Bitcoin blocks, checks that the handover epoch ends exactly at the enactment
+height, kills and restarts the sequencer before settlement, then requires the
+handover and two V2 epochs to finalize. A live L1 follower and a fresh follower
+started after the upgrade replay the same checkpoints and account summaries and
+read V2 from their reconstructed root state. Non-sequencer nodes currently use
+checkpoint sync; block-executing fullnode replay is not available yet.
+
+Real SP1 network proving is opt-in. Install the SP1 toolchain matching the
+workspace SDK (`v6.8.1`) and export `NETWORK_PRIVATE_KEY` through your shell's
+secret configuration. On macOS, use LLVM's archiver for the guest's RISC-V
+objects; for a Homebrew LLVM installation:
+
+```sh
+export AR_riscv64im_unknown_none_elf="$(brew --prefix llvm)/bin/llvm-ar"
+```
+
+Then, from `functional-tests/`, run:
+
+```sh
+OL_PROVER_BACKEND=sp1 SP1_PROVER=network \
+./run_tests.sh -t test_checkpoint_predicate_rotation
+```
+
+The runner builds the node and tools in release mode with SP1 support, then
+builds the current V2 checkpoint guest, predicate, and artifact manifest. V1
+comes from the [frozen deployed bundle](testdata/sp1/v1/README.md). Both the
+V2 build and the test network use the runtime parameters stored beside V1;
+the test's genesis predicate and rotation target come from their respective
+bundles. The node validates both bundles against those parameters and derives
+their keys from the ELFs at startup. A custom `CARGO_TARGET_DIR` is supported.
+
+The node inherits `NETWORK_PRIVATE_KEY`, optional `NETWORK_RPC_URL`, and
+`SP1_PROOF_STRATEGY` from the invoking shell or Actions step. The network key
+signs proof requests; it is separate from the local test's sequencer and
+Bitcoin keys. The runner rejects missing credentials instead of falling back
+to native proving. Real proving submits paid network requests.
+
+SP1 mode uses slower blocks and longer proof waits to accommodate the network.
+
+### Running the SP1 upgrade test in CI
+
+The [SP1 checkpoint upgrade workflow](../.github/workflows/checkpoint-upgrade-sp1.yml)
+runs only `test_checkpoint_predicate_rotation` against the real prover network.
+It runs daily at 02:17 UTC and supports manual dispatch. Merging the workflow
+onto the default branch enables its daily paid proof requests. Ordinary
+functional CI continues to use native execution.
+
+Configure a repository Actions secret named `NETWORK_PRIVATE_KEY`, or give
+this repository access to an organization Actions secret with that name.
+The workflow passes that secret into the test step explicitly. No local
+network key is needed to trigger CI. Optional repository Actions variables
+`NETWORK_RPC_URL` and `SP1_PROOF_STRATEGY` select a custom endpoint or fulfillment
+strategy; leaving them unset uses the SDK defaults.
+
+No environment approval gate is configured. A user with repository write
+access can trigger the workflow. Adding required reviewers later would need
+a GitHub environment and repository-admin configuration; using that same
+protected environment for the daily job would require approval each day too.
+
+The CI runner needs the usual functional-test dependencies (Rust, bitcoind,
+uv, and protoc), plus the matching SP1 `v6.8.1` toolchain. With those installed,
+the SP1 job runs only the upgrade test using this step:
+
+```yaml
+- name: Run V1 to V2 upgrade with SP1 network proofs
+  working-directory: functional-tests
+  env:
+    OL_PROVER_BACKEND: sp1
+    SP1_PROVER: network
+    NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+  run: ./run_tests.sh -t test_checkpoint_predicate_rotation
+```
+
+The script builds the release binaries and V2 bundle before running the test;
+V1 comes from committed test data. A missing secret fails before toolchain
+installation or builds. SP1 toolchain and core-runner versions come from
+`Cargo.lock`, using the same resolver as artifact publishing.
+
+After the workflow file lands on the default branch, open **Actions → SP1
+checkpoint upgrade → Run workflow**, select the branch to test, and start the
+run. To trigger it with the GitHub CLI:
+
+```sh
+gh workflow run checkpoint-upgrade-sp1.yml --repo alpenlabs/alpen --ref main
+gh run list --repo alpenlabs/alpen --workflow checkpoint-upgrade-sp1.yml
+```
+
+The run uploads `checkpoint-upgrade-sp1-<run_id>-<attempt>` with the test
+console output, service logs, results JSON, and V2 bundle metadata. Check that
+the test passed: it requires the V1 handover and both V2 checkpoints to
+finalize. A successful guest build alone does not validate network proving.
+Runs are serialized, and each job has a three-hour timeout.

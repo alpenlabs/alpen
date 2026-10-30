@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from common.config.config import BitcoindConfig
+from common.config.params import BridgeParams
 
 DEFAULT_OL_BLOCK_TIME_MS = 5_000
 PREDICATE_FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "predicates"
@@ -154,12 +155,10 @@ def generate_ol_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
+    bridge_params: BridgeParams,
     genesis_accounts_path: Path = GENESIS_ACCOUNTS_FIXTURE,
-    bridge_denomination: int = 100_000_000,
-    max_withdrawal_amount: int | None = 1_000_000_000,
-    max_withdrawal_descriptor_len: int = 81,
 ) -> Path:
-    """Generates OL params via ``strata-datatool gen-ol-params``."""
+    """Generates OL params with the supplied bridge runtime parameters."""
     params_path = datadir / "ol-params.json"
 
     args = [
@@ -167,16 +166,16 @@ def generate_ol_params(
         "--genesis-accounts",
         str(genesis_accounts_path),
         "--bridge-denomination-sats",
-        str(bridge_denomination),
+        str(bridge_params.denomination),
         "--max-withdrawal-descriptor-len",
-        str(max_withdrawal_descriptor_len),
+        str(bridge_params.max_withdrawal_descriptor_len),
         "--genesis-l1-height",
         str(genesis_l1_height),
         "-o",
         str(params_path),
     ]
-    if max_withdrawal_amount is not None:
-        args.extend(["--max-withdrawal-amount-sats", str(max_withdrawal_amount)])
+    if bridge_params.max_withdrawal_amount is not None:
+        args.extend(["--max-withdrawal-amount-sats", str(bridge_params.max_withdrawal_amount)])
 
     run_datatool(args, bconfig)
     return params_path
@@ -190,6 +189,7 @@ def generate_asm_params(
     ol_params_path: Path | None = None,
     sequencer_pubkey: str | None = None,
     admin_confirmation_depth: int | None = None,
+    checkpoint_predicate_file: Path = CHECKPOINT_TEST_PREDICATE_FILE,
 ) -> Path:
     params_path = datadir / "asm-params.json"
     if not operator_pubkeys:
@@ -198,7 +198,7 @@ def generate_asm_params(
     args = [
         "gen-asm-params",
         "--checkpoint-predicate-file",
-        str(CHECKPOINT_TEST_PREDICATE_FILE),
+        str(checkpoint_predicate_file),
         "--name",
         "ALPN",
         "--genesis-l1-height",

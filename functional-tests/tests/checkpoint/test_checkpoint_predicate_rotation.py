@@ -1,21 +1,13 @@
-"""STR-3130: the outgoing OL checkpoint predicate governs coverage up to its boundary.
+"""STR-4088: a fresh V1 network rotates to V2 on every test run.
 
-Predicate handovers are range-keyed. Enacting a transition at L1 height B
-does not reject the next checkpoint outright: the outgoing predicate still
-governs every checkpoint whose claimed L1 coverage ends at or below B, and
-only coverage past B is verified against the incoming key.
+Distinct native signing keys exercise per-epoch prover selection in normal CI.
+Set OL_PROVER_BACKEND=sp1 via run_tests.sh to exercise real ZK proving.
+The V2 program verifies every block of the first V2 epoch from its V1 start
+state, so accepting its checkpoint also checks the switch at the first block.
 
-The enactment also ends the OL spec the node runs. The OL seals an epoch on
-the enactment's L1 block, so that epoch's coverage ends exactly at B, and the
-epoch after it runs the next spec, V2, which this binary implements. The node
-keeps building under V2 past that epoch's terminal block, while it still
-proves and posts that epoch's checkpoint.
-
-This test asserts that the epoch ending at B, sealed after the rotation
-enacted, is still accepted under the outgoing predicate and finalizes, and
-that the node proves and posts V2 checkpoints past it. The incoming
-NeverAccept predicate rejects those checkpoints, so finalization remains at
-the boundary epoch while the rejection tracker reports a later V2 epoch.
+Non-sequencer nodes currently use L1 checkpoint sync. A live follower and an
+empty follower started after the upgrade independently reconstruct the chain;
+block-executing fullnode coverage needs the future OL fullnode service profile.
 """
 
 import logging
@@ -26,56 +18,27 @@ from pathlib import Path
 import flexitest
 
 from common.base_test import StrataNodeTest
-from common.config import EpochSealingConfig, ServiceType
-from common.services.bitcoin import BitcoinService
+from common.checkpoint_prover import checkpoint_rotation_programs
+from common.checkpoint_sync import check_summaries_equivalent, check_top_level_state_equivalent
+from common.config import ServiceType
+from common.config.constants import ALPEN_ACCOUNT_ID
 from common.services.strata import StrataService
 from common.test_cli import create_checkpoint_predicate_update
 from common.wait import wait_until_with_value
-from envconfigs.strata import StrataEnvConfig
+from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from tests.checkpoint.helpers import mine_until_finalized_epoch, tx_block_height
 
 logger = logging.getLogger(__name__)
-
+PROGRAMS = checkpoint_rotation_programs()
 POST_ADMIN_UPDATE_L1_BLOCKS = 5
-PREDICATE_REJECTION_L1_BLOCKS = 8
-PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
-
-# Budget for pacing L1 from the reveal up to the enactment height.
 ENACTMENT_TIMEOUT_SECONDS = 180
-
-# Budget for the OL to seal the epoch that processes the enactment once the
-# boundary is buried. The OL seals it on the block that processes the
-# enactment's manifest, without waiting for the slot cadence.
-EPOCH_SEAL_TIMEOUT_SECONDS = 90
-
-# Block assembly only reads ASM manifests this many blocks deep, so the
-# enactment's manifest at the boundary is processed once L1 is
-# `L1_REORG_SAFE_DEPTH - 1` blocks past it. Set explicitly because the test
-# mines exactly that far.
+EPOCH_SEAL_TIMEOUT_SECONDS = 120 * PROGRAMS.proof_wait_scale
 L1_REORG_SAFE_DEPTH = 6
-
-# Confirmation delay for the admin update. The transition is enacted at
-# `confirm_height + depth`, which is also the handover boundary.
 ADMIN_CONFIRMATION_DEPTH = 24
-
-# Budget for the epoch ending at the boundary to finalize once L1 moves on.
-FINALIZATION_TIMEOUT_SECONDS = 240
-
-# Budget for posting a V2 checkpoint and burying its rejection at the safe depth.
-REJECTION_TIMEOUT_SECONDS = 360
-
-# Budget for the node to build its first V2 block after the epoch ending at
-# the boundary. Blocks follow the slot cadence, without L1 progress.
+FINALIZATION_TIMEOUT_SECONDS = 240 * PROGRAMS.proof_wait_scale
 V2_BLOCK_TIMEOUT_SECONDS = 60
-
 PACE_L1_BLOCKS_PER_STEP = 1
-
-# Pacing L1 keeps the OL in step with it, so the epoch that processes the
-# enactment seals soon after L1 reaches the boundary.
 PACE_STEP_SLEEP_SECONDS = 1.5
-
-# Upstream logs this when the transition is enacted, carrying the boundary we
-# derive independently. Used only as a cross-check.
 ENACTMENT_LOG = "recording checkpoint predicate transition"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 BOUNDARY_FIELD_RE = re.compile(r"\bboundary=(\d+)")
@@ -83,260 +46,179 @@ BOUNDARY_FIELD_RE = re.compile(r"\bboundary=(\d+)")
 
 @flexitest.register
 class TestCheckpointPredicateRotation(StrataNodeTest):
-    """A rotated OL checkpoint predicate still accepts coverage up to its boundary."""
+    """Checks old-key catch-up, V2 finalization, restart, and cold L1 replay."""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
-            StrataEnvConfig(
+            CheckpointSyncEnv(
                 pre_generate_blocks=110,
-                epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
+                seal_epoch_slots=8,
+                ol_block_time_ms=PROGRAMS.ol_block_time_ms,
                 fund_test_cli_wallet=True,
                 admin_confirmation_depth=ADMIN_CONFIRMATION_DEPTH,
                 l1_reorg_safe_depth=L1_REORG_SAFE_DEPTH,
+                provision_recovery_node=True,
+                bridge_params=PROGRAMS.bridge_params,
+                prover_config=PROGRAMS.config,
+                checkpoint_predicate_file=PROGRAMS.genesis_predicate_file,
             )
         )
 
     def main(self, ctx):
-        bitcoin: BitcoinService = self.get_service(ServiceType.Bitcoin)
-        strata: StrataService = self.get_service(ServiceType.Strata)
-
+        bitcoin = self.get_service(ServiceType.Bitcoin)
+        strata = self.get_service(ServiceType.Strata)
+        signer = self.get_service(ServiceType.StrataSigner)
+        follower = self.get_service(ServiceType.StrataCheckpointNode)
+        recovery = self.get_service(ServiceType.StrataRecoveryCheckpointNode)
         btc_rpc = bitcoin.create_rpc()
-        strata_rpc = strata.wait_for_rpc_ready(timeout=20)
+        rpc = strata.wait_for_rpc_ready(timeout=30)
         mine_addr = btc_rpc.proxy.getnewaddress()
+        genesis_predicate = PROGRAMS.genesis_predicate_file.read_text().strip()
+        assert genesis_predicate != PROGRAMS.rotation_predicate, "rotation must change the key"
+        assert rpc.strata_getSpecStatus()["cur_spec_version"] == 1
 
         baseline = mine_until_finalized_epoch(
-            bitcoin=bitcoin,
-            strata=strata,
-            strata_rpc=strata_rpc,
+            bitcoin,
+            strata,
+            rpc,
             target_epoch=1,
-            timeout=120,
-            step=1.0,
+            timeout=FINALIZATION_TIMEOUT_SECONDS,
+            step=float(PROGRAMS.proof_wait_scale),
         )
-        logger.info("baseline finalized epoch under AlwaysAccept: %s", baseline["epoch"])
-
-        admin_xpriv = self._read_admin_xpriv(strata)
         result = create_checkpoint_predicate_update(
             seq_no=1,
-            predicate="NeverAccept",
-            admin_xpriv=admin_xpriv,
+            predicate=PROGRAMS.rotation_predicate,
+            admin_xpriv=self._read_admin_xpriv(strata),
             btc_url=bitcoin.props["rpc_url"],
             btc_user=bitcoin.props["rpc_user"],
             btc_password=bitcoin.props["rpc_password"],
         )
-        logger.info("submitted NeverAccept checkpoint predicate update: %s", result)
-
         log_path = Path(strata.props["datadir"]) / "service.log"
-        log_offset = log_path.stat().st_size if log_path.exists() else 0
-
+        log_offset = log_path.stat().st_size
         self._mine_l1_and_wait_for_asm(
-            bitcoin=bitcoin,
-            strata=strata,
-            strata_rpc=strata_rpc,
-            btc_rpc=btc_rpc,
-            mine_addr=mine_addr,
-            blocks=POST_ADMIN_UPDATE_L1_BLOCKS,
-            timeout=PREDICATE_SETTLE_TIMEOUT_SECONDS,
+            strata, rpc, btc_rpc, mine_addr, POST_ADMIN_UPDATE_L1_BLOCKS, 120
         )
+        boundary = tx_block_height(btc_rpc, result["reveal_txid"]) + ADMIN_CONFIRMATION_DEPTH
+        assert btc_rpc.proxy.getblockcount() < boundary
 
-        # The transition is enacted `ADMIN_CONFIRMATION_DEPTH` blocks after the
-        # reveal confirms, and the enactment height *is* the handover boundary.
-        reveal_height = tx_block_height(btc_rpc, result["reveal_txid"])
-        boundary = reveal_height + ADMIN_CONFIRMATION_DEPTH
-        logger.info(
-            "predicate update reveal confirmed at L1 height %s; handover boundary=%s",
-            reveal_height,
-            boundary,
-        )
-
-        # Advance L1 to the enactment height. Nothing before it can exercise
-        # the handover: while the transition is still pending, `AlwaysAccept`
-        # governs every checkpoint, so an epoch finalizing in that window says
-        # nothing about the rotation.
-        finalized_at_enactment = self._pace_l1_to_enactment(
-            bitcoin=bitcoin,
-            strata=strata,
-            strata_rpc=strata_rpc,
-            btc_rpc=btc_rpc,
-            mine_addr=mine_addr,
-            boundary=boundary,
-        )
-        logger.info(
-            "rotation enacted at L1 height %s; finalized epoch there: %s",
-            boundary,
-            finalized_at_enactment,
-        )
-
-        # Bury the boundary so block assembly reads the enactment's manifest,
-        # then wait, without mining, for the OL to seal the epoch that
-        # processes it. Its coverage must end exactly at the boundary even
-        # though L1 is past it: the OL seals on the enactment's L1 block.
-        self._pace_l1_to(
-            bitcoin=bitcoin,
-            strata=strata,
-            strata_rpc=strata_rpc,
-            btc_rpc=btc_rpc,
-            mine_addr=mine_addr,
-            height=boundary + L1_REORG_SAFE_DEPTH - 1,
-        )
-        last_epoch, last_terminal = self._wait_for_epoch_ending_at(
-            strata_rpc, boundary, finalized_at_enactment
-        )
-        last_info = self._wait_for_checkpoint_info(strata_rpc, last_epoch)
-        last_status = self._checkpoint_status(last_info)
-
-        # The epoch did not exist when the rotation enacted. It sealed only
-        # after the last burying block, and nothing has been mined since, so
-        # its checkpoint cannot have been accepted yet. Accepting it later is
-        # what shows the enacted handover still applies the outgoing predicate
-        # to coverage <= the boundary.
-        if last_status != "pending":
-            raise AssertionError(
-                f"epoch {last_epoch}, which ends at the boundary {boundary}, was already "
-                f"{last_status!r} at the enactment height, so accepting it later would not say "
-                "anything about the enacted handover"
-            )
-        logger.info(
-            "epoch %s sealed at the boundary %s with terminal block %s, still pending",
-            last_epoch,
-            boundary,
-            last_terminal,
-        )
-
+        # Seal an old-key checkpoint now, then mine empty blocks until B is
+        # buried. This deterministically leaves a pre-B checkpoint in flight
+        # when the admin update enacts, instead of relying on prover timing.
+        in_flight_epoch = int(rpc.strata_getChainStatus()["latest"]["epoch"]) + 1
+        in_flight = self._wait_for_checkpoint_info(rpc, in_flight_epoch)
+        in_flight_end = self._coverage_end(in_flight)
+        assert in_flight_end is not None and in_flight_end < boundary
+        assert self._checkpoint_status(in_flight) == "pending"
+        self._pace_l1_to(strata, rpc, btc_rpc, mine_addr, boundary, empty_blocks=True)
+        assert rpc.strata_getSpecStatus()["cur_spec_version"] == 1
         self._assert_enactment_boundary(log_path, log_offset, boundary)
-        self._wait_for_v2_tip(strata_rpc, last_epoch)
-
-        # Positive half of the range-keyed semantics: the epoch ending at the
-        # boundary finalizes under the outgoing predicate.
-        finalized = mine_until_finalized_epoch(
-            bitcoin=bitcoin,
-            strata=strata,
-            strata_rpc=strata_rpc,
-            target_epoch=last_epoch,
-            timeout=FINALIZATION_TIMEOUT_SECONDS,
-            step=1.0,
-        )
-        if finalized["epoch"] != last_epoch:
-            raise AssertionError(
-                f"finalized epoch {finalized['epoch']} is past the epoch {last_epoch} that "
-                f"ends at the boundary {boundary}, after which NeverAccept rejects checkpoints"
-            )
-        logger.info("epoch %s finalized under the outgoing predicate", last_epoch)
-
-        # Proving and submission must make progress: finality staying at the
-        # boundary alone could also mean the V2 prover never submitted anything.
-        def rejected_v2_checkpoints():
-            self._assert_finalized_at(strata, strata_rpc, last_epoch)
-            return [
-                entry
-                for entry in strata_rpc.strata_getRejectedCheckpoints(last_epoch + 1)
-                if entry["epoch"] == last_epoch + 1
-            ]
-
-        rejected = bitcoin.mine_until(
-            check=rejected_v2_checkpoints,
-            predicate=lambda entries: len(entries) > 0,
-            error_with="the first V2 checkpoint after the handover was not reported rejected",
-            timeout=REJECTION_TIMEOUT_SECONDS,
-            step=PACE_STEP_SLEEP_SECONDS,
-            mine_address=mine_addr,
-        )
-        first_v2_info = self._wait_for_checkpoint_info(strata_rpc, last_epoch + 1)
-        if self._checkpoint_status(first_v2_info) != "pending":
-            raise AssertionError(f"rejected V2 checkpoint is not pending: {first_v2_info}")
-        for entry in rejected:
-            verified_tip = entry["asm_verified_tip"]
-            if verified_tip is None or verified_tip["epoch"] != last_epoch:
-                raise AssertionError(
-                    f"V2 rejection {entry} does not report the boundary epoch {last_epoch} "
-                    "as the ASM verified tip"
-                )
-        logger.info("incoming NeverAccept predicate rejected V2 checkpoints: %s", rejected)
-
-        # Keep advancing L1 after detection: no rejected V2 epoch may finalize.
-        for _ in range(PREDICATE_REJECTION_L1_BLOCKS):
-            self._mine_l1_and_wait_for_asm(
-                bitcoin=bitcoin,
-                strata=strata,
-                strata_rpc=strata_rpc,
-                btc_rpc=btc_rpc,
-                mine_addr=mine_addr,
-                blocks=1,
-                timeout=30,
-            )
-            time.sleep(PACE_STEP_SLEEP_SECONDS)
-            self._assert_finalized_at(strata, strata_rpc, last_epoch)
-
-        self._wait_for_v2_tip(strata_rpc, last_epoch)
-        latest_epoch = int(strata.get_sync_status(strata_rpc)["latest"]["epoch"])
-        if latest_epoch <= last_epoch:
-            raise AssertionError(
-                f"the node sealed no epoch past epoch {last_epoch}, which ends at the boundary "
-                f"{boundary}: latest epoch {latest_epoch}"
-            )
-
-        logger.info(
-            "the node built V2 epochs up to epoch %s past the terminal block %s of epoch %s, "
-            "and none finalized across %s L1 blocks",
-            latest_epoch,
-            last_terminal,
-            last_epoch,
-            PREDICATE_REJECTION_L1_BLOCKS,
-        )
-        return True
-
-    def _pace_l1_to_enactment(
-        self,
-        bitcoin: BitcoinService,
-        strata: StrataService,
-        strata_rpc,
-        btc_rpc,
-        mine_addr: str,
-        boundary: int,
-    ) -> int:
-        """Mines up to the enactment height and returns the finalized epoch there.
-
-        Paced so that the OL stays in step with L1 on the way to the boundary.
-        """
         self._pace_l1_to(
-            bitcoin=bitcoin,
-            strata=strata,
-            strata_rpc=strata_rpc,
-            btc_rpc=btc_rpc,
-            mine_addr=mine_addr,
-            height=boundary,
+            strata,
+            rpc,
+            btc_rpc,
+            mine_addr,
+            boundary + L1_REORG_SAFE_DEPTH - 1,
+            empty_blocks=True,
         )
+        last_v1_epoch, last_v1_terminal = self._wait_for_epoch_ending_at(
+            rpc, boundary, baseline["epoch"]
+        )
+        assert in_flight_epoch < last_v1_epoch
+        assert self._checkpoint_status(rpc.strata_getCheckpointInfo(last_v1_epoch)) == "pending"
+        assert self._checkpoint_status(rpc.strata_getCheckpointInfo(in_flight_epoch)) == "pending"
 
-        # `_mine_l1_and_wait_for_asm` waited for the ASM to commit at the tip,
-        # so the block that enacts the transition has been processed.
-        return self._finalized_epoch(strata, strata_rpc)
+        # No further L1 block can accept a V2 checkpoint before this crash.
+        # Kill the sequencer with the transition enacted but not settled;
+        # restart must recover the boundary and pending old/new proof work.
+        signer.stop()
+        assert strata.proc is not None
+        strata.proc.kill()
+        strata.wait_for_down(timeout=30)
+        strata.stop()
+        strata.start()
+        rpc = strata.wait_for_rpc_ready(timeout=60 * PROGRAMS.proof_wait_scale)
+        signer.start()
+        signer.wait_for_ready(timeout=20)
+        recovered_epoch, recovered_terminal = self._wait_for_epoch_ending_at(
+            rpc, boundary, baseline["epoch"]
+        )
+        assert (recovered_epoch, recovered_terminal) == (last_v1_epoch, last_v1_terminal)
+        self._wait_for_v2_tip(rpc, last_v1_epoch)
+
+        # Both the first V2 epoch (V1 start state) and a later V2 epoch
+        # (V2 start state) must finalize. The ASM still needs the old key for
+        # every in-flight V1 checkpoint, including the epoch ending at B.
+        mine_until_finalized_epoch(
+            bitcoin,
+            strata,
+            rpc,
+            target_epoch=last_v1_epoch + 2,
+            timeout=FINALIZATION_TIMEOUT_SECONDS,
+            step=float(PROGRAMS.proof_wait_scale),
+        )
+        for epoch in (in_flight_epoch, last_v1_epoch, last_v1_epoch + 1, last_v1_epoch + 2):
+            info = rpc.strata_getCheckpointInfo(epoch)
+            assert self._checkpoint_status(info) == "finalized", info
+            assert info["confirmation_status"]["l1_reference"]["l1_block"]["height"] > boundary
+        assert rpc.strata_getRejectedCheckpoints(0) == []
+
+        # Stop signing and leave L1 fixed. Keep sequencer RPC available so
+        # each follower comparison can read fresh finalized data.
+        signer.stop()
+        recovery.start()
+        for node in (follower, recovery):
+            node_rpc = node.wait_for_rpc_ready(timeout=60)
+            sequencer_status, node_status = wait_until_with_value(
+                lambda node=node: (strata.get_sync_status(rpc), node.get_sync_status()),
+                lambda statuses: statuses[0]["finalized"] == statuses[1]["finalized"],
+                error_with="checkpoint follower did not replay through the V2 upgrade",
+                timeout=FINALIZATION_TIMEOUT_SECONDS,
+            )
+            check_top_level_state_equivalent(sequencer_status, node_status)
+            spec_status = node_rpc.strata_getSpecStatus()
+            assert spec_status["cur_spec_version"] == 2, spec_status
+            assert spec_status["upgrade_required"] is None, spec_status
+            target_epoch = int(sequencer_status["finalized"]["epoch"])
+            for epoch in range(1, target_epoch + 1):
+                expected = rpc.strata_getCheckpointInfo(epoch)
+                actual = node_rpc.strata_getCheckpointInfo(epoch)
+                # L1-only nodes do not retain the first block of an epoch.
+                for field in ("idx", "l1_range", "l2_end", "confirmation_status"):
+                    assert actual[field] == expected[field], (epoch, field, actual, expected)
+                check_summaries_equivalent(
+                    strata.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch, rpc=rpc),
+                    node.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch, rpc=node_rpc),
+                )
+        logger.info("V1 to V2 rotation replayed through epoch %s on both followers", target_epoch)
+        return True
 
     def _pace_l1_to(
         self,
-        bitcoin: BitcoinService,
         strata: StrataService,
         strata_rpc,
         btc_rpc,
         mine_addr: str,
         height: int,
+        empty_blocks: bool = False,
     ) -> None:
         """Mines up to L1 `height`, one block at a time, waiting for the ASM after each."""
-        deadline = time.time() + ENACTMENT_TIMEOUT_SECONDS
+        deadline = time.monotonic() + ENACTMENT_TIMEOUT_SECONDS
         tip = btc_rpc.proxy.getblockcount()
 
         while tip < height:
-            if time.time() >= deadline:
+            if time.monotonic() >= deadline:
                 raise AssertionError(
                     f"L1 did not reach height {height} within {ENACTMENT_TIMEOUT_SECONDS}s "
                     f"(tip {tip})"
                 )
             self._mine_l1_and_wait_for_asm(
-                bitcoin=bitcoin,
                 strata=strata,
                 strata_rpc=strata_rpc,
                 btc_rpc=btc_rpc,
                 mine_addr=mine_addr,
                 blocks=PACE_L1_BLOCKS_PER_STEP,
                 timeout=60,
+                empty_blocks=empty_blocks,
             )
             time.sleep(PACE_STEP_SLEEP_SECONDS)
             tip = btc_rpc.proxy.getblockcount()
@@ -382,15 +264,6 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 f"{boundary}: the OL did not seal on the enactment's L1 block"
             )
         return epoch, info["l2_end"]["blkid"]
-
-    def _assert_finalized_at(self, strata: StrataService, strata_rpc, epoch: int) -> None:
-        """Asserts that `epoch`, the epoch ending at the enactment, is still finalized last."""
-        status = strata.get_sync_status(strata_rpc)
-        if int(status["finalized"]["epoch"]) != epoch:
-            raise AssertionError(
-                f"finalized epoch moved off {epoch}, the epoch ending at the enactment: "
-                f"finalized={status['finalized']}"
-            )
 
     @staticmethod
     def _wait_for_v2_tip(strata_rpc, last_v1_epoch: int) -> None:
@@ -479,16 +352,20 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
 
     @staticmethod
     def _mine_l1_and_wait_for_asm(
-        bitcoin: BitcoinService,
         strata: StrataService,
         strata_rpc,
         btc_rpc,
         mine_addr,
         blocks: int,
         timeout: int,
+        empty_blocks: bool = False,
     ) -> None:
         start_height = btc_rpc.proxy.getblockcount()
-        btc_rpc.proxy.generatetoaddress(blocks, mine_addr)
+        if empty_blocks:
+            for _ in range(blocks):
+                btc_rpc.proxy.generateblock(mine_addr, [])
+        else:
+            btc_rpc.proxy.generatetoaddress(blocks, mine_addr)
         strata.wait_for_asm_manifest_commitment_at(
             start_height + blocks,
             rpc=strata_rpc,
@@ -502,7 +379,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             lambda: strata_rpc.strata_getCheckpointInfo(epoch),
             lambda info: info is not None,
             error_with=f"checkpoint info for epoch {epoch} was not created",
-            timeout=120,
+            timeout=EPOCH_SEAL_TIMEOUT_SECONDS,
             step=1.0,
         )
 

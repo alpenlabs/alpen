@@ -146,8 +146,8 @@ impl LoadedCheckpointPredicates {
 
 /// Initializes the supported native checkpoint programs for functional-test deployments.
 ///
-/// Native programs share a test signing key, so their predicate alone cannot establish the
-/// rules they execute. Each entry binds its spec to the corresponding program closure.
+/// Native programs use distinct test signing keys so verification detects stale-spec routing.
+/// Each entry binds its spec to the corresponding program closure and predicate.
 /// V1 and V2 each have a fixed-spec host; unknown specs never get a program.
 #[cfg(feature = "native")]
 pub fn native_checkpoint_registry(
@@ -157,7 +157,7 @@ pub fn native_checkpoint_registry(
         let host = CheckpointProgram::native_host(spec, runtime_params);
         let artifact = CheckpointArtifact::new(
             spec,
-            CheckpointProgram::test_predicate_key(),
+            CheckpointProgram::test_predicate_key_for_spec(spec),
             host.program_id(),
             host,
         );
@@ -175,6 +175,33 @@ mod tests {
 
     use super::{CheckpointArtifact, CheckpointArtifactRegistry, native_checkpoint_registry};
     use crate::RegistryError;
+
+    #[test]
+    fn native_predicates_match_rotation_fixtures() {
+        let registry = native_checkpoint_registry(OLRuntimeParams::test_default());
+        let fixtures = [
+            (
+                OLSpecId::V1,
+                include_str!(
+                    "../../../../functional-tests/fixtures/predicates/checkpoint-bip340-schnorr-test.predicate"
+                ),
+            ),
+            (
+                OLSpecId::V2,
+                include_str!(
+                    "../../../../functional-tests/fixtures/predicates/checkpoint-v2-bip340-schnorr-test.predicate"
+                ),
+            ),
+        ];
+        for (spec, fixture) in fixtures {
+            let predicate = serde_json::from_value(serde_json::json!(fixture.trim())).unwrap();
+            assert_eq!(registry.get(spec).unwrap().predicate(), &predicate);
+        }
+        assert_ne!(
+            registry.get(OLSpecId::V1).unwrap().predicate(),
+            registry.get(OLSpecId::V2).unwrap().predicate(),
+        );
+    }
 
     #[test]
     fn missing_spec_does_not_fall_back_to_resident_program() {

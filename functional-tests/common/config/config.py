@@ -87,6 +87,7 @@ class ProverConfig:
 
     backend: str = field(default="native")
     workers: int = field(default=1)
+    artifacts: list[dict[str, int | str]] = field(default_factory=list)
 
 
 @dataclass
