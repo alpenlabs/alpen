@@ -254,6 +254,7 @@ mod tests {
         AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Buf64, Epoch,
         L1BlockCommitment, L1BlockId, OLBlockCommitment, Slot,
     };
+    use strata_ol_block_ancestry_provider::EpochBlockAncestry;
     use strata_ol_chain_types_v1::{
         AsmManifest, BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog,
         OLTxSegmentV1, SignedOLBlockHeaderV1, SimpleWithdrawalIntentLogData,
@@ -406,6 +407,13 @@ mod tests {
             blkid: &OLBlockCommitment,
         ) -> anyhow::Result<Option<OLBlockHeaderV1>> {
             self.inner.get_block_header(blkid)
+        }
+
+        fn collect_epoch_block_commitments(
+            &self,
+            start: &OLBlockHeaderV1,
+        ) -> anyhow::Result<EpochBlockAncestry> {
+            self.inner.collect_epoch_block_commitments(start)
         }
 
         fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlockV1>> {
