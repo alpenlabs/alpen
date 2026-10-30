@@ -90,11 +90,7 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnvSerde, spec: OLSpecId, runtime_params: 
 /// 5. Constructs and returns a [`CheckpointClaim`]
 ///
 /// The initial state is the previous epoch's terminal state, and the epoch
-/// runs under that state's staged spec. After an epoch processes a checkpoint
-/// predicate enactment its terminal state stages the successor while its
-/// current spec is still the old one; the promotion happens during the next
-/// epoch's first block. Checking the current spec would therefore reject the
-/// first epoch after every upgrade.
+/// runs under that state's staged spec.
 ///
 /// A V0 initial state is the exception. Its root is the bare chainstate root,
 /// which commits no staged spec, so the epoch runs under V0's successor and
@@ -146,6 +142,13 @@ pub fn process_ol_stf_core(
     // That the first V1 range starts at the enactment boundary B relies on the
     // ASM's v0.4.0-rc.6 predicate handover, which MN0 gets through STR-4489
     // before the OlStfVk transaction.
+    //
+    // TODO(STR-4662): no rule set stages a spec; nodes select the spec of the
+    // epoch after an enactment from the L1 manifests. A V1 terminal state
+    // stages V1, including the one that processed the enactment ending V1, so
+    // the V2 program must run the first V2 epoch from such a state, as this
+    // function runs the first V1 epoch from a V0 state, and the argument above
+    // must cover that case too.
     let epoch_spec = if state.cur_spec() == OLSpecId::V0 {
         OLSpecId::V0.successor().expect("V0 has a successor spec")
     } else {

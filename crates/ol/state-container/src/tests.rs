@@ -69,7 +69,7 @@ fn test_staged_version_changes_state_root() {
 
 #[test]
 fn test_decode_rejects_unsupported_cur_spec() {
-    for raw in [2, u32::MAX] {
+    for raw in [3, u32::MAX] {
         let mut serde_form = create_test_container_with_staged(1).to_serde();
         serde_form.cur_spec_version = raw;
 

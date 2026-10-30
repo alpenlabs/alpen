@@ -278,20 +278,23 @@ async fn test_da_rollback_on_failed_tx() {
     );
 }
 
-/// Sequencer assembly of the first V1 epoch on a V0 terminal parent.
+/// Checks that sequencer assembly of the first blocks after the genesis parent
+/// of `builder`, which ends the last `parent_spec` epoch at a checkpoint
+/// predicate enactment, matches node verification under the next spec and
+/// resource rebuild.
 ///
-/// Each template's header must commit to the root node verification reaches
-/// from the V0 parent, through a write-tracking overlay as the chain worker
-/// runs it, and the epoch's resource state must rebuild from that parent to
-/// the incremental DA.
-#[tokio::test(flavor = "multi_thread")]
-async fn test_assembly_on_v0_terminal_parent_matches_node_and_rebuild() {
-    let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
-        .with_parent_slot(0)
-        .with_v0_genesis_parent()
-        .with_l1_manifest_height_range(1..=3)
-        .build_fixture()
-        .await;
+/// The first block takes over the parent's state. Each template's header must
+/// commit to the root node verification reaches from the parent, through a
+/// write-tracking overlay as the chain worker runs it, and the resource state
+/// must rebuild from that parent to the incremental DA.
+async fn assert_takeover_epoch_matches_node_and_rebuild(
+    builder: TestStorageFixtureBuilder,
+    parent_spec: OLSpecId,
+) {
+    let spec = parent_spec
+        .successor()
+        .expect("the parent spec has a successor");
+    let (fixture, parent_commitment) = builder.build_fixture().await;
     let parent_block = fixture
         .storage()
         .ol_block()
@@ -300,31 +303,31 @@ async fn test_assembly_on_v0_terminal_parent_matches_node_and_rebuild() {
         .expect("read parent block")
         .expect("parent block stored");
     let mut env = TestEnv::from_fixture(fixture, parent_commitment);
-    let v0_parent = env
+    let parent_state = env
         .ctx()
         .fetch_state_for_tip(parent_commitment)
         .await
         .expect("fetch parent state")
         .expect("parent state stored");
     assert_eq!(
-        v0_parent.spec_versions(),
-        OLSpecVersions::uniform(OLSpecId::V0)
+        parent_state.spec_versions(),
+        OLSpecVersions::uniform(parent_spec)
     );
     assert_eq!(
-        v0_parent.compute_state_root().unwrap(),
+        parent_state.compute_state_root().unwrap(),
         *parent_block.header().state_root()
     );
 
     let (final_commitment, assembled_state, artifacts) =
         build_blocks_with_resource_state_and_artifacts(&mut env, 4).await;
 
-    let mut node_state = (*v0_parent).clone();
+    let mut node_state = (*parent_state).clone();
     let mut parent_header = parent_block.header().clone();
     for (block, post_state) in &artifacts {
         let header = block.header();
         let mut tracking = WriteTrackingState::new_empty(&node_state);
         verify_block(
-            OLSpecId::V1,
+            spec,
             &mut tracking,
             header,
             Some(&parent_header),
@@ -346,10 +349,7 @@ async fn test_assembly_on_v0_terminal_parent_matches_node_and_rebuild() {
         );
         parent_header = header.clone();
     }
-    assert_eq!(
-        node_state.spec_versions(),
-        OLSpecVersions::uniform(OLSpecId::V1)
-    );
+    assert_eq!(node_state.spec_versions(), OLSpecVersions::uniform(spec));
 
     let (_, last_post_state) = artifacts.last().unwrap();
     let (incremental_acc, incremental_logs) = assembled_state.da().clone().into_parts();
@@ -361,7 +361,7 @@ async fn test_assembly_on_v0_terminal_parent_matches_node_and_rebuild() {
         env.ctx(),
     )
     .await
-    .expect("rebuild from the V0 epoch parent succeeds");
+    .expect("rebuild from the epoch parent succeeds");
     let (rebuilt_acc, rebuilt_logs) = rebuilt_state.da().clone().into_parts();
     let rebuilt_blob = finalize_da_to_bytes(rebuilt_acc, last_post_state.clone());
     assert_eq!(incremental_blob, rebuilt_blob);
@@ -370,6 +370,27 @@ async fn test_assembly_on_v0_terminal_parent_matches_node_and_rebuild() {
         assembled_state.manifest_count(),
         rebuilt_state.manifest_count()
     );
+}
+
+/// Sequencer assembly of the first V1 epoch on a V0 terminal parent.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_assembly_on_v0_terminal_parent_matches_node_and_rebuild() {
+    let builder = TestStorageFixtureBuilder::new()
+        .with_parent_slot(0)
+        .with_v0_genesis_parent()
+        .with_l1_manifest_height_range(1..=3);
+    assert_takeover_epoch_matches_node_and_rebuild(builder, OLSpecId::V0).await;
+}
+
+/// Sequencer assembly of the first V2 epoch on a V1 terminal parent that
+/// processed a checkpoint predicate enactment.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_assembly_after_v1_enactment_matches_node_and_rebuild() {
+    let builder = TestStorageFixtureBuilder::new()
+        .with_parent_slot(0)
+        .with_genesis_enactment(OLSpecId::V1)
+        .with_l1_manifest_height_range(1..=3);
+    assert_takeover_epoch_matches_node_and_rebuild(builder, OLSpecId::V1).await;
 }
 
 /// `rebuild_epoch_resource_state_upto` must produce the same DA as incremental accumulation.

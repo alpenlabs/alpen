@@ -820,7 +820,7 @@ fn fetch_canonical_epoch_summary(storage: &NodeStorage, epoch: Epoch) -> Result<
 pub(crate) fn builds_blocks_under(spec: OLSpecId) -> bool {
     match spec {
         OLSpecId::V0 => false,
-        OLSpecId::V1 => true,
+        OLSpecId::V1 | OLSpecId::V2 => true,
     }
 }
 
@@ -834,9 +834,10 @@ pub(crate) fn builds_blocks_under(spec: OLSpecId) -> bool {
 /// V1 blocks on it would fork the network at slot 1.
 ///
 /// A tip after which the next epoch runs a spec this binary does not
-/// implement passes with a warning. The node must keep running to prove and
-/// post the checkpoint of the epoch that ends at the tip, and block assembly
-/// builds nothing after it.
+/// implement passes with a warning. The node keeps running so that it can
+/// prove and post the checkpoint of the epoch that ends at the tip once it has
+/// a checkpoint program for that epoch's spec, and block assembly builds
+/// nothing after it.
 ///
 /// This binary stores V0 states only from V0 genesis and checkpoint replay,
 /// and both store terminal states alone. Block execution runs V1 rules, which
@@ -1525,14 +1526,17 @@ mod tests {
         verify_sequencer_tip_spec(&v1_storage, genesis_l1).expect("V1 tip is accepted");
     }
 
-    /// Stores a V1 tip at slot 1 whose state's last L1 block is the block
-    /// whose manifest carries a checkpoint predicate enactment, and returns the
-    /// storage with the genesis L1 anchor.
+    /// Stores a tip at slot 1 whose state runs `spec` and whose last L1 block
+    /// is the block whose manifest carries a checkpoint predicate enactment,
+    /// and returns the storage with the genesis L1 anchor.
     ///
     /// A terminal tip ends epoch 1, which processed the enactment, and the
     /// summary of epoch 1 is stored. A nonterminal tip leaves epoch 1 open, so
     /// no summary exists for it.
-    fn setup_v1_tip_on_enactment(is_terminal: bool) -> (NodeStorage, L1BlockCommitment) {
+    fn setup_tip_on_enactment(
+        spec: OLSpecId,
+        is_terminal: bool,
+    ) -> (NodeStorage, L1BlockCommitment) {
         let (storage, genesis_commitment) = setup_storage_with_genesis();
         let genesis_l1 = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
         let genesis_block = storage
@@ -1554,6 +1558,7 @@ mod tests {
             .expect("test: store enactment manifest");
 
         let mut state = MemoryStateBaseLayer::from_container((*genesis_state).clone());
+        state.set_spec_versions(OLSpecVersions::uniform(spec));
         state.append_l1_block_rec(1, L1BlockRecord::new(*enactment.blkid().as_ref(), [0; 32]));
         state.set_cur_slot(1);
         if is_terminal {
@@ -1620,17 +1625,15 @@ mod tests {
     /// count again, and no summary is read for the open epoch.
     #[test]
     fn test_sequencer_builds_after_a_nonterminal_tip_on_an_enactment() {
-        let (storage, genesis_l1) = setup_v1_tip_on_enactment(false);
+        let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V1, false);
         verify_sequencer_tip_spec(&storage, genesis_l1).expect("the next block runs V1");
     }
 
     /// A V1 tip that ends an epoch which processed a checkpoint predicate
-    /// enactment is followed by V2, which this binary does not implement. The
-    /// sequencer still starts, to prove and post the checkpoint ending at the
-    /// tip, and builds nothing after it.
+    /// enactment is followed by V2, which the sequencer builds blocks under.
     #[test]
-    fn test_sequencer_starts_on_the_tip_after_a_v1_enactment() {
-        let (storage, genesis_l1) = setup_v1_tip_on_enactment(true);
+    fn test_sequencer_builds_v2_after_a_v1_enactment() {
+        let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V1, true);
         verify_sequencer_tip_spec(&storage, genesis_l1).expect("the sequencer starts");
         let tip = resolve_tip_ol_block(&storage).expect("tip");
         let state = storage
@@ -1639,8 +1642,27 @@ mod tests {
             .unwrap()
             .unwrap();
         let selected = select_spec_after_block(&storage, genesis_l1, tip, &state).expect("selects");
-        let upgrade = selected.upgrade_required().expect("the next epoch runs V2");
-        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        assert_eq!(selected, SelectedSpec::Supported(OLSpecId::V2));
+    }
+
+    /// A V2 tip that ends an epoch which processed a checkpoint predicate
+    /// enactment is followed by V3, which this binary does not implement. The
+    /// spec check still lets the sequencer start on the tip, and block assembly
+    /// builds nothing after it. Proving the checkpoint that ends at the tip
+    /// needs a V2 checkpoint program, which this build does not have.
+    #[test]
+    fn test_sequencer_starts_on_the_tip_after_a_v2_enactment() {
+        let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V2, true);
+        verify_sequencer_tip_spec(&storage, genesis_l1).expect("the sequencer starts");
+        let tip = resolve_tip_ol_block(&storage).expect("tip");
+        let state = storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(tip)
+            .unwrap()
+            .unwrap();
+        let selected = select_spec_after_block(&storage, genesis_l1, tip, &state).expect("selects");
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V3");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
         assert_eq!(upgrade.enactment_l1_height(), 1);
     }
 
@@ -1651,7 +1673,7 @@ mod tests {
     /// summary that FCM's acceptance replay stores.
     #[test]
     fn test_sequencer_selects_after_a_terminal_tip_without_its_summary() {
-        let (storage, genesis_l1) = setup_v1_tip_on_enactment(true);
+        let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V2, true);
         let tip = resolve_tip_ol_block(&storage).expect("test: resolve tip");
         assert!(
             storage
@@ -1667,8 +1689,8 @@ mod tests {
             .unwrap();
         let selected = select_spec_after_block(&storage, genesis_l1, tip, &state)
             .expect("selects without the tip's summary");
-        let upgrade = selected.upgrade_required().expect("the next epoch runs V2");
-        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V3");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
         assert_eq!(upgrade.enactment_l1_height(), 1);
     }
 

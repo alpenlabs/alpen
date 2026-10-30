@@ -18,10 +18,10 @@ use crate::series::OLStateSeries;
 /// converts back into a new container afterwards.
 ///
 /// The current spec is always one this binary supports, because it selects
-/// the chainstate layout. The staged spec may be unknown: the state still
-/// materializes, and executing the next epoch must halt until the node is
-/// upgraded. A V0 container always stages V0, since its bare root commits no
-/// staged spec ([`OLSpecVersions`]).
+/// the chainstate layout. The staged version is kept as a raw value and need
+/// not name a known spec; no rule set stages a spec, so in every state the
+/// rules produce it equals the current one. A V0 container always stages V0,
+/// since its bare root commits no staged spec ([`OLSpecVersions`]).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OLStateContainer {
     root: OLRootState,
@@ -55,7 +55,7 @@ impl OLStateContainer {
         self.root.cur_spec_version()
     }
 
-    /// Returns the raw spec version the next epoch runs under.
+    /// Returns the raw spec version the state stages for the next epoch.
     pub fn staged_spec_version(&self) -> u32 {
         self.root.staged_spec_version()
     }

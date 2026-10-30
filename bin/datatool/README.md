@@ -82,7 +82,8 @@ strata-datatool gen-asm-params \
 `genesis.spec` is required and has no default. Networks launched from this
 release start at `1` (V1), which is what `gen-ol-params` writes. A nested file
 that an earlier build of this release wrote without the field describes a V1
-network: add `"spec": 1` under `genesis` or regenerate it.
+network: add `"spec": 1` under `genesis` or regenerate it. `2` (V2) also parses
+and starts a network under V2, but no checkpoint program proves V2 epochs yet.
 
 The flat layout 0.3.0 wrote, with `header`, `accounts`, `last_l1_block` and
 `bridge_params` at the top level, no longer parses. Networks launched on 0.3.0

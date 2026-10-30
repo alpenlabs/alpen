@@ -346,11 +346,23 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "epoch runs under spec V2, but this program proves spec V1")]
+    fn test_statements_reject_v2_start_state() {
+        let mut input = prepare_input();
+        let (_, chainstate) = input.start_state.clone().into_parts();
+        input.start_state =
+            OLStateContainer::new(OLSpecVersions::uniform(OLSpecId::V2), chainstate);
+        // Authenticate the altered state so that the spec check is what fails.
+        input.parent.state_root = input.start_state.compute_state_root();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default());
+    }
+
+    #[test]
     #[should_panic(expected = "initial state stages a spec this program does not prove")]
     fn test_statements_reject_start_state_staging_another_spec() {
         let mut input = prepare_input();
         let (_, chainstate) = input.start_state.clone().into_parts();
-        let versions = OLSpecVersions::new(OLSpecId::V1, 2).expect("V1 may stage any spec");
+        let versions = OLSpecVersions::new(OLSpecId::V1, 3).expect("V1 may stage any spec");
         input.start_state = OLStateContainer::new(versions, chainstate);
         // Authenticate the altered state so that the spec check is what fails.
         input.parent.state_root = input.start_state.compute_state_root();

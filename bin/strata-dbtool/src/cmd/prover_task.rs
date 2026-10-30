@@ -406,7 +406,7 @@ pub(crate) fn backfill_checkpoint_proof_task(
         )
     })?;
     let terminal = commitment.to_block_commitment();
-    // The current spec identifies the completed epoch; the staged spec is for the next one.
+    // The current spec identifies the completed epoch.
     let spec = db
         .ol_state_db()
         .get_toplevel_ol_state(terminal)

@@ -1294,7 +1294,7 @@ pub struct TestStorageFixtureBuilder {
     expected_inbox_message_indices: Vec<(AccountId, Vec<u64>)>,
     accounts: Vec<TestAccount>,
     v0_genesis_parent: bool,
-    genesis_enactment: bool,
+    genesis_enactment: Option<OLSpecId>,
 }
 
 impl TestStorageFixtureBuilder {
@@ -1319,10 +1319,10 @@ impl TestStorageFixtureBuilder {
     }
 
     /// Puts a checkpoint predicate enactment in the slot-0 genesis's manifest
-    /// and keeps genesis a V1 terminal, so genesis ends V1 and the next block
-    /// would run V1's successor.
-    pub fn with_v1_genesis_enactment(mut self) -> Self {
-        self.genesis_enactment = true;
+    /// and builds genesis under `spec`, so genesis ends `spec` and the next
+    /// block runs its successor.
+    pub fn with_genesis_enactment(mut self, spec: OLSpecId) -> Self {
+        self.genesis_enactment = Some(spec);
         self
     }
 
@@ -1505,7 +1505,7 @@ impl TestStorageFixtureBuilder {
                 // Create genesis manifest when last_l1_height is 0. A genesis
                 // relabelled as the last V0 terminal processes the checkpoint
                 // predicate enactment that ends V0, so the next epoch runs V1.
-                let genesis_logs = if self.v0_genesis_parent || self.genesis_enactment {
+                let genesis_logs = if self.v0_genesis_parent || self.genesis_enactment.is_some() {
                     vec![checkpoint_enactment_log()]
                 } else {
                     Vec::new()
@@ -1530,7 +1530,7 @@ impl TestStorageFixtureBuilder {
 
                 let block_context = BlockContext::new(&block_info, None);
                 let construct_output = stf_construct_block(
-                    OLSpecId::V1,
+                    self.genesis_enactment.unwrap_or(OLSpecId::V1),
                     &mut state,
                     block_context,
                     components,

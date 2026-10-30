@@ -1,4 +1,4 @@
-"""STR-3130: OL checkpoint predicate rotation is enforced end to end.
+"""STR-3130: the outgoing OL checkpoint predicate governs coverage up to its boundary.
 
 Predicate handovers are range-keyed. Enacting a transition at L1 height B
 does not reject the next checkpoint outright: the outgoing predicate still
@@ -7,14 +7,19 @@ only coverage past B is verified against the incoming key.
 
 The enactment also ends the OL spec the node runs. The OL seals an epoch on
 the enactment's L1 block, so that epoch's coverage ends exactly at B, and the
-epoch after it runs the next spec. This binary implements no spec after V1,
-so the node builds nothing past that epoch's terminal block, while it still
+epoch after it runs the next spec, V2, which this binary implements. The node
+keeps building under V2 past that epoch's terminal block, while it still
 proves and posts that epoch's checkpoint.
 
-This test asserts both halves: that the epoch ending at B, sealed after the
-rotation enacted, is still accepted under the outgoing predicate and
-finalizes, and that the node then stays at that epoch's terminal block, with
-nothing finalizing past it, as L1 keeps advancing.
+This test asserts that the epoch ending at B, sealed after the rotation
+enacted, is still accepted under the outgoing predicate and finalizes, and
+that the node then builds V2 epochs past it. None of them finalizes as L1
+keeps advancing: this build has no V2 checkpoint program, so the node proves
+none of them, and the incoming NeverAccept predicate never sees their
+checkpoints.
+
+TODO(STR-4662): once a V2 checkpoint program exists, assert that the incoming
+predicate rejects the checkpoints of the V2 epochs.
 """
 
 import logging
@@ -60,6 +65,10 @@ ADMIN_CONFIRMATION_DEPTH = 24
 # Budget for the epoch ending at the boundary to finalize once L1 moves on.
 FINALIZATION_TIMEOUT_SECONDS = 240
 
+# Budget for the node to build its first V2 block after the epoch ending at
+# the boundary. Blocks follow the slot cadence, without L1 progress.
+V2_BLOCK_TIMEOUT_SECONDS = 60
+
 PACE_L1_BLOCKS_PER_STEP = 1
 
 # Pacing L1 keeps the OL in step with it, so the epoch that processes the
@@ -75,7 +84,7 @@ BOUNDARY_FIELD_RE = re.compile(r"\bboundary=(\d+)")
 
 @flexitest.register
 class TestCheckpointPredicateRotation(StrataNodeTest):
-    """Rotating the OL checkpoint predicate changes ASM checkpoint acceptance."""
+    """A rotated OL checkpoint predicate still accepts coverage up to its boundary."""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
@@ -170,7 +179,9 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             mine_addr=mine_addr,
             height=boundary + L1_REORG_SAFE_DEPTH - 1,
         )
-        last_epoch, last_terminal = self._wait_for_epoch_ending_at(strata_rpc, boundary)
+        last_epoch, last_terminal = self._wait_for_epoch_ending_at(
+            strata_rpc, boundary, finalized_at_enactment
+        )
         last_info = self._wait_for_checkpoint_info(strata_rpc, last_epoch)
         last_status = self._checkpoint_status(last_info)
 
@@ -193,7 +204,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         )
 
         self._assert_enactment_boundary(log_path, log_offset, boundary)
-        self._assert_upgrade_required(strata_rpc, last_terminal, boundary)
+        self._wait_for_v2_tip(strata_rpc, last_epoch)
 
         # Positive half of the range-keyed semantics: the epoch ending at the
         # boundary finalizes under the outgoing predicate.
@@ -208,13 +219,13 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         if finalized["epoch"] != last_epoch:
             raise AssertionError(
                 f"finalized epoch {finalized['epoch']} is past the epoch {last_epoch} that "
-                f"ends at the boundary {boundary}, which this node cannot build past"
+                f"ends at the boundary {boundary}, after which this build proves no epoch"
             )
         logger.info("epoch %s finalized under the outgoing predicate", last_epoch)
 
-        # Negative half: the epoch after the boundary runs a spec this binary
-        # does not implement, so the node builds nothing past the terminal
-        # block and nothing finalizes past it as L1 keeps advancing.
+        # The node keeps building V2 epochs past the boundary, but nothing
+        # finalizes past the epoch ending at it as L1 keeps advancing: this
+        # build has no V2 checkpoint program to prove them.
         for _ in range(PREDICATE_REJECTION_L1_BLOCKS):
             self._mine_l1_and_wait_for_asm(
                 bitcoin=bitcoin,
@@ -226,17 +237,20 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 timeout=30,
             )
             time.sleep(PACE_STEP_SLEEP_SECONDS)
-            self._assert_stopped_at(strata, strata_rpc, last_epoch, last_terminal)
+            self._assert_finalized_at(strata, strata_rpc, last_epoch)
 
-        self._assert_upgrade_required(strata_rpc, last_terminal, boundary)
-        if strata_rpc.strata_getCheckpointInfo(last_epoch + 1) is not None:
+        self._wait_for_v2_tip(strata_rpc, last_epoch)
+        latest_epoch = int(strata.get_sync_status(strata_rpc)["latest"]["epoch"])
+        if latest_epoch <= last_epoch:
             raise AssertionError(
-                f"the node built a checkpoint for epoch {last_epoch + 1}, past the epoch that "
-                f"ends at the boundary {boundary}"
+                f"the node sealed no epoch past epoch {last_epoch}, which ends at the boundary "
+                f"{boundary}: latest epoch {latest_epoch}"
             )
 
         logger.info(
-            "the node stayed at the terminal block %s of epoch %s across %s L1 blocks",
+            "the node built V2 epochs up to epoch %s past the terminal block %s of epoch %s, "
+            "and none finalized across %s L1 blocks",
+            latest_epoch,
             last_terminal,
             last_epoch,
             PREDICATE_REJECTION_L1_BLOCKS,
@@ -300,22 +314,33 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             time.sleep(PACE_STEP_SLEEP_SECONDS)
             tip = btc_rpc.proxy.getblockcount()
 
-    def _wait_for_epoch_ending_at(self, strata_rpc, boundary: int) -> tuple[int, str]:
+    def _wait_for_epoch_ending_at(
+        self, strata_rpc, boundary: int, from_epoch: int
+    ) -> tuple[int, str]:
         """Waits, without mining, for the OL to seal the epoch ending at `boundary`.
 
-        Returns that epoch and its terminal block ID. The epoch is the latest
-        sealed one once its checkpoint coverage reaches the boundary, since
-        the OL seals nothing after it.
+        Returns that epoch and its terminal block ID. It is the first epoch
+        from `from_epoch` on whose checkpoint coverage reaches the boundary.
+        The V2 epochs after it also end on the boundary while they process no
+        manifests, so the latest epoch that does is not necessarily it.
         """
 
-        def latest_epoch_coverage():
-            latest = strata_rpc.strata_getChainStatus()["latest"]
-            info = strata_rpc.strata_getCheckpointInfo(int(latest["epoch"]))
-            return latest, self._coverage_end(info)
+        def first_epoch_reaching_boundary():
+            latest = int(strata_rpc.strata_getChainStatus()["latest"]["epoch"])
+            for epoch in range(from_epoch, latest + 1):
+                info = strata_rpc.strata_getCheckpointInfo(epoch)
+                coverage_end = self._coverage_end(info)
+                # Epochs get checkpoints in order, so a later epoch's
+                # checkpoint cannot stand in for a missing earlier one.
+                if coverage_end is None:
+                    return None
+                if coverage_end >= boundary:
+                    return epoch, info
+            return None
 
-        latest, coverage_end = wait_until_with_value(
-            latest_epoch_coverage,
-            lambda value: value[1] is not None and value[1] >= boundary,
+        epoch, info = wait_until_with_value(
+            first_epoch_reaching_boundary,
+            lambda value: value is not None,
             error_with=(
                 f"OL sealed no epoch covering L1 up to the boundary {boundary} once the "
                 "boundary was buried"
@@ -323,25 +348,17 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             timeout=EPOCH_SEAL_TIMEOUT_SECONDS,
             step=0.5,
         )
-        epoch = int(latest["epoch"])
+        coverage_end = self._coverage_end(info)
         if coverage_end != boundary:
             raise AssertionError(
                 f"epoch {epoch} claims L1 coverage up to {coverage_end}, not the boundary "
                 f"{boundary}: the OL did not seal on the enactment's L1 block"
             )
-        return epoch, latest["last_blkid"]
+        return epoch, info["l2_end"]["blkid"]
 
-    def _assert_stopped_at(
-        self, strata: StrataService, strata_rpc, epoch: int, terminal: str
-    ) -> None:
-        """Asserts that the node is still at `epoch`'s terminal block."""
+    def _assert_finalized_at(self, strata: StrataService, strata_rpc, epoch: int) -> None:
+        """Asserts that `epoch`, the epoch ending at the enactment, is still finalized last."""
         status = strata.get_sync_status(strata_rpc)
-        tip = status["tip"]
-        if tip["blkid"] != terminal or int(status["latest"]["epoch"]) != epoch:
-            raise AssertionError(
-                f"the node built past the terminal block {terminal} of epoch {epoch}, which "
-                f"ends at the enactment: tip={tip}, latest={status['latest']}"
-            )
         if int(status["finalized"]["epoch"]) != epoch:
             raise AssertionError(
                 f"finalized epoch moved off {epoch}, the epoch ending at the enactment: "
@@ -349,29 +366,25 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             )
 
     @staticmethod
-    def _assert_upgrade_required(strata_rpc, terminal: str, boundary: int) -> None:
-        """Asserts that the spec status reports the stop at `terminal`.
+    def _wait_for_v2_tip(strata_rpc, last_v1_epoch: int) -> None:
+        """Waits for the node to build past `last_v1_epoch` under V2.
 
-        The tip's epoch runs V1 and processed the enactment at `boundary`, so
-        the next epoch runs V2, which this binary does not implement.
+        That epoch processed the enactment, which ends V1, so the epoch after
+        it runs V2. This binary implements V2, so the node keeps building and
+        the spec status reports no upgrade.
         """
-        status = strata_rpc.strata_getSpecStatus()
-        expected = {
-            "tip": terminal,
-            "cur_spec_version": 1,
-            "next_epoch_spec_version": 2,
-            "upgrade_required": {"enactment_l1_height": boundary, "spec_version": 2},
-        }
-        actual = {
-            "tip": status["tip"]["blkid"],
-            "cur_spec_version": status["cur_spec_version"],
-            "next_epoch_spec_version": status["next_epoch_spec_version"],
-            "upgrade_required": status["upgrade_required"],
-        }
-        if actual != expected:
-            raise AssertionError(
-                f"spec status does not report the upgrade the next epoch needs: {status}"
-            )
+        status = wait_until_with_value(
+            strata_rpc.strata_getSpecStatus,
+            lambda status: status["cur_spec_version"] == 2,
+            error_with=(
+                f"the node built no V2 block after epoch {last_v1_epoch}, which ends at the "
+                "enactment"
+            ),
+            timeout=V2_BLOCK_TIMEOUT_SECONDS,
+            step=0.5,
+        )
+        if status["upgrade_required"] is not None:
+            raise AssertionError(f"spec status reports an upgrade the node does not need: {status}")
 
     @staticmethod
     def _coverage_end(checkpoint_info: dict | None) -> int | None:

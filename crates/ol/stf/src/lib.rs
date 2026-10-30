@@ -7,11 +7,12 @@
 //! genesis.
 //!
 //! Each rule set implements one internal trait, and a single dispatch macro
-//! maps spec identifiers to rule sets. A spec that reuses earlier rules adds
-//! one arm to that mapping. A spec with new rules adds a trait implementation,
-//! which the compiler requires to provide every operation. Sequencer block
-//! assembly composes the [`sequencer`] phases itself, so a rule set that changes
-//! their order or composition must also update block assembly.
+//! maps spec identifiers to rule sets. From V1 on, every spec records its own
+//! identifier in the state root, so every spec has its own rule set, even one
+//! that changes no rules: V2 runs the V1 code and only takes over the V1 state.
+//! The compiler requires each rule set to provide every operation. Sequencer
+//! block assembly composes the [`sequencer`] phases itself, so a rule set that
+//! changes their order or composition must also update block assembly.
 //!
 //! # Spec selection
 //!
@@ -51,7 +52,9 @@
 //! whose epoch-initial processing wraps it as `cur = staged = V1`. Every
 //! driver runs that processing, DA replay included, so they all reach the same
 //! wrapped root. A V1 block that does not start an epoch fails on a V0 state
-//! with [`ExecError::ContinuesV0Epoch`].
+//! with [`ExecError::ContinuesV0Epoch`]. V2 rules take over a V1 state the same
+//! way, as `cur = staged = V2`, and fail a block that continues a V1 epoch with
+//! [`ExecError::ContinuesEarlierSpecEpoch`].
 //!
 //! # V1-compatible surface
 //!
@@ -69,6 +72,7 @@ pub mod sequencer;
 mod spec;
 mod v0;
 mod v1;
+mod v2;
 
 pub use block::{
     construct_block, execute_and_complete_block, execute_block_batch_predrain, verify_block,

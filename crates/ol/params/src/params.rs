@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn genesis_spec_reads_as_its_discriminant() {
-        for (raw, spec) in [(0, OLSpecId::V0), (1, OLSpecId::V1)] {
+        for (raw, spec) in [(0, OLSpecId::V0), (1, OLSpecId::V1), (2, OLSpecId::V2)] {
             let params =
                 serde_json::from_str::<OLParams>(&nested_params(&format!(r#""spec": {raw},"#)))
                     .expect("nested params parse");

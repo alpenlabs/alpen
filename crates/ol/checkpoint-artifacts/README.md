@@ -3,9 +3,8 @@
 The integrated checkpoint prover keeps resident programs indexed by `OLSpecId`.
 For each completed epoch it reads the current spec from that epoch's terminal OL
 state and looks up its program. This records the spec the epoch actually used,
-including V0 epochs and the first V1 epoch after the upgrade. The terminal state's
-staged spec applies to the next epoch. The same selection drives DA computation
-and routing to the spec's fixed-host prover service.
+including V0 epochs and the first V1 epoch after the upgrade. The same selection
+drives DA computation and routing to the spec's fixed-host prover service.
 
 The registry contains no activation heights, epoch ranges, or mutable active
 program. ASM's current active predicate is not a selector for every local proof:
@@ -187,9 +186,9 @@ cargo test --release -p strata-ol-checkpoint-artifacts --features sp1 \
   loads_real_bundle_and_rejects_tampered_identity -- --ignored --nocapture
 ```
 
-Use runtime parameters matching the bundle's build. Live rotation after V1 also
-requires the separately owned OL spec-activation implementation and an actual
-supported successor program.
+Use runtime parameters matching the bundle's build. Proving after a rotation past
+V1 also requires a V2 checkpoint program and its bundle, which this release does
+not build.
 
 To check the deployed V0 ELF against its independently published predicate:
 

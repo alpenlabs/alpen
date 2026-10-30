@@ -7,9 +7,10 @@ posting checkpoints and the broadcaster sees them confirm. The ASM only logs a
 tracing warning for a rejection and emits no ASM log, so this is the case the
 submission tracker exists for.
 
-A checkpoint predicate rotation cannot produce this case. Its enactment ends
-the spec this binary runs, so the node builds nothing past the handover
-boundary and never posts a checkpoint the incoming predicate governs.
+A checkpoint predicate rotation cannot produce this case in this build. Its
+enactment ends V1, and the node builds V2 epochs past the handover boundary,
+but this build has no V2 checkpoint program, so it never posts a checkpoint
+the incoming predicate governs.
 
 With every service running, the test pushes L1 on and asserts that once the
 corrupted checkpoint's block is buried at the reorg-safe depth,

@@ -230,7 +230,7 @@ pub enum ExecError {
 
     /// The rules of `spec` ran on a state a later spec produced.
     ///
-    /// A spec takes over the state of an earlier spec at the start of an
+    /// A spec takes over the state of the spec before it at the start of an
     /// epoch, but never the state of a later one, so only a wrong spec
     /// selection reaches this. [`Self::kind`] reports it as
     /// [`ErrorKind::Execution`], because the block or epoch may be valid under
@@ -243,10 +243,40 @@ pub enum ExecError {
         state_spec_version: u32,
     },
 
-    /// A block that does not start an epoch runs on a V0 state.
+    /// The rules of `spec` ran on a state produced under `state_spec`, which
+    /// is older than the spec before `spec`.
     ///
-    /// Later rules take over a V0 state only at the first block of an epoch,
+    /// Each enactment advances the spec by one, so a spec takes over only the
+    /// state of the spec before it, and only a wrong spec selection reaches
+    /// this. [`Self::kind`] reports it as [`ErrorKind::Execution`], like
+    /// [`Self::StateFromLaterSpec`].
+    #[error("OL spec {spec:?} rules cannot take over a state produced under {state_spec:?}")]
+    StateFromEarlierSpec {
+        spec: OLSpecId,
+        state_spec: OLSpecId,
+    },
+
+    /// A block that does not start an epoch runs under `spec` on a state of
+    /// `state_spec`, the spec before it.
+    ///
+    /// A spec takes over the state of the spec before it only at the first
+    /// block of an epoch, so it cannot continue an epoch that started under
+    /// that spec. V1 reports the same case for a V0 state as
+    /// [`Self::ContinuesV0Epoch`]. [`Self::kind`] reports it as
+    /// [`ErrorKind::Execution`], because the block may be valid under the
+    /// state's own rules.
+    #[error("OL spec {spec:?} rules cannot continue an epoch that started under {state_spec:?}")]
+    ContinuesEarlierSpecEpoch {
+        spec: OLSpecId,
+        state_spec: OLSpecId,
+    },
+
+    /// A block that does not start an epoch runs under V1 on a V0 state.
+    ///
+    /// V1 rules take over a V0 state only at the first block of an epoch,
     /// which wraps it, so they cannot continue an epoch that started under V0.
+    /// Later rules take over no V0 state and report
+    /// [`Self::StateFromEarlierSpec`] instead.
     ///
     /// [`Self::kind`] reports it as [`ErrorKind::Execution`], like
     /// [`Self::UnimplementedSpec`], because the block may be valid under the
@@ -301,6 +331,8 @@ impl ExecError {
             // rules other than its own.
             Self::UnimplementedSpec(_)
             | Self::StateFromLaterSpec { .. }
+            | Self::StateFromEarlierSpec { .. }
+            | Self::ContinuesEarlierSpecEpoch { .. }
             | Self::ContinuesV0Epoch => ErrorKind::Execution,
 
             // All other errors indicate the block is invalid.
@@ -337,6 +369,18 @@ mod tests {
 
         let wrapped = err.with_tx(OLTxId::from(Buf32::from([1u8; 32])), 0);
         assert_eq!(wrapped.kind(), ErrorKind::Execution);
+
+        let err = ExecError::StateFromEarlierSpec {
+            spec: OLSpecId::V2,
+            state_spec: OLSpecId::V0,
+        };
+        assert_eq!(err.kind(), ErrorKind::Execution);
+
+        let err = ExecError::ContinuesEarlierSpecEpoch {
+            spec: OLSpecId::V2,
+            state_spec: OLSpecId::V1,
+        };
+        assert_eq!(err.kind(), ErrorKind::Execution);
 
         assert_eq!(ExecError::ChainIntegrity.kind(), ErrorKind::Correctness);
     }

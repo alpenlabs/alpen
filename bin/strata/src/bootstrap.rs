@@ -250,14 +250,15 @@ fn promote_from_checkpoint_storage(
 /// Checks that the epoch after `anchor` runs a spec this binary builds blocks
 /// under.
 ///
-/// A V1 anchor is followed by V1 unless its epoch processed a checkpoint
-/// predicate enactment. A V0 anchor is followed by V1 only if it is the last
-/// V0 epoch, which processed the checkpoint predicate enactment; promoting an
-/// earlier V0 anchor would build V1 blocks where the network still runs V0.
-/// An anchor after which the next epoch runs a spec this binary does not
-/// implement is refused too: the promoted sequencer could build nothing. The
-/// rule and the data it reads are those of checkpoint sync and the
-/// sequencer's boot check, [`select_spec_after_epoch_terminal_block`].
+/// An anchor's epoch is followed by its own spec, or by the spec after it if
+/// the epoch processed a checkpoint predicate enactment: a V1 anchor by V1, or
+/// by V2 after an enactment. A V0 anchor is followed by V1 only if it is the
+/// last V0 epoch, which processed the checkpoint predicate enactment;
+/// promoting an earlier V0 anchor would build V1 blocks where the network
+/// still runs V0. An anchor after which the next epoch runs a spec this binary
+/// does not implement is refused too: the promoted sequencer could build
+/// nothing. The rule and the data it reads are those of checkpoint sync and
+/// the sequencer's boot check, [`select_spec_after_epoch_terminal_block`].
 fn verify_anchor_successor_is_buildable(
     storage: &NodeStorage,
     genesis_l1_block: L1BlockCommitment,
@@ -385,6 +386,12 @@ mod tests {
         /// `last_manifest` last.
         fn with_v1_anchor(last_manifest: V0LastManifest) -> Self {
             Self::build(true, true, true, Some((OLSpecId::V1, last_manifest)))
+        }
+
+        /// Builds the fixture with a V2 anchor epoch that processed
+        /// `last_manifest` last.
+        fn with_v2_anchor(last_manifest: V0LastManifest) -> Self {
+            Self::build(true, true, true, Some((OLSpecId::V2, last_manifest)))
         }
 
         fn build(
@@ -837,12 +844,21 @@ mod tests {
     }
 
     /// A V1 anchor whose epoch processed a checkpoint predicate enactment is
-    /// followed by V2, which this binary does not implement: a promoted
+    /// followed by V2, which a promoted sequencer builds blocks under.
+    #[test]
+    fn v1_anchor_after_an_enactment_is_promoted() {
+        PromotionFixture::with_v1_anchor(V0LastManifest::Enactment)
+            .promote()
+            .expect("promotion succeeds");
+    }
+
+    /// A V2 anchor whose epoch processed a checkpoint predicate enactment is
+    /// followed by V3, which this binary does not implement: a promoted
     /// sequencer could build nothing, so promotion is refused.
     #[test]
-    fn v1_anchor_after_an_enactment_needs_an_upgrade() {
-        PromotionFixture::with_v1_anchor(V0LastManifest::Enactment)
-            .assert_failure("OL spec version 2, which this binary does not implement");
+    fn v2_anchor_after_an_enactment_needs_an_upgrade() {
+        PromotionFixture::with_v2_anchor(V0LastManifest::Enactment)
+            .assert_failure("OL spec version 3, which this binary does not implement");
     }
 
     /// A V1 anchor whose epoch processed no enactment is followed by V1.

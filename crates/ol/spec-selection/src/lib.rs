@@ -578,9 +578,10 @@ mod tests {
         let fork = Fork::new();
         let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
 
-        let spec = select_after_epoch_2(&fork, OLSpecId::V0, enactment);
-
-        assert_eq!(spec.unwrap(), OLSpecId::V1);
+        for (spec, successor) in [(OLSpecId::V0, OLSpecId::V1), (OLSpecId::V1, OLSpecId::V2)] {
+            let selected = select_after_epoch_2(&fork, spec, enactment.clone());
+            assert_eq!(selected.unwrap(), successor);
+        }
     }
 
     #[test]
@@ -588,7 +589,7 @@ mod tests {
         let fork = Fork::new();
         let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
 
-        let err = select_after_epoch_2(&fork, OLSpecId::V1, enactment).unwrap_err();
+        let err = select_after_epoch_2(&fork, OLSpecId::V2, enactment).unwrap_err();
 
         assert!(
             matches!(
@@ -777,7 +778,7 @@ mod tests {
         let expected = manifest_block(&enactment);
 
         let err = select_spec_after_unsummarized_epoch(
-            OLSpecVersions::uniform(OLSpecId::V1),
+            OLSpecVersions::uniform(OLSpecId::V2),
             expected,
             &prev_epoch_summary,
             |block| -> Result<_, ()> {
@@ -785,7 +786,7 @@ mod tests {
                 Ok(Some(enactment))
             },
         )
-        .expect_err("V1 has no implemented successor");
+        .expect_err("V2 has no implemented successor");
         let SelectSpecAfterEpochError::Selection(EpochSpecSelectionError::UpgradeRequired(upgrade)) =
             err
         else {
@@ -901,11 +902,11 @@ mod tests {
         let enactment = make_checkpoint_predicate_enactment_manifest(9, 1);
 
         let selected =
-            SelectedSpec::from_selection(select_after_epoch_2(&fork, OLSpecId::V1, enactment))
+            SelectedSpec::from_selection(select_after_epoch_2(&fork, OLSpecId::V2, enactment))
                 .expect("an upgrade is an outcome");
 
-        let upgrade = selected.upgrade_required().expect("V1 has no successor");
-        assert_eq!(upgrade.prev_spec(), OLSpecId::V1);
+        let upgrade = selected.upgrade_required().expect("V2 has no successor");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
         assert_eq!(upgrade.enactment_l1_height(), 9);
         assert_eq!(selected.require_supported(), Err(*upgrade));
     }

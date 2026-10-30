@@ -71,7 +71,7 @@ mod tests {
             toml::from_str("spec = 1\nbundle_dir = 'releases/v1'").unwrap();
         assert_eq!(config.spec(), OLSpecId::V1);
         assert!(
-            toml::from_str::<CheckpointArtifactConfig>("spec = 2\nbundle_dir = 'releases/v2'")
+            toml::from_str::<CheckpointArtifactConfig>("spec = 3\nbundle_dir = 'releases/v3'")
                 .is_err()
         );
     }

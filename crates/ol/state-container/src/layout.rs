@@ -23,10 +23,11 @@ impl OLStateLayout {
     ///
     /// This is the only spec-to-layout mapping. A spec that keeps the previous
     /// layout adds an arm naming it; a spec with a new layout adds a layout
-    /// variant too. The 0.3.0 rules (V0) and V1 share the [`Self::V1`] layout.
+    /// variant too. The 0.3.0 rules (V0), V1, and V2 share the [`Self::V1`]
+    /// layout.
     pub fn for_spec(spec: OLSpecId) -> Self {
         match spec {
-            OLSpecId::V0 | OLSpecId::V1 => Self::V1,
+            OLSpecId::V0 | OLSpecId::V1 | OLSpecId::V2 => Self::V1,
         }
     }
 }

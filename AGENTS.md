@@ -127,16 +127,18 @@ states commit no spec versions and always stage V0 (`OLSpecVersions`).
 `OLRootState::compute_state_root` is the one place the form is chosen. The first block of
 the first V1 epoch after a V0 state wraps it as `cur = staged = V1` in epoch-initial
 processing, so every driver, DA replay included, reaches the same root; a V1 block that
-does not start an epoch rejects a V0 state. `cur_spec_version` selects the layout through
-`OLStateLayout::for_spec` (V0 and V1 share `OLStateV1`); the staged version names the spec
-the next epoch runs under. `OLStateContainer` (`ol/state-container`) pairs the root with
-an `OLStateSeries` chainstate and is what storage, the chain worker, and the checkpoint
-proof input carry. It serializes through serde as the root's fields plus the chainstate's
-SSZ bytes, and decoding checks the chainstate against the root. Execution uses
-`MemoryStateBaseLayer<OLStateV1>`, built with `from_container` and converted back with
-`into_container`. Genesis construction assigns the initial versions (`new_genesis`), and
-afterwards only the rules change them, through `IStateAccessorMut::set_spec_versions` and
-the `WriteBatch` version slot.
+does not start an epoch rejects a V0 state. V2 runs the V1 rules and takes over a V1 state
+the same way, as `cur = staged = V2`. `cur_spec_version` selects the layout through
+`OLStateLayout::for_spec` (V0, V1, and V2 share `OLStateV1`). No rules stage a spec, so the
+staged version equals the current one; nodes select the next epoch's spec from the L1
+manifests the previous epoch processed (`ol/spec-selection`). `OLStateContainer`
+(`ol/state-container`) pairs the root with an `OLStateSeries` chainstate and is what
+storage, the chain worker, and the checkpoint proof input carry. It serializes through serde
+as the root's fields plus the chainstate's SSZ bytes, and decoding checks the chainstate
+against the root. Execution uses `MemoryStateBaseLayer<OLStateV1>`, built with
+`from_container` and converted back with `into_container`. Genesis construction assigns the
+initial versions (`new_genesis`), and afterwards only the rules change them, through
+`IStateAccessorMut::set_spec_versions` and the `WriteBatch` version slot.
 
 #### EE Layer (Execution Environment)
 
@@ -728,6 +730,8 @@ Configuration is split by ownership:
   checkpoint verification key. `OLGenesisParams` carries the network's genesis
   `OLSpecId` as a required `genesis.spec`: `0` (V0) for networks launched on 0.3.0, whose
   flat params files must be converted, and `1` (V1) for networks launched from this release.
+  `2` (V2) also parses and starts a network under V2, whose epochs no checkpoint program
+  proves yet.
 - **Node configuration** (TOML types under `crates/config`) contains operational settings,
   including `BtcioConfig` and its L1 reader, writer, fee, and reorg policy.
 
