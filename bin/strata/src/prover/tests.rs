@@ -358,13 +358,22 @@ fn first_checkpoint_after_upgrade_uses_successor_after_restart() {
 
 #[test]
 fn fixed_host_service_rejects_an_epoch_assigned_to_another_spec() {
-    let fixture = EpochFixture::new();
-    fixture.discard_epoch_blocks();
-    // V2 has its own service, but must never claim a V1 epoch's work.
-    assert!(matches!(
-        fixture.resolve_on(OLSpecId::V2),
-        InputResolution::Rejected { .. }
-    ));
+    for (epoch_spec, assigned_spec) in [(OLSpecId::V1, OLSpecId::V2), (OLSpecId::V2, OLSpecId::V1)]
+    {
+        let fixture = EpochFixture::with_specs(OLSpecId::V1, epoch_spec);
+        fixture.discard_epoch_blocks();
+        let InputResolution::Rejected { reason } = fixture.resolve_on(assigned_spec) else {
+            panic!("the {assigned_spec:?} service must reject a {epoch_spec:?} epoch");
+        };
+        assert!(
+            reason.contains(&format!("requires {epoch_spec:?}")),
+            "{reason}"
+        );
+        assert!(
+            reason.contains(&format!("routed to {assigned_spec:?}")),
+            "{reason}"
+        );
+    }
 }
 
 #[test]
