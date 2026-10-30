@@ -103,7 +103,7 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnvSerde, spec: OLSpecId, runtime_params: 
 ///
 /// This function panics if:
 /// - The parent state root doesn't match the initial state root
-/// - The epoch's spec, derived from the initial state, is not `spec`
+/// - The initial state's versions are incompatible with `spec`, including its predecessor exception
 /// - The block batch is empty
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
@@ -129,10 +129,26 @@ pub fn process_ol_stf_core(
         initial_state_root
     );
 
-    // V1 never stages its successor, so the first V2 epoch starts from cur = staged = V1.
-    // The ASM accepts a V2 proof only under the V2 key and from its verified tip. The first
-    // V2 block commits V2 in its state root, so later accepted proofs start from a V2 state.
-    // Keep the V0 -> V1 exception and V1's staged-spec selection unchanged.
+    // Accepting a predecessor state is sound only together with ASM range verification:
+    // V1 accepts a V0 state, and V2 accepts a state with cur = staged = V1 because V1
+    // never stages its successor. Neither exception independently authorizes an upgrade.
+    // - The parent root authenticates the start state above, and the ASM binds the claim's range
+    //   start to its verified tip. A proof can only extend the already accepted chain.
+    // - The ASM verifies each claim under its active checkpoint predicate, so a successor program's
+    //   proof cannot verify before its key becomes active.
+    // - OL boundary verification requires the block processing a checkpoint predicate enactment to
+    //   end its epoch. The ASM refuses an old-key range crossing that L1 boundary and activates the
+    //   new key only when its verified tip reaches the boundary. Thus the new program cannot extend
+    //   an earlier predecessor tip under the new key.
+    // - The terminal-parent assertion below requires an epoch boundary. V1 epoch-initial processing
+    //   wraps V0 as V1; V2's take_over_state records V2 on a V1 state and rejects a V1 start within
+    //   an epoch. DA replay applies the same version changes.
+    // - The first accepted successor range therefore advances the verified tip to a state
+    //   committing the successor version. Later accepted ranges cannot reuse a predecessor start
+    //   state, even though the program itself accepts any compatible terminal one.
+    // This argument depends on the ASM v0.4.0-rc.6 predicate handover, which MN0 must get
+    // through STR-4489 before the OlStfVk transaction. Keep the V0 -> V1 exception and
+    // V1's staged-spec selection unchanged.
     let epoch_spec = if state.cur_spec() == OLSpecId::V0 {
         OLSpecId::V0.successor().expect("V0 has a successor spec")
     } else {
