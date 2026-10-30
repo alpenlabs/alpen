@@ -11,8 +11,13 @@ use zkaleido_native_adapter::NativeHost;
 
 use crate::statements::process_ol_stf;
 
-fn test_signing_key() -> SigningKey {
-    SigningKey::from_bytes(&[0x01u8; 32]).expect("valid test signing key")
+fn test_signing_key(spec: OLSpecId) -> SigningKey {
+    // Keep the deployed V1 test key stable while making stale-key routing observable.
+    let byte = match spec {
+        OLSpecId::V0 | OLSpecId::V1 => 0x01,
+        OLSpecId::V2 => 0x02,
+    };
+    SigningKey::from_bytes(&[byte; 32]).expect("valid test signing key")
 }
 
 #[derive(Debug)]
@@ -63,15 +68,22 @@ impl ZkVmProgram for CheckpointProgram {
 impl CheckpointProgram {
     /// Returns a native host that proves `spec`'s rules.
     pub fn native_host(spec: OLSpecId, runtime_params: OLRuntimeParams) -> NativeHost {
-        NativeHost::new(test_signing_key(), move |zkvm| {
+        NativeHost::new(test_signing_key(spec), move |zkvm| {
             process_ol_stf(zkvm, spec, &runtime_params)
         })
     }
 
-    /// Predicate key matching the signing key the native host uses, for wiring into
-    /// functional-test params so the resulting witness verifies under `Bip340Schnorr`.
+    /// Returns the V1 native predicate used by existing functional-test genesis params.
     pub fn test_predicate_key() -> PredicateKey {
-        let pk = test_signing_key().verifying_key().to_bytes().to_vec();
+        Self::test_predicate_key_for_spec(OLSpecId::V1)
+    }
+
+    /// Returns the predicate for the fixed-spec native program.
+    ///
+    /// Each supported upgrade uses a different test key so verification catches
+    /// proofs routed to the preceding spec's host. These keys are public test fixtures.
+    pub fn test_predicate_key_for_spec(spec: OLSpecId) -> PredicateKey {
+        let pk = test_signing_key(spec).verifying_key().to_bytes().to_vec();
         PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, pk)
             .expect("predicate condition must fit within the maximum length")
     }
