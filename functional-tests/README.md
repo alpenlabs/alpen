@@ -321,3 +321,71 @@ handover and two V2 epochs to finalize. A live L1 follower and a fresh follower
 started after the upgrade replay the same checkpoints and account summaries and
 read V2 from their reconstructed root state. Non-sequencer nodes currently use
 checkpoint sync; block-executing fullnode replay is not available yet.
+
+Real SP1 network proving is opt-in. Install the SP1 toolchain matching the
+workspace SDK (`v6.8.1`) and export `NETWORK_PRIVATE_KEY` through your shell's
+secret configuration. On macOS, use LLVM's archiver for the guest's RISC-V
+objects; for a Homebrew LLVM installation:
+
+```sh
+export AR_riscv64im_unknown_none_elf="$(brew --prefix llvm)/bin/llvm-ar"
+```
+
+Then, from `functional-tests/`, run:
+
+```sh
+OL_PROVER_BACKEND=sp1 SP1_PROVER=network \
+./run_tests.sh -t test_checkpoint_predicate_rotation
+```
+
+The runner builds the node and tools in release mode with SP1 support, then
+builds the current V2 checkpoint guest, predicate, and artifact manifest. V1
+comes from the [frozen deployed bundle](testdata/sp1/v1/README.md). Both the
+V2 build and the test network use the runtime parameters stored beside V1;
+the test's genesis predicate and rotation target come from their respective
+bundles. The node validates both bundles against those parameters and derives
+their keys from the ELFs at startup. A custom `CARGO_TARGET_DIR` is supported.
+
+The node inherits `NETWORK_PRIVATE_KEY`, optional `NETWORK_RPC_URL`, and
+`SP1_PROOF_STRATEGY` from the invoking shell or Actions step. The network key
+signs proof requests; it is separate from the local test's sequencer and
+Bitcoin keys. The runner rejects missing credentials instead of falling back
+to native proving. Real proving submits paid network requests.
+
+SP1 mode uses slower blocks and longer proof waits to accommodate the network.
+
+### Running the SP1 upgrade test in CI
+
+The dedicated daily/manual SP1 workflow is added in the next review chunk.
+The existing ordinary functional CI job still runs this test in native mode;
+triggering that job does not enable network proving.
+
+Configure a repository Actions secret named `NETWORK_PRIVATE_KEY`, or give
+this repository access to an organization Actions secret with that name.
+GitHub must pass the secret into the test step explicitly. No local network
+key is needed to trigger CI.
+
+The CI runner needs the usual functional-test dependencies (Rust, bitcoind,
+uv, and protoc), plus the matching SP1 `v6.8.1` toolchain. With those installed,
+the SP1 job runs only the upgrade test using this step:
+
+```yaml
+- name: Run V1 to V2 upgrade with SP1 network proofs
+  working-directory: functional-tests
+  env:
+    OL_PROVER_BACKEND: sp1
+    SP1_PROVER: network
+    NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+  run: ./run_tests.sh -t test_checkpoint_predicate_rotation
+```
+
+The script builds the release binaries and V2 bundle before running the test;
+V1 comes from committed test data. A missing secret fails before the builds
+start. If the network needs a custom endpoint or fulfillment strategy, pass
+`NETWORK_RPC_URL` or `SP1_PROOF_STRATEGY` into the same step's environment.
+
+Once the dedicated workflow is available, use its **Run workflow** action for
+the first real-proof validation. The daily schedule runs after the workflow
+lands on the default branch. Check the test result and service logs to verify
+that the V1 handover and both V2 checkpoints finalized; a successful guest
+build alone does not validate network proving.

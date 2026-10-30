@@ -1,12 +1,14 @@
 """Environment configurations."""
 
 import subprocess
+from pathlib import Path
 from typing import cast
 
 import flexitest
 
-from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
-from common.config.params import GenesisAccountData, L1BlockCommitment, OLParams
+from common.config import BitcoindConfig, EpochSealingConfig, ProverConfig, ServiceType
+from common.config.params import BridgeParams, GenesisAccountData, L1BlockCommitment, OLParams
+from common.datatool import CHECKPOINT_TEST_PREDICATE_FILE
 from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
 from factories.strata import CreateNodeResult, StrataFactory
@@ -30,7 +32,13 @@ class StrataEnvConfig(flexitest.EnvConfig):
         strata_env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
         l1_reorg_safe_depth: int | None = None,
+        bridge_params: BridgeParams | None = None,
+        prover_config: ProverConfig | None = None,
+        checkpoint_predicate_file: Path = CHECKPOINT_TEST_PREDICATE_FILE,
     ):
+        self.bridge_params = bridge_params if bridge_params is not None else BridgeParams()
+        self.prover_config = prover_config
+        self.checkpoint_predicate_file = checkpoint_predicate_file
         self.pre_generate_blocks = pre_generate_blocks
         self.genesis_accounts = genesis_accounts
         self.epoch_sealing = epoch_sealing
@@ -100,7 +108,10 @@ class StrataEnvConfig(flexitest.EnvConfig):
         # Build OL params with optional genesis accounts
         ol_params = None
         if self.genesis_accounts is not None:
-            ol_params = OLParams(accounts=self.genesis_accounts).with_genesis_l1(genesis_l1_block)
+            ol_params = OLParams(
+                accounts=self.genesis_accounts,
+                bridge_params=self.bridge_params,
+            ).with_genesis_l1(genesis_l1_block)
 
         # Start Strata sequencer
         sequencer_node = strata_factory.create_node(
@@ -113,10 +124,15 @@ class StrataEnvConfig(flexitest.EnvConfig):
             env=self.strata_env,
             ol_block_time_ms=self.ol_block_time_ms,
             l1_reorg_safe_depth=self.l1_reorg_safe_depth,
+            bridge_params=self.bridge_params,
+            prover_config=self.prover_config,
+            checkpoint_predicate_file=self.checkpoint_predicate_file,
         )
         self.sequencer_node = sequencer_node
         strata = sequencer_node.service
-        strata.wait_for_ready(timeout=30)
+        strata.wait_for_ready(
+            timeout=120 if self.prover_config and self.prover_config.backend == "sp1" else 30
+        )
 
         # Start strata-signer for the sequencer (connects to strata's WS RPC)
         assert sequencer_node.sequencer_key_path is not None

@@ -5,7 +5,9 @@ from typing import cast
 
 import flexitest
 
-from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
+from common.config import BitcoindConfig, EpochSealingConfig, ProverConfig, ServiceType
+from common.config.params import BridgeParams
+from common.datatool import CHECKPOINT_TEST_PREDICATE_FILE
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from envconfigs.strata import StrataEnvConfig
@@ -37,6 +39,9 @@ class CheckpointSyncEnv(flexitest.EnvConfig):
         provision_promotion: bool = False,
         provision_recovery_node: bool = False,
         fund_test_cli_wallet: bool = False,
+        bridge_params: BridgeParams | None = None,
+        prover_config: ProverConfig | None = None,
+        checkpoint_predicate_file: Path = CHECKPOINT_TEST_PREDICATE_FILE,
     ):
         epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
@@ -47,6 +52,9 @@ class CheckpointSyncEnv(flexitest.EnvConfig):
         self.strata_config = StrataEnvConfig(
             pre_generate_blocks=pre_generate_blocks,
             fund_test_cli_wallet=fund_test_cli_wallet,
+            bridge_params=bridge_params,
+            prover_config=prover_config,
+            checkpoint_predicate_file=checkpoint_predicate_file,
             epoch_sealing=epoch_seal_config,
             admin_confirmation_depth=admin_confirmation_depth,
             ol_block_time_ms=ol_block_time_ms,

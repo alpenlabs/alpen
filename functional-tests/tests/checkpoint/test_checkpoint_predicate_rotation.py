@@ -1,6 +1,7 @@
 """STR-4088: a fresh V1 network rotates to V2 on every test run.
 
 Distinct native signing keys exercise per-epoch prover selection in normal CI.
+Set OL_PROVER_BACKEND=sp1 via run_tests.sh to exercise real ZK proving.
 The V2 program verifies every block of the first V2 epoch from its V1 start
 state, so accepting its checkpoint also checks the switch at the first block.
 
@@ -17,10 +18,10 @@ from pathlib import Path
 import flexitest
 
 from common.base_test import StrataNodeTest
+from common.checkpoint_prover import checkpoint_rotation_programs
 from common.checkpoint_sync import check_summaries_equivalent, check_top_level_state_equivalent
 from common.config import ServiceType
 from common.config.constants import ALPEN_ACCOUNT_ID
-from common.datatool import CHECKPOINT_TEST_PREDICATE_FILE, PREDICATE_FIXTURES_DIR
 from common.services.strata import StrataService
 from common.test_cli import create_checkpoint_predicate_update
 from common.wait import wait_until_with_value
@@ -28,15 +29,13 @@ from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from tests.checkpoint.helpers import mine_until_finalized_epoch, tx_block_height
 
 logger = logging.getLogger(__name__)
-ROTATION_PREDICATE = (
-    (PREDICATE_FIXTURES_DIR / "checkpoint-v2-bip340-schnorr-test.predicate").read_text().strip()
-)
+PROGRAMS = checkpoint_rotation_programs()
 POST_ADMIN_UPDATE_L1_BLOCKS = 5
 ENACTMENT_TIMEOUT_SECONDS = 180
-EPOCH_SEAL_TIMEOUT_SECONDS = 120
+EPOCH_SEAL_TIMEOUT_SECONDS = 120 * PROGRAMS.proof_wait_scale
 L1_REORG_SAFE_DEPTH = 6
 ADMIN_CONFIRMATION_DEPTH = 24
-FINALIZATION_TIMEOUT_SECONDS = 240
+FINALIZATION_TIMEOUT_SECONDS = 240 * PROGRAMS.proof_wait_scale
 V2_BLOCK_TIMEOUT_SECONDS = 60
 PACE_L1_BLOCKS_PER_STEP = 1
 PACE_STEP_SLEEP_SECONDS = 1.5
@@ -54,11 +53,14 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             CheckpointSyncEnv(
                 pre_generate_blocks=110,
                 seal_epoch_slots=8,
-                ol_block_time_ms=1_000,
+                ol_block_time_ms=PROGRAMS.ol_block_time_ms,
                 fund_test_cli_wallet=True,
                 admin_confirmation_depth=ADMIN_CONFIRMATION_DEPTH,
                 l1_reorg_safe_depth=L1_REORG_SAFE_DEPTH,
                 provision_recovery_node=True,
+                bridge_params=PROGRAMS.bridge_params,
+                prover_config=PROGRAMS.config,
+                checkpoint_predicate_file=PROGRAMS.genesis_predicate_file,
             )
         )
 
@@ -71,16 +73,21 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         btc_rpc = bitcoin.create_rpc()
         rpc = strata.wait_for_rpc_ready(timeout=30)
         mine_addr = btc_rpc.proxy.getnewaddress()
-        genesis_predicate = CHECKPOINT_TEST_PREDICATE_FILE.read_text().strip()
-        assert genesis_predicate != ROTATION_PREDICATE, "rotation must change the key"
+        genesis_predicate = PROGRAMS.genesis_predicate_file.read_text().strip()
+        assert genesis_predicate != PROGRAMS.rotation_predicate, "rotation must change the key"
         assert rpc.strata_getSpecStatus()["cur_spec_version"] == 1
 
         baseline = mine_until_finalized_epoch(
-            bitcoin, strata, rpc, target_epoch=1, timeout=FINALIZATION_TIMEOUT_SECONDS
+            bitcoin,
+            strata,
+            rpc,
+            target_epoch=1,
+            timeout=FINALIZATION_TIMEOUT_SECONDS,
+            step=float(PROGRAMS.proof_wait_scale),
         )
         result = create_checkpoint_predicate_update(
             seq_no=1,
-            predicate=ROTATION_PREDICATE,
+            predicate=PROGRAMS.rotation_predicate,
             admin_xpriv=self._read_admin_xpriv(strata),
             btc_url=bitcoin.props["rpc_url"],
             btc_user=bitcoin.props["rpc_user"],
@@ -129,7 +136,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         strata.wait_for_down(timeout=30)
         strata.stop()
         strata.start()
-        rpc = strata.wait_for_rpc_ready(timeout=60)
+        rpc = strata.wait_for_rpc_ready(timeout=60 * PROGRAMS.proof_wait_scale)
         signer.start()
         signer.wait_for_ready(timeout=20)
         recovered_epoch, recovered_terminal = self._wait_for_epoch_ending_at(
@@ -147,6 +154,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             rpc,
             target_epoch=last_v1_epoch + 2,
             timeout=FINALIZATION_TIMEOUT_SECONDS,
+            step=float(PROGRAMS.proof_wait_scale),
         )
         for epoch in (in_flight_epoch, last_v1_epoch, last_v1_epoch + 1, last_v1_epoch + 2):
             info = rpc.strata_getCheckpointInfo(epoch)

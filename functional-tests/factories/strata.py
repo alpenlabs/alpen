@@ -24,7 +24,9 @@ from common.config import (
     ServiceType,
     StrataConfig,
 )
+from common.config.params import BridgeParams
 from common.datatool import (
+    CHECKPOINT_TEST_PREDICATE_FILE,
     generate_asm_params,
     generate_ol_params,
     generate_sequencer_artifacts,
@@ -81,6 +83,9 @@ class StrataFactory(flexitest.Factory):
         extra_args: list[str] | None = None,
         auto_start: bool = True,
         service_type: ServiceType | None = None,
+        bridge_params: BridgeParams | None = None,
+        prover_config: ProverConfig | None = None,
+        checkpoint_predicate_file: Path = CHECKPOINT_TEST_PREDICATE_FILE,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -108,6 +113,10 @@ class StrataFactory(flexitest.Factory):
             auto_start: Start the service before returning it. Set False to provision a
                 dormant service that a test starts later.
             service_type: Optional distinct service label used for its directory and logs.
+            bridge_params: Overrides the standard test bridge parameters when generating
+                OL params. Shared or existing parameter files already include them.
+            prover_config: Checkpoint prover backend and resident artifacts.
+            checkpoint_predicate_file: Genesis checkpoint predicate matching the prover.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -175,7 +184,7 @@ class StrataFactory(flexitest.Factory):
             bitcoind=bconfig,
             client=client_config,
             logging=logging_config,
-            prover=ProverConfig(backend="native"),
+            prover=prover_config if prover_config is not None else ProverConfig(),
             btcio=btcio_config,
         )
         config_path = datadir / "config.toml"
@@ -230,6 +239,7 @@ class StrataFactory(flexitest.Factory):
                     datadir,
                     bconfig,
                     genesis_l1_height,
+                    bridge_params=bridge_params if bridge_params is not None else BridgeParams(),
                 )
 
             # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
@@ -241,6 +251,7 @@ class StrataFactory(flexitest.Factory):
                 ol_params_path=ol_params_path,
                 sequencer_pubkey=seq_artifacts.sequencer_pubkey,
                 admin_confirmation_depth=admin_confirmation_depth,
+                checkpoint_predicate_file=checkpoint_predicate_file,
             )
             if is_sequencer:
                 seq_key_path = seq_artifacts.sequencer_key_path
