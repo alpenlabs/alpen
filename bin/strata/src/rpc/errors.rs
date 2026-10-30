@@ -3,6 +3,7 @@ use std::fmt::Display;
 use jsonrpsee::types::ErrorObjectOwned;
 pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
 use serde_json::json;
+use strata_ol_block_ancestry_provider::BlockAncestryError;
 use strata_ol_log_budget::TxLogBudgetError;
 use strata_ol_mempool::OLMempoolError;
 use tracing::*;
@@ -24,6 +25,15 @@ pub(crate) fn db_error(e: impl Display) -> ErrorObjectOwned {
         format!("Database error: {e}"),
         None::<()>,
     )
+}
+
+/// Maps ancestry failures to the corresponding block-read RPC errors.
+pub(crate) fn map_block_ancestry_error_to_rpc(error: BlockAncestryError) -> ErrorObjectOwned {
+    match error {
+        BlockAncestryError::Db(error) => db_error(error),
+        BlockAncestryError::MissingHeader(id) => not_found_error(format!("block not found: {id}")),
+        error => internal_error(error.to_string()),
+    }
 }
 
 /// Creates an RPC error for resource not found.

@@ -9937,6 +9937,7 @@ dependencies = [
  "strata-csm-types",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ol-block-ancestry-provider",
  "strata-ol-block-assembly",
  "strata-ol-chain-types-v1",
  "strata-ol-mempool",

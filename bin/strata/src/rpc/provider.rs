@@ -15,8 +15,11 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
+use strata_ol_block_ancestry_provider::{
+    BlockAncestryError, BlockAncestryProvider, EpochBlockAncestry,
+};
 use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
-use strata_ol_chain_types_v1::OLBlockV1;
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_mempool::{MempoolHandle, OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::OLRpcProvider;
 use strata_ol_state_container::OLStateContainer;
@@ -34,6 +37,7 @@ use strata_storage::NodeStorage;
 pub(crate) struct NodeRpcProvider<P> {
     storage: Arc<NodeStorage>,
     canonical_chain_provider: P,
+    block_ancestry_provider: BlockAncestryProvider,
     status_channel: Arc<StatusChannel>,
     mempool_handle: Option<Arc<MempoolHandle>>,
 }
@@ -46,6 +50,7 @@ impl<P: OLCanonicalChainProvider> NodeRpcProvider<P> {
         mempool_handle: Option<Arc<MempoolHandle>>,
     ) -> Self {
         Self {
+            block_ancestry_provider: BlockAncestryProvider::new(storage.ol_block().clone()),
             storage,
             canonical_chain_provider,
             status_channel,
@@ -75,6 +80,22 @@ fn decode_inbox_messages(
 
 #[async_trait]
 impl<P: OLCanonicalChainProvider> OLRpcProvider for NodeRpcProvider<P> {
+    async fn get_canonical_tip(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.canonical_chain_provider
+            .get_canonical_tip_async()
+            .await
+    }
+
+    async fn collect_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+        max_blocks: usize,
+    ) -> Result<Vec<OLBlockCommitment>, BlockAncestryError> {
+        self.block_ancestry_provider
+            .collect_block_commitments_async(start, max_blocks)
+            .await
+    }
+
     async fn get_canonical_block_at(&self, height: u64) -> DbResult<Option<OLBlockCommitment>> {
         self.canonical_chain_provider
             .get_canonical_block_at_async(height)
@@ -83,6 +104,15 @@ impl<P: OLCanonicalChainProvider> OLRpcProvider for NodeRpcProvider<P> {
 
     async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         self.storage.ol_block().get_block_data_async(id).await
+    }
+
+    async fn collect_epoch_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+    ) -> Result<EpochBlockAncestry, BlockAncestryError> {
+        self.block_ancestry_provider
+            .collect_epoch_block_commitments_async(start)
+            .await
     }
 
     async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability> {
