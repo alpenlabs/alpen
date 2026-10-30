@@ -35,7 +35,7 @@ use tracing::{error, info};
 
 use crate::rpc::errors::{
     block_history_unavailable_error, db_error, internal_error, invalid_params_error,
-    map_mempool_error_to_rpc, not_available_on_node_error, not_found_error,
+    mempool_error_to_rpc, not_available_on_node_error, not_found_error,
 };
 
 /// Whether this node serves OL block body/data over RPC.
@@ -1310,7 +1310,7 @@ impl<P: OLRpcProvider> OLSubmitRpcServer for OLRpcServer<P> {
             .provider
             .submit_transaction(mempool_tx)
             .await
-            .map_err(map_mempool_error_to_rpc)?;
+            .map_err(mempool_error_to_rpc)?;
 
         match next_inbox_msg_idx {
             Some(next_inbox_msg_idx) => {

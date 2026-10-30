@@ -59,6 +59,7 @@ use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraints
 use tracing::{debug, error, warn};
 
 use crate::da::EpochDaReplayError;
+use crate::limits::OLSpecLimits;
 use crate::spec::OLStfSpec;
 
 /// The V0 OL rules.
@@ -66,6 +67,10 @@ use crate::spec::OLStfSpec;
 pub(crate) struct StfV0;
 
 impl OLStfSpec for StfV0 {
+    fn limits() -> OLSpecLimits {
+        OLSpecLimits::V0
+    }
+
     fn verify_block<S: IStateAccessorMut>(
         _state: &mut S,
         _header: &OLBlockHeaderV1,

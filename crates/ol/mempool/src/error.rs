@@ -7,7 +7,7 @@ use strata_db_types::DbError;
 use strata_identifiers::OLTxId;
 use strata_ol_log_budget::TxLogBudgetError;
 use strata_ol_spec_selection::SelectSpecAfterEpochError;
-use strata_ol_stf::UpgradeRequired;
+use strata_ol_stf::{TxEffectsOverflow, UpgradeRequired};
 
 /// Errors that can occur during mempool operations.
 #[derive(Debug, thiserror::Error)]
@@ -15,6 +15,11 @@ pub enum OLMempoolError {
     /// A transaction exceeds its standalone log budget, or its logs cannot be encoded.
     #[error(transparent)]
     LogBudget(#[from] TxLogBudgetError),
+
+    /// A transaction carries more transfers or messages than the spec of the
+    /// next block allows.
+    #[error(transparent)]
+    EffectsOverflow(#[from] TxEffectsOverflow),
 
     /// Mempool is full (transaction count limit reached).
     #[error("mempool is full: current={current}, limit={limit}")]

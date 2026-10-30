@@ -11,6 +11,7 @@ use strata_ol_stf_v1::{
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
 use crate::da::EpochDaReplayError;
+use crate::limits::OLSpecLimits;
 
 /// The operations an OL rules version implements.
 ///
@@ -26,6 +27,10 @@ use crate::da::EpochDaReplayError;
 // epoch-initial, epoch-transaction, and epoch check-in processing. Shrink this
 // trait to match.
 pub(crate) trait OLStfSpec {
+    /// Returns the transaction effect and block log capacities these rules
+    /// allow.
+    fn limits() -> OLSpecLimits;
+
     fn verify_block<S: IStateAccessorMut>(
         state: &mut S,
         header: &OLBlockHeaderV1,
@@ -121,9 +126,7 @@ pub(crate) trait OLStfSpec {
 /// predicate rotation advances the spec, including rotations that change no
 /// rules. From V1 on, each spec records its own identifier in the state root
 /// from the first block of its epoch on, where spec selection reads it. So
-/// every spec has its own implementation, even one that changes no rules:
-/// [`StfV2`](crate::v2::StfV2) runs the V1 code and only takes over the V1
-/// state.
+/// every spec has its own implementation, even one that changes no rules.
 ///
 /// An implementation returns
 /// [`ExecError::UnimplementedSpec`](strata_ol_state_types::ExecError::UnimplementedSpec)

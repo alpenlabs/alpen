@@ -16,7 +16,7 @@ use strata_ol_log_budget::check_tx_log_budget;
 use strata_ol_spec_selection::SelectedSpec;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_types::{IStateAccessor, OLSpecId};
-use strata_ol_stf::UpgradeRequired;
+use strata_ol_stf::{UpgradeRequired, spec_limits};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_service::ServiceState;
 use strata_storage::NodeStorage;
@@ -428,6 +428,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Checks whether a submitted or restored transaction can enter the mempool.
     fn validate_admission(&self, txid: OLTxId, tx: &OLTransactionV1) -> OLMempoolResult<()> {
         let spec = self.select_spec()?;
+        spec_limits(spec).check_tx_effects(tx.data().effects())?;
         check_tx_log_budget(spec, tx, &self.ctx.bridge_params)?;
         validate_transaction(spec, txid, tx, &self.state_accessor, &self.account_state)
     }
@@ -735,6 +736,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
     ///
     /// This is necessary after state changes (new block, slot change) because:
     /// - Slot bounds (`min_slot`, `max_slot`) depend on `state.cur_slot()`
+    /// - Effect capacities depend on the spec of the next block, which a tip at
+    ///   a spec activation lowers
     ///
     /// Returns a list of transaction IDs that failed validation.
     ///
@@ -744,18 +747,20 @@ impl<P: StateProvider> MempoolServiceState<P> {
         let SelectedSpec::Supported(spec) = self.tip_spec else {
             return Vec::new();
         };
+        let limits = spec_limits(spec);
         self.entries
             .iter()
             .filter_map(|(txid, entry)| {
-                validate_transaction(
-                    spec,
-                    *txid,
-                    &entry.tx,
-                    &self.state_accessor,
-                    &self.account_state,
-                )
-                .is_err()
-                .then_some(*txid)
+                let valid = limits.check_tx_effects(entry.tx.data().effects()).is_ok()
+                    && validate_transaction(
+                        spec,
+                        *txid,
+                        &entry.tx,
+                        &self.state_accessor,
+                        &self.account_state,
+                    )
+                    .is_ok();
+                (!valid).then_some(*txid)
             })
             .collect()
     }
@@ -966,6 +971,7 @@ mod tests {
     use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
+    use strata_ol_stf::TxEffectsOverflow;
     use strata_ol_stf_v1::test_utils::{
         make_checkpoint_predicate_enactment_manifest, make_empty_manifest,
         make_op_return_bosd_descriptor, make_withdrawal_payload,
@@ -986,6 +992,32 @@ mod tests {
     };
     use crate::types::OLMempoolConfig;
     use crate::{DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH};
+
+    /// Builds an update from account 1 that sends `count` zero-value messages,
+    /// which emit no logs, to account 2.
+    fn create_test_snark_tx_with_messages(count: usize) -> OLTransactionV1 {
+        let payload = MsgPayload::from_bytes(BitcoinAmount::try_from(0).unwrap(), vec![]).unwrap();
+        let outputs = UpdateOutputs::new_empty().with_messages(vec![
+            OutputMessage::new(
+                create_test_account_id_with(2),
+                payload
+            );
+            count
+        ]);
+        let operation = UpdateOperationData::new(
+            0,
+            ProofState::new(Buf32::zero(), 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            outputs,
+            vec![],
+        );
+        create_test_snark_tx_from_update(
+            create_test_account_id_with(1),
+            SnarkAccountUpdate::new(operation, vec![]),
+            create_test_constraints_with_slots(None, None),
+        )
+    }
 
     fn create_test_snark_tx_with_withdrawals(count: usize) -> OLTransactionV1 {
         let payload = MsgPayload::from_bytes(
@@ -2645,6 +2677,68 @@ mod tests {
         state.load_from_db().await.unwrap();
         assert!(!state.contains(&stored.compute_txid()), "nothing is loaded");
         assert_eq!(state.ctx.storage.mempool().get_all_txs().unwrap().len(), 1);
+    }
+
+    /// A transaction above the V2 effect capacities, admitted under V1, is
+    /// evicted with its successors once the next block runs V2.
+    #[tokio::test]
+    async fn test_revalidation_evicts_effects_over_the_next_spec_capacity() {
+        let max_messages = spec_limits(OLSpecId::V2).max_tx_messages();
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, false).await;
+        let over = state
+            .add_transaction(create_test_snark_tx_with_messages(max_messages + 1))
+            .await
+            .expect("admitted under V1");
+        let successor = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 1))
+            .await
+            .expect("successor admitted under V1");
+        assert!(state.revalidate_all_transactions().is_empty());
+
+        state.tip_spec = SelectedSpec::Supported(OLSpecId::V2);
+        let invalid_txids = state.revalidate_all_transactions();
+        assert_eq!(invalid_txids, vec![over]);
+        state.remove_transactions(&invalid_txids, true);
+        assert!(!state.contains(&over));
+        assert!(!state.contains(&successor), "the successor is evicted too");
+    }
+
+    /// The mempool admits a transaction above the V2 effect capacities under
+    /// V1 and rejects it under V2.
+    #[tokio::test]
+    async fn test_mempool_rejects_effects_over_the_spec_capacity() {
+        let max_messages = spec_limits(OLSpecId::V2).max_tx_messages();
+        let tx = create_test_snark_tx_with_messages(max_messages + 1);
+
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, false).await;
+        assert_eq!(state.select_spec().unwrap(), OLSpecId::V1);
+        let txid = state
+            .add_transaction(tx.clone())
+            .await
+            .expect("admitted under V1");
+        assert!(state.contains(&txid));
+
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, true).await;
+        assert_eq!(state.select_spec().unwrap(), OLSpecId::V2);
+        let err = state
+            .add_transaction(tx)
+            .await
+            .expect_err("rejected under V2");
+        assert!(
+            matches!(
+                err,
+                OLMempoolError::EffectsOverflow(TxEffectsOverflow::Messages { count, max })
+                    if count == max_messages + 1 && max == max_messages
+            ),
+            "{err}"
+        );
+        assert!(!state.contains(&txid));
+
+        let txid = state
+            .add_transaction(create_test_snark_tx_with_messages(max_messages))
+            .await
+            .expect("admitted at the V2 capacity");
+        assert!(state.contains(&txid));
     }
 
     /// After a terminal tip whose epoch processed no enactment, the next block

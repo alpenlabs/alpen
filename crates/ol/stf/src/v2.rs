@@ -2,8 +2,22 @@
 //!
 //! V2 starts as a copy of the V1 rules: [`StfV2`] runs every operation with
 //! the [`strata_ol_stf_v1`] code, except that it takes over a V1 state at the
-//! first block of an epoch, as V1 takes over a V0 state. Rules that V2 changes
-//! later replace the V1 call of the operation they change.
+//! first block of an epoch, as V1 takes over a V0 state, and that it allows
+//! fewer transaction effects and block logs. Rules that V2 changes later
+//! replace the V1 call of the operation they change.
+//!
+//! # Capacities
+//!
+//! V2 restores the capacities of the 0.3.0 rules, which V1 raised: a
+//! transaction carries at most 255 transfers and 255 messages, and a block
+//! emits at most 4,096 logs ([`OLSpecLimits`]). The V1 types keep their
+//! larger bounds, so V1 txids and encodings never change, and V2 checks its
+//! capacities around the V1 code instead. Each operation that executes a
+//! transaction checks its effects before the V1 code runs it, and each
+//! operation that executes a whole block checks the block's logs after the
+//! V1 code emits them. A transaction or block above a capacity is invalid.
+//! Block assembly composes the [`sequencer`](crate::sequencer) phases itself,
+//! so it checks the block log capacity on its own.
 //!
 //! # Taking over a V1 state
 //!
@@ -32,8 +46,12 @@
 //! checks a transaction for the first V2 block against the V1 state that
 //! block takes over.
 
+use std::slice;
+
 use strata_acct_types::{AccountId, TxEffects};
-use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
+use strata_ol_chain_types_v1::{
+    AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1,
+};
 use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_types::{
@@ -47,6 +65,7 @@ use strata_ol_stf_v1::{
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
 use crate::da::EpochDaReplayError;
+use crate::limits::OLSpecLimits;
 use crate::spec::OLStfSpec;
 
 /// The V2 OL rules.
@@ -54,6 +73,10 @@ use crate::spec::OLStfSpec;
 pub(crate) struct StfV2;
 
 impl OLStfSpec for StfV2 {
+    fn limits() -> OLSpecLimits {
+        OLSpecLimits::V2
+    }
+
     fn verify_block<S: IStateAccessorMut>(
         state: &mut S,
         header: &OLBlockHeaderV1,
@@ -62,7 +85,12 @@ impl OLStfSpec for StfV2 {
         runtime_params: &OLRuntimeParams,
     ) -> ExecResult<Vec<OLLog>> {
         take_over_state(state, opens_epoch(parent_header))?;
-        v1::verify_block(state, header, parent_header, body, runtime_params)
+        if let Some(tx_segment) = body.tx_segment() {
+            check_tx_segment_effects(tx_segment)?;
+        }
+        let logs = v1::verify_block(state, header, parent_header, body, runtime_params)?;
+        Self::limits().check_block_log_count(logs.len())?;
+        Ok(logs)
     }
 
     fn construct_block<S: IStateAccessorMut>(
@@ -72,7 +100,10 @@ impl OLStfSpec for StfV2 {
         runtime_params: &OLRuntimeParams,
     ) -> ExecResult<ConstructBlockOutput> {
         take_over_state(state, block_context.is_epoch_initial())?;
-        v1::construct_block(state, block_context, block_components, runtime_params)
+        check_tx_segment_effects(block_components.tx_segment())?;
+        let output = v1::construct_block(state, block_context, block_components, runtime_params)?;
+        Self::limits().check_block_log_count(output.outputs().logs().len())?;
+        Ok(output)
     }
 
     fn execute_and_complete_block<S: IStateAccessorMut>(
@@ -81,8 +112,10 @@ impl OLStfSpec for StfV2 {
         block_components: BlockComponents,
         runtime_params: &OLRuntimeParams,
     ) -> ExecResult<CompletedBlock> {
-        take_over_state(state, block_context.is_epoch_initial())?;
-        v1::execute_and_complete_block(state, block_context, block_components, runtime_params)
+        // The V1 operation drops the logs this needs to count, so this
+        // completes the block the way the V1 operation does.
+        Self::construct_block(state, block_context, block_components, runtime_params)
+            .map(ConstructBlockOutput::into_completed_block)
     }
 
     fn execute_block_batch_predrain<S: IStateAccessorMut>(
@@ -96,7 +129,25 @@ impl OLStfSpec for StfV2 {
         if !blocks.is_empty() {
             take_over_state(state, opens_epoch(Some(initial_parent)))?;
         }
-        v1::execute_block_batch_predrain(state, blocks, initial_parent, runtime_params)
+        // The V1 operation concatenates the logs of all blocks, so this runs
+        // it one block at a time to count each block's logs.
+        let mut batch_logs = Vec::new();
+        let mut parent = initial_parent;
+        for block in blocks {
+            if let Some(tx_segment) = block.body().tx_segment() {
+                check_tx_segment_effects(tx_segment)?;
+            }
+            let logs = v1::execute_block_batch_predrain(
+                state,
+                slice::from_ref(block),
+                parent,
+                runtime_params,
+            )?;
+            Self::limits().check_block_log_count(logs.len())?;
+            batch_logs.extend(logs);
+            parent = block.header();
+        }
+        Ok(batch_logs)
     }
 
     fn apply_da_epoch<S: IStateAccessorMut>(
@@ -149,6 +200,7 @@ impl OLStfSpec for StfV2 {
         tx: &OLTransactionV1,
         context: &TxExecContext<'_>,
     ) -> ExecResult<()> {
+        Self::limits().check_tx_effects(tx.data().effects())?;
         v1::process_single_tx(state, tx, context)
     }
 
@@ -173,6 +225,7 @@ impl OLStfSpec for StfV2 {
         sau_op: &SauTxOperationDataV1,
         effects: &TxEffects,
     ) -> ExecResult<TxProofIndexer> {
+        Self::limits().check_tx_effects(effects)?;
         // The indexer records each proof check instead of verifying it, so the
         // update's proof checks run as a dry run that lists what it needs.
         let mut proof_indexer = TxProofIndexer::new_fresh();
@@ -203,6 +256,24 @@ impl OLStfSpec for StfV2 {
     fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) -> ExecResult<()> {
         v1::verify_block_structure(header, body)
     }
+}
+
+/// Checks the effects of each transaction in a block against the V2
+/// capacities.
+///
+/// # Errors
+///
+/// Returns [`ExecError::TxEffectsOverflow`] for the first transaction above a
+/// capacity, wrapped with its txid and index as block execution wraps
+/// transaction errors.
+fn check_tx_segment_effects(tx_segment: &OLTxSegmentV1) -> ExecResult<()> {
+    let limits = StfV2::limits();
+    for (index, tx) in tx_segment.txs().iter().enumerate() {
+        limits
+            .check_tx_effects(tx.data().effects())
+            .map_err(|err| ExecError::from(err).with_tx(tx.compute_txid(), index))?;
+    }
+    Ok(())
 }
 
 /// Returns whether the block after `parent_header` is the first block of an

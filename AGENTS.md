@@ -128,7 +128,10 @@ states commit no spec versions and always stage V0 (`OLSpecVersions`).
 the first V1 epoch after a V0 state wraps it as `cur = staged = V1` in epoch-initial
 processing, so every driver, DA replay included, reaches the same root; a V1 block that
 does not start an epoch rejects a V0 state. V2 runs the V1 rules and takes over a V1 state
-the same way, as `cur = staged = V2`. `cur_spec_version` selects the layout through
+the same way, as `cur = staged = V2`, but restores the 0.3.0 capacities: 255 transfers and
+255 messages per transaction and 4,096 logs per block. The V1 types keep their 65,536-entry
+bounds, which fix V1 txids and encodings, so V2 checks these capacities as validity rules
+(`OLSpecLimits` in `ol/stf`). `cur_spec_version` selects the layout through
 `OLStateLayout::for_spec` (V0, V1, and V2 share `OLStateV1`). No rules stage a spec, so the
 staged version equals the current one; nodes select the next epoch's spec from the L1
 manifests the previous epoch processed (`ol/spec-selection`). `OLStateContainer`

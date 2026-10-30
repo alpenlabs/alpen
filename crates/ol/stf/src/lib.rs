@@ -9,7 +9,8 @@
 //! Each rule set implements one internal trait, and a single dispatch macro
 //! maps spec identifiers to rule sets. From V1 on, every spec records its own
 //! identifier in the state root, so every spec has its own rule set, even one
-//! that changes no rules: V2 runs the V1 code and only takes over the V1 state.
+//! that changes no rules. V2 runs the V1 code, takes over the V1 state, and
+//! allows fewer transaction effects and block logs.
 //! The compiler requires each rule set to provide every operation. Sequencer
 //! block assembly composes the [`sequencer`] phases itself, so a rule set that
 //! changes their order or composition must also update block assembly.
@@ -28,6 +29,13 @@
 //! promotes a spec, and the rule is the same from V0 to V1 and from each later
 //! spec to the next. Every node-side driver selects with it: block assembly,
 //! its mempool, block execution, checkpoint DA and sync, and boot checks.
+//!
+//! # Capacities
+//!
+//! The V1 transaction and block types bound transaction effects and block
+//! logs, and a spec may allow less than those bounds. [`spec_limits`] returns
+//! the capacities a spec allows, for drivers that build blocks or admit
+//! transactions.
 //!
 //! # Unknown and unimplemented specs
 //!
@@ -67,6 +75,7 @@
 
 mod block;
 mod da;
+mod limits;
 mod selection;
 pub mod sequencer;
 mod spec;
@@ -78,11 +87,12 @@ pub use block::{
     construct_block, execute_and_complete_block, execute_block_batch_predrain, verify_block,
 };
 pub use da::{EpochDaReplayError, apply_da_epoch, verify_epoch_with_diff};
+pub use limits::{OLSpecLimits, spec_limits};
 pub use selection::{
     EpochL1Range, EpochSpecSelectionError, InvalidEpochL1Range, UpgradeRequired, next_epoch_spec,
     select_next_epoch_spec,
 };
-pub use strata_ol_state_types::OLSpecId;
+pub use strata_ol_state_types::{OLSpecId, TxEffectsOverflow};
 pub use strata_ol_stf_v1::{
     BasicExecContext, BlockComponents, BlockContext, BlockExecOutputs, BlockInfo, CompletedBlock,
     ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecError, ExecOutputBuffer,

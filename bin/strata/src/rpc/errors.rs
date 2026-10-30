@@ -5,6 +5,7 @@ pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_COD
 use serde_json::json;
 use strata_ol_log_budget::TxLogBudgetError;
 use strata_ol_mempool::OLMempoolError;
+use strata_ol_state_types::TxEffectsOverflow;
 use tracing::*;
 
 /// Custom error code for mempool capacity-related errors.
@@ -71,7 +72,7 @@ pub(crate) fn block_history_unavailable_error(history_base_slot: u64) -> ErrorOb
 }
 
 /// Maps mempool errors to RPC errors with appropriate error codes.
-pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
+pub(crate) fn mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
     match &err {
         // Capacity-related errors
         OLMempoolError::MempoolFull { .. } | OLMempoolError::MempoolByteLimitExceeded { .. } => {
@@ -83,6 +84,12 @@ pub(crate) fn map_mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned 
         }
         OLMempoolError::LogBudget(TxLogBudgetError::LogPayloadBytes { actual, limit }) => {
             resource_limit_error(err.to_string(), "log_payload_bytes", *actual, *limit)
+        }
+        OLMempoolError::EffectsOverflow(TxEffectsOverflow::Transfers { count, max }) => {
+            resource_limit_error(err.to_string(), "transfer_count", *count, *max)
+        }
+        OLMempoolError::EffectsOverflow(TxEffectsOverflow::Messages { count, max }) => {
+            resource_limit_error(err.to_string(), "message_count", *count, *max)
         }
         OLMempoolError::AccountDoesNotExist { .. }
         | OLMempoolError::AccountTypeMismatch { .. }

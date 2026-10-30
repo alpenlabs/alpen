@@ -2,9 +2,11 @@
 //!
 //! Sequencer block assembly stages each transaction separately so it can drop
 //! failing ones, so it composes these phases in `strata-ol-block-assembly`
-//! instead of calling [`construct_block`](crate::construct_block). Its mempool
-//! uses [`check_tx_constraints`] and [`predict_tx_log_payloads`] for admission.
-//! A rule set that changes the order or composition of these phases must also
+//! instead of calling [`construct_block`](crate::construct_block), and checks
+//! the block log capacity of [`spec_limits`](crate::spec_limits) itself. Its
+//! mempool uses [`check_tx_constraints`], [`predict_tx_log_payloads`], and the
+//! effect capacities of [`spec_limits`](crate::spec_limits) for admission. A
+//! rule set that changes the order or composition of these phases must also
 //! update sequencer block assembly, which no dispatch here enforces.
 
 // TODO(STR-2863): deblockification removes block start and replaces these

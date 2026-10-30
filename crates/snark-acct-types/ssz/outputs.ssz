@@ -39,6 +39,9 @@ class OutputNewPredicate(StableContainer[8]):
     predicate: Optional[strata_predicate.PredicateKey]
 
 ### Collection of outputs from an update
+###
+### The list capacities equal those of [`strata_acct_types::TxEffects`], so
+### [`Self::to_tx_effects`] keeps every output.
 class UpdateOutputs(Container):
     ### Native asset transfers
     transfers: List[OutputTransfer, MAX_TRANSFERS]
