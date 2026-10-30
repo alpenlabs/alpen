@@ -170,18 +170,39 @@ fn test_maximal_update_exceeds_log_count_budget() {
 }
 
 #[test]
-fn test_log_count_limit_is_inclusive_for_the_admission_error() {
-    // Isolate the count dimension; real withdrawal payloads hit the byte limit sooner.
-    let limit = (MAX_LOGS_PER_BLOCK as usize).min(MAX_OL_LOGS_PER_CHECKPOINT as usize);
-    let mut usage = LogUsage::default();
-    for _ in 0..limit {
+fn test_maximal_v2_update_exceeds_log_payload_budget() {
+    // Update log: 1-byte type + 8-byte inbox index + 1-byte empty extra-data length.
+    // Withdrawal log: 1-byte type + 8-byte amount + 1-byte length + 81-byte BOSD + 4-byte operator.
+    let withdrawal_count = spec_limits(OLSpecId::V2).max_tx_messages();
+    let error = check_tx_log_budget(
+        OLSpecId::V2,
+        &create_test_snark_tx_with_withdrawals(withdrawal_count, 0),
+        &BridgeParams::default(),
+    )
+    .unwrap_err();
+    let TxLogBudgetError::LogPayloadBytes { actual, limit } = error else {
+        panic!("expected payload-byte error, got {error:?}");
+    };
+    assert_eq!(actual, 10 + withdrawal_count * 95);
+    assert_eq!(limit, MAX_TOTAL_LOG_PAYLOAD_BYTES);
+}
+
+#[test]
+fn test_log_count_limit_follows_the_spec_and_is_inclusive() {
+    // V1 blocks hold more logs than a checkpoint; V2 blocks hold fewer.
+    for (spec, limit) in [(OLSpecId::V1, 16_384), (OLSpecId::V2, 4_096)] {
+        // Isolate the count dimension; real withdrawal payloads hit the byte limit sooner.
+        let mut usage = LogUsage::default();
+        for _ in 0..limit {
+            usage.add_payload(&[]);
+        }
+        assert!(check_limits(spec, &usage).is_ok(), "{spec:?}");
         usage.add_payload(&[]);
+        let error = check_limits(spec, &usage).unwrap_err();
+        assert!(
+            matches!(error, TxLogBudgetError::LogCount { actual, limit: reported_limit }
+            if actual == limit + 1 && reported_limit == limit),
+            "{spec:?}: {error:?}"
+        );
     }
-    assert!(check_limits(&usage).is_ok());
-    usage.add_payload(&[]);
-    let error = check_limits(&usage).unwrap_err();
-    assert!(
-        matches!(error, TxLogBudgetError::LogCount { actual, limit: reported_limit }
-        if actual == limit + 1 && reported_limit == limit)
-    );
 }

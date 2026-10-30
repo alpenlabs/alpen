@@ -158,6 +158,10 @@ pub enum OLMempoolRejectReason {
     /// Rejected because its logs cannot fit a checkpoint's standalone budget.
     LogBudgetExceeded,
 
+    /// Rejected because it carries more transfers or messages than the next
+    /// block's spec allows.
+    EffectCapacityExceeded,
+
     /// Rejected due to mempool size limit exceeded.
     MempoolFull,
 
@@ -192,6 +196,7 @@ impl OLMempoolRejectReason {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::LogBudgetExceeded => "log_budget_exceeded",
+            Self::EffectCapacityExceeded => "effect_capacity_exceeded",
             Self::MempoolFull => "mempool_full",
             Self::AccountDoesNotExist => "account_does_not_exist",
             Self::AccountTypeMismatch => "account_type_mismatch",
@@ -221,6 +226,7 @@ impl OLMempoolRejectReason {
                 TxLogBudgetError::LogCount { .. } | TxLogBudgetError::LogPayloadBytes { .. },
             ) => Some(Self::LogBudgetExceeded),
             OLMempoolError::LogBudget(TxLogBudgetError::Prediction(_)) => None,
+            OLMempoolError::EffectsOverflow(_) => Some(Self::EffectCapacityExceeded),
             OLMempoolError::MempoolFull { .. } => Some(Self::MempoolFull),
             OLMempoolError::MempoolByteLimitExceeded { .. } => Some(Self::MempoolFull),
             OLMempoolError::AccountDoesNotExist { .. } => Some(Self::AccountDoesNotExist),

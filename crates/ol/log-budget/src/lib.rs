@@ -13,9 +13,8 @@ mod tests;
 
 use strata_asm_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
 use strata_bridge_params::BridgeParams;
-use strata_ol_chain_types_v1::MAX_LOGS_PER_BLOCK;
 use strata_ol_stf::sequencer::predict_tx_log_payloads;
-use strata_ol_stf::{ExecError, OLSpecId};
+use strata_ol_stf::{ExecError, OLSpecId, spec_limits};
 use strata_ol_tx_types_v1::OLTransactionV1;
 use thiserror::Error;
 
@@ -43,8 +42,10 @@ pub enum TxLogBudgetError {
     Prediction(#[from] ExecError),
 }
 
-fn check_limits(usage: &LogUsage) -> Result<(), TxLogBudgetError> {
-    let count_limit = (MAX_LOGS_PER_BLOCK as usize).min(MAX_OL_LOGS_PER_CHECKPOINT as usize);
+fn check_limits(spec: OLSpecId, usage: &LogUsage) -> Result<(), TxLogBudgetError> {
+    let count_limit = spec_limits(spec)
+        .max_block_logs()
+        .min(MAX_OL_LOGS_PER_CHECKPOINT as usize);
     if usage.count() > count_limit {
         return Err(TxLogBudgetError::LogCount {
             actual: usage.count(),
@@ -66,8 +67,8 @@ fn check_limits(usage: &LogUsage) -> Result<(), TxLogBudgetError> {
 /// This check does not execute the transaction, verify its proof, or establish
 /// DA/envelope fit.
 ///
-/// Log count must not exceed [`MAX_LOGS_PER_BLOCK`] or
-/// [`MAX_OL_LOGS_PER_CHECKPOINT`]. Encoded payload bytes must not exceed
+/// Log count must not exceed the block log capacity of `spec` (see
+/// [`spec_limits`]) or [`MAX_OL_LOGS_PER_CHECKPOINT`]. Encoded payload bytes must not exceed
 /// [`MAX_TOTAL_LOG_PAYLOAD_BYTES`], independently of the current epoch's usage.
 ///
 /// # Panics
@@ -82,5 +83,5 @@ pub fn check_tx_log_budget(
     predict_tx_log_payloads(spec, tx, bridge_params, |payload| {
         usage.add_payload(payload);
     })?;
-    check_limits(&usage)
+    check_limits(spec, &usage)
 }
