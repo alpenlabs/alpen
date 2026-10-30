@@ -8643,6 +8643,7 @@ dependencies = [
  "strata-logging",
  "strata-metrics",
  "strata-node-context",
+ "strata-ol-block-ancestry-provider",
  "strata-ol-block-assembly",
  "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",

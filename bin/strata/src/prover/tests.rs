@@ -12,6 +12,7 @@ use strata_db_types::asm::AsmExecOutput;
 use strata_identifiers::{
     Buf32, Buf64, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
 };
+use strata_ol_block_ancestry_provider::BlockAncestryError;
 use strata_ol_chain_types_v1::{OLBlockV1, SignedOLBlockHeaderV1};
 use strata_ol_checkpoint::{CanonicalEpochReconcileError, ProofNotify};
 use strata_ol_checkpoint_artifacts::{LoadedCheckpointPredicates, native_checkpoint_registry};
@@ -25,7 +26,8 @@ use strata_ol_stf_v1::test_utils::{
     make_genesis_state, tamper_state_root, to_ol_block,
 };
 use strata_paas::{
-    InputResolution, ProofSpec, Prover, TaskRecord, TaskResult, TaskStatus, TaskStore,
+    FailureAction, InputResolution, ProofSpec, Prover, ProverError as PaasError, ProverResult,
+    TaskRecord, TaskResult, TaskStatus, TaskStore,
 };
 use strata_predicate::PredicateKey;
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
@@ -46,6 +48,7 @@ struct EpochFixture {
     start_state: OLStateContainer,
     terminal_state: OLStateContainer,
     task: CheckpointTask,
+    epoch_execution_spec: OLSpecId,
 }
 
 impl EpochFixture {
@@ -53,11 +56,37 @@ impl EpochFixture {
         Self::with_start_spec(OLSpecId::V1)
     }
 
-    fn with_start_spec(start_spec: OLSpecId) -> Self {
-        Self::with_specs(start_spec, OLSpecId::V1)
+    fn with_start_spec(pre_state_spec: OLSpecId) -> Self {
+        Self::build_single_block_epoch(pre_state_spec, OLSpecId::V1)
     }
 
-    fn with_specs(start_spec: OLSpecId, epoch_spec: OLSpecId) -> Self {
+    /// Builds a one-block epoch with [`Self::build_epoch`].
+    fn build_single_block_epoch(pre_state_spec: OLSpecId, epoch_execution_spec: OLSpecId) -> Self {
+        Self::build_epoch(pre_state_spec, epoch_execution_spec, 1)
+    }
+
+    /// Builds epoch 1 on a genesis terminal whose state is tagged `pre_state_spec`, executing
+    /// its `block_count` blocks with `epoch_execution_spec`.
+    ///
+    /// Stores every block, the start and terminal states, the epoch summary and the canonical
+    /// index, and points the fixture's task at epoch 1.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `block_count` is zero or the specs do not describe a supported same-spec or
+    /// successor transition.
+    fn build_epoch(
+        pre_state_spec: OLSpecId,
+        epoch_execution_spec: OLSpecId,
+        block_count: u32,
+    ) -> Self {
+        assert!(block_count > 0, "an epoch must contain at least one block");
+        assert!(
+            epoch_execution_spec != OLSpecId::V0
+                && (epoch_execution_spec == pre_state_spec
+                    || pre_state_spec.successor() == Some(epoch_execution_spec)),
+            "fixture requires an implemented same-spec or successor epoch transition"
+        );
         let storage =
             Arc::new(create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap());
         let runtime_params = OLRuntimeParams::test_default();
@@ -72,33 +101,51 @@ impl EpochFixture {
         )
         .unwrap();
         let mut parent = to_ol_block(genesis.completed_block());
-        if start_spec == OLSpecId::V0 {
-            // Represents the promoted V0 terminal without executing a V0 block.
-            state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
-            parent = OLBlockV1::new(
-                SignedOLBlockHeaderV1::new(
-                    tamper_state_root(parent.header(), state.compute_state_root().unwrap()),
-                    Buf64::zero(),
-                ),
-                parent.body().clone(),
-            );
-        }
-        let start_state = state.to_container();
-        let terminal_manifest = make_empty_manifest(2, 0);
-        let block_info = BlockInfo::new(
-            EPOCH_RUNNER_GENESIS_TIMESTAMP + EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
-            1,
-            1,
+        // The parent is a synthetic epoch boundary. Its header is rewritten to commit to the
+        // `pre_state_spec` state; resolution reads that header and state, but never its body.
+        state.set_spec_versions(OLSpecVersions::uniform(pre_state_spec));
+        parent = OLBlockV1::new(
+            SignedOLBlockHeaderV1::new(
+                tamper_state_root(parent.header(), state.compute_state_root().unwrap()),
+                Buf64::zero(),
+            ),
+            parent.body().clone(),
         );
-        let output = construct_block(
-            epoch_spec,
-            &mut state,
-            BlockContext::new(&block_info, Some(parent.header())),
-            BlockComponents::new_manifests(vec![terminal_manifest.clone()]).as_terminal(),
-            &runtime_params,
-        )
-        .unwrap();
-        let terminal = to_ol_block(output.completed_block());
+        storage
+            .ol_block()
+            .put_block_data_blocking(parent.clone())
+            .unwrap();
+        let mut canonical_ids = vec![parent.header().compute_blkid()];
+        let start_state = state.to_container();
+        let terminal_manifest = make_empty_manifest(block_count + 1, 0);
+        let mut terminal = parent.clone();
+        for slot in 1..=block_count {
+            let block_info = BlockInfo::new(
+                EPOCH_RUNNER_GENESIS_TIMESTAMP + u64::from(slot) * EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+                u64::from(slot),
+                1,
+            );
+            let components = BlockComponents::new_manifests(vec![make_empty_manifest(slot + 1, 0)]);
+            let components = if slot == block_count {
+                components.as_terminal()
+            } else {
+                components
+            };
+            let output = construct_block(
+                epoch_execution_spec,
+                &mut state,
+                BlockContext::new(&block_info, Some(terminal.header())),
+                components,
+                &runtime_params,
+            )
+            .unwrap();
+            terminal = to_ol_block(output.completed_block());
+            canonical_ids.push(terminal.header().compute_blkid());
+            storage
+                .ol_block()
+                .put_block_data_blocking(terminal.clone())
+                .unwrap();
+        }
         let terminal_state = state.into_container();
         let summary = EpochSummary::new(
             1,
@@ -107,12 +154,6 @@ impl EpochFixture {
             L1BlockCommitment::new(terminal_manifest.height(), *terminal_manifest.blkid()),
             *terminal.header().state_root(),
         );
-        for block in [&parent, &terminal] {
-            storage
-                .ol_block()
-                .put_block_data_blocking(block.clone())
-                .unwrap();
-        }
         storage
             .ol_state()
             .put_toplevel_ol_state_blocking(
@@ -133,13 +174,7 @@ impl EpochFixture {
             .unwrap();
         storage
             .ol_block()
-            .replace_canonical_suffix_from_blocking(
-                0,
-                vec![
-                    parent.header().compute_blkid(),
-                    terminal.header().compute_blkid(),
-                ],
-            )
+            .replace_canonical_suffix_from_blocking(0, canonical_ids)
             .unwrap();
         Self {
             storage,
@@ -148,22 +183,25 @@ impl EpochFixture {
             start_state,
             terminal_state,
             task: CheckpointTask(summary.get_epoch_commitment()),
+            epoch_execution_spec,
         }
     }
 
+    /// Resolves the task on the service for the spec that executed the epoch.
     fn resolve(&self) -> InputResolution<CheckpointProverInput> {
-        self.resolve_on(OLSpecId::V1)
+        self.try_resolve_on(self.epoch_execution_spec).unwrap()
     }
 
-    fn resolve_on(&self, assigned_spec: OLSpecId) -> InputResolution<CheckpointProverInput> {
+    fn try_resolve_on(
+        &self,
+        assigned_spec: OLSpecId,
+    ) -> ProverResult<InputResolution<CheckpointProverInput>> {
         let spec = CheckpointSpec::new(
             Arc::clone(&self.storage),
             OLRuntimeParams::test_default(),
             assigned_spec,
         );
-        test_runtime_handle()
-            .block_on(spec.resolve_input(&self.task))
-            .unwrap()
+        test_runtime_handle().block_on(spec.resolve_input(&self.task))
     }
 
     /// Changes the persisted terminal snapshot for routing tests, without proving it.
@@ -256,6 +294,149 @@ impl EpochFixture {
     }
 }
 
+#[test]
+fn test_multiblock_epoch_preserves_execution_order_in_prover_input() {
+    let fixture = EpochFixture::build_epoch(OLSpecId::V1, OLSpecId::V1, 3);
+    let InputResolution::Ready(input) = fixture.resolve() else {
+        panic!("stored epoch must resolve to proof input");
+    };
+    assert_eq!(
+        input
+            .blocks
+            .iter()
+            .map(|block| block.header().slot())
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    assert_eq!(input.parent, *fixture.parent.header());
+    assert_eq!(input.blocks.last(), Some(&fixture.terminal));
+    CheckpointProgram::execute(&input, OLSpecId::V1, OLRuntimeParams::test_default()).unwrap();
+}
+
+#[test]
+fn test_v2_epoch_resolves_from_v2_pre_state() {
+    let fixture = EpochFixture::build_single_block_epoch(OLSpecId::V2, OLSpecId::V2);
+    let InputResolution::Ready(input) = fixture.resolve() else {
+        panic!("a V2 epoch on a V2 pre-state must resolve to proof input");
+    };
+
+    assert_eq!(input.start_state.cur_spec(), OLSpecId::V2);
+    CheckpointProgram::execute(&input, OLSpecId::V2, OLRuntimeParams::test_default()).unwrap();
+}
+
+#[test]
+fn test_wrong_terminal_epoch_is_retryable() {
+    let mut fixture = EpochFixture::new();
+    // Keep the stored terminal but claim it closes the following epoch, so the summary-derived
+    // commitment disagrees with the terminal header's epoch.
+    let summary = EpochSummary::new(
+        fixture.terminal.header().epoch() + 1,
+        fixture.terminal.header().compute_block_commitment(),
+        fixture.parent.header().compute_block_commitment(),
+        L1BlockCommitment::new(2, L1BlockId::default()),
+        *fixture.terminal.header().state_root(),
+    );
+    fixture
+        .storage
+        .ol_checkpoint()
+        .insert_epoch_summary_blocking(summary)
+        .unwrap();
+    fixture.task = CheckpointTask(summary.get_epoch_commitment());
+    let expected = ProverError::BlockAncestry(BlockAncestryError::EpochTerminalMismatch {
+        expected: fixture.task.0,
+        actual: EpochCommitment::from_terminal(
+            fixture.terminal.header().epoch(),
+            fixture.terminal.header().compute_block_commitment(),
+        ),
+    })
+    .to_string();
+
+    // Inconsistent terminal metadata for a canonical task is a repairable local storage failure.
+    let error = fixture
+        .try_resolve_on(OLSpecId::V1)
+        .expect_err("terminal epoch mismatch must remain an infrastructure error");
+    assert!(
+        matches!(&error, PaasError::Storage(reason) if reason.contains(&expected)),
+        "{error:?}"
+    );
+    assert_eq!(error.action(), FailureAction::RetryResume);
+}
+
+#[test]
+fn test_predecessor_slot_mismatch_is_retryable() {
+    let fixture = EpochFixture::new();
+    let previous = fixture.parent.header().compute_block_commitment();
+    // Preserve the real predecessor's block ID but assign it the terminal's slot. The ancestry
+    // walk resolves the stored predecessor commitment and exposes the disagreement.
+    let summary = EpochSummary::new(
+        fixture.task.0.epoch(),
+        fixture.task.0.to_block_commitment(),
+        OLBlockCommitment::new(previous.slot() + 1, *previous.blkid()),
+        L1BlockCommitment::new(2, L1BlockId::default()),
+        *fixture.terminal.header().state_root(),
+    );
+    fixture
+        .storage
+        .ol_checkpoint()
+        .del_epoch_summary_blocking(fixture.task.0)
+        .unwrap();
+    fixture
+        .storage
+        .ol_checkpoint()
+        .insert_epoch_summary_blocking(summary)
+        .unwrap();
+    let expected = ProverError::BlockAncestry(BlockAncestryError::PreviousTerminalMismatch {
+        expected: *summary.prev_terminal(),
+        actual: previous,
+    })
+    .to_string();
+
+    // A canonical summary that names the wrong predecessor is a repairable local storage failure.
+    let error = fixture
+        .try_resolve_on(OLSpecId::V1)
+        .expect_err("predecessor mismatch must remain an infrastructure error");
+    assert!(
+        matches!(&error, PaasError::Storage(reason) if reason.contains(&expected)),
+        "{error:?}"
+    );
+    assert_eq!(error.action(), FailureAction::RetryResume);
+}
+
+#[test]
+fn test_missing_intermediate_header_is_retryable() {
+    let fixture = EpochFixture::build_epoch(OLSpecId::V1, OLSpecId::V1, 3);
+    let missing_id = *fixture.terminal.header().parent_blkid();
+    // Remove the terminal's parent from an otherwise complete canonical epoch. The terminal and
+    // summary remain available, but ancestry can no longer reach the epoch boundary.
+    fixture
+        .storage
+        .ol_block()
+        .del_block_data_blocking(missing_id)
+        .unwrap();
+    // Deletion truncates the index. Restore the terminal row to exercise missing
+    // ancestry for a canonical task rather than failing the eligibility check.
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(
+            fixture.terminal.header().slot(),
+            vec![fixture.terminal.header().compute_blkid()],
+        )
+        .unwrap();
+    let expected =
+        ProverError::BlockAncestry(BlockAncestryError::MissingHeader(missing_id)).to_string();
+
+    // Incomplete local ancestry is a retryable storage failure, not a permanent task rejection.
+    let error = fixture
+        .try_resolve_on(OLSpecId::V1)
+        .expect_err("missing local ancestry must remain an infrastructure error");
+    assert!(
+        matches!(&error, PaasError::Storage(reason) if reason.contains(&expected)),
+        "{error:?}"
+    );
+    assert_eq!(error.action(), FailureAction::RetryResume);
+}
+
 fn loaded_predicates() -> LoadedCheckpointPredicates {
     native_checkpoint_registry(OLRuntimeParams::test_default()).to_predicates()
 }
@@ -342,7 +523,7 @@ fn task_uses_its_loaded_artifact_while_its_vk_is_pending_in_asm() {
 #[test]
 fn first_checkpoint_after_upgrade_uses_successor_after_restart() {
     for (start_spec, epoch_spec) in [(OLSpecId::V0, OLSpecId::V1), (OLSpecId::V1, OLSpecId::V2)] {
-        let fixture = EpochFixture::with_specs(start_spec, epoch_spec);
+        let fixture = EpochFixture::build_single_block_epoch(start_spec, epoch_spec);
         fixture.put_asm_checkpoint(
             PredicateKey::never_accept(),
             Some(CheckpointProgram::test_predicate_key_for_spec(epoch_spec)),
@@ -372,8 +553,9 @@ fn first_checkpoint_after_upgrade_uses_successor_after_restart() {
 fn fixed_host_service_rejects_an_epoch_assigned_to_another_spec() {
     for (epoch_spec, assigned_spec) in [(OLSpecId::V1, OLSpecId::V2), (OLSpecId::V2, OLSpecId::V1)]
     {
-        let fixture = EpochFixture::with_specs(OLSpecId::V1, epoch_spec);
-        let InputResolution::Rejected { reason } = fixture.resolve_on(assigned_spec) else {
+        let fixture = EpochFixture::build_single_block_epoch(OLSpecId::V1, epoch_spec);
+        let InputResolution::Rejected { reason } = fixture.try_resolve_on(assigned_spec).unwrap()
+        else {
             panic!("the {assigned_spec:?} service must reject a {epoch_spec:?} epoch");
         };
         assert!(
@@ -543,7 +725,7 @@ fn checkpoint_prover(fixture: &EpochFixture) -> Arc<Prover<CheckpointSpec>> {
 }
 
 fn assert_persisted_task_proving(recovered: bool, spec: OLSpecId, superseded: bool) {
-    let fixture = EpochFixture::with_specs(OLSpecId::V1, spec);
+    let fixture = EpochFixture::build_single_block_epoch(OLSpecId::V1, spec);
     let own_store = VersionedTaskStore::new(Arc::clone(fixture.storage.prover_tasks()), spec);
     // Both services exist, but neither may recover or mutate the other's records.
     let foreign_spec = if spec == OLSpecId::V1 {
