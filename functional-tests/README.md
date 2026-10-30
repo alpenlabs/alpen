@@ -301,3 +301,23 @@ self.wait_for_rpc_ready(rpc, timeout=60)
 **Service crashed**: Check `service.log` in datadir
 
 **Timeout errors**: Check exception message for last error and attempt count
+
+## Repeatable OL upgrade test
+
+`test_checkpoint_predicate_rotation` creates a fresh V1 network on every run and
+rotates it to V2. Ordinary functional CI discovers and runs it with native
+checkpoint programs. The programs execute the fixed-spec checkpoint logic and
+sign with different BIP-340 test keys, so stale-key routing cannot pass verification.
+This checks integration and recovery without generating a ZK proof.
+
+```sh
+./run_tests.sh -t test_checkpoint_predicate_rotation
+```
+
+The test keeps an old checkpoint in flight through enactment by mining empty
+Bitcoin blocks, checks that the handover epoch ends exactly at the enactment
+height, kills and restarts the sequencer before settlement, then requires the
+handover and two V2 epochs to finalize. A live L1 follower and a fresh follower
+started after the upgrade replay the same checkpoints and account summaries and
+read V2 from their reconstructed root state. Non-sequencer nodes currently use
+checkpoint sync; block-executing fullnode replay is not available yet.

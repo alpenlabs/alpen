@@ -36,6 +36,7 @@ class CheckpointSyncEnv(flexitest.EnvConfig):
         l1_reorg_safe_depth: int | None = None,
         provision_promotion: bool = False,
         provision_recovery_node: bool = False,
+        fund_test_cli_wallet: bool = False,
     ):
         epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
@@ -45,6 +46,7 @@ class CheckpointSyncEnv(flexitest.EnvConfig):
 
         self.strata_config = StrataEnvConfig(
             pre_generate_blocks=pre_generate_blocks,
+            fund_test_cli_wallet=fund_test_cli_wallet,
             epoch_sealing=epoch_seal_config,
             admin_confirmation_depth=admin_confirmation_depth,
             ol_block_time_ms=ol_block_time_ms,
