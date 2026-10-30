@@ -13,13 +13,9 @@ proves and posts that epoch's checkpoint.
 
 This test asserts that the epoch ending at B, sealed after the rotation
 enacted, is still accepted under the outgoing predicate and finalizes, and
-that the node then builds V2 epochs past it. None of them finalizes as L1
-keeps advancing: this build has no V2 checkpoint program, so the node proves
-none of them, and the incoming NeverAccept predicate never sees their
-checkpoints.
-
-TODO(STR-4662): once a V2 checkpoint program exists, assert that the incoming
-predicate rejects the checkpoints of the V2 epochs.
+that the node proves and posts V2 checkpoints past it. The incoming
+NeverAccept predicate rejects those checkpoints, so finalization remains at
+the boundary epoch while the rejection tracker reports a later V2 epoch.
 """
 
 import logging
@@ -64,6 +60,9 @@ ADMIN_CONFIRMATION_DEPTH = 24
 
 # Budget for the epoch ending at the boundary to finalize once L1 moves on.
 FINALIZATION_TIMEOUT_SECONDS = 240
+
+# Budget for posting a V2 checkpoint and burying its rejection at the safe depth.
+REJECTION_TIMEOUT_SECONDS = 360
 
 # Budget for the node to build its first V2 block after the epoch ending at
 # the boundary. Blocks follow the slot cadence, without L1 progress.
@@ -219,13 +218,41 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         if finalized["epoch"] != last_epoch:
             raise AssertionError(
                 f"finalized epoch {finalized['epoch']} is past the epoch {last_epoch} that "
-                f"ends at the boundary {boundary}, after which this build proves no epoch"
+                f"ends at the boundary {boundary}, after which NeverAccept rejects checkpoints"
             )
         logger.info("epoch %s finalized under the outgoing predicate", last_epoch)
 
-        # The node keeps building V2 epochs past the boundary, but nothing
-        # finalizes past the epoch ending at it as L1 keeps advancing: this
-        # build has no V2 checkpoint program to prove them.
+        # Proving and submission must make progress: finality staying at the
+        # boundary alone could also mean the V2 prover never submitted anything.
+        def rejected_v2_checkpoints():
+            self._assert_finalized_at(strata, strata_rpc, last_epoch)
+            return [
+                entry
+                for entry in strata_rpc.strata_getRejectedCheckpoints(last_epoch + 1)
+                if entry["epoch"] == last_epoch + 1
+            ]
+
+        rejected = bitcoin.mine_until(
+            check=rejected_v2_checkpoints,
+            predicate=lambda entries: len(entries) > 0,
+            error_with="the first V2 checkpoint after the handover was not reported rejected",
+            timeout=REJECTION_TIMEOUT_SECONDS,
+            step=PACE_STEP_SLEEP_SECONDS,
+            mine_address=mine_addr,
+        )
+        first_v2_info = self._wait_for_checkpoint_info(strata_rpc, last_epoch + 1)
+        if self._checkpoint_status(first_v2_info) != "pending":
+            raise AssertionError(f"rejected V2 checkpoint is not pending: {first_v2_info}")
+        for entry in rejected:
+            verified_tip = entry["asm_verified_tip"]
+            if verified_tip is None or verified_tip["epoch"] != last_epoch:
+                raise AssertionError(
+                    f"V2 rejection {entry} does not report the boundary epoch {last_epoch} "
+                    "as the ASM verified tip"
+                )
+        logger.info("incoming NeverAccept predicate rejected V2 checkpoints: %s", rejected)
+
+        # Keep advancing L1 after detection: no rejected V2 epoch may finalize.
         for _ in range(PREDICATE_REJECTION_L1_BLOCKS):
             self._mine_l1_and_wait_for_asm(
                 bitcoin=bitcoin,

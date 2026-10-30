@@ -7,10 +7,9 @@ posting checkpoints and the broadcaster sees them confirm. The ASM only logs a
 tracing warning for a rejection and emits no ASM log, so this is the case the
 submission tracker exists for.
 
-A checkpoint predicate rotation cannot produce this case in this build. Its
-enactment ends V1, and the node builds V2 epochs past the handover boundary,
-but this build has no V2 checkpoint program, so it never posts a checkpoint
-the incoming predicate governs.
+The predicate rotation test separately covers V2 checkpoints rejected after a
+handover to NeverAccept. This test exercises rejection of a corrupted proof
+without changing the active predicate or the OL spec.
 
 With every service running, the test pushes L1 on and asserts that once the
 corrupted checkpoint's block is buried at the reorg-safe depth,

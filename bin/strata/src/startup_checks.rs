@@ -1648,8 +1648,8 @@ mod tests {
     /// A V2 tip that ends an epoch which processed a checkpoint predicate
     /// enactment is followed by V3, which this binary does not implement. The
     /// spec check still lets the sequencer start on the tip, and block assembly
-    /// builds nothing after it. Proving the checkpoint that ends at the tip
-    /// needs a V2 checkpoint program, which this build does not have.
+    /// builds nothing after it. The prover can still prove the V2 checkpoint
+    /// that ends at the tip using its configured V2 program.
     #[test]
     fn test_sequencer_starts_on_the_tip_after_a_v2_enactment() {
         let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V2, true);

@@ -295,13 +295,13 @@ mod tests {
             env::var_os("CHECKPOINT_RUNTIME_PARAMS_PATH").expect("runtime params path");
         let runtime_params: OLRuntimeParams =
             serde_json::from_slice(&fs::read(params_path).unwrap()).unwrap();
-        let config = CheckpointArtifactConfig::new(OLSpecId::V1, bundle.clone());
+        let config = CheckpointArtifactConfig::new(OLSpecId::V2, bundle.clone());
         let registry =
             load_checkpoint_registry(&[config], runtime_params, SP1HostConfig::default())
                 .await
                 .unwrap();
-        let artifact = registry.get(OLSpecId::V1).unwrap();
-        println!("loaded V1 checkpoint program {}", artifact.program_id());
+        let artifact = registry.get(OLSpecId::V2).unwrap();
+        println!("loaded V2 checkpoint program {}", artifact.program_id());
 
         let tampered = tempfile::tempdir().unwrap();
         for filename in [ELF_FILE, MANIFEST_FILE, PREDICATE_FILE] {
@@ -313,7 +313,7 @@ mod tests {
             let mut manifest: Value = serde_json::from_slice(&original_manifest).unwrap();
             manifest[field] = Value::String(hex::encode([0; 32]));
             fs::write(&manifest_path, manifest.to_string()).unwrap();
-            let config = CheckpointArtifactConfig::new(OLSpecId::V1, tampered.path().to_owned());
+            let config = CheckpointArtifactConfig::new(OLSpecId::V2, tampered.path().to_owned());
             let error =
                 load_checkpoint_registry(&[config], runtime_params, SP1HostConfig::default())
                     .await
@@ -332,7 +332,7 @@ mod tests {
         }
         fs::write(&manifest_path, original_manifest).unwrap();
         fs::write(tampered.path().join(PREDICATE_FILE), "AlwaysAccept").unwrap();
-        let config = CheckpointArtifactConfig::new(OLSpecId::V1, tampered.path().to_owned());
+        let config = CheckpointArtifactConfig::new(OLSpecId::V2, tampered.path().to_owned());
         let error = load_checkpoint_registry(&[config], runtime_params, SP1HostConfig::default())
             .await
             .unwrap_err();

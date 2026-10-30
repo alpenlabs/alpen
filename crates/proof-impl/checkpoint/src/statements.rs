@@ -89,18 +89,21 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnvSerde, spec: OLSpecId, runtime_params: 
 /// 4. Accumulates ASM manifests and OL logs across the batch
 /// 5. Constructs and returns a [`CheckpointClaim`]
 ///
-/// The initial state is the previous epoch's terminal state, and the epoch
-/// runs under that state's staged spec.
+/// The initial state is the previous epoch's terminal state. V1 proving uses
+/// its staged spec, except that a V0 state starts the first V1 epoch. V2
+/// proving also accepts a V1 state with `cur = staged = V1`: V1 never stages
+/// its successor, so the first V2 epoch takes over that state in its first
+/// block. Subsequent V2 epochs start from V2 states.
 ///
-/// A V0 initial state is the exception. Its root is the bare chainstate root,
-/// which commits no staged spec, so the epoch runs under V0's successor and
-/// its first block wraps the state as V1.
+/// The ASM's active checkpoint predicate and verified tip bind each program
+/// to the ranges it may extend; the start state alone does not authorize a
+/// spec upgrade.
 ///
 /// # Panics
 ///
 /// This function panics if:
 /// - The parent state root doesn't match the initial state root
-/// - The epoch's spec, derived from the initial state, is not `spec`
+/// - The initial state's versions are incompatible with `spec`, including its predecessor exception
 /// - The block batch is empty
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
@@ -126,43 +129,45 @@ pub fn process_ol_stf_core(
         initial_state_root
     );
 
-    // The epoch runs under the staged spec of the authenticated start state,
-    // except that a V0 start state commits no staged spec. The epoch then runs
-    // under V0's successor.
-    //
-    // Accepting any V0 start state here is sound because only the first V1
-    // range can start from a V0 state:
-    // - The ASM binds a claim's range start to its verified tip, so a proof can only extend the
-    //   chain the ASM has already accepted.
-    // - The ASM has one active checkpoint key, so no range proven by this program verifies before
-    //   the V1 key is active.
-    // - V1 rules always wrap a V0 state at the start of an epoch: the parent must be terminal
-    //   (asserted below), and a V0 state outside an epoch start fails with `ContinuesV0Epoch`. Once
-    //   the first V1 range is accepted, the verified tip is a V1 state.
-    // That the first V1 range starts at the enactment boundary B relies on the
-    // ASM's v0.4.0-rc.6 predicate handover, which MN0 gets through STR-4489
-    // before the OlStfVk transaction.
-    //
-    // TODO(STR-4662): no rule set stages a spec; nodes select the spec of the
-    // epoch after an enactment from the L1 manifests. A V1 terminal state
-    // stages V1, including the one that processed the enactment ending V1, so
-    // the V2 program must run the first V2 epoch from such a state, as this
-    // function runs the first V1 epoch from a V0 state, and the argument above
-    // must cover that case too.
+    // Accepting a predecessor state is sound only together with ASM range verification:
+    // V1 accepts a V0 state, and V2 accepts a state with cur = staged = V1 because V1
+    // never stages its successor. Neither exception independently authorizes an upgrade.
+    // - The parent root authenticates the start state above, and the ASM binds the claim's range
+    //   start to its verified tip. A proof can only extend the already accepted chain.
+    // - The ASM verifies each claim under its active checkpoint predicate, so a successor program's
+    //   proof cannot verify before its key becomes active.
+    // - OL boundary verification requires the block processing a checkpoint predicate enactment to
+    //   end its epoch. The ASM refuses an old-key range crossing that L1 boundary and activates the
+    //   new key only when its verified tip reaches the boundary. Thus the new program cannot extend
+    //   an earlier predecessor tip under the new key.
+    // - The terminal-parent assertion below requires an epoch boundary. V1 epoch-initial processing
+    //   wraps V0 as V1; V2's take_over_state records V2 on a V1 state and rejects a V1 start within
+    //   an epoch. DA replay applies the same version changes.
+    // - The first accepted successor range therefore advances the verified tip to a state
+    //   committing the successor version. Later accepted ranges cannot reuse a predecessor start
+    //   state, even though the program itself accepts any compatible terminal one.
+    // This argument depends on the ASM v0.4.0-rc.6 predicate handover, which MN0 must get
+    // through STR-4489 before the OlStfVk transaction. Keep the V0 -> V1 exception and
+    // V1's staged-spec selection unchanged.
     let epoch_spec = if state.cur_spec() == OLSpecId::V0 {
         OLSpecId::V0.successor().expect("V0 has a successor spec")
     } else {
-        state.root().staged_spec().unwrap_or_else(|err| {
+        let staged_spec = state.root().staged_spec().unwrap_or_else(|err| {
             panic!("initial state stages a spec this program does not prove: {err}")
-        })
+        });
+        if spec == OLSpecId::V2 && state.cur_spec() == OLSpecId::V1 && staged_spec == OLSpecId::V1 {
+            OLSpecId::V2
+        } else {
+            staged_spec
+        }
     };
     assert_eq!(
         epoch_spec, spec,
         "epoch runs under spec {epoch_spec:?}, but this program proves spec {spec:?}"
     );
 
-    // Build the V1 state accessor, keeping the spec versions. For a V0 start
-    // state, the first block's epoch-initial processing wraps them.
+    // Keep the authenticated versions until the first block's spec-specific
+    // initialization takes over the predecessor state, if needed.
     let mut state = MemoryStateBaseLayer::from_container(state);
 
     // The block batch must contain at least one block to process

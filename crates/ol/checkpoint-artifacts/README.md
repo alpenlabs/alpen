@@ -12,7 +12,7 @@ the OL may be ahead of checkpoint acceptance, or proving older work.
 
 ## Configuration
 
-Native proving uses the supported built-in V1 program. SP1 deployments can
+Native proving uses fixed-spec built-in V1 and V2 programs. SP1 deployments can
 configure independent release bundles:
 
 ```toml
@@ -22,9 +22,13 @@ backend = "sp1"
 [[prover.artifacts]]
 spec = 1
 bundle_dir = "elfs/sp1/v1"
+
+[[prover.artifacts]]
+spec = 2
+bundle_dir = "elfs/sp1/v2"
 ```
 
-Each V1 bundle contains `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
+Each V1 or V2 bundle contains `guest-checkpoint.elf`, `guest-checkpoint.predicate`, and
 `guest-checkpoint.artifact-manifest.json`. The schema 1 manifest records `spec`,
 `program_id`, and `runtime_params_hash`. Loading derives the program identity and
 predicate from the ELF and checks both sidecars and the node's runtime parameters
@@ -55,7 +59,7 @@ the new binary. Loading derives the complete predicate from the ELF and requires
 an exact match; the usual startup check then compares loaded predicates with ASM.
 
 V0 loading uses only the ELF and predicate; it does not read a manifest.
-V1 still requires its full manifest, including the matching runtime-parameter hash.
+V1 and V2 require their full manifests, including the matching runtime-parameter hash.
 
 V0 is loaded only for startup validation and never gets a proving service or task
 recovery. The 0.3.x sequencer proves the final V0 epoch; the promoted node starts at
@@ -63,11 +67,11 @@ the following V1 epoch. Once local ASM state requires only V1, the V0 entry can 
 removed. Promotion and V0 checkpoint replay are handled by STR-4486.
 
 SP1 proving requires at least one explicit artifact entry, even for a single
-program. Each entry must name its spec and bundle directory. V1 bundles must also
+program. Each entry must name its spec and bundle directory. V1 and V2 bundles must also
 have a manifest declaring the spec. Missing configuration fails startup; there is no default
 bundle directory or inferred V1 program. To use locally built artifacts, configure
 `bundle_dir` to point to the builder's output directory. Existing deployments must
-add artifact entries and supply V1 manifests with the spec field. Artifact publishing
+add artifact entries and supply V1 or V2 manifests with the spec field. Artifact publishing
 includes the per-guest manifest and its checksum.
 
 ## Availability and recovery
@@ -180,15 +184,15 @@ is opt-in because it requires a built checkpoint ELF and its runtime parameters:
 
 ```sh
 SP1_PROVER=cpu \
-CHECKPOINT_ARTIFACT_TEST_BUNDLE="$PWD/elfs/sp1/v1" \
+CHECKPOINT_ARTIFACT_TEST_BUNDLE="$PWD/elfs/sp1/v2" \
 CHECKPOINT_RUNTIME_PARAMS_PATH="$PWD/.github/fixtures/checkpoint-runtime-params.json" \
 cargo test --release -p strata-ol-checkpoint-artifacts --features sp1 \
   loads_real_bundle_and_rejects_tampered_identity -- --ignored --nocapture
 ```
 
-Use runtime parameters matching the bundle's build. Proving after a rotation past
-V1 also requires a V2 checkpoint program and its bundle, which this release does
-not build.
+This test loads a V2 bundle built from the current guest. Use runtime parameters
+matching that bundle's build. V1 epochs continue using the published
+`v0.4.0-rc.1` bundle; do not rebuild or replace it with the current V2 guest.
 
 To check the deployed V0 ELF against its independently published predicate:
 

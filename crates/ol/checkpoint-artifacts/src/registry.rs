@@ -144,25 +144,27 @@ impl LoadedCheckpointPredicates {
     }
 }
 
-/// Initializes the supported native checkpoint program for functional-test deployments.
+/// Initializes the supported native checkpoint programs for functional-test deployments.
 ///
 /// Native programs share a test signing key, so their predicate alone cannot establish the
 /// rules they execute. Each entry binds its spec to the corresponding program closure.
-/// This binary implements only V1 proving; it never synthesizes programs for unknown specs.
+/// V1 and V2 each have a fixed-spec host; unknown specs never get a program.
 #[cfg(feature = "native")]
 pub fn native_checkpoint_registry(
     runtime_params: OLRuntimeParams,
 ) -> CheckpointArtifactRegistry<NativeHost> {
-    let spec = OLSpecId::V1;
-    let host = CheckpointProgram::native_host(spec, runtime_params);
-    let artifact = CheckpointArtifact::new(
-        spec,
-        CheckpointProgram::test_predicate_key(),
-        host.program_id(),
-        host,
-    );
+    let artifacts = [OLSpecId::V1, OLSpecId::V2].map(|spec| {
+        let host = CheckpointProgram::native_host(spec, runtime_params);
+        let artifact = CheckpointArtifact::new(
+            spec,
+            CheckpointProgram::test_predicate_key(),
+            host.program_id(),
+            host,
+        );
+        (spec, artifact)
+    });
     CheckpointArtifactRegistry {
-        artifacts: BTreeMap::from([(spec, artifact)]),
+        artifacts: BTreeMap::from(artifacts),
     }
 }
 
@@ -178,8 +180,16 @@ mod tests {
     fn missing_spec_does_not_fall_back_to_resident_program() {
         let registry = native_checkpoint_registry(OLRuntimeParams::test_default());
         assert_eq!(registry.get(OLSpecId::V1).unwrap().spec(), OLSpecId::V1);
+        assert_eq!(registry.get(OLSpecId::V2).unwrap().spec(), OLSpecId::V2);
         assert!(registry.get(OLSpecId::V0).is_none());
         assert!(registry.to_predicates().predicate(OLSpecId::V0).is_none());
+        assert_eq!(
+            registry
+                .into_proving_hosts()
+                .map(|(spec, _)| spec)
+                .collect::<Vec<_>>(),
+            vec![OLSpecId::V1, OLSpecId::V2]
+        );
     }
 
     #[test]

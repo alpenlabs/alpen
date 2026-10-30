@@ -83,7 +83,8 @@ strata-datatool gen-asm-params \
 release start at `1` (V1), which is what `gen-ol-params` writes. A nested file
 that an earlier build of this release wrote without the field describes a V1
 network: add `"spec": 1` under `genesis` or regenerate it. `2` (V2) also parses
-and starts a network under V2, but no checkpoint program proves V2 epochs yet.
+and starts a network under V2. The current checkpoint guest proves V2; V1 epochs
+continue to use the published `v0.4.0-rc.1` bundle.
 
 The flat layout 0.3.0 wrote, with `header`, `accounts`, `last_l1_block` and
 `bridge_params` at the top level, no longer parses. Networks launched on 0.3.0
