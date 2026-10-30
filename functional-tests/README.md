@@ -356,14 +356,23 @@ SP1 mode uses slower blocks and longer proof waits to accommodate the network.
 
 ### Running the SP1 upgrade test in CI
 
-The dedicated daily/manual SP1 workflow is added in the next review chunk.
-The existing ordinary functional CI job still runs this test in native mode;
-triggering that job does not enable network proving.
+The [SP1 checkpoint upgrade workflow](../.github/workflows/checkpoint-upgrade-sp1.yml)
+runs only `test_checkpoint_predicate_rotation` against the real prover network.
+It runs daily at 02:17 UTC and supports manual dispatch. Merging the workflow
+onto the default branch enables its daily paid proof requests. Ordinary
+functional CI continues to use native execution.
 
 Configure a repository Actions secret named `NETWORK_PRIVATE_KEY`, or give
 this repository access to an organization Actions secret with that name.
-GitHub must pass the secret into the test step explicitly. No local network
-key is needed to trigger CI.
+The workflow passes that secret into the test step explicitly. No local
+network key is needed to trigger CI. Optional repository Actions variables
+`NETWORK_RPC_URL` and `SP1_PROOF_STRATEGY` select a custom endpoint or fulfillment
+strategy; leaving them unset uses the SDK defaults.
+
+No environment approval gate is configured. A user with repository write
+access can trigger the workflow. Adding required reviewers later would need
+a GitHub environment and repository-admin configuration; using that same
+protected environment for the daily job would require approval each day too.
 
 The CI runner needs the usual functional-test dependencies (Rust, bitcoind,
 uv, and protoc), plus the matching SP1 `v6.8.1` toolchain. With those installed,
@@ -380,12 +389,21 @@ the SP1 job runs only the upgrade test using this step:
 ```
 
 The script builds the release binaries and V2 bundle before running the test;
-V1 comes from committed test data. A missing secret fails before the builds
-start. If the network needs a custom endpoint or fulfillment strategy, pass
-`NETWORK_RPC_URL` or `SP1_PROOF_STRATEGY` into the same step's environment.
+V1 comes from committed test data. A missing secret fails before toolchain
+installation or builds. SP1 toolchain and core-runner versions come from
+`Cargo.lock`, using the same resolver as artifact publishing.
 
-Once the dedicated workflow is available, use its **Run workflow** action for
-the first real-proof validation. The daily schedule runs after the workflow
-lands on the default branch. Check the test result and service logs to verify
-that the V1 handover and both V2 checkpoints finalized; a successful guest
-build alone does not validate network proving.
+After the workflow file lands on the default branch, open **Actions → SP1
+checkpoint upgrade → Run workflow**, select the branch to test, and start the
+run. To trigger it with the GitHub CLI:
+
+```sh
+gh workflow run checkpoint-upgrade-sp1.yml --repo alpenlabs/alpen --ref main
+gh run list --repo alpenlabs/alpen --workflow checkpoint-upgrade-sp1.yml
+```
+
+The run uploads `checkpoint-upgrade-sp1-<run_id>-<attempt>` with the test
+console output, service logs, results JSON, and V2 bundle metadata. Check that
+the test passed: it requires the V1 handover and both V2 checkpoints to
+finalize. A successful guest build alone does not validate network proving.
+Runs are serialized, and each job has a three-hour timeout.

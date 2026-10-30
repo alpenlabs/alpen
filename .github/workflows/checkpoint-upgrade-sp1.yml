@@ -1,0 +1,136 @@
+name: SP1 checkpoint upgrade
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # Daily at 02:17 UTC.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Let an in-flight proof run finish before another run starts.
+concurrency:
+  group: checkpoint-upgrade-sp1
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  upgrade:
+    name: V1 to V2 with SP1 network proofs
+    runs-on: ubuntu-latest-m
+    timeout-minutes: 180
+    env:
+      OL_PROVER_BACKEND: sp1
+      SP1_PROVER: network
+      LOG_LEVEL: info
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check SP1 network credentials
+        env:
+          NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$NETWORK_PRIVATE_KEY" ]]; then
+            echo "::error::NETWORK_PRIVATE_KEY must be available to this repository for SP1 network proving."
+            exit 1
+          fi
+
+      - name: Free up disk space
+        uses: $/.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+
+      - name: Extract Rust toolchain version
+        id: rust
+        uses: $/.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
+
+      - name: Set up Rust
+        env:
+          RUST_NIGHTLY: ${{ steps.rust.outputs.rust-version }}
+        run: |
+          rustup toolchain install "$RUST_NIGHTLY" --profile minimal
+          rustup default "$RUST_NIGHTLY"
+
+      - name: Resolve locked SP1 versions
+        id: sp1
+        env:
+          SOURCE_DIR: .
+        run: python3 .github/scripts/sp1_artifact_publish.py resolve-build
+
+      - name: Install bitcoind
+        env:
+          BITCOIND_VERSION: "30.2"
+          BITCOIND_ARCH: x86_64-linux-gnu
+        run: |
+          curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/SHA256SUMS"
+          sha256sum --ignore-missing --check SHA256SUMS
+          tar xzf "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          sudo install -m 0755 -t /usr/local/bin bitcoin-"$BITCOIND_VERSION"/bin/*
+          bitcoind --version
+          rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: functional-tests
+          activate-environment: true
+          enable-cache: true
+          cache-suffix: checkpoint-upgrade-sp1
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-on-failure: true
+
+      - name: Install SP1 core runner override
+        uses: $/.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+        with:
+          version: ${{ steps.sp1.outputs.sp1_runner_version }}
+
+      - name: Install SP1 toolchain
+        env:
+          SP1_VERSION: ${{ steps.sp1.outputs.sp1_version }}
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
+          "$HOME/.sp1/bin/sp1up" -v "$SP1_VERSION" -c
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.sp1/bin:$PATH"
+          cargo prove --version
+
+      - name: Run upgrade test on the SP1 network
+        working-directory: functional-tests
+        env:
+          NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+          NETWORK_RPC_URL: ${{ vars.NETWORK_RPC_URL }}
+          SP1_PROOF_STRATEGY: ${{ vars.SP1_PROOF_STRATEGY }}
+        run: |
+          # Unset empty optional variables so the SDK keeps its defaults.
+          if [[ -z "$NETWORK_RPC_URL" ]]; then unset NETWORK_RPC_URL; fi
+          if [[ -z "$SP1_PROOF_STRATEGY" ]]; then unset SP1_PROOF_STRATEGY; fi
+          set -o pipefail
+          ./run_tests.sh -t test_checkpoint_predicate_rotation 2>&1 | tee sp1-checkpoint-upgrade.log
+
+      - name: Upload upgrade results and bundle metadata
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: checkpoint-upgrade-sp1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            functional-tests/sp1-checkpoint-upgrade.log
+            functional-tests/_dd/**/results.json
+            functional-tests/_dd/**/service.log
+            provers/sp1/generated/guest-checkpoint.artifact-manifest.json
+            provers/sp1/generated/guest-checkpoint.predicate
+            provers/sp1/generated/guest-checkpoint.vk-hash
+          if-no-files-found: warn
+          retention-days: 14
