@@ -18,7 +18,10 @@ strata-da-framework.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-da-types-v1.workspace = true
+strata-ol-params = { workspace = true, features = ["test-defaults"] }
+strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
+strata-ol-stf.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
 strata-zkvm-hosts.workspace = true
 
@@ -35,9 +38,6 @@ clap = { workspace = true, features = [
 ] }
 tokio.workspace = true
 tracing.workspace = true
-
-[dev-dependencies]
-strata-ol-params = { workspace = true, features = ["test-defaults"] }
 
 [features]
 default = ["sp1"]
