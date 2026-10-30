@@ -24,6 +24,9 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::*;
+use strata_ol_block_ancestry_provider::{
+    BlockAncestryError, EpochBlockAncestry, test_utils::BlockAncestryView,
+};
 use strata_ol_chain_types_v1::*;
 use strata_ol_log_budget::{TxLogBudgetError, check_tx_log_budget};
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
@@ -64,6 +67,13 @@ type InboxFetchFn = Box<dyn Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry
 type UpdateRecordsFetchFn =
     Box<dyn Fn(Epoch, AccountId) -> DbResult<Option<Vec<AccountUpdateRecord>>> + Send + Sync>;
 type EpochCommitmentFetchFn = Box<dyn Fn(Epoch) -> DbResult<Option<EpochCommitment>> + Send + Sync>;
+type EpochAncestryFetchFn =
+    Box<dyn Fn(EpochCommitment) -> Result<EpochBlockAncestry, BlockAncestryError> + Send + Sync>;
+type RecentHistoryFetchFn = Box<
+    dyn Fn(&OLBlockHeaderV1, usize) -> Result<Vec<OLBlockCommitment>, BlockAncestryError>
+        + Send
+        + Sync,
+>;
 
 fn update_record(
     update_meta: Option<AccountUpdateMeta>,
@@ -91,6 +101,9 @@ fn update_record_with_prev(
 }
 
 struct MockProvider {
+    epoch_block_history: Option<BlockAncestryView>,
+    epoch_ancestry_fetch_fn: Option<EpochAncestryFetchFn>,
+    recent_history_fetch_fn: Option<RecentHistoryFetchFn>,
     blocks: HashMap<OLBlockId, OLBlockV1>,
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
     history_base: Option<EpochCommitment>,
@@ -116,6 +129,9 @@ struct MockProvider {
 impl MockProvider {
     fn new() -> Self {
         Self {
+            epoch_block_history: None,
+            epoch_ancestry_fetch_fn: None,
+            recent_history_fetch_fn: None,
             blocks: HashMap::new(),
             canonical_slots: HashMap::new(),
             history_base: None,
@@ -139,12 +155,91 @@ impl MockProvider {
         }
     }
 
+    /// Configures coherent epoch block data and ancestry, and marks that epoch's blocks canonical
+    /// with default states.
+    ///
+    /// Use instead of [`Self::with_block_and_state`] and [`Self::with_history_base`].
+    fn with_epoch_block_history(mut self, view: BlockAncestryView, epoch: EpochCommitment) -> Self {
+        assert!(
+            self.epoch_block_history.is_none(),
+            "epoch block history configured twice"
+        );
+        assert!(
+            self.epoch_ancestry_fetch_fn.is_none(),
+            "epoch block history cannot be combined with an epoch ancestry override"
+        );
+        assert!(
+            self.blocks.is_empty(),
+            "epoch block history cannot be combined with blocks from `with_block_and_state`"
+        );
+        assert!(
+            self.history_base.is_none(),
+            "epoch block history cannot be combined with `with_history_base`"
+        );
+        let terminal = view
+            .visible_header(*epoch.last_blkid())
+            .expect("recorded epoch terminal must be visible");
+        assert_eq!(
+            EpochCommitment::from_terminal(terminal.epoch(), terminal.compute_block_commitment()),
+            epoch,
+            "epoch commitment must identify the view's terminal"
+        );
+        assert!(terminal.is_terminal(), "epoch terminal must be terminal");
+        let ancestry = view.expected_epoch_ancestry(&terminal);
+        for block in ancestry.blocks() {
+            assert!(
+                view.visible_block(*block.blkid()).is_some(),
+                "checkpoint epoch block body must be visible"
+            );
+            self.canonical_slots.insert(block.slot(), *block);
+            self.states.insert(*block, Arc::new(genesis_ol_state()));
+        }
+        self.epoch_block_history = Some(view);
+        self
+    }
+
+    /// Configures every commitment-keyed epoch-ancestry query to return `fetch`'s result.
+    fn with_epoch_ancestry_fetch_fn(
+        mut self,
+        fetch: impl Fn(EpochCommitment) -> Result<EpochBlockAncestry, BlockAncestryError>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        assert!(
+            self.epoch_block_history.is_none(),
+            "epoch ancestry override cannot be combined with epoch block history"
+        );
+        self.epoch_ancestry_fetch_fn = Some(Box::new(fetch));
+        self
+    }
+
     fn with_sync_status(mut self, status: OLSyncStatus) -> Self {
         self.sync_status = Some(status);
         self
     }
 
+    /// Configures every recent-history query to return `fetch`'s result without walking ancestry.
+    fn with_recent_history_fetch_fn(
+        mut self,
+        fetch: impl Fn(&OLBlockHeaderV1, usize) -> Result<Vec<OLBlockCommitment>, BlockAncestryError>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        self.recent_history_fetch_fn = Some(Box::new(fetch));
+        self
+    }
+
+    /// Stores one block and its state, and marks the block canonical at its slot.
+    ///
+    /// This setup does not configure epoch ancestry and cannot be combined with
+    /// [`Self::with_epoch_block_history`].
     fn with_block_and_state(mut self, block: &OLBlockV1, state: OLStateContainer) -> Self {
+        assert!(
+            self.epoch_block_history.is_none(),
+            "blocks from `with_block_and_state` cannot be combined with epoch block history"
+        );
         let blkid = block.header().compute_blkid();
         let slot = block.header().slot();
         let commitment = OLBlockCommitment::new(slot, blkid);
@@ -159,7 +254,15 @@ impl MockProvider {
         self
     }
 
+    /// Sets the history base reported to RPC handlers.
+    ///
+    /// A [`BlockAncestryView`] carries its own history base, so this setup cannot be combined with
+    /// [`Self::with_epoch_block_history`].
     fn with_history_base(mut self, history_base: EpochCommitment) -> Self {
+        assert!(
+            self.epoch_block_history.is_none(),
+            "`with_history_base` cannot be combined with epoch block history"
+        );
         self.history_base = Some(history_base);
         self
     }
@@ -209,6 +312,7 @@ impl MockProvider {
         self
     }
 
+    /// Stores state without configuring block data or canonicality.
     fn with_state_at(mut self, commitment: OLBlockCommitment, state: OLStateContainer) -> Self {
         self.states.insert(commitment, Arc::new(state));
         self
@@ -386,31 +490,92 @@ impl MockProvider {
         self.update_records_fetch_fn = Some(Box::new(f));
         self
     }
+
+    /// Returns block data from the epoch-block-history view if configured, otherwise from the
+    /// mock's `blocks` map.
+    fn block_data(&self, id: OLBlockId) -> Option<OLBlockV1> {
+        match &self.epoch_block_history {
+            Some(view) => view.visible_block(id),
+            None => self.blocks.get(&id).cloned(),
+        }
+    }
+
+    /// Returns the history base from the epoch-block-history view if configured, otherwise the one
+    /// set with [`Self::with_history_base`].
+    fn block_history_base(&self) -> Option<EpochCommitment> {
+        match &self.epoch_block_history {
+            Some(view) => view.history_base(),
+            None => self.history_base,
+        }
+    }
 }
 
 #[async_trait]
 impl OLRpcProvider for MockProvider {
+    async fn get_canonical_tip(&self) -> DbResult<Option<OLBlockCommitment>> {
+        Ok(self
+            .canonical_slots
+            .values()
+            .max_by_key(|block| block.slot())
+            .copied())
+    }
+
+    async fn collect_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+        max_blocks: usize,
+    ) -> Result<Vec<OLBlockCommitment>, BlockAncestryError> {
+        let fetch = self
+            .recent_history_fetch_fn
+            .as_ref()
+            .expect("recent history must be configured with `with_recent_history_fetch_fn`");
+        fetch(start, max_blocks)
+    }
+
     async fn get_canonical_block_at(&self, height: u64) -> DbResult<Option<OLBlockCommitment>> {
         Ok(self.canonical_slots.get(&height).copied())
     }
 
     async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
-        Ok(self.blocks.get(&id).cloned())
+        Ok(self.block_data(id))
+    }
+
+    async fn collect_epoch_block_commitments_at(
+        &self,
+        epoch: EpochCommitment,
+    ) -> Result<EpochBlockAncestry, BlockAncestryError> {
+        if let Some(fetch) = &self.epoch_ancestry_fetch_fn {
+            return fetch(epoch);
+        }
+        let view = self
+            .epoch_block_history
+            .as_ref()
+            .expect("epoch ancestry must be configured with `with_epoch_block_history`");
+        let terminal = view
+            .visible_header(*epoch.last_blkid())
+            .expect("requested epoch terminal must be configured in the epoch block history");
+        let actual =
+            EpochCommitment::from_terminal(terminal.epoch(), terminal.compute_block_commitment());
+        assert_eq!(
+            actual, epoch,
+            "requested epoch must match the configured epoch block history"
+        );
+        Ok(view.expected_epoch_ancestry(&terminal))
     }
 
     async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability> {
-        if let Some(block) = self.blocks.get(commitment.blkid()) {
-            return Ok(BlockAvailability::Available(Box::new(block.clone())));
+        if let Some(block) = self.block_data(*commitment.blkid()) {
+            return Ok(BlockAvailability::Available(Box::new(block)));
         }
 
-        match self.history_base {
+        match self.block_history_base() {
             Some(base) if commitment.slot() <= base.last_slot() => Ok(BlockAvailability::Pruned),
             _ => Ok(BlockAvailability::Missing),
         }
     }
 
     async fn get_history_base(&self) -> DbResult<Option<EpochCommitment>> {
-        Ok(self.history_base)
+        Ok(self.block_history_base())
     }
 
     async fn get_toplevel_ol_state(
@@ -611,30 +776,36 @@ fn make_block_with_terminal_flag(
     OLBlockV1::new(signed, body)
 }
 
-fn make_epoch_blocks(
-    prev_terminal: L2BlockCommitment,
-    epoch: Epoch,
-    terminal_slot: Slot,
-) -> Vec<OLBlockV1> {
-    let mut blocks = Vec::new();
-    let mut parent = *prev_terminal.blkid();
-    for slot in prev_terminal.slot().saturating_add(1)..=terminal_slot {
-        let block = if slot == terminal_slot {
-            make_terminal_block(slot, epoch, parent)
-        } else {
-            make_block(slot, epoch, parent)
-        };
-        parent = block.header().compute_blkid();
-        blocks.push(block);
-    }
-    blocks
+struct CheckpointEpochHistory {
+    view: BlockAncestryView,
+    previous: EpochCommitment,
+    current: EpochCommitment,
 }
 
-fn with_blocks(mut provider: MockProvider, blocks: &[OLBlockV1]) -> MockProvider {
-    for block in blocks {
-        provider = provider.with_block_and_state(block, genesis_ol_state());
+/// Builds two complete post-genesis epochs and records their coherent block history.
+fn build_checkpoint_epoch_history() -> CheckpointEpochHistory {
+    let mut view = BlockAncestryView::new();
+    let mut parent = view.genesis().clone();
+    let mut previous = None;
+    for slot in 1..=20 {
+        parent = if slot == 10 || slot == 20 {
+            view.append_terminal_block(&parent)
+        } else {
+            view.append_block(&parent)
+        };
+        if slot == 10 {
+            previous = Some(EpochCommitment::from_terminal(
+                parent.epoch(),
+                parent.compute_block_commitment(),
+            ));
+        }
     }
-    provider
+    let current = EpochCommitment::from_terminal(parent.epoch(), parent.compute_block_commitment());
+    CheckpointEpochHistory {
+        view,
+        previous: previous.expect("epoch 1 terminal is recorded"),
+        current,
+    }
 }
 
 fn make_block_with_gam_tx(
@@ -1255,10 +1426,9 @@ async fn checkpoint_info_returns_none_when_epoch_missing() {
 async fn checkpoint_info_with_l1_advance() {
     // With fixed-slot sealing at 10 slots/epoch, epoch 0 is slot 0, epoch 1
     // terminates at slot 10, and epoch 2 terminates at slot 20.
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
-    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
-    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
-    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let history = build_checkpoint_epoch_history();
+    let prev_terminal = history.previous.to_block_commitment();
+    let terminal = history.current.to_block_commitment();
 
     let prev_summary = EpochSummary::new(
         1,
@@ -1309,7 +1479,7 @@ async fn checkpoint_info_with_l1_advance() {
             .expect("test manifest should be valid"),
         )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider.with_epoch_block_history(history.view, cur_commitment);
 
     let rpc = make_rpc(provider);
 
@@ -1328,10 +1498,9 @@ async fn checkpoint_info_with_l1_advance() {
 
 #[tokio::test]
 async fn checkpoint_info_no_l1_advance() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
-    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
-    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
-    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let history = build_checkpoint_epoch_history();
+    let prev_terminal = history.previous.to_block_commitment();
+    let terminal = history.current.to_block_commitment();
     let unchanged_l1 = L1BlockCommitment::new(500, fixed_l1_block_id(0x30));
 
     let prev_summary = EpochSummary::new(
@@ -1352,7 +1521,7 @@ async fn checkpoint_info_no_l1_advance() {
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
         .with_epoch_summary(cur_summary);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider.with_epoch_block_history(history.view, cur_commitment);
 
     let rpc = make_rpc(provider);
 
@@ -1374,15 +1543,14 @@ async fn checkpoint_info_no_l1_advance() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let history = build_checkpoint_epoch_history();
+    let prev_terminal = history.previous.to_block_commitment();
     let observed_height = 505;
     let l1_tip_height = 510;
     let checkpoint_txid = fixed_buf32(0xAA);
     let checkpoint_wtxid = fixed_buf32(0xBB);
 
-    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
-    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
-    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let terminal = history.current.to_block_commitment();
 
     let prev_summary = EpochSummary::new(
         1,
@@ -1434,7 +1602,7 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
         )
         .with_canonical_l1_block(observed_height, fixed_l1_block_id(0x50))
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider.with_epoch_block_history(history.view, cur_commitment);
 
     let rpc = make_rpc(provider);
 
@@ -1456,11 +1624,10 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_pending_when_observation_block_is_orphaned() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let history = build_checkpoint_epoch_history();
+    let prev_terminal = history.previous.to_block_commitment();
     let observed_height = 505;
-    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
-    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
-    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let terminal = history.current.to_block_commitment();
 
     let prev_summary = EpochSummary::new(
         1,
@@ -1508,7 +1675,7 @@ async fn checkpoint_info_returns_pending_when_observation_block_is_orphaned() {
         )
         .with_canonical_l1_block(observed_height, canonical_blkid)
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let rpc = make_rpc(with_blocks(provider, &epoch_blocks));
+    let rpc = make_rpc(provider.with_epoch_block_history(history.view, cur_commitment));
 
     let info = rpc
         .get_checkpoint_info(2)
@@ -1521,10 +1688,9 @@ async fn checkpoint_info_returns_pending_when_observation_block_is_orphaned() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_pending_when_observation_missing() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
-    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
-    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
-    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let history = build_checkpoint_epoch_history();
+    let prev_terminal = history.previous.to_block_commitment();
+    let terminal = history.current.to_block_commitment();
 
     let prev_summary = EpochSummary::new(
         1,
@@ -1563,7 +1729,7 @@ async fn checkpoint_info_returns_pending_when_observation_missing() {
             AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
                 .expect("test manifest should be valid"),
         );
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider.with_epoch_block_history(history.view, cur_commitment);
 
     let rpc = make_rpc(provider);
 
@@ -1581,14 +1747,13 @@ async fn checkpoint_info_returns_pending_when_observation_missing() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let history = build_checkpoint_epoch_history();
+    let prev_terminal = history.previous.to_block_commitment();
     let observed_height = 505;
     let l1_tip_height = 510;
     let checkpoint_txid = fixed_buf32(0xAA);
     let checkpoint_wtxid = fixed_buf32(0xBB);
-    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
-    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
-    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let terminal = history.current.to_block_commitment();
 
     let prev_summary = EpochSummary::new(
         1,
@@ -1635,7 +1800,7 @@ async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
         )
         .with_canonical_l1_block(observed_height, fixed_l1_block_id(0x50))
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider.with_epoch_block_history(history.view, cur_commitment);
 
     let rpc = make_rpc(provider);
 
@@ -1755,7 +1920,7 @@ async fn checkpoint_info_epoch_0_l1_did_not_advance() {
 
 #[tokio::test]
 async fn checkpoint_info_non_genesis_omits_l2_start_on_checkpoint_sync() {
-    // Checkpoint-sync nodes lack block bodies, so the first L2 block of a
+    // Checkpoint-sync nodes do not serve retained OL block history, so the first L2 block of a
     // non-genesis epoch is unavailable: `l2_start` is `None`. The rest of the
     // checkpoint info (terminal, L1 range, status) is still served.
     let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
@@ -1863,7 +2028,7 @@ async fn checkpoint_info_reports_pruned_history_for_epoch_at_history_base() {
 }
 
 #[tokio::test]
-async fn checkpoint_info_without_history_base_preserves_missing_terminal_error() {
+async fn checkpoint_info_missing_terminal_returns_internal_error() {
     let epoch_commitment = test_epoch_commitment(2, 10, 0x10);
     let summary = EpochSummary::new(
         epoch_commitment.epoch(),
@@ -1874,19 +2039,18 @@ async fn checkpoint_info_without_history_base_preserves_missing_terminal_error()
     );
     let provider = MockProvider::new()
         .with_epoch_commitment(epoch_commitment.epoch(), epoch_commitment)
-        .with_epoch_summary(summary);
+        .with_epoch_summary(summary)
+        .with_epoch_ancestry_fetch_fn(|epoch| Err(BlockAncestryError::MissingEpochTerminal(epoch)));
     let rpc = make_rpc(provider);
 
     let err = rpc
         .get_checkpoint_info(epoch_commitment.epoch())
         .await
-        .expect_err("without a marker the missing terminal body should retain not-found");
+        .expect_err("missing canonical epoch ancestry must be an internal error");
 
-    assert_eq!(err.code(), INVALID_PARAMS_CODE);
-    assert_eq!(
-        err.message(),
-        format!("block not found: {}", epoch_commitment.last_blkid())
-    );
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
+    let expected = BlockAncestryError::MissingEpochTerminal(epoch_commitment);
+    assert_eq!(err.message(), expected.to_string());
 }
 
 #[tokio::test]
@@ -1927,13 +2091,12 @@ async fn checkpoint_info_epoch_0_ok_on_checkpoint_sync() {
 
 #[tokio::test]
 async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let history = build_checkpoint_epoch_history();
+    let prev_terminal = history.previous.to_block_commitment();
     let observed_height = 505;
     let checkpoint_txid = fixed_buf32(0xAA);
     let checkpoint_wtxid = fixed_buf32(0xBB);
-    let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
-    let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
-    let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
+    let terminal = history.current.to_block_commitment();
 
     let prev_summary = EpochSummary::new(
         1,
@@ -1980,7 +2143,7 @@ async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
         )
         .with_canonical_l1_block(observed_height, fixed_l1_block_id(0x50))
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider.with_epoch_block_history(history.view, cur_commitment);
 
     let rpc = make_rpc(provider);
 
@@ -4824,7 +4987,7 @@ async fn get_raw_block_by_id_only_classifies_the_history_base_anchor() {
 // ── get_recent_blocks ──
 
 #[tokio::test]
-async fn get_recent_blocks_walks_backwards_in_order() {
+async fn get_recent_blocks_preserves_provider_order() {
     let block0 = make_block(0, 0, null_blkid());
     let blkid0 = block0.header().compute_blkid();
     let block1 = make_block(1, 0, blkid0);
@@ -4832,21 +4995,19 @@ async fn get_recent_blocks_walks_backwards_in_order() {
     let block2 = make_block(2, 0, blkid1);
     let blkid2 = block2.header().compute_blkid();
 
-    let tip = OLBlockCommitment::new(2, blkid2);
+    let commitments = vec![
+        block0.header().compute_block_commitment(),
+        block1.header().compute_block_commitment(),
+        block2.header().compute_block_commitment(),
+    ];
     let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip,
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
         .with_block_and_state(&block0, genesis_ol_state())
         .with_block_and_state(&block1, genesis_ol_state())
-        .with_block_and_state(&block2, genesis_ol_state());
+        .with_block_and_state(&block2, genesis_ol_state())
+        .with_recent_history_fetch_fn(move |_, _| Ok(commitments.clone()));
     let rpc = make_rpc(provider);
 
+    // The handler must preserve the ancestry provider's ascending execution order.
     let summaries = rpc.get_recent_blocks(3).await.expect("recent blocks");
     assert_eq!(summaries.len(), 3);
     assert_eq!(summaries[0].slot(), 0);
@@ -4858,6 +5019,7 @@ async fn get_recent_blocks_walks_backwards_in_order() {
 
 #[tokio::test]
 async fn get_recent_blocks_zero_returns_empty() {
+    // A zero count returns before canonical-tip lookup or ancestry collection.
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         OLBlockCommitment::new(5, null_blkid()),
         0,
@@ -4869,78 +5031,17 @@ async fn get_recent_blocks_zero_returns_empty() {
     let rpc = make_rpc(provider);
 
     let summaries = rpc.get_recent_blocks(0).await.expect("rpc call");
+    // No provider history was configured, so success also proves the early return.
     assert!(summaries.is_empty());
 }
 
 #[tokio::test]
-async fn get_recent_blocks_caps_at_genesis_when_count_exceeds_tip() {
-    let block0 = make_block(0, 0, null_blkid());
-    let blkid0 = block0.header().compute_blkid();
-    let block1 = make_block(1, 0, blkid0);
-    let blkid1 = block1.header().compute_blkid();
-
-    let tip = OLBlockCommitment::new(1, blkid1);
-    let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip,
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
-        .with_block_and_state(&block0, genesis_ol_state())
-        .with_block_and_state(&block1, genesis_ol_state());
-    let rpc = make_rpc(provider);
-
-    let summaries = rpc.get_recent_blocks(10).await.expect("rpc call");
-    assert_eq!(summaries.len(), 2);
-    assert_eq!(summaries[0].slot(), 0);
-    assert_eq!(summaries[1].slot(), 1);
-}
-
-#[tokio::test]
-async fn get_recent_blocks_stops_before_history_base_anchor() {
-    let history_base = test_epoch_commitment(2, 10, 0x10);
-    let block11 = make_block(11, 3, *history_base.last_blkid());
-    let blkid11 = block11.header().compute_blkid();
-    let block12 = make_block(12, 3, blkid11);
-    let blkid12 = block12.header().compute_blkid();
-    let block13 = make_block(13, 3, blkid12);
-    let blkid13 = block13.header().compute_blkid();
-    let tip = OLBlockCommitment::new(13, blkid13);
-    let provider = MockProvider::new()
-        .with_history_base(history_base)
-        .with_sync_status(make_sync_status(
-            tip,
-            3,
-            false,
-            history_base,
-            history_base,
-            history_base,
-        ))
-        .with_block_and_state(&block11, genesis_ol_state())
-        .with_block_and_state(&block12, genesis_ol_state())
-        .with_block_and_state(&block13, genesis_ol_state());
-    let rpc = make_rpc(provider);
-
-    let summaries = rpc
-        .get_recent_blocks(10)
-        .await
-        .expect("the recent-block walk should stop before the bodyless anchor");
-
-    assert_eq!(summaries.len(), 3);
-    assert_eq!(summaries[0].slot(), 11);
-    assert_eq!(summaries[1].slot(), 12);
-    assert_eq!(summaries[2].slot(), 13);
-}
-
-#[tokio::test]
-async fn get_recent_blocks_returns_empty_when_tip_is_the_anchor() {
+async fn get_recent_blocks_returns_empty_at_history_base() {
     let history_base = test_epoch_commitment(2, 10, 0x10);
     let tip = history_base.to_block_commitment();
     let provider = MockProvider::new()
         .with_history_base(history_base)
+        .with_canonical_commitment(tip)
         .with_sync_status(make_sync_status(
             tip,
             2,
@@ -4951,6 +5052,7 @@ async fn get_recent_blocks_returns_empty_when_tip_is_the_anchor() {
         ));
     let rpc = make_rpc(provider);
 
+    // A canonical tip at the history base has no full blocks to return.
     let summaries = rpc
         .get_recent_blocks(10)
         .await
@@ -4963,35 +5065,92 @@ async fn get_recent_blocks_returns_empty_when_tip_is_the_anchor() {
 }
 
 #[tokio::test]
-async fn get_recent_blocks_without_history_base_preserves_missing_parent_error() {
-    let former_anchor = test_epoch_commitment(2, 10, 0x10);
-    let block11 = make_block(11, 3, *former_anchor.last_blkid());
+async fn get_recent_blocks_missing_parent_without_history_base_returns_internal_error() {
+    let missing_parent_epoch = test_epoch_commitment(2, 10, 0x10);
+    let block11 = make_block(11, 3, *missing_parent_epoch.last_blkid());
     let blkid11 = block11.header().compute_blkid();
     let block12 = make_block(12, 3, blkid11);
     let blkid12 = block12.header().compute_blkid();
     let tip = OLBlockCommitment::new(12, blkid12);
+    // The configured ancestry result reports a missing parent with no history base.
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
             3,
             false,
-            former_anchor,
-            former_anchor,
+            missing_parent_epoch,
+            missing_parent_epoch,
             EpochCommitment::null(),
         ))
         .with_block_and_state(&block11, genesis_ol_state())
-        .with_block_and_state(&block12, genesis_ol_state());
+        .with_block_and_state(&block12, genesis_ol_state())
+        .with_recent_history_fetch_fn(move |_, _| {
+            Err(BlockAncestryError::MissingHeader(
+                *missing_parent_epoch.last_blkid(),
+            ))
+        });
     let rpc = make_rpc(provider);
 
     let err = rpc
         .get_recent_blocks(3)
         .await
-        .expect_err("without a marker the missing parent should retain not-found");
+        .expect_err("missing ancestry behind the canonical tip must be an internal error");
 
-    assert_eq!(err.code(), INVALID_PARAMS_CODE);
+    // Missing server-selected history is an internal error, not a client input failure.
+    assert_eq!(err.code(), INTERNAL_ERROR_CODE);
+    let expected = BlockAncestryError::MissingHeader(*missing_parent_epoch.last_blkid());
+    assert_eq!(err.message(), expected.to_string());
+}
+
+#[tokio::test]
+async fn get_recent_blocks_mismatched_canonical_tip_returns_internal_error() {
+    let block = make_block(2, 0, null_blkid());
+    let actual = block.header().compute_block_commitment();
+    let expected = OLBlockCommitment::new(actual.slot(), fixed_ol_block_id(0x42));
+    assert_ne!(actual, expected);
+    // Store a different block under the canonical tip's ID, as corrupt local storage would.
+    let mut provider = MockProvider::new().with_canonical_commitment(expected);
+    provider.blocks.insert(*expected.blkid(), block);
+    let rpc = make_rpc(provider);
+
+    let error = rpc.get_recent_blocks(1).await.unwrap_err();
+    // The handler must reject the mismatch before asking for ancestry.
+    assert_eq!(error.code(), INTERNAL_ERROR_CODE);
     assert_eq!(
-        err.message(),
-        format!("block not found: {}", former_anchor.last_blkid())
+        error.message(),
+        format!("canonical tip block commitment mismatch (expected {expected}, got {actual})")
+    );
+}
+
+#[tokio::test]
+async fn get_recent_blocks_missing_canonical_tip_returns_internal_error() {
+    let status_tip = OLBlockCommitment::new(5, fixed_ol_block_id(1));
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        status_tip,
+        1,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+    // Sync status is deliberately present, but recent history must start from the canonical index.
+    let error = rpc.get_recent_blocks(1).await.unwrap_err();
+    assert_eq!(error.code(), INTERNAL_ERROR_CODE);
+    assert_eq!(error.message(), "No canonical tip found");
+}
+
+#[tokio::test]
+async fn get_recent_blocks_rejects_excessive_count_before_lookup() {
+    // This returns the count error only if count validation runs before the tip lookup.
+    let rpc = make_rpc(MockProvider::new());
+    let count = TEST_MAX_HEADERS_RANGE as u64 + 1;
+    let error = rpc.get_recent_blocks(count).await.unwrap_err();
+    // The client-supplied bound is invalid regardless of canonical-tip availability.
+    assert_eq!(error.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        error.message(),
+        format!("count {count} exceeds max_headers_range {TEST_MAX_HEADERS_RANGE}")
     );
 }
 

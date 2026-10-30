@@ -80,6 +80,11 @@ impl BlockAncestryChain {
         self.blocks.get(&id).map(OLBlockV1::header)
     }
 
+    /// Returns the valid-history block identified by `id`.
+    fn block(&self, id: OLBlockId) -> Option<&OLBlockV1> {
+        self.blocks.get(&id)
+    }
+
     /// Iterates over valid-history blocks in append order.
     fn blocks(&self) -> impl Iterator<Item = &OLBlockV1> {
         self.block_order
@@ -210,6 +215,31 @@ impl BlockAncestryView {
             return (!self.header_is_pruned(id, block.header())).then(|| block.header().clone());
         }
         None
+    }
+
+    /// Returns the full block visible after applying this view's storage deviations.
+    pub fn visible_block(&self, id: OLBlockId) -> Option<OLBlockV1> {
+        if self.dropped_headers.contains(&id) || self.dropped_bodies.contains(&id) {
+            return None;
+        }
+        if let Some(block) = self.chain.block(id) {
+            if self.body_is_pruned(block.header()) {
+                return None;
+            }
+            if let Some(actual) = self.substituted_headers.get(&id) {
+                return self.chain.block(*actual).cloned();
+            }
+            return Some(block.clone());
+        }
+        self.overlays
+            .get(&id)
+            .filter(|block| !self.body_is_pruned(block.header()))
+            .cloned()
+    }
+
+    /// Returns the history base, if one has been promoted.
+    pub fn history_base(&self) -> Option<EpochCommitment> {
+        self.history_base
     }
 
     /// Appends a valid nonterminal child of `parent`.
@@ -865,6 +895,38 @@ mod tests {
                 .to_block_commitment(),
             previous.compute_block_commitment()
         );
+    }
+
+    #[test]
+    fn test_visible_block_reflects_body_and_header_availability() {
+        let mut view = BlockAncestryView::new();
+        let genesis = view.genesis().clone();
+        let body_dropped = view.append_terminal_block(&genesis);
+        let header_dropped = view.append_block(&genesis);
+
+        assert!(view.visible_block(body_dropped.compute_blkid()).is_some());
+        assert!(view.visible_block(header_dropped.compute_blkid()).is_some());
+
+        view.drop_body(body_dropped.compute_blkid());
+        view.drop_header(header_dropped.compute_blkid());
+
+        assert!(view.visible_block(body_dropped.compute_blkid()).is_none());
+        assert!(view.visible_block(header_dropped.compute_blkid()).is_none());
+        assert_eq!(
+            view.visible_header(body_dropped.compute_blkid()),
+            Some(body_dropped)
+        );
+    }
+
+    #[test]
+    fn test_history_base_reports_promoted_terminal() {
+        let mut view = BlockAncestryView::new();
+        let genesis = view.genesis().clone();
+        let terminal = view.append_terminal_block(&genesis);
+
+        assert_eq!(view.history_base(), None);
+        let promoted = view.promote_history_anchor(&terminal);
+        assert_eq!(view.history_base(), Some(promoted));
     }
 
     #[test]
