@@ -6,6 +6,7 @@ use std::time::Duration;
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment, Slot};
+use strata_ol_block_ancestry_provider::{BlockAncestryProvider, EpochBlockAncestry};
 use strata_ol_canonical_chain_provider::{OLCanonicalChainProvider, OLCanonicalChainProviderImpl};
 use strata_ol_chain_types_v1::{AsmManifest, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog};
 use strata_ol_params::OLRuntimeParams;
@@ -88,6 +89,12 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
         &self,
         blkid: &OLBlockCommitment,
     ) -> anyhow::Result<Option<OLBlockHeaderV1>>;
+
+    /// Validates and collects an epoch's block commitments in execution order.
+    fn collect_epoch_block_commitments_at(
+        &self,
+        epoch: EpochCommitment,
+    ) -> anyhow::Result<EpochBlockAncestry>;
 
     /// Gets an OL block by its block ID.
     fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlockV1>>;
@@ -181,6 +188,7 @@ pub struct ProverConfig {
 pub(crate) struct CheckpointWorkerContextImpl {
     canonical_chain_provider: OLCanonicalChainProviderImpl,
     epoch_reconciler: CanonicalEpochReconciler,
+    block_ancestry_provider: BlockAncestryProvider,
     storage: Arc<NodeStorage>,
     runtime_params: OLRuntimeParams,
     genesis_l1_block: L1BlockCommitment,
@@ -199,6 +207,7 @@ impl CheckpointWorkerContextImpl {
         Self {
             canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
             epoch_reconciler: CanonicalEpochReconciler::new(&storage),
+            block_ancestry_provider: BlockAncestryProvider::new(storage.ol_block().clone()),
             storage,
             runtime_params,
             genesis_l1_block,
@@ -216,6 +225,7 @@ impl CheckpointWorkerContextImpl {
         Self {
             canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
             epoch_reconciler: CanonicalEpochReconciler::new(&storage),
+            block_ancestry_provider: BlockAncestryProvider::new(storage.ol_block().clone()),
             storage,
             runtime_params,
             genesis_l1_block,
@@ -349,6 +359,15 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
+    fn collect_epoch_block_commitments_at(
+        &self,
+        epoch: EpochCommitment,
+    ) -> anyhow::Result<EpochBlockAncestry> {
+        Ok(self
+            .block_ancestry_provider
+            .collect_epoch_block_commitments_at_blocking(epoch)?)
+    }
+
     fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlockV1>> {
         self.storage
             .ol_block()
@@ -477,55 +496,30 @@ fn select_spec_after_epoch_terminal_block<C: CheckpointWorkerContext>(
     })
 }
 
-/// Collects all blocks in an epoch by walking backwards from the terminal block.
-///
-/// Returns blocks in forward order (first block of epoch first, terminal last).
+/// Validates the summary's ancestry, then loads its epoch blocks in execution order.
 fn collect_epoch_blocks<C: CheckpointWorkerContext>(
     summary: &EpochSummary,
     ctx: &C,
 ) -> anyhow::Result<NonEmptyVec<OLBlockV1>> {
-    let terminal_blkid = summary.terminal().blkid();
-    let prev_terminal_blkid = summary.prev_terminal().blkid();
-    let prev_terminal_slot = summary.prev_terminal().slot();
+    let ancestry = ctx.collect_epoch_block_commitments_at(summary.get_epoch_commitment())?;
+    ancestry.require_previous_terminal(*summary.prev_terminal())?;
 
-    let mut blocks = Vec::new();
-    let mut cur_id = *terminal_blkid;
-
-    loop {
-        let block = ctx
-            .get_block(&cur_id)?
-            .ok_or_else(|| anyhow::anyhow!("missing block {cur_id:?} while collecting epoch"))?;
-
-        anyhow::ensure!(
-            block.header().slot() > prev_terminal_slot,
-            "block at slot {} is at or below prev terminal slot {}; \
-             epoch chain is broken",
-            block.header().slot(),
-            prev_terminal_slot,
-        );
-
-        // Check if the same epoch is being traversed.
-        anyhow::ensure!(
-            block.header().epoch() == summary.epoch(),
-            "Obtained a block with different epoch, expected {}, obtained {}",
-            summary.epoch(),
-            block.header().epoch(),
-        );
-
-        let parent_id = *block.header().parent_blkid();
-        blocks.push(block);
-
-        if parent_id == *prev_terminal_blkid {
-            break;
-        }
-
-        cur_id = parent_id;
-    }
-
-    blocks.reverse();
-    let blocks =
-        NonEmptyVec::try_from_vec(blocks).map_err(|_| anyhow::anyhow!("Non-empty epoch blocks"))?;
-    Ok(blocks)
+    let blocks = ancestry
+        .blocks()
+        .iter()
+        .map(|commitment| {
+            let block = ctx.get_block(commitment.blkid())?.ok_or_else(|| {
+                anyhow::anyhow!("missing block {} while collecting epoch", commitment)
+            })?;
+            anyhow::ensure!(
+                block.header().compute_block_commitment() == *commitment,
+                "block commitment mismatch while collecting epoch (expected {})",
+                commitment
+            );
+            Ok(block)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(NonEmptyVec::try_from_vec(blocks).expect("epoch ancestry includes the starting block"))
 }
 
 #[cfg(test)]
@@ -540,16 +534,231 @@ mod tests {
     use strata_db_types::backend::DatabaseBackend;
     use strata_db_types::checkpoint_proof::{CheckpointProofDatabase, ProofReceiptEntry};
     use strata_identifiers::{
-        Buf32, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+        Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+        Slot,
     };
+    use strata_ol_block_ancestry_provider::BlockAncestryError;
+    use strata_ol_block_ancestry_provider::test_utils::BlockAncestryView;
     use strata_ol_chain_types_v1::{BlockFlagsV1, OLBlockHeaderV1};
     use strata_ol_params::OLRuntimeParams;
     use strata_storage::create_node_storage;
 
     use super::{
         CheckpointWorkerContext, CheckpointWorkerContextImpl, PROOF_WAIT_INTERVAL, ProofNotify,
-        ProofWaitOutcome, ProverConfig,
+        ProofWaitOutcome, ProverConfig, collect_epoch_blocks,
     };
+
+    struct EpochBlocksFixture {
+        context: CheckpointWorkerContextImpl,
+        block_history: BlockAncestryView,
+    }
+
+    impl EpochBlocksFixture {
+        fn new() -> Self {
+            let storage = Arc::new(
+                create_node_storage(
+                    get_test_sled_backend(),
+                    strata_storage::test_runtime_handle(),
+                )
+                .expect("create epoch-block test storage"),
+            );
+            let block_history = BlockAncestryView::with_storage(storage.ol_block().clone());
+            Self {
+                context: CheckpointWorkerContextImpl::new(
+                    storage,
+                    OLRuntimeParams::test_default(),
+                    L1BlockCommitment::default(),
+                ),
+                block_history,
+            }
+        }
+    }
+
+    /// Builds an epoch summary with placeholder L1 and state fields.
+    fn make_epoch_summary(
+        epoch: Epoch,
+        terminal: OLBlockCommitment,
+        previous_terminal: OLBlockCommitment,
+    ) -> EpochSummary {
+        EpochSummary::new(
+            epoch,
+            terminal,
+            previous_terminal,
+            L1BlockCommitment::new(1, L1BlockId::default()),
+            Buf32::zero(),
+        )
+    }
+
+    #[test]
+    fn test_summary_branch_blocks_are_collected_in_execution_order() {
+        // Two epoch-2 terminals fork from `pivot`. The summarized epoch 3 builds on
+        // `fork_previous`, so its blocks are `first` and `terminal`.
+        let mut fixture = EpochBlocksFixture::new();
+        let genesis = fixture.block_history.genesis().clone();
+        let pivot = fixture.block_history.append_terminal_block(&genesis);
+        let canonical = fixture.block_history.append_terminal_block(&pivot);
+        let fork_previous = fixture.block_history.append_terminal_block(&pivot);
+        let first = fixture.block_history.append_block(&fork_previous);
+        let terminal = fixture.block_history.append_terminal_block(&first);
+        let ancestry = fixture.block_history.expected_epoch_ancestry(&terminal);
+        let summary = make_epoch_summary(
+            terminal.epoch(),
+            terminal.compute_block_commitment(),
+            ancestry.previous_epoch().to_block_commitment(),
+        );
+
+        // Publish the competing terminal as canonical; collection must still follow the summary.
+        fixture
+            .context
+            .storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                canonical.slot(),
+                vec![canonical.compute_blkid()],
+            )
+            .expect("publish competing canonical terminal");
+
+        let blocks =
+            collect_epoch_blocks(&summary, &fixture.context).expect("collect summary branch");
+
+        assert_eq!(
+            blocks
+                .iter()
+                .map(|block| block.header().compute_block_commitment())
+                .collect::<Vec<_>>(),
+            ancestry.blocks()
+        );
+    }
+
+    #[test]
+    fn test_summary_predecessor_mismatch_is_rejected() {
+        let mut fixture = EpochBlocksFixture::new();
+        let genesis = fixture.block_history.genesis().clone();
+        let previous = fixture.block_history.append_terminal_block(&genesis);
+        let terminal = fixture.block_history.append_terminal_block(&previous);
+        let fork_previous = fixture.block_history.append_terminal_block(&genesis);
+
+        // Exercise both another branch's terminal and the right ID at the wrong slot.
+        for predecessor in [
+            fork_previous.compute_block_commitment(),
+            OLBlockCommitment::new(previous.slot() + 1, previous.compute_blkid()),
+        ] {
+            let summary = make_epoch_summary(
+                terminal.epoch(),
+                terminal.compute_block_commitment(),
+                predecessor,
+            );
+
+            let error = collect_epoch_blocks(&summary, &fixture.context)
+                .expect_err("reject mismatched summary predecessor");
+
+            assert!(
+                matches!(
+                    error.downcast_ref::<BlockAncestryError>(),
+                    Some(BlockAncestryError::PreviousTerminalMismatch { expected, actual })
+                        if *expected == predecessor
+                            && *actual == previous.compute_block_commitment()
+                ),
+                "{error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_nonterminal_summary_commitment_is_rejected() {
+        let mut fixture = EpochBlocksFixture::new();
+        let genesis = fixture.block_history.genesis().clone();
+        let nonterminal = fixture.block_history.append_block(&genesis);
+        let summary = make_epoch_summary(
+            nonterminal.epoch(),
+            nonterminal.compute_block_commitment(),
+            genesis.compute_block_commitment(),
+        );
+
+        // The commitment resolves to the requested block and epoch, leaving the missing terminal
+        // flag as the only invalid part of the summary.
+        let error = collect_epoch_blocks(&summary, &fixture.context)
+            .expect_err("reject nonterminal summary commitment");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<BlockAncestryError>(),
+                Some(BlockAncestryError::MissingTerminalFlag(commitment))
+                    if *commitment == summary.get_epoch_commitment()
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn test_summary_epoch_mismatch_is_rejected() {
+        let mut fixture = EpochBlocksFixture::new();
+        let genesis = fixture.block_history.genesis().clone();
+        let terminal = fixture.block_history.append_terminal_block(&genesis);
+        let summary = make_epoch_summary(
+            terminal
+                .epoch()
+                .checked_add(1)
+                .expect("test epoch must fit"),
+            terminal.compute_block_commitment(),
+            genesis.compute_block_commitment(),
+        );
+
+        // The summary names a real terminal but assigns it to the following epoch.
+        let error = collect_epoch_blocks(&summary, &fixture.context)
+            .expect_err("reject summary epoch mismatch");
+
+        assert!(
+            matches!(
+                error.downcast_ref::<BlockAncestryError>(),
+                Some(BlockAncestryError::EpochTerminalMismatch { expected, actual })
+                    if *expected == summary.get_epoch_commitment()
+                        && *actual
+                            == EpochCommitment::from_terminal(
+                                terminal.epoch(),
+                                terminal.compute_block_commitment()
+                            )
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn test_retained_terminal_without_body_is_rejected() {
+        let mut fixture = EpochBlocksFixture::new();
+        let genesis = fixture.block_history.genesis().clone();
+        let terminal = fixture.block_history.append_terminal_block(&genesis);
+        let summary = make_epoch_summary(
+            terminal.epoch(),
+            terminal.compute_block_commitment(),
+            genesis.compute_block_commitment(),
+        );
+
+        // Keep the terminal header for ancestry but remove its full block from storage.
+        fixture.block_history.drop_body(terminal.compute_blkid());
+
+        let error = collect_epoch_blocks(&summary, &fixture.context)
+            .expect_err("terminal body is required for checkpoint replay");
+
+        assert!(error.to_string().contains("missing block"), "{error:?}");
+    }
+
+    /// Builds a terminal header with fixed nonzero body, state and logs roots for
+    /// storage-context tests.
+    fn make_terminal_header(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlockHeaderV1 {
+        let mut flags = BlockFlagsV1::zero();
+        flags.set_is_terminal(true);
+        OLBlockHeaderV1::new(
+            1_000,
+            flags,
+            slot,
+            epoch,
+            parent,
+            Buf32::from([1; 32]),
+            Buf32::from([2; 32]),
+            Buf32::from([3; 32]),
+        )
+    }
 
     fn proof_test_context() -> (
         CheckpointWorkerContextImpl,
@@ -563,18 +772,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let mut flags = BlockFlagsV1::zero();
-        flags.set_is_terminal(true);
-        let header = OLBlockHeaderV1::new(
-            1_000,
-            flags,
-            1,
-            1,
-            OLBlockId::from(Buf32::zero()),
-            Buf32::from([1; 32]),
-            Buf32::from([2; 32]),
-            Buf32::from([3; 32]),
-        );
+        let header = make_terminal_header(1, 1, OLBlockId::from(Buf32::from([4; 32])));
         let terminal = header.compute_block_commitment();
         storage
             .ol_block()
@@ -685,18 +883,7 @@ mod tests {
             )
             .expect("create test storage"),
         );
-        let mut flags = BlockFlagsV1::zero();
-        flags.set_is_terminal(true);
-        let header = OLBlockHeaderV1::new(
-            1_000,
-            flags,
-            9,
-            3,
-            OLBlockId::from(Buf32::zero()),
-            Buf32::from([1; 32]),
-            Buf32::from([2; 32]),
-            Buf32::from([3; 32]),
-        );
+        let header = make_terminal_header(9, 3, OLBlockId::from(Buf32::from([4; 32])));
         let commitment = header.compute_block_commitment();
         storage
             .ol_block()

@@ -11,9 +11,9 @@
 //! - Promote a terminal block to the history base, as on a node started from a checkpoint,
 //!   to test retained history. Recent-history results exclude the history base and older
 //!   blocks, while epoch ancestry can still use its retained header.
-//! - Break the history to test failures: drop a header, append a malformed child with
-//!   [`InvalidAncestry`], or substitute a header. Assert the resulting error directly; asking
-//!   for an expected result that depends on a broken block panics.
+//! - Break the history to test failures: drop a header or terminal body, append a malformed child
+//!   with [`InvalidAncestry`], or substitute a header. Assert the resulting error directly;
+//!   asking for an expected result that depends on a broken block panics.
 //!
 //! Use [`BlockAncestryView::new`] for in-memory tests and
 //! [`BlockAncestryView::with_storage`] when the code under test reads an [`OLBlockManager`].
@@ -158,6 +158,7 @@ pub struct BlockAncestryView {
     ol_block: Option<Arc<OLBlockManager>>,
     next_identity: u64,
     history_base: Option<EpochCommitment>,
+    dropped_bodies: HashSet<OLBlockId>,
     dropped_headers: HashSet<OLBlockId>,
     substituted_headers: HashMap<OLBlockId, OLBlockId>,
     overlays: HashMap<OLBlockId, OLBlockV1>,
@@ -294,8 +295,8 @@ impl BlockAncestryView {
     /// # Panics
     ///
     /// Panics when the header is not a visible valid-history terminal, a different history base
-    /// was already promoted, a malformed overlay sits at or below the new history base, storage
-    /// holds an older terminal header that pruning cannot remove, or a storage write fails.
+    /// was already promoted, a malformed overlay sits at or below the new history base, an older
+    /// terminal header was retained separately and cannot be pruned, or a storage write fails.
     pub fn promote_history_anchor(&mut self, terminal: &OLBlockHeaderV1) -> EpochCommitment {
         let base = self.validate_history_base(terminal);
         if self.history_base == Some(base) {
@@ -330,6 +331,46 @@ impl BlockAncestryView {
             assert!(deleted, "visible valid-history full block must exist");
         }
         self.dropped_headers.insert(id);
+    }
+
+    /// Removes a terminal block's body while retaining its header in the visible view.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `id` is not a visible valid-history terminal with an available body, conflicts
+    /// with another deviation, or a storage write fails.
+    pub fn drop_body(&mut self, id: OLBlockId) {
+        let header = self
+            .chain
+            .header(id)
+            .expect("body drop must name a valid-history block")
+            .clone();
+        assert_eq!(
+            self.visible_header(id).as_ref(),
+            Some(&header),
+            "body drop requires an unsubstituted visible header"
+        );
+        assert!(
+            !self.substitution_mentions(id),
+            "a header cannot be both body-dropped and substituted"
+        );
+        assert!(header.is_terminal(), "only terminal bodies can be dropped");
+        assert!(!self.body_is_pruned(&header), "block body must be visible");
+        assert!(
+            !self.dropped_bodies.contains(&id),
+            "block body cannot be dropped twice"
+        );
+
+        if let Some(ol_block) = &self.ol_block {
+            ol_block
+                .put_terminal_header_blocking(id, header)
+                .expect("test: retain terminal header before dropping body");
+            let deleted = ol_block
+                .del_block_data_blocking(id)
+                .expect("test: delete terminal block body");
+            assert!(deleted, "visible terminal block body must exist");
+        }
+        self.dropped_bodies.insert(id);
     }
 
     /// Returns the epoch ancestry the provider must resolve through `start`.
@@ -413,6 +454,7 @@ impl BlockAncestryView {
             ol_block,
             next_identity: 1,
             history_base: None,
+            dropped_bodies: HashSet::new(),
             dropped_headers: HashSet::new(),
             substituted_headers: HashMap::new(),
             overlays: HashMap::new(),
@@ -572,6 +614,16 @@ impl BlockAncestryView {
                 .all(|block| block.header().slot() > base.last_slot()),
             "malformed overlay must be above the history base"
         );
+        assert!(
+            self.dropped_bodies.iter().all(|id| {
+                self.chain
+                    .header(*id)
+                    .expect("dropped body must belong to valid history")
+                    .slot()
+                    >= base.last_slot()
+            }),
+            "cannot prune an older retained terminal header"
+        );
         base
     }
 
@@ -607,7 +659,7 @@ impl BlockAncestryView {
                 .del_block_data_blocking(id)
                 .expect("test: prune retained history block");
             assert!(
-                deleted || self.dropped_headers.contains(&id),
+                deleted || self.dropped_bodies.contains(&id) || self.dropped_headers.contains(&id),
                 "visible valid-history full block must exist before pruning"
             );
         }
@@ -631,6 +683,10 @@ impl BlockAncestryView {
             "header cannot be dropped twice"
         );
         assert!(
+            !self.dropped_bodies.contains(&id),
+            "a retained header cannot be dropped after its body"
+        );
+        assert!(
             !self.substitution_mentions(id),
             "a header cannot be both dropped and substituted"
         );
@@ -647,6 +703,12 @@ impl BlockAncestryView {
             header.slot() < base.last_slot()
                 || (header.slot() == base.last_slot() && id != *base.last_blkid())
         })
+    }
+
+    /// Returns whether the history base makes `header`'s body unavailable.
+    fn body_is_pruned(&self, header: &OLBlockHeaderV1) -> bool {
+        self.history_base
+            .is_some_and(|base| header.slot() <= base.last_slot())
     }
 
     /// Returns whether `id` participates in a keyed-header substitution.
@@ -782,6 +844,49 @@ mod tests {
 
         view.drop_header(previous.compute_blkid());
         let _ = view.expected_epoch_ancestry(&start);
+    }
+
+    #[test]
+    fn test_terminal_body_drop_keeps_header_ancestry_available() {
+        let mut view = BlockAncestryView::new();
+        let genesis = view.genesis().clone();
+        let previous = view.append_terminal_block(&genesis);
+        let start = view.append_terminal_block(&previous);
+
+        view.drop_body(previous.compute_blkid());
+
+        assert_eq!(
+            view.visible_header(previous.compute_blkid()),
+            Some(previous.clone())
+        );
+        assert_eq!(
+            view.expected_epoch_ancestry(&start)
+                .previous_epoch()
+                .to_block_commitment(),
+            previous.compute_block_commitment()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "only terminal bodies can be dropped")]
+    fn test_nonterminal_body_cannot_be_dropped_alone() {
+        let mut view = BlockAncestryView::new();
+        let genesis = view.genesis().clone();
+        let nonterminal = view.append_block(&genesis);
+
+        view.drop_body(nonterminal.compute_blkid());
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot prune an older retained terminal header")]
+    fn test_history_base_cannot_advance_past_dropped_terminal_body() {
+        let mut view = BlockAncestryView::new();
+        let genesis = view.genesis().clone();
+        let retained = view.append_terminal_block(&genesis);
+        let later = view.append_terminal_block(&retained);
+        view.drop_body(retained.compute_blkid());
+
+        view.promote_history_anchor(&later);
     }
 
     #[test]

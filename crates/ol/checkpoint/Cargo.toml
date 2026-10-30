@@ -20,6 +20,7 @@ strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-node-context.workspace = true
+strata-ol-block-ancestry-provider.workspace = true
 strata-ol-canonical-chain-provider.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-params.workspace = true
@@ -53,6 +54,9 @@ strata-bridge-params = { workspace = true, features = ["test-defaults"] }
 strata-checkpoint-verification.workspace = true
 strata-db-store-sled.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-ol-block-ancestry-provider = { workspace = true, features = [
+  "test-utils",
+] }
 strata-ol-state-types.workspace = true
 strata-ol-state-types-v1.workspace = true
 strata-ol-stf-v1 = { workspace = true, features = ["test-utils"] }
