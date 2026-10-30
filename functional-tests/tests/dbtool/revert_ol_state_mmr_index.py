@@ -118,8 +118,7 @@ class RevertOLStateMmrIndexTest(StrataNodeTest):
         signer_service.stop()
         seq_service.stop()
 
-        datadir = seq_service.props["datadir"]
-        pre_revert_sync = run_dbtool_json(datadir, "get-syncinfo")
+        pre_revert_sync = run_dbtool_json(seq_service, "get-syncinfo")
         pre_revert_tip_slot = int(pre_revert_sync["ol_tip_height"])
         expected_reverted_blocks = pre_revert_tip_slot - target_slot
         if expected_reverted_blocks <= 0:
@@ -128,7 +127,7 @@ class RevertOLStateMmrIndexTest(StrataNodeTest):
                 f"{pre_revert_tip_slot}"
             )
 
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(seq_service)
         _, latest_checkpoint_slot = target_end_of_checkpointed_epoch(latest_checkpoint)
         inside_checkpointed_epoch = target_slot < latest_checkpoint_slot
         logger.info(
@@ -139,15 +138,15 @@ class RevertOLStateMmrIndexTest(StrataNodeTest):
             inside_checkpointed_epoch,
         )
 
-        target_state_before = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_state_before = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         assert int(target_state_before["current_slot"]) == target_slot
         # `get-ol-state` does not expose l1_block_refs_mmr.num_entries().
         # The regtest genesis sentinel plus one leaf per accepted L1 height
         # makes that target count equal next_expected_height in this environment.
         target_l1_count = int(target_state_before["l1_next_expected_height"])
 
-        inbox_count_before_revert = get_mmr_leaf_count(datadir, INBOX_MMR_ID)
-        l1_count_before_revert = get_mmr_leaf_count(datadir, L1_BLOCK_REFS_MMR_ID)
+        inbox_count_before_revert = get_mmr_leaf_count(seq_service, INBOX_MMR_ID)
+        l1_count_before_revert = get_mmr_leaf_count(seq_service, L1_BLOCK_REFS_MMR_ID)
         logger.info(
             "MMR %s before revert: leaf_count=%s",
             INBOX_MMR_ID,
@@ -164,7 +163,7 @@ class RevertOLStateMmrIndexTest(StrataNodeTest):
         assert l1_count_before_revert > target_l1_count
 
         code, stdout, stderr = revert_ol_state(
-            datadir,
+            seq_service,
             target_block_id,
             force=True,
             revert_checkpointed=inside_checkpointed_epoch,
@@ -179,8 +178,8 @@ class RevertOLStateMmrIndexTest(StrataNodeTest):
         assert self._summary_count(stdout, "Blocks to mark unchecked") == expected_reverted_blocks
         assert self._summary_count(stdout, "Blocks to delete") == 0
 
-        inbox_count_after_revert = get_mmr_leaf_count(datadir, INBOX_MMR_ID)
-        l1_count_after_revert = get_mmr_leaf_count(datadir, L1_BLOCK_REFS_MMR_ID)
+        inbox_count_after_revert = get_mmr_leaf_count(seq_service, INBOX_MMR_ID)
+        l1_count_after_revert = get_mmr_leaf_count(seq_service, L1_BLOCK_REFS_MMR_ID)
         logger.info(
             "MMR %s after revert: leaf_count=%s",
             INBOX_MMR_ID,
@@ -196,9 +195,9 @@ class RevertOLStateMmrIndexTest(StrataNodeTest):
         assert l1_count_after_revert == target_l1_count
         assert l1_count_after_revert < l1_count_before_revert
 
-        target_state_after = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_state_after = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         assert int(target_state_after["current_slot"]) == target_slot
-        post_revert_sync = run_dbtool_json(datadir, "get-syncinfo")
+        post_revert_sync = run_dbtool_json(seq_service, "get-syncinfo")
         assert int(post_revert_sync["ol_tip_height"]) == target_slot
 
         seq_rpc, resumed_slot = restart_sequencer_after_revert(

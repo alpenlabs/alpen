@@ -8,9 +8,10 @@ use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{backend::DatabaseBackend, checkpoint_proof::CheckpointProofDatabase};
 use strata_identifiers::Epoch;
+use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
 
 use crate::{
-    cli::OutputFormat,
+    cli::{NodeRole, OutputFormat},
     cmd::{checkpoint::get_canonical_epoch_commitment_at, prover_task_common::print_force_hint},
     output::{
         checkpoint_proof::{CheckpointProofInfo, DeletedCheckpointProofInfo},
@@ -23,6 +24,10 @@ use crate::{
 #[argh(subcommand, name = "get-checkpoint-proof")]
 /// Fetch the stored proof receipt for an OL checkpoint epoch.
 pub(crate) struct GetCheckpointProofArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// checkpoint epoch
     #[argh(positional)]
     pub(crate) epoch: Epoch,
@@ -40,6 +45,10 @@ pub(crate) struct GetCheckpointProofArgs {
 /// force a re-prove after a guest-program upgrade or to drop a stale
 /// receipt from a broken run. Dry-run unless `--force` is passed.
 pub(crate) struct DeleteCheckpointProofArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// checkpoint epoch
     #[argh(positional)]
     pub(crate) epoch: Epoch,
@@ -56,14 +65,16 @@ pub(crate) struct DeleteCheckpointProofArgs {
 /// Fetch the proof receipt for a checkpoint epoch.
 pub(crate) fn get_checkpoint_proof(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: GetCheckpointProofArgs,
 ) -> Result<(), DisplayedError> {
-    let commitment = get_canonical_epoch_commitment_at(db, args.epoch)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "No canonical checkpoint commitment at epoch".to_string(),
-            Box::new(args.epoch),
-        )
-    })?;
+    let commitment = get_canonical_epoch_commitment_at(canonical_chain_provider, args.epoch)?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "No canonical checkpoint commitment at epoch".to_string(),
+                Box::new(args.epoch),
+            )
+        })?;
 
     let receipt = db
         .checkpoint_proof_db()
@@ -84,14 +95,16 @@ pub(crate) fn get_checkpoint_proof(
 /// Delete the proof receipt for a checkpoint epoch.
 pub(crate) fn delete_checkpoint_proof(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: DeleteCheckpointProofArgs,
 ) -> Result<(), DisplayedError> {
-    let commitment = get_canonical_epoch_commitment_at(db, args.epoch)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "No canonical checkpoint commitment at epoch".to_string(),
-            Box::new(args.epoch),
-        )
-    })?;
+    let commitment = get_canonical_epoch_commitment_at(canonical_chain_provider, args.epoch)?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "No canonical checkpoint commitment at epoch".to_string(),
+                Box::new(args.epoch),
+            )
+        })?;
 
     // Resolve existence up front so the dry run still emits the same
     // structured `existed` field operators check against.

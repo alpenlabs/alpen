@@ -8398,6 +8398,7 @@ dependencies = [
  "strata-metrics",
  "strata-node-context",
  "strata-ol-block-assembly",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-checkpoint",
  "strata-ol-checkpoint-artifacts",
@@ -9374,6 +9375,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-merkle",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-mmr-index",
  "strata-ol-params",
@@ -9597,6 +9599,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-canonical-chain-provider"
+version = "0.1.0"
+dependencies = [
+ "strata-asm-checkpoint-types",
+ "strata-checkpoint-types",
+ "strata-csm-types",
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-storage",
+ "tokio",
+]
+
+[[package]]
 name = "strata-ol-chain-types-v1"
 version = "0.1.0"
 dependencies = [
@@ -9646,6 +9662,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-node-context",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-params",
  "strata-ol-spec-selection",
@@ -9660,6 +9677,7 @@ dependencies = [
  "strata-primitives",
  "strata-proofimpl-checkpoint",
  "strata-service",
+ "strata-status",
  "strata-storage",
  "strata-tasks",
  "thiserror 2.0.20",
@@ -9804,6 +9822,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-log-budget",
  "strata-ol-params",
@@ -9929,13 +9948,16 @@ dependencies = [
  "strata-asm-checkpoint-types",
  "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-txs",
+ "strata-checkpoint-types",
  "strata-codec",
  "strata-common",
  "strata-crypto",
  "strata-csm-types",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-block-assembly",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-msg-types",
  "strata-ol-state-types-v1",

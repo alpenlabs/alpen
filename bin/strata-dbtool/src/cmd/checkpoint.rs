@@ -10,9 +10,10 @@ use strata_db_types::{
     ol_checkpoint::OLCheckpointDatabase,
 };
 use strata_identifiers::{Epoch, EpochCommitment, L1Height, Slot};
+use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
 
 use crate::{
-    cli::OutputFormat,
+    cli::{NodeRole, OutputFormat},
     cmd::l1::get_l1_chain_tip,
     output::{
         checkpoint::{CheckpointInfo, CheckpointsSummaryInfo, EpochInfo, UnexpectedCheckpointInfo},
@@ -24,6 +25,10 @@ use crate::{
 #[argh(subcommand, name = "get-checkpoint")]
 /// Shows detailed information about a specific OL checkpoint epoch.
 pub(crate) struct GetCheckpointArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// checkpoint epoch
     #[argh(positional)]
     pub(crate) checkpoint_epoch: Epoch,
@@ -42,6 +47,10 @@ pub(crate) struct GetCheckpointArgs {
 #[argh(subcommand, name = "get-checkpoints-summary")]
 /// Shows a summary of all OL checkpoints in the database.
 pub(crate) struct GetCheckpointsSummaryArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// start L1 height to query checkpoints from
     #[argh(positional)]
     pub(crate) height_from: L1Height,
@@ -55,6 +64,10 @@ pub(crate) struct GetCheckpointsSummaryArgs {
 #[argh(subcommand, name = "get-epoch-summary")]
 /// Shows detailed information about a specific OL epoch summary.
 pub(crate) struct GetEpochSummaryArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// epoch
     #[argh(positional)]
     pub(crate) epoch: Epoch,
@@ -128,21 +141,18 @@ pub(crate) fn derive_checkpoint_status(
 
 /// Resolves canonical OL checkpoint commitment at an epoch.
 pub(crate) fn get_canonical_epoch_commitment_at(
-    db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     epoch: Epoch,
 ) -> Result<Option<EpochCommitment>, DisplayedError> {
     if epoch == 0 {
         return Ok(None);
     }
 
-    let commitments = db
-        .ol_checkpoint_db()
-        .get_epoch_commitments_at(epoch)
+    canonical_chain_provider
+        .get_canonical_epoch_commitment_at_blocking(epoch)
         .internal_error(format!(
-            "Failed to get OL checkpoint commitments at epoch {epoch}"
-        ))?;
-
-    Ok(commitments.first().copied())
+            "Failed to resolve canonical epoch commitment at epoch {epoch}"
+        ))
 }
 
 /// Gets the derived checkpoint status for a canonical commitment.
@@ -186,10 +196,13 @@ pub(crate) fn get_checkpoint_status_by_commitment(
 /// Gets the derived checkpoint status for an epoch from OL checkpoint DB facts.
 pub(crate) fn get_checkpoint_status_at_epoch(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     checkpoint_epoch: Epoch,
     l1_reorg_safe_depth: u32,
 ) -> Result<Option<CheckpointStatus>, DisplayedError> {
-    let Some(commitment) = get_canonical_epoch_commitment_at(db, checkpoint_epoch)? else {
+    let Some(commitment) =
+        get_canonical_epoch_commitment_at(canonical_chain_provider, checkpoint_epoch)?
+    else {
         return Ok(None);
     };
     get_checkpoint_status_by_commitment(db, checkpoint_epoch, commitment, l1_reorg_safe_depth)
@@ -249,9 +262,11 @@ fn collect_checkpoint_epochs_in_l1_logs(
 /// Returns `None` if no checkpoint exists at that epoch.
 pub(crate) fn get_checkpoint_at_epoch(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     epoch: Epoch,
 ) -> Result<Option<CheckpointRecord>, DisplayedError> {
-    let Some(commitment) = get_canonical_epoch_commitment_at(db, epoch)? else {
+    let Some(commitment) = get_canonical_epoch_commitment_at(canonical_chain_provider, epoch)?
+    else {
         return Ok(None);
     };
 
@@ -360,6 +375,7 @@ pub(crate) fn get_latest_checkpoint_last_slot(
 /// Gets the latest checkpoint epoch commitment whose derived status is `Finalized`.
 pub(crate) fn get_latest_finalized_checkpoint_epoch(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     l1_reorg_safe_depth: u32,
 ) -> Result<Option<EpochCommitment>, DisplayedError> {
     let Some((start_epoch, end_epoch)) = get_checkpoint_epoch_range(db)? else {
@@ -367,11 +383,17 @@ pub(crate) fn get_latest_finalized_checkpoint_epoch(
     };
 
     for epoch in (start_epoch..=end_epoch).rev() {
-        let Some(status) = get_checkpoint_status_at_epoch(db, epoch, l1_reorg_safe_depth)? else {
+        let Some(status) = get_checkpoint_status_at_epoch(
+            db,
+            canonical_chain_provider,
+            epoch,
+            l1_reorg_safe_depth,
+        )?
+        else {
             continue;
         };
         if status == CheckpointStatus::Finalized {
-            return get_canonical_epoch_commitment_at(db, epoch);
+            return get_canonical_epoch_commitment_at(canonical_chain_provider, epoch);
         }
     }
 
@@ -381,15 +403,17 @@ pub(crate) fn get_latest_finalized_checkpoint_epoch(
 /// Get checkpoint details by epoch.
 pub(crate) fn get_checkpoint(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: GetCheckpointArgs,
 ) -> Result<(), DisplayedError> {
     let checkpoint_epoch = args.checkpoint_epoch;
-    let checkpoint = get_checkpoint_at_epoch(db, checkpoint_epoch)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "No checkpoint found at epoch".to_string(),
-            Box::new(checkpoint_epoch),
-        )
-    })?;
+    let checkpoint = get_checkpoint_at_epoch(db, canonical_chain_provider, checkpoint_epoch)?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "No checkpoint found at epoch".to_string(),
+                Box::new(checkpoint_epoch),
+            )
+        })?;
 
     let current_l1_tip = get_l1_chain_tip(db)?.0;
     let tip = checkpoint.payload.new_tip();
@@ -433,6 +457,7 @@ pub(crate) fn get_checkpoint(
 /// Get summary of all checkpoints.
 pub(crate) fn get_checkpoints_summary(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: GetCheckpointsSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let l1_db = db.l1_db();
@@ -471,7 +496,8 @@ pub(crate) fn get_checkpoints_summary(
     let mut checkpoints_found_in_db = 0u64;
     if let Some((start_epoch, end_epoch)) = epoch_range {
         for epoch in start_epoch..=end_epoch {
-            let Some(checkpoint) = get_checkpoint_at_epoch(db, epoch)? else {
+            let Some(checkpoint) = get_checkpoint_at_epoch(db, canonical_chain_provider, epoch)?
+            else {
                 continue;
             };
             epochs_in_db.insert(epoch);
@@ -506,15 +532,17 @@ pub(crate) fn get_checkpoints_summary(
 /// Get epoch summary at specified index.
 pub(crate) fn get_epoch_summary(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: GetEpochSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let epoch = args.epoch;
-    let commitment = get_canonical_epoch_commitment_at(db, epoch)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "No epoch summary found for epoch".to_string(),
-            Box::new(epoch),
-        )
-    })?;
+    let commitment = get_canonical_epoch_commitment_at(canonical_chain_provider, epoch)?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "No epoch summary found for epoch".to_string(),
+                Box::new(epoch),
+            )
+        })?;
 
     let epoch_summary = db
         .ol_checkpoint_db()

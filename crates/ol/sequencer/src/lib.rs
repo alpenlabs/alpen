@@ -12,10 +12,13 @@ pub(crate) mod service;
 pub mod signing;
 mod types;
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 pub use builder::SequencerBuilder;
 pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry, RevealTxSigningDuty};
 pub use error::Error;
-pub use extraction::extract_duties;
+pub use extraction::{extract_duties, CheckpointDutyContext};
 pub use service::{SequencerContext, SequencerContextError, SequencerServiceStatus};
 pub use signing::{sign_checkpoint, sign_header, sign_reveal_tx};
 pub use strata_ol_block_assembly::BlockasmHandle;

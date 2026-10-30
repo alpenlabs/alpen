@@ -40,10 +40,10 @@ class RevertCheckpointedBlockShouldFailTest(StrataNodeTest):
             raise AssertionError(f"Invalid slots_per_epoch in sequencer props: {slots_per_epoch!r}")
 
         logger.info("Reading checkpoint summary from datadir=%s", datadir)
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(seq_service)
         latest_epoch = int(latest_checkpoint["checkpoint_epoch"])
         target_block_id, _ = target_start_of_checkpointed_epoch(
-            datadir,
+            seq_service,
             latest_checkpoint,
             slots_per_epoch,
         )
@@ -53,7 +53,7 @@ class RevertCheckpointedBlockShouldFailTest(StrataNodeTest):
             target_block_id,
         )
 
-        code, stdout, stderr = revert_ol_state(datadir, target_block_id)
+        code, stdout, stderr = revert_ol_state(seq_service, target_block_id)
         assert code != 0
         logger.info("revert without -c failed for checkpointed target")
         return True

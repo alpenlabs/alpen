@@ -1741,10 +1741,13 @@ mod tests {
             .replace_canonical_suffix_from_blocking(0, Vec::new())
             .expect("test: clear canonical index");
 
-        storage
-            .ol_block()
-            .get_canonical_tip_blocking()
-            .expect_err("test: missing canonical index has no tip");
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_tip_blocking()
+                .expect("test: query empty canonical index"),
+            None
+        );
 
         let finalized_epoch = EpochCommitment::new(1, 1, *tip_commitment.blkid());
         ensure_canonical_block_index(&storage, genesis_commitment, Some(finalized_epoch))
@@ -1786,10 +1789,13 @@ mod tests {
             .ol_block()
             .replace_canonical_suffix_from_blocking(0, Vec::new())
             .expect("test: clear canonical index");
-        storage
-            .ol_block()
-            .get_canonical_tip_blocking()
-            .expect_err("test: missing canonical index has no tip");
+        assert_eq!(
+            storage
+                .ol_block()
+                .get_canonical_tip_blocking()
+                .expect("test: query empty canonical index"),
+            None
+        );
 
         ensure_genesis_canonical_entry(&storage, genesis_commitment)
             .expect("test: seed genesis canonical entry");

@@ -5,6 +5,7 @@ use strata_db_types::{
     ol_state_index::OLStateIndexingDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
+use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
 
 use super::{
     checkpoint::{
@@ -15,10 +16,13 @@ use super::{
         build_mmr_index_revert_plan, execute_mmr_index_revert_plan, print_mmr_index_revert_summary,
         validate_mmr_index_revert_prefixes,
     },
-    ol::{delete_ol_block_data, get_ol_block_slot_and_epoch, mark_ol_block_unchecked},
+    ol::{
+        delete_ol_block_data, get_canonical_ol_tip, get_ol_block_slot_and_epoch,
+        mark_ol_block_unchecked,
+    },
 };
 use crate::{
-    cli::OutputFormat,
+    cli::{NodeRole, OutputFormat},
     output::{ol_state::OLStateInfo, output},
     utils::block_id::parse_ol_block_id,
 };
@@ -27,6 +31,10 @@ use crate::{
 #[argh(subcommand, name = "get-ol-state")]
 /// Get OL state at specified block
 pub(crate) struct GetOLStateArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// OL block id
     #[argh(positional)]
     pub(crate) block_id: String,
@@ -44,6 +52,10 @@ pub(crate) struct GetOLStateArgs {
 #[argh(subcommand, name = "revert-ol-state")]
 /// Revert OL state to specified block
 pub(crate) struct RevertOLStateArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// target OL block id
     #[argh(positional)]
     pub(crate) block_id: String,
@@ -68,6 +80,7 @@ pub(crate) struct RevertOLStateArgs {
 /// Get OL state at specified block.
 pub(crate) fn get_ol_state(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: GetOLStateArgs,
 ) -> Result<(), DisplayedError> {
     let block_id = parse_ol_block_id(&args.block_id)?;
@@ -100,8 +113,12 @@ pub(crate) fn get_ol_state(
     let chainstate = top_level_state.chainstate();
     let recorded_epoch = chainstate.asm_recorded_epoch();
     // Finalized epoch should come from client-state declared final epoch (L1-confirmed).
-    let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
-        .unwrap_or_else(EpochCommitment::null);
+    let finalized_epoch = get_latest_finalized_checkpoint_epoch(
+        db,
+        canonical_chain_provider,
+        args.l1_reorg_safe_depth,
+    )?
+    .unwrap_or_else(EpochCommitment::null);
     let l1_safe_block = chainstate.last_l1_block();
     let l1_safe_block_height = l1_safe_block.height();
     let ol_state_info = OLStateInfo {
@@ -122,6 +139,7 @@ pub(crate) fn get_ol_state(
 /// Revert OL state to specified block.
 pub(crate) fn revert_ol_state(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: RevertOLStateArgs,
 ) -> Result<(), DisplayedError> {
     let target_block_id = parse_ol_block_id(&args.block_id)?;
@@ -148,10 +166,7 @@ pub(crate) fn revert_ol_state(
 
     let dry_run = !args.force;
 
-    let chain_tip_slot = db
-        .ol_block_db()
-        .get_tip_slot()
-        .internal_error("Failed to get OL tip slot")?;
+    let chain_tip_slot = get_canonical_ol_tip(db)?.slot();
 
     // No-op: target is already at/after current tip.
     if target_slot >= chain_tip_slot {
@@ -161,8 +176,12 @@ pub(crate) fn revert_ol_state(
         );
         return Ok(());
     }
-    let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
-        .unwrap_or_else(EpochCommitment::null);
+    let finalized_epoch = get_latest_finalized_checkpoint_epoch(
+        db,
+        canonical_chain_provider,
+        args.l1_reorg_safe_depth,
+    )?
+    .unwrap_or_else(EpochCommitment::null);
     let finalized_slot = finalized_epoch.last_slot();
     if target_slot < finalized_slot {
         return Err(DisplayedError::UserError(
@@ -373,12 +392,13 @@ mod tests {
         MmrId,
     };
     use strata_identifiers::{Buf32, Buf64, Hash, OLBlockId, L1_HEIGHT_MMR_PREFILL_LEAF};
+    use strata_ol_canonical_chain_provider::OLCanonicalChainProviderImpl;
     use strata_ol_chain_types_v1::{
         BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLTxSegmentV1,
         SignedOLBlockHeaderV1,
     };
     use strata_ol_state_container::{test_utils::create_test_genesis_container, OLStateContainer};
-    use strata_storage::MmrIndexManager;
+    use strata_storage::{create_node_storage, MmrIndexManager};
     use tokio::runtime::Runtime;
 
     use super::*;
@@ -436,7 +456,11 @@ mod tests {
 
         revert_ol_state(
             db.as_ref(),
+            &OLCanonicalChainProviderImpl::new(
+                &create_node_storage(db.clone(), runtime.handle().clone()).unwrap(),
+            ),
             RevertOLStateArgs {
+                node_role: NodeRole::Sequencer,
                 block_id: hex::encode(target_block_id.as_ref()),
                 delete_blocks: false,
                 revert_checkpointed_blocks: false,
@@ -515,7 +539,11 @@ mod tests {
 
         let err = revert_ol_state(
             db.as_ref(),
+            &OLCanonicalChainProviderImpl::new(
+                &create_node_storage(db.clone(), runtime.handle().clone()).unwrap(),
+            ),
             RevertOLStateArgs {
+                node_role: NodeRole::Sequencer,
                 block_id: hex::encode(target_block_id.as_ref()),
                 delete_blocks: false,
                 revert_checkpointed_blocks: false,

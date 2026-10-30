@@ -46,20 +46,19 @@ class RevertCheckpointedBlockFnTest(BaseTest):
 
         seq_service.stop()
         fn_service.stop()
-        datadir = fn_service.props["datadir"]
         slots_per_epoch = seq_service.props.get("slots_per_epoch")
         if not isinstance(slots_per_epoch, int) or slots_per_epoch <= 0:
             raise AssertionError(f"Invalid slots_per_epoch in sequencer props: {slots_per_epoch!r}")
 
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(fn_service)
         latest_epoch_before_revert = int(latest_checkpoint["checkpoint_epoch"])
         post_restart_target_epoch = latest_epoch_before_revert + 1
         epoch_summary_before = run_dbtool_json(
-            datadir, "get-epoch-summary", str(latest_epoch_before_revert)
+            fn_service, "get-epoch-summary", str(latest_epoch_before_revert)
         )
         logger.info("Epoch summary before revert: %s", epoch_summary_before)
         target_block_id, target_slot = target_start_of_checkpointed_epoch(
-            datadir,
+            fn_service,
             latest_checkpoint,
             slots_per_epoch,
         )
@@ -69,17 +68,17 @@ class RevertCheckpointedBlockFnTest(BaseTest):
         )
 
         code, stdout, stderr = revert_ol_state(
-            datadir,
+            fn_service,
             target_block_id,
             revert_checkpointed=True,
         )
         assert code == 0, stderr or stdout
 
-        target_after = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_after = run_dbtool_json(fn_service, "get-ol-state", target_block_id)
         assert int(target_after["current_slot"]) == target_slot
         logger.info("target OL state slot preserved after revert")
         # Reverting to the start of checkpointed epoch should delete that epoch's metadata.
-        assert verify_checkpoint_deleted(datadir, latest_epoch_before_revert)
+        assert verify_checkpoint_deleted(fn_service, latest_epoch_before_revert)
         logger.info("checkpoint and epoch summary deleted for reverted epoch")
 
         # Restart both services and verify fullnode catches up.

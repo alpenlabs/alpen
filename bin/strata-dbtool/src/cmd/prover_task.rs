@@ -16,11 +16,12 @@ use strata_db_types::{
     backend::DatabaseBackend, ol_state::OLStateDatabase, prover_task::ProverTaskDatabase,
 };
 use strata_identifiers::Epoch;
+use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
 use strata_paas::{TaskRecordData, TaskStatus};
 use strata_storage::VersionedTaskStore;
 
 use crate::{
-    cli::OutputFormat,
+    cli::{NodeRole, OutputFormat},
     cmd::{
         checkpoint::get_canonical_epoch_commitment_at,
         prover_task_common::{parse_task_key, print_force_hint, StatusFilter, ABANDONED_REASON},
@@ -367,6 +368,10 @@ pub(crate) fn delete_prover_task(
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "backfill-checkpoint-proof-task")]
 pub(crate) struct BackfillCheckpointProofTaskArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// checkpoint epoch
     #[argh(positional)]
     pub(crate) epoch: Epoch,
@@ -397,14 +402,16 @@ pub(crate) struct BackfillProverTaskRawArgs {
 /// the given epoch.
 pub(crate) fn backfill_checkpoint_proof_task(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: BackfillCheckpointProofTaskArgs,
 ) -> Result<(), DisplayedError> {
-    let commitment = get_canonical_epoch_commitment_at(db, args.epoch)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "No canonical checkpoint commitment at epoch".to_string(),
-            Box::new(args.epoch),
-        )
-    })?;
+    let commitment = get_canonical_epoch_commitment_at(canonical_chain_provider, args.epoch)?
+        .ok_or_else(|| {
+            DisplayedError::UserError(
+                "No canonical checkpoint commitment at epoch".to_string(),
+                Box::new(args.epoch),
+            )
+        })?;
     let terminal = commitment.to_block_commitment();
     // The current spec identifies the completed epoch.
     let spec = db
@@ -475,8 +482,9 @@ mod tests {
     use sled::Config as SledConfig;
     use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::{test_utils::get_test_sled_backend, SledBackend, SledDbConfig};
-    use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
+    use strata_db_types::{ol_block::OLBlockDatabase, ol_checkpoint::OLCheckpointDatabase};
     use strata_identifiers::{Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
+    use strata_ol_canonical_chain_provider::OLCanonicalChainProviderImpl;
     use strata_ol_state_container::{
         test_utils::{
             create_test_container_with_staged, create_test_genesis_container, v0_container,
@@ -485,6 +493,7 @@ mod tests {
     };
     use strata_ol_state_types::OLSpecId;
     use strata_ol_state_types_v1::test_utils::create_test_genesis_state;
+    use strata_storage::{create_node_storage, test_runtime_handle};
     use typed_sled::SledDb;
 
     use super::*;
@@ -502,11 +511,23 @@ mod tests {
             .put_toplevel_ol_state(terminal, state)
             .unwrap();
         db.ol_checkpoint_db().insert_epoch_summary(summary).unwrap();
+        db.ol_block_db()
+            .replace_canonical_suffix_from(terminal.slot(), vec![*terminal.blkid()])
+            .unwrap();
         summary.get_epoch_commitment()
     }
 
-    fn backfill(db: &impl DatabaseBackend, force: bool) -> Result<(), DisplayedError> {
-        backfill_checkpoint_proof_task(db, BackfillCheckpointProofTaskArgs { epoch: 1, force })
+    fn backfill(db: &Arc<SledBackend>, force: bool) -> Result<(), DisplayedError> {
+        let storage = create_node_storage(db.clone(), test_runtime_handle()).unwrap();
+        backfill_checkpoint_proof_task(
+            db.as_ref(),
+            &OLCanonicalChainProviderImpl::new(&storage),
+            BackfillCheckpointProofTaskArgs {
+                node_role: NodeRole::Sequencer,
+                epoch: 1,
+                force,
+            },
+        )
     }
 
     #[test]
@@ -527,7 +548,7 @@ mod tests {
                 )
                 .unwrap();
 
-            backfill(db.as_ref(), true).unwrap();
+            backfill(&db, true).unwrap();
 
             let tasks = db.prover_task_db().list_all_tasks().unwrap();
             assert_eq!(tasks.len(), 1);
@@ -556,7 +577,7 @@ mod tests {
                     .unwrap();
             }
 
-            let error = backfill(db.as_ref(), force).unwrap_err();
+            let error = backfill(&db, force).unwrap_err();
 
             assert!(matches!(error, DisplayedError::UserError(_, _)));
             assert!(error.to_string().contains("terminal OL state"));
@@ -567,12 +588,14 @@ mod tests {
     #[test]
     fn backfill_unreadable_terminal_spec_does_not_insert_a_task() {
         let raw_db = SledConfig::new().temporary(true).open().unwrap();
-        let db = SledBackend::new(
-            Arc::new(SledDb::new(raw_db.clone()).unwrap()),
-            SledDbConfig::test(),
-        )
-        .unwrap();
-        seed_epoch(&db, create_test_genesis_container());
+        let db = Arc::new(
+            SledBackend::new(
+                Arc::new(SledDb::new(raw_db.clone()).unwrap()),
+                SledDbConfig::test(),
+            )
+            .unwrap(),
+        );
+        seed_epoch(db.as_ref(), create_test_genesis_container());
 
         // Inject an unsupported current spec into the actual stored CBOR snapshot.
         // Typed state constructors cannot produce this invalid state.
@@ -602,7 +625,7 @@ mod tests {
     fn backfill_without_canonical_epoch_does_not_insert_a_task() {
         let db = get_test_sled_backend();
         for force in [false, true] {
-            let error = backfill(db.as_ref(), force).unwrap_err();
+            let error = backfill(&db, force).unwrap_err();
             assert!(error
                 .to_string()
                 .contains("No canonical checkpoint commitment"));
@@ -615,7 +638,7 @@ mod tests {
         let db = get_test_sled_backend();
         seed_epoch(db.as_ref(), create_test_genesis_container());
 
-        backfill(db.as_ref(), false).unwrap();
+        backfill(&db, false).unwrap();
 
         assert_eq!(db.prover_task_db().list_all_tasks().unwrap().len(), 0);
     }
@@ -631,8 +654,8 @@ mod tests {
             .insert_task(key.clone(), record.clone())
             .unwrap();
 
-        backfill(db.as_ref(), false).unwrap();
-        let error = backfill(db.as_ref(), true).unwrap_err();
+        backfill(&db, false).unwrap();
+        let error = backfill(&db, true).unwrap_err();
 
         assert!(error.to_string().contains("EntryAlreadyExists"));
         let tasks = db.prover_task_db().list_all_tasks().unwrap();

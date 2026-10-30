@@ -7,13 +7,16 @@ edition = "2021"
 strata-asm-checkpoint-types.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
+strata-checkpoint-types = { workspace = true, optional = true }
 strata-codec.workspace = true
 strata-common.workspace = true
 strata-crypto.workspace = true
 strata-csm-types.workspace = true
+strata-db-store-sled = { workspace = true, optional = true }
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-block-assembly.workspace = true
+strata-ol-canonical-chain-provider = { workspace = true, optional = true }
 strata-ol-chain-types-v1.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-state-types-v1.workspace = true
@@ -33,11 +36,22 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-checkpoint-types.workspace = true
+strata-db-store-sled = { workspace = true, features = ["test_utils"] }
+strata-ol-canonical-chain-provider.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
 proptest.workspace = true
 strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ol-chain-types-v1 = { workspace = true, features = ["test-utils"] }
 
 [features]
+test-utils = [
+  "dep:strata-checkpoint-types",
+  "dep:strata-db-store-sled",
+  "dep:strata-ol-canonical-chain-provider",
+  "strata-db-store-sled/test_utils",
+  "strata-storage/test-utils",
+]
 debug-utils = ["strata-common/debug-utils"]
 jsonschema = ["strata-ol-block-assembly/jsonschema"]

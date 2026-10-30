@@ -8,9 +8,9 @@ use strata_asm_checkpoint_types::{
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_service::ServiceState;
-use tracing::{debug, info};
+use tracing::info;
 
-use crate::context::CheckpointWorkerContext;
+use crate::context::{CheckpointWorkerContext, ProofWaitOutcome};
 #[cfg(feature = "debug-utils")]
 use crate::debug_faults::apply_requested_proof_corruption;
 use crate::errors::CheckpointNotReady;
@@ -21,16 +21,23 @@ use crate::errors::CheckpointNotReady;
 pub(crate) struct OLCheckpointServiceState<C: CheckpointWorkerContext> {
     ctx: C,
     initialized: bool,
-    last_processed_epoch: Option<Epoch>,
+    last_processed: Option<EpochCommitment>,
+    history_base: Option<EpochCommitment>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum EpochProcessingOutcome {
+    Complete,
+    Superseded,
 }
 
 impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
-    /// Create a new state with the given context.
     pub(crate) fn new(ctx: C) -> Self {
         Self {
             ctx,
             initialized: false,
-            last_processed_epoch: None,
+            last_processed: None,
+            history_base: None,
         }
     }
 
@@ -39,133 +46,141 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
     }
 
     pub(crate) fn last_processed_epoch(&self) -> Option<Epoch> {
-        self.last_processed_epoch
+        self.last_processed.map(|commitment| commitment.epoch())
     }
 
-    pub(crate) fn initialize(&mut self) {
-        self.init_cursor_from_db();
+    pub(crate) fn initialize(&mut self) -> anyhow::Result<()> {
+        self.history_base = self.ctx.get_history_base()?;
+        self.last_processed = self.history_base;
+        self.init_cursor_from_db()?;
         self.initialized = true;
-    }
-
-    /// Returns the canonical commitment of the most recently summarized epoch,
-    /// or `None` if no epoch has been summarized yet.
-    pub(crate) fn last_summarized_commitment(&self) -> anyhow::Result<Option<EpochCommitment>> {
-        let Some(epoch_index) = self.ctx.get_last_summarized_epoch()? else {
-            return Ok(None);
-        };
-        self.ctx.get_canonical_epoch_commitment_at(epoch_index)
-    }
-
-    /// Handles a completed epoch, catching up from last checkpoint to latest summary.
-    ///
-    /// The `target` commitment identifies the epoch that was completed. We process
-    /// all pending epochs up to and including the latest summarized epoch.
-    pub(crate) fn handle_complete_epoch(&mut self, target: EpochCommitment) -> anyhow::Result<()> {
-        anyhow::ensure!(self.initialized, "worker not initialized");
-
-        let Some(target_epoch_index) = self.ctx.get_last_summarized_epoch()? else {
-            return Ok(());
-        };
-
-        // Determine starting epoch index (last processed + 1, or 1 if none, skip genesis epoch)
-        let start_epoch_index = self
-            .last_processed_epoch
-            .map(|e| e.saturating_add(1))
-            .unwrap_or(1);
-
-        // Process all epochs from start to target (inclusive)
-        for epoch_index in start_epoch_index..=target_epoch_index {
-            self.process_epoch(epoch_index)?;
-        }
-
-        // Sanity check: verify we processed up to at least the target epoch
-        if let Some(last_epoch) = self.last_processed_epoch
-            && last_epoch < target.epoch()
-        {
-            debug!(
-                last_processed = last_epoch,
-                target_epoch = target.epoch(),
-                "processed epochs but not yet caught up to target"
-            );
-        }
-
         Ok(())
     }
 
-    /// Process a single epoch, building checkpoint if summary exists.
-    ///
-    /// Returns error if the epoch index cannot be processed (missing data).
-    /// Checkpoints must be built sequentially, so caller should stop on error.
-    fn process_epoch(&mut self, epoch_number: Epoch) -> anyhow::Result<()> {
-        // Get canonical commitment for this epoch index - must exist to proceed
-        let commitment = self
+    fn latest_completed_epoch(&self) -> anyhow::Result<Option<Epoch>> {
+        let Some(tip) = self.ctx.get_canonical_tip()? else {
+            return Ok(None);
+        };
+        let header = self
             .ctx
-            .get_canonical_epoch_commitment_at(epoch_number)?
-            .ok_or(CheckpointNotReady::EpochCommitment(epoch_number))?;
+            .get_block_header(&tip)?
+            .ok_or_else(|| anyhow::anyhow!("missing canonical tip header {tip}"))?;
+        Ok(if header.is_terminal() {
+            Some(header.epoch())
+        } else {
+            header.epoch().checked_sub(1)
+        })
+    }
 
-        // Get summary - must exist to proceed
+    fn epoch_summary(&self, commitment: EpochCommitment) -> anyhow::Result<EpochSummary> {
         let summary = self
             .ctx
             .get_epoch_summary(commitment)?
             .ok_or(CheckpointNotReady::EpochSummary(commitment))?;
-
-        let epoch = summary.epoch();
-
-        // Skip if already checkpointed
-        if self.ctx.get_checkpoint_payload(commitment)?.is_some() {
-            self.last_processed_epoch = Some(epoch);
-            return Ok(());
-        }
-
-        let payload = build_checkpoint_payload(commitment, &summary, &self.ctx)?;
-        self.ctx.put_checkpoint_payload(commitment, payload)?;
-        counter!("strata_checkpoint_created_total").increment(1);
-        gauge!("strata_checkpoint_last_created_epoch").set(epoch as f64);
-
-        info!(
-            component = "ol_checkpoint",
-            %epoch,
-            l1_height = summary.new_l1().height(),
-            l1_block = %summary.new_l1(),
-            l2_commitment = %summary.terminal(),
-            "stored OL checkpoint entry"
+        anyhow::ensure!(
+            summary.get_epoch_commitment() == commitment,
+            "epoch summary does not match commitment {commitment}"
         );
-        self.last_processed_epoch = Some(epoch);
+        Ok(summary)
+    }
 
+    /// Reconciles the processed branch and catches up using current canonical reads.
+    pub(crate) fn handle_chain_update(&mut self) -> anyhow::Result<()> {
+        anyhow::ensure!(self.initialized, "worker not initialized");
+        loop {
+            let Some(target) = self.latest_completed_epoch()? else {
+                return Ok(());
+            };
+            self.reconcile_cursor()?;
+            let next = match self.last_processed {
+                Some(commitment) => commitment.epoch().checked_add(1),
+                None => Some(1),
+            };
+            let Some(next) = next else {
+                return Ok(());
+            };
+            let mut superseded = false;
+            for epoch in next..=target {
+                if self.process_epoch(epoch)? == EpochProcessingOutcome::Superseded {
+                    superseded = true;
+                    break;
+                }
+            }
+            if !superseded {
+                return Ok(());
+            }
+            // A proof wait may consume the time during which a new signal arrived.
+            // Reconcile immediately instead of requiring another notification.
+        }
+    }
+
+    fn reconcile_cursor(&mut self) -> anyhow::Result<()> {
+        if let Some(commitment) = self.last_processed {
+            self.last_processed = self
+                .ctx
+                .find_canonical_resume_point(commitment, self.history_base)?;
+        }
         Ok(())
     }
 
-    fn init_cursor_from_db(&mut self) {
-        let history_base_epoch = self.ctx.get_history_base_epoch().ok().flatten();
-        self.last_processed_epoch = history_base_epoch;
+    fn process_epoch(&mut self, epoch: Epoch) -> anyhow::Result<EpochProcessingOutcome> {
+        let commitment = self
+            .ctx
+            .get_canonical_epoch_commitment_at(epoch)?
+            .ok_or(CheckpointNotReady::EpochCommitment(epoch))?;
+        let summary = self.epoch_summary(commitment)?;
+        if let Some(previous) = self.last_processed
+            && *summary.prev_terminal() != previous.to_block_commitment()
+        {
+            if self.ctx.get_canonical_block_at(previous.last_slot())?
+                != Some(previous.to_block_commitment())
+                || self.ctx.get_canonical_epoch_commitment_at(epoch)? != Some(commitment)
+            {
+                return Ok(EpochProcessingOutcome::Superseded);
+            }
+            anyhow::bail!("epoch summary predecessor does not match processed epoch {previous}");
+        }
 
-        let Ok(Some(last_checkpoint_commitment)) = self.ctx.get_last_checkpoint_payload_epoch()
-        else {
-            return;
+        if self.ctx.get_checkpoint_payload(commitment)?.is_none() {
+            let Some(payload) = build_checkpoint_payload(commitment, &summary, &self.ctx)? else {
+                return Ok(EpochProcessingOutcome::Superseded);
+            };
+            if self.ctx.get_canonical_epoch_commitment_at(epoch)? != Some(commitment) {
+                return Ok(EpochProcessingOutcome::Superseded);
+            }
+            self.ctx.put_checkpoint_payload(commitment, payload)?;
+            counter!("strata_checkpoint_created_total").increment(1);
+            gauge!("strata_checkpoint_last_created_epoch").set(epoch as f64);
+            info!(%commitment, "stored OL checkpoint entry");
+        } else if self.ctx.get_canonical_epoch_commitment_at(epoch)? != Some(commitment) {
+            return Ok(EpochProcessingOutcome::Superseded);
+        }
+        self.last_processed = Some(commitment);
+        Ok(EpochProcessingOutcome::Complete)
+    }
+
+    fn init_cursor_from_db(&mut self) -> anyhow::Result<()> {
+        let Some(last_payload) = self.ctx.get_last_checkpoint_payload_epoch()? else {
+            return Ok(());
         };
-
-        let Ok(Some(last_summarized_index)) = self.ctx.get_last_summarized_epoch() else {
-            return;
+        let Some(target) = self.latest_completed_epoch()? else {
+            return Ok(());
         };
-
-        for epoch_index in (0..=last_summarized_index).rev() {
-            let Ok(Some(commitment)) = self.ctx.get_canonical_epoch_commitment_at(epoch_index)
-            else {
+        let upper = target.min(last_payload.epoch());
+        for epoch in (0..=upper)
+            .rev()
+            .take_while(|epoch| self.history_base.is_none_or(|base| *epoch > base.epoch()))
+        {
+            let Some(commitment) = self.ctx.get_canonical_epoch_commitment_at(epoch)? else {
                 continue;
             };
-            let Ok(Some(summary)) = self.ctx.get_epoch_summary(commitment) else {
-                continue;
-            };
-
-            if summary.get_epoch_commitment() == last_checkpoint_commitment {
-                let payload_epoch = last_checkpoint_commitment.epoch();
-                self.last_processed_epoch = Some(
-                    self.last_processed_epoch
-                        .map_or(payload_epoch, |floor| floor.max(payload_epoch)),
-                );
+            if self.ctx.get_checkpoint_payload(commitment)?.is_some() {
+                self.epoch_summary(commitment)?;
+                self.last_processed = Some(commitment);
                 break;
             }
         }
+        Ok(())
     }
 }
 
@@ -179,7 +194,7 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     commitment: EpochCommitment,
     summary: &EpochSummary,
     ctx: &C,
-) -> anyhow::Result<CheckpointPayload> {
+) -> anyhow::Result<Option<CheckpointPayload>> {
     let l1_height = summary.new_l1().height();
     let l2_commitment = *summary.terminal();
     let new_tip = CheckpointTip::new(summary.epoch(), l1_height, l2_commitment);
@@ -201,16 +216,19 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     );
 
     let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
-    let proof = ctx.get_proof(&commitment)?;
-    #[cfg(feature = "debug-utils")]
-    let proof = apply_requested_proof_corruption(commitment, proof);
-
-    Ok(CheckpointPayload::new(new_tip, sidecar, proof)?)
+    match ctx.get_proof(&commitment)? {
+        ProofWaitOutcome::Ready(proof) => {
+            #[cfg(feature = "debug-utils")]
+            let proof = apply_requested_proof_corruption(commitment, proof);
+            Ok(Some(CheckpointPayload::new(new_tip, sidecar, proof)?))
+        }
+        ProofWaitOutcome::Superseded => Ok(None),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use proptest::prelude::*;
     use strata_acct_types::BitcoinAmount;
@@ -226,12 +244,15 @@ mod tests {
     use strata_checkpoint_types::EpochSummary;
     use strata_checkpoint_verification::{CheckpointL1Range, CheckpointState, verify_progression};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::DbError;
+    use strata_db_types::backend::DatabaseBackend;
+    use strata_db_types::ol_checkpoint::OLCheckpointDatabase;
     use strata_identifiers::test_utils::{
         buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy,
     };
     use strata_identifiers::{
         AccountSerial, BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Buf64, Epoch,
-        L1BlockCommitment, L1BlockId, OLBlockCommitment,
+        L1BlockCommitment, L1BlockId, OLBlockCommitment, Slot,
     };
     use strata_ol_chain_types_v1::{
         AsmManifest, BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLBlockId, OLBlockV1, OLLog,
@@ -257,10 +278,19 @@ mod tests {
     use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
     use strata_predicate::PredicateKey;
     use strata_primitives::epoch::EpochCommitment;
+    use strata_service::SyncService;
+    use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
     use strata_storage::create_node_storage;
 
     use super::OLCheckpointServiceState;
-    use crate::context::{CheckpointWorkerContext, CheckpointWorkerContextImpl, StateDiffRaw};
+    use crate::context::{
+        CheckpointWorkerContext, CheckpointWorkerContextImpl, ProofWaitOutcome, StateDiffRaw,
+    };
+    use crate::errors::CheckpointNotReady;
+    use crate::service::OLCheckpointService;
+
+    type ProofResponse =
+        Box<dyn Fn(&EpochCommitment) -> anyhow::Result<ProofWaitOutcome> + Send + Sync>;
 
     fn state_diff_strategy() -> impl Strategy<Value = Vec<u8>> {
         prop::collection::vec(any::<u8>(), 0..1024)
@@ -284,6 +314,8 @@ mod tests {
         inner: CheckpointWorkerContextImpl,
         stub_state_diff: StateDiffRaw,
         stub_ol_logs: Vec<OLLog>,
+        proof_requests: Mutex<Vec<EpochCommitment>>,
+        proof_response: Option<ProofResponse>,
     }
 
     impl TestCheckpointContext {
@@ -300,20 +332,35 @@ mod tests {
                 ),
                 stub_state_diff,
                 stub_ol_logs,
+                proof_requests: Mutex::new(Vec::new()),
+                proof_response: None,
             }
         }
     }
 
     impl CheckpointWorkerContext for TestCheckpointContext {
-        fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<Epoch>> {
-            self.inner.get_last_summarized_epoch()
+        fn find_canonical_resume_point(
+            &self,
+            last_processed: EpochCommitment,
+            history_base: Option<EpochCommitment>,
+        ) -> anyhow::Result<Option<EpochCommitment>> {
+            self.inner
+                .find_canonical_resume_point(last_processed, history_base)
+        }
+
+        fn get_canonical_tip(&self) -> anyhow::Result<Option<OLBlockCommitment>> {
+            self.inner.get_canonical_tip()
+        }
+
+        fn get_canonical_block_at(&self, slot: Slot) -> anyhow::Result<Option<OLBlockCommitment>> {
+            self.inner.get_canonical_block_at(slot)
         }
 
         fn get_canonical_epoch_commitment_at(
             &self,
-            index: Epoch,
+            epoch: Epoch,
         ) -> anyhow::Result<Option<EpochCommitment>> {
-            self.inner.get_canonical_epoch_commitment_at(index)
+            self.inner.get_canonical_epoch_commitment_at(epoch)
         }
 
         fn get_epoch_summary(
@@ -334,8 +381,8 @@ mod tests {
             self.inner.get_last_checkpoint_payload_epoch()
         }
 
-        fn get_history_base_epoch(&self) -> anyhow::Result<Option<Epoch>> {
-            self.inner.get_history_base_epoch()
+        fn get_history_base(&self) -> anyhow::Result<Option<EpochCommitment>> {
+            self.inner.get_history_base()
         }
 
         fn put_checkpoint_payload(
@@ -346,8 +393,12 @@ mod tests {
             self.inner.put_checkpoint_payload(commitment, payload)
         }
 
-        fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
-            self.inner.get_proof(epoch)
+        fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<ProofWaitOutcome> {
+            self.proof_requests.lock().unwrap().push(*epoch);
+            match &self.proof_response {
+                Some(response) => response(epoch),
+                None => self.inner.get_proof(epoch),
+            }
         }
 
         fn get_block_header(
@@ -404,7 +455,7 @@ mod tests {
             L1BlockCommitment::default(),
         );
         let mut state = OLCheckpointServiceState::new(ctx);
-        state.initialize();
+        state.initialize().expect("initialize checkpoint cursor");
         state
     }
 
@@ -415,10 +466,8 @@ mod tests {
         commitment: EpochCommitment,
     ) -> CheckpointPayload {
         let mut state = OLCheckpointServiceState::new(ctx);
-        state.initialize();
-        state
-            .handle_complete_epoch(commitment)
-            .expect("build checkpoint");
+        state.initialize().expect("initialize checkpoint cursor");
+        state.handle_chain_update().expect("build checkpoint");
         storage
             .ol_checkpoint()
             .get_checkpoint_payload_entry_blocking(commitment)
@@ -441,8 +490,48 @@ mod tests {
             .collect()
     }
 
+    fn store_test_terminal(
+        storage: &strata_storage::NodeStorage,
+        epoch: Epoch,
+        slot: u64,
+        parent: OLBlockCommitment,
+        seed: Buf32,
+    ) -> OLBlockHeaderV1 {
+        let mut flags = BlockFlagsV1::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeaderV1::new(
+            1_000 + slot,
+            flags,
+            slot,
+            epoch,
+            *parent.blkid(),
+            seed,
+            seed,
+            seed,
+        );
+        storage
+            .ol_block()
+            .put_terminal_header_blocking(header.compute_blkid(), header.clone())
+            .expect("store test terminal header");
+        header
+    }
+
+    fn set_canonical_tip(storage: &strata_storage::NodeStorage, tip: OLBlockCommitment) {
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(tip.slot(), vec![*tip.blkid()])
+            .expect("set canonical tip");
+    }
+
     fn set_history_base(storage: &strata_storage::NodeStorage, epoch: Epoch) -> EpochCommitment {
-        let commitment = EpochCommitment::new(epoch, u64::from(epoch), OLBlockId::null());
+        let header = store_test_terminal(
+            storage,
+            epoch,
+            u64::from(epoch),
+            OLBlockCommitment::null(),
+            Buf32::zero(),
+        );
+        let commitment = EpochCommitment::from_terminal(epoch, header.compute_block_commitment());
         storage
             .ol_block()
             .promote_to_history_anchor_blocking(commitment)
@@ -455,10 +544,25 @@ mod tests {
         epoch: Epoch,
     ) -> EpochCommitment {
         let payload = create_test_checkpoint_payload(epoch);
-        let commitment = EpochCommitment::from_terminal(epoch, *payload.new_tip().l2_commitment());
+        let header = store_test_terminal(
+            storage,
+            epoch,
+            u64::from(epoch),
+            OLBlockCommitment::null(),
+            Buf32::zero(),
+        );
+        let terminal = header.compute_block_commitment();
+        set_canonical_tip(storage, terminal);
+        let payload = CheckpointPayload::new(
+            CheckpointTip::new(epoch, payload.new_tip().l1_height(), terminal),
+            payload.sidecar().clone(),
+            payload.proof().to_vec(),
+        )
+        .unwrap();
+        let commitment = EpochCommitment::from_terminal(epoch, terminal);
         let summary = EpochSummary::new(
             epoch,
-            *payload.new_tip().l2_commitment(),
+            terminal,
             OLBlockCommitment::null(),
             L1BlockCommitment::new(0, L1BlockId::default()),
             Buf32::zero(),
@@ -519,8 +623,9 @@ mod tests {
         set_history_base(&storage, 5);
         let payload_commitment = put_checkpoint_payload(&storage, 6);
         storage
-            .ol_checkpoint()
-            .del_checkpoint_payload_entry_blocking(payload_commitment)
+            .db()
+            .ol_checkpoint_db()
+            .del_checkpoint_payload_entry(payload_commitment)
             .expect("delete checkpoint payload");
 
         let state = initialize_cursor(storage);
@@ -528,18 +633,429 @@ mod tests {
         assert_eq!(state.last_processed_epoch(), Some(5));
     }
 
+    fn store_epoch(
+        storage: &strata_storage::NodeStorage,
+        previous: EpochCommitment,
+        branch: u8,
+    ) -> EpochCommitment {
+        let epoch = previous.epoch() + 1;
+        let header = store_test_terminal(
+            storage,
+            epoch,
+            previous.last_slot() + 1,
+            previous.to_block_commitment(),
+            Buf32::from([branch; 32]),
+        );
+        let summary = EpochSummary::new(
+            epoch,
+            header.compute_block_commitment(),
+            previous.to_block_commitment(),
+            L1BlockCommitment::new(epoch, L1BlockId::default()),
+            *header.state_root(),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .unwrap();
+        summary.get_epoch_commitment()
+    }
+
+    fn publish_epochs(storage: &strata_storage::NodeStorage, epochs: &[EpochCommitment]) {
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                epochs[0].last_slot(),
+                epochs.iter().map(|epoch| *epoch.last_blkid()).collect(),
+            )
+            .unwrap();
+    }
+
+    fn new_test_state(
+        storage: &Arc<strata_storage::NodeStorage>,
+    ) -> OLCheckpointServiceState<TestCheckpointContext> {
+        OLCheckpointServiceState::new(TestCheckpointContext::new(
+            Arc::clone(storage),
+            vec![1, 2, 3],
+            vec![],
+        ))
+    }
+
+    fn wake_builder(
+        state: &mut OLCheckpointServiceState<TestCheckpointContext>,
+        advertised: EpochCommitment,
+    ) {
+        let status = OLSyncStatus::new(
+            advertised.to_block_commitment(),
+            advertised.epoch(),
+            true,
+            advertised,
+            advertised,
+            advertised,
+            L1BlockCommitment::new(0, L1BlockId::default()),
+        );
+        OLCheckpointService::process_input(state, Some(OLSyncStatusUpdate::new(status))).unwrap();
+    }
+
+    #[test]
+    fn test_waits_for_index_publication_and_ignores_notification_commitments() {
+        let storage = create_cursor_test_storage();
+        let genesis = set_history_base(&storage, 0);
+        let first = store_epoch(&storage, genesis, 1);
+        let second = store_epoch(&storage, first, 1);
+        let fork = store_epoch(&storage, genesis, 2);
+        let mut higher_fork = fork;
+        for _ in 0..3 {
+            higher_fork = store_epoch(&storage, higher_fork, 2);
+        }
+        let mut state = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut state).unwrap();
+        assert_eq!(state.last_processed, Some(genesis));
+        assert_eq!(*state.ctx.proof_requests.lock().unwrap(), vec![]);
+
+        // One wake-up covers both completed epochs. Its fields deliberately
+        // describe a higher fork; only the published index selects candidates.
+        publish_epochs(&storage, &[first, second]);
+        wake_builder(&mut state, higher_fork);
+        assert_eq!(state.last_processed, Some(second));
+        assert_eq!(
+            *state.ctx.proof_requests.lock().unwrap(),
+            vec![first, second]
+        );
+        let payload = state.ctx.get_checkpoint_payload(first).unwrap().unwrap();
+        assert_eq!(
+            *payload.new_tip().l2_commitment(),
+            first.to_block_commitment()
+        );
+        assert_eq!(state.ctx.get_checkpoint_payload(fork).unwrap(), None);
+        assert_eq!(state.ctx.get_checkpoint_payload(higher_fork).unwrap(), None);
+
+        wake_builder(&mut state, higher_fork);
+        assert_eq!(
+            *state.ctx.proof_requests.lock().unwrap(),
+            vec![first, second]
+        );
+    }
+
+    #[test]
+    fn test_retries_unfinished_epoch_without_tip_advancing() {
+        let storage = create_cursor_test_storage();
+        let genesis = set_history_base(&storage, 0);
+        let first = store_epoch(&storage, genesis, 1);
+        let summary = storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(first)
+            .unwrap()
+            .unwrap();
+        storage
+            .ol_checkpoint()
+            .del_epoch_summary_blocking(first)
+            .unwrap();
+        publish_epochs(&storage, &[first]);
+        let mut state = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut state).unwrap();
+        assert_eq!(state.last_processed, Some(genesis));
+
+        // The index and completed-epoch target remain unchanged when the
+        // missing summary becomes available before the next wake-up.
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .unwrap();
+        wake_builder(&mut state, genesis);
+        assert_eq!(state.last_processed, Some(first));
+        assert_eq!(*state.ctx.proof_requests.lock().unwrap(), vec![first]);
+    }
+
+    #[test]
+    fn test_proof_failure_does_not_advance_cursor_or_store_payload() {
+        let storage = create_cursor_test_storage();
+        let genesis = set_history_base(&storage, 0);
+        let first = store_epoch(&storage, genesis, 1);
+        publish_epochs(&storage, &[first]);
+        let mut state = new_test_state(&storage);
+        state.ctx.proof_response = Some(Box::new(|_| {
+            Err(DbError::Other("injected proof read failure".into()).into())
+        }));
+        let err = OLCheckpointService::on_launch(&mut state).unwrap_err();
+        assert!(
+            matches!(err.downcast_ref::<DbError>(), Some(DbError::Other(reason)) if reason == "injected proof read failure")
+        );
+        assert_eq!(state.last_processed, Some(genesis));
+        assert_eq!(state.ctx.get_checkpoint_payload(first).unwrap(), None);
+    }
+
+    #[test]
+    fn test_startup_catches_up_and_reuses_exact_canonical_payload() {
+        let storage = create_cursor_test_storage();
+        let genesis = set_history_base(&storage, 0);
+        let first = store_epoch(&storage, genesis, 1);
+        publish_epochs(&storage, &[first]);
+        let mut state = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut state).unwrap();
+        assert_eq!(state.last_processed, Some(first));
+
+        let second = store_epoch(&storage, first, 1);
+        publish_epochs(&storage, &[second]);
+        // Restart catches up without a notification and skips the cached first epoch.
+        let mut restarted = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut restarted).unwrap();
+        assert_eq!(restarted.last_processed, Some(second));
+        assert_eq!(*restarted.ctx.proof_requests.lock().unwrap(), vec![second]);
+    }
+
+    #[test]
+    fn test_restart_ignores_payloads_from_a_higher_replaced_branch() {
+        let storage = create_cursor_test_storage();
+        let genesis = set_history_base(&storage, 0);
+        let first = store_epoch(&storage, genesis, 1);
+        let second = store_epoch(&storage, first, 1);
+        let third = store_epoch(&storage, second, 1);
+        publish_epochs(&storage, &[first, second, third]);
+        OLCheckpointService::on_launch(&mut new_test_state(&storage)).unwrap();
+
+        // The highest stored payload belongs to the old branch. Neither it nor
+        // the old payloads at matching epoch numbers may advance the new cursor.
+        let fork_first = store_epoch(&storage, genesis, 2);
+        let fork_second = store_epoch(&storage, fork_first, 2);
+        publish_epochs(&storage, &[fork_first, fork_second]);
+        let mut restarted = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut restarted).unwrap();
+        assert_eq!(restarted.last_processed, Some(fork_second));
+        assert_eq!(
+            *restarted.ctx.proof_requests.lock().unwrap(),
+            vec![fork_first, fork_second]
+        );
+        assert!(
+            restarted
+                .ctx
+                .get_checkpoint_payload(third)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn test_same_epoch_becoming_terminal_triggers_checkpoint() {
+        let storage = create_cursor_test_storage();
+        let genesis = set_history_base(&storage, 0);
+        let header = OLBlockHeaderV1::new(
+            1_001,
+            BlockFlagsV1::zero(),
+            1,
+            1,
+            *genesis.last_blkid(),
+            Buf32::zero(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        let nonterminal = header.compute_block_commitment();
+        storage
+            .ol_block()
+            .put_block_data_blocking(OLBlockV1::new(
+                SignedOLBlockHeaderV1::new(header, Buf64::zero()),
+                OLBlockBodyV1::new_common(OLTxSegmentV1::new(vec![]).unwrap()),
+            ))
+            .unwrap();
+        set_canonical_tip(&storage, nonterminal);
+        let mut state = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut state).unwrap();
+        assert_eq!(state.last_processed, Some(genesis));
+
+        let terminal = store_test_terminal(&storage, 1, 2, nonterminal, Buf32::from([1; 32]));
+        let summary = EpochSummary::new(
+            1,
+            terminal.compute_block_commitment(),
+            genesis.to_block_commitment(),
+            L1BlockCommitment::new(1, L1BlockId::default()),
+            *terminal.state_root(),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .unwrap();
+        let epoch = summary.get_epoch_commitment();
+        publish_epochs(&storage, &[epoch]);
+        wake_builder(&mut state, genesis);
+        assert_eq!(state.last_processed, Some(epoch));
+        assert_eq!(*state.ctx.proof_requests.lock().unwrap(), vec![epoch]);
+    }
+
+    #[test]
+    fn test_reorg_rewinds_processed_branch_and_preserves_signed_payload() {
+        let storage = create_cursor_test_storage();
+        let floor = set_history_base(&storage, 5);
+        let first = store_epoch(&storage, floor, 1);
+        let second = store_epoch(&storage, first, 1);
+        publish_epochs(&storage, &[first, second]);
+        let mut state = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut state).unwrap();
+        let old_payload = state.ctx.get_checkpoint_payload(second).unwrap().unwrap();
+        storage
+            .ol_checkpoint()
+            .put_checkpoint_signing_entry_blocking(second, 42)
+            .unwrap();
+
+        // Replace only the last completed epoch first, then replace both epochs.
+        let replacement = store_epoch(&storage, first, 2);
+        publish_epochs(&storage, &[replacement]);
+        wake_builder(&mut state, second);
+        assert_eq!(state.last_processed, Some(replacement));
+        assert_eq!(
+            *state.ctx.proof_requests.lock().unwrap(),
+            vec![first, second, replacement]
+        );
+        assert_eq!(
+            state.ctx.get_checkpoint_payload(second).unwrap(),
+            Some(old_payload)
+        );
+        assert_eq!(
+            storage
+                .ol_checkpoint()
+                .get_checkpoint_signing_entry_blocking(second)
+                .unwrap(),
+            Some(42)
+        );
+
+        let fork_first = store_epoch(&storage, floor, 3);
+        let fork_second = store_epoch(&storage, fork_first, 3);
+        publish_epochs(&storage, &[fork_first, fork_second]);
+        wake_builder(&mut state, second);
+        assert_eq!(state.last_processed, Some(fork_second));
+        assert_eq!(
+            *state.ctx.proof_requests.lock().unwrap(),
+            vec![first, second, replacement, fork_first, fork_second]
+        );
+
+        // Returning to the old branch reuses only its exact payloads.
+        publish_epochs(&storage, &[first, second]);
+        let requests = state.ctx.proof_requests.lock().unwrap().clone();
+        wake_builder(&mut state, fork_second);
+        assert_eq!(state.last_processed, Some(second));
+        assert_eq!(*state.ctx.proof_requests.lock().unwrap(), requests);
+        assert_eq!(state.ctx.get_checkpoint_payload(floor).unwrap(), None);
+    }
+
+    #[test]
+    fn test_reorg_during_proof_wait_retries_without_another_notification() {
+        // Cover explicit cancellation and a proof that arrives just as its
+        // branch is replaced. Neither may store the superseded payload.
+        for proof_arrives in [false, true] {
+            let storage = create_cursor_test_storage();
+            let genesis = set_history_base(&storage, 0);
+            let first = store_epoch(&storage, genesis, 1);
+            let replacement = store_epoch(&storage, genesis, 2);
+            publish_epochs(&storage, &[first]);
+            let mut state = new_test_state(&storage);
+            let proof_storage = Arc::clone(&storage);
+            state.ctx.proof_response = Some(Box::new(move |epoch| {
+                if *epoch == first {
+                    publish_epochs(&proof_storage, &[replacement]);
+                    if !proof_arrives {
+                        return Ok(ProofWaitOutcome::Superseded);
+                    }
+                }
+                Ok(ProofWaitOutcome::Ready(vec![]))
+            }));
+            OLCheckpointService::on_launch(&mut state).unwrap();
+            assert_eq!(state.last_processed, Some(replacement));
+            assert_eq!(
+                *state.ctx.proof_requests.lock().unwrap(),
+                vec![first, replacement]
+            );
+            assert_eq!(state.ctx.get_checkpoint_payload(first).unwrap(), None);
+            assert!(
+                state
+                    .ctx
+                    .get_checkpoint_payload(replacement)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn test_rewind_rejects_missing_processed_summary() {
+        let storage = create_cursor_test_storage();
+        let genesis = set_history_base(&storage, 0);
+        let first = store_epoch(&storage, genesis, 1);
+        let second = store_epoch(&storage, first, 3);
+        publish_epochs(&storage, &[first, second]);
+        let mut state = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut state).unwrap();
+        let replacement = store_epoch(&storage, genesis, 2);
+        publish_epochs(&storage, &[replacement]);
+        storage
+            .ol_checkpoint()
+            .del_epoch_summary_blocking(first)
+            .unwrap();
+
+        let err = state.handle_chain_update().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("missing processed epoch summary for {first}")
+        );
+        assert!(!err.is::<CheckpointNotReady>());
+        // A later read failed after walking past the second epoch; progress stays intact.
+        assert_eq!(state.last_processed, Some(second));
+        assert_eq!(state.ctx.get_checkpoint_payload(replacement).unwrap(), None);
+    }
+
+    #[test]
+    fn test_rewind_rejects_conflicting_history_anchor() {
+        let storage = create_cursor_test_storage();
+        let floor = set_history_base(&storage, 5);
+        let first = store_epoch(&storage, floor, 1);
+        publish_epochs(&storage, &[first]);
+        let mut state = new_test_state(&storage);
+        OLCheckpointService::on_launch(&mut state).unwrap();
+        // Remove the processed suffix and replace the anchor's canonical row.
+        let different_anchor = store_test_terminal(
+            &storage,
+            floor.epoch(),
+            floor.last_slot(),
+            OLBlockCommitment::null(),
+            Buf32::from([9; 32]),
+        );
+        set_canonical_tip(&storage, different_anchor.compute_block_commitment());
+        let err = state.handle_chain_update().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("canonical history conflicts with retained anchor {floor}")
+        );
+    }
+
+    #[test]
+    fn test_inconsistent_summary_predecessor_errors() {
+        let storage = create_cursor_test_storage();
+        let floor = set_history_base(&storage, 5);
+        let unrelated = EpochCommitment::from_terminal(
+            floor.epoch(),
+            OLBlockCommitment::new(floor.last_slot(), OLBlockId::from(Buf32::from([9; 32]))),
+        );
+        let first = store_epoch(&storage, unrelated, 1);
+        publish_epochs(&storage, &[first]);
+        let mut state = new_test_state(&storage);
+        state.initialize().unwrap();
+        // The retained anchor need not have an epoch-summary record. A mismatched
+        // predecessor must still fail, rather than retrying it as a reorg forever.
+        let err = state.handle_chain_update().unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!("epoch summary predecessor does not match processed epoch {floor}")
+        );
+        assert_eq!(state.ctx.get_checkpoint_payload(first).unwrap(), None);
+    }
+
     proptest! {
         #[test]
         fn init_cursor_from_db_uses_last_checkpoint_payload_epoch(
             len in 1usize..=5,
-            terminals in prop::collection::vec(ol_block_commitment_strategy(), 1..=5),
             l1s in prop::collection::vec(l1_block_commitment_strategy(), 1..=5),
             finals in prop::collection::vec(buf32_strategy(), 1..=5),
             sidecars in prop::collection::vec(checkpoint_sidecar_strategy(), 1..=5),
             last_checkpoint in 0usize..=4,
         ) {
-            let len = len.min(terminals.len())
-                .min(l1s.len())
+            let len = len.min(l1s.len())
                 .min(finals.len())
                 .min(sidecars.len());
             prop_assume!(len > 0);
@@ -556,7 +1072,9 @@ mod tests {
             let mut summaries = Vec::with_capacity(len);
             for i in 0..len {
                 let epoch = i as Epoch;
-                let terminal = terminals[i];
+                let header = store_test_terminal(&storage, epoch, i as u64, prev_terminal, finals[i]);
+                let terminal = header.compute_block_commitment();
+                set_canonical_tip(&storage, terminal);
                 let new_l1 = l1s[i];
                 let summary = EpochSummary::new(
                     epoch,
@@ -588,7 +1106,7 @@ mod tests {
                 L1BlockCommitment::default(),
             );
             let mut state = OLCheckpointServiceState::new(ctx);
-            state.initialize();
+            state.initialize().expect("initialize checkpoint cursor");
 
             assert_eq!(state.last_processed_epoch(), Some(last_checkpoint as Epoch));
         }
@@ -617,9 +1135,11 @@ mod tests {
             let epoch: Epoch = 1;
             let prev_terminal: OLBlockCommitment = prev_terminal;
             let terminal_slot = prev_terminal.slot().saturating_add(slot_offset);
+            let mut flags = BlockFlagsV1::zero();
+            flags.set_is_terminal(true);
             let terminal_header = OLBlockHeaderV1::new(
                 1_700_000_000,
-                BlockFlagsV1::zero(),
+                flags,
                 terminal_slot,
                 epoch,
                 *prev_terminal.blkid(),
@@ -651,6 +1171,7 @@ mod tests {
                 .insert_epoch_summary_blocking(summary)
                 .expect("insert summary");
 
+            set_canonical_tip(&storage, terminal);
             let ctx = TestCheckpointContext::new(Arc::clone(&storage), state_diff, ol_logs);
             let stored = process_epoch_and_load_payload(&storage, ctx, commitment);
             let sidecar_terminal_subset = stored.sidecar().terminal_header_complement();
@@ -771,6 +1292,7 @@ mod tests {
                     *header.state_root(),
                 ))
                 .unwrap();
+            set_canonical_tip(&storage, terminal);
             previous_terminal = terminal;
         }
 
@@ -797,9 +1319,9 @@ mod tests {
         let after_b = ctx.get_canonical_epoch_commitment_at(2).unwrap().unwrap();
         let after_v2 = ctx.get_canonical_epoch_commitment_at(3).unwrap().unwrap();
         let mut state = OLCheckpointServiceState::new(ctx);
-        state.initialize();
+        state.initialize().expect("initialize checkpoint cursor");
         let err = state
-            .handle_complete_epoch(after_v2)
+            .handle_chain_update()
             .expect_err("no checkpoint follows the V2 enactment");
         assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
         assert_eq!(state.last_processed_epoch(), Some(2));
@@ -936,6 +1458,7 @@ mod tests {
             .insert_epoch_summary_blocking(summary)
             .unwrap();
 
+        set_canonical_tip(&storage, terminal_commitment);
         let ctx = CheckpointWorkerContextImpl::new(
             Arc::clone(&storage),
             OLRuntimeParams::test_default(),
@@ -1071,6 +1594,7 @@ mod tests {
             .insert_epoch_summary_blocking(summary)
             .expect("insert summary");
 
+        set_canonical_tip(&storage, *summary.terminal());
         let ctx = CheckpointWorkerContextImpl::new(
             Arc::clone(&storage),
             OLRuntimeParams::test_default(),

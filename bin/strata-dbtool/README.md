@@ -39,16 +39,17 @@ strata-dbtool [OPTIONS] <COMMAND>
 Shows the latest synchronization information including L1/OL tips, epochs, and block status.
 
 ```bash
-strata-dbtool get-syncinfo [OPTIONS]
+strata-dbtool get-syncinfo --node-role sequencer [OPTIONS]
 ```
 
 **Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
 - `-o, --output-format <format>` - Output format (default: porcelain)
 - `--l1-reorg-safe-depth <depth>` - L1 reorg-safe depth used to derive finalized checkpoint epoch
 
 **Example:**
 ```bash
-strata-dbtool get-syncinfo --l1-reorg-safe-depth 6
+strata-dbtool get-syncinfo --node-role sequencer --l1-reorg-safe-depth 6
 ```
 
 **Notes:**
@@ -107,15 +108,16 @@ strata-dbtool get-l1-block 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c
 Shows a summary of writer database contents including payload and intent entry counts.
 
 ```bash
-strata-dbtool get-writer-summary [OPTIONS]
+strata-dbtool get-writer-summary --node-role sequencer [OPTIONS]
 ```
 
 **Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
 - `-o, --output-format <format>` - Output format (default: porcelain)
 
 **Example:**
 ```bash
-strata-dbtool get-writer-summary
+strata-dbtool get-writer-summary --node-role sequencer
 ```
 
 ### `get-writer-payload`
@@ -227,37 +229,39 @@ strata-dbtool get-ol-block 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01
 Shows a summary of all OL checkpoints in the database.
 
 ```bash
-strata-dbtool get-checkpoints-summary <height_from> [OPTIONS]
+strata-dbtool get-checkpoints-summary --node-role sequencer <height_from> [OPTIONS]
 ```
 
 **Arguments:**
 - `height_from` - Start L1 height to query checkpoints from
 
 **Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
 - `-o, --output-format <format>` - Output format (default: porcelain)
 
 **Example:**
 ```bash
-strata-dbtool get-checkpoints-summary 10
+strata-dbtool get-checkpoints-summary --node-role sequencer 10
 ```
 
 ### `get-checkpoint`
 Shows detailed information about a specific OL checkpoint epoch.
 
 ```bash
-strata-dbtool get-checkpoint <checkpoint_epoch> [OPTIONS]
+strata-dbtool get-checkpoint --node-role sequencer <checkpoint_epoch> [OPTIONS]
 ```
 
 **Arguments:**
 - `checkpoint_epoch` - Checkpoint epoch (number)
 
 **Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
 - `-o, --output-format <format>` - Output format (default: porcelain)
 - `--l1-reorg-safe-depth <depth>` - L1 reorg-safe depth used to derive checkpoint status
 
 **Example:**
 ```bash
-strata-dbtool get-checkpoint 5 --l1-reorg-safe-depth 6
+strata-dbtool get-checkpoint --node-role sequencer 5 --l1-reorg-safe-depth 6
 ```
 
 **Notes:**
@@ -269,37 +273,39 @@ strata-dbtool get-checkpoint 5 --l1-reorg-safe-depth 6
 Shows detailed information about a specific OL epoch summary.
 
 ```bash
-strata-dbtool get-epoch-summary <epoch> [OPTIONS]
+strata-dbtool get-epoch-summary --node-role sequencer <epoch> [OPTIONS]
 ```
 
 **Arguments:**
 - `epoch` - epoch
 
 **Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
 - `-o, --output-format <format>` - Output format (default: porcelain)
 
 **Example:**
 ```bash
-strata-dbtool get-epoch-summary 5
+strata-dbtool get-epoch-summary --node-role sequencer 5
 ```
 
 ### `get-ol-state`
 Shows the current OL state information.
 
 ```bash
-strata-dbtool get-ol-state <block_id> [OPTIONS]
+strata-dbtool get-ol-state --node-role sequencer <block_id> [OPTIONS]
 ```
 
 **Arguments:**
 - `block_id` - OL block ID (hex string)
 
 **Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
 - `-o, --output-format <format>` - Output format (default: porcelain)
 - `--l1-reorg-safe-depth <depth>` - L1 reorg-safe depth used to derive finalized checkpoint epoch
 
 **Example:**
 ```bash
-strata-dbtool get-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
+strata-dbtool get-ol-state --node-role sequencer 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
 **Notes:**
@@ -329,13 +335,14 @@ Reverts the OL state to a specific block ID.
 > - The checkpoint for the previous epoch may already be confirmed on L1 or have a proof ready (L1 transactions may already be broadcasted or broadcasted soon). If you delete checkpoints and epoch summaries for the previous epoch and earlier, the sequencer may not be able to restart.
 
 ```bash
-strata-dbtool revert-ol-state <block_id> [OPTIONS]
+strata-dbtool revert-ol-state --node-role sequencer <block_id> [OPTIONS]
 ```
 
 **Arguments:**
 - `block_id` - Target OL block ID to revert to (hex string)
 
 **Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
 - `-f, --force` - Force execution (without this flag, only a dry run is performed)
 - `-d, --delete-blocks` - Delete blocks after target block (not just mark as unchecked)
 - `-c, --revert-checkpointed-blocks` - Allow reverting blocks inside checkpointed epoch
@@ -345,17 +352,17 @@ strata-dbtool revert-ol-state <block_id> [OPTIONS]
 
 Dry run (default behavior - shows what would be affected):
 ```bash
-strata-dbtool revert-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
+strata-dbtool revert-ol-state --node-role sequencer 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
 Actually execute the revert:
 ```bash
-strata-dbtool revert-ol-state --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
+strata-dbtool revert-ol-state --node-role sequencer --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
 Execute revert with block deletion:
 ```bash
-strata-dbtool revert-ol-state -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
+strata-dbtool revert-ol-state --node-role sequencer -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
 ## Prover Task Admin
@@ -441,8 +448,11 @@ causes an error without inserting a task, including during a dry run. Without
 overwritten. This command does not add proving support for a spec or migrate
 existing tasks.
 
+**Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
+
 ```bash
-strata-dbtool backfill-checkpoint-proof-task <epoch> --force
+strata-dbtool backfill-checkpoint-proof-task --node-role sequencer <epoch> --force
 ```
 
 ### `backfill-prover-task-raw`
@@ -456,8 +466,11 @@ strata-dbtool backfill-prover-task-raw <key_hex> --force
 ### `get-checkpoint-proof`
 Fetch the stored proof receipt for an OL checkpoint epoch.
 
+**Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
+
 ```bash
-strata-dbtool get-checkpoint-proof <epoch> [OPTIONS]
+strata-dbtool get-checkpoint-proof --node-role sequencer <epoch> [OPTIONS]
 ```
 
 ### `delete-checkpoint-proof`
@@ -473,8 +486,11 @@ and rewinds OL state. Replacing a guest artifact under the same spec is not a
 supported protocol upgrade; see
 [checkpoint work across restarts](../../crates/ol/checkpoint-artifacts/README.md#checkpoint-work-across-restarts).
 
+**Options:**
+- `--node-role <role>` - Effective node role: `sequencer` or `checkpoint-sync` (required).
+
 ```bash
-strata-dbtool delete-checkpoint-proof <epoch> --force
+strata-dbtool delete-checkpoint-proof --node-role sequencer <epoch> --force
 ```
 
 ## Output Formats

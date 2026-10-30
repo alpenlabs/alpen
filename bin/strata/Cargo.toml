@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = ["sequencer"]
 sequencer = [
+  "dep:strata-asm-checkpoint-types",
   "dep:strata-asm-proto-checkpoint-txs",
   "dep:strata-codec",
   "dep:strata-codec-utils",
@@ -40,6 +41,7 @@ sp1 = [
 [dependencies]
 ssz.workspace = true
 strata-acct-types.workspace = true
+strata-asm-checkpoint-types = { workspace = true, optional = true }
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-proto-checkpoint.workspace = true
@@ -64,6 +66,7 @@ strata-logging.workspace = true
 strata-metrics.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
+strata-ol-canonical-chain-provider.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-checkpoint.workspace = true
 strata-ol-checkpoint-artifacts = { workspace = true, features = ["node"] }
@@ -111,7 +114,7 @@ zkaleido = { workspace = true, optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
-strata-paas.workspace = true
+strata-ol-sequencer = { workspace = true, features = ["test-utils"] }
 strata-db-tests.workspace = true
 strata-ol-stf.workspace = true
 proptest.workspace = true

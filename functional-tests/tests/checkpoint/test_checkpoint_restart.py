@@ -46,11 +46,10 @@ class TestCheckpointRestart(StrataNodeTest):
 
         signer.stop()
         strata.stop()
-        datadir = strata.props["datadir"]
-        checkpoint = run_dbtool_json(datadir, "get-checkpoint", str(epoch))
-        proof = run_dbtool_json(datadir, "get-checkpoint-proof", str(epoch))
+        checkpoint = run_dbtool_json(strata, "get-checkpoint", str(epoch))
+        proof = run_dbtool_json(strata, "get-checkpoint-proof", str(epoch))
         tasks = run_dbtool_json(
-            datadir, "get-prover-tasks-summary", "--status", "completed", "--limit", "100"
+            strata, "get-prover-tasks-summary", "--status", "completed", "--limit", "100"
         )["entries"]
         assert "intent_index" in checkpoint, checkpoint
         assert proof["proof_len"] > 0, proof
@@ -62,9 +61,9 @@ class TestCheckpointRestart(StrataNodeTest):
         assert rpc.strata_getCheckpointInfo(epoch)["confirmation_status"]["status"] == "pending"
         strata.stop()
 
-        assert run_dbtool_json(datadir, "get-checkpoint", str(epoch)) == checkpoint
-        assert run_dbtool_json(datadir, "get-checkpoint-proof", str(epoch)) == proof
+        assert run_dbtool_json(strata, "get-checkpoint", str(epoch)) == checkpoint
+        assert run_dbtool_json(strata, "get-checkpoint-proof", str(epoch)) == proof
         for task in tasks:
-            assert run_dbtool_json(datadir, "get-prover-task", task["key_hex"]) == task
+            assert run_dbtool_json(strata, "get-prover-task", task["key_hex"]) == task
         assert btc_rpc.proxy.getblockcount() == l1_tip
         return True

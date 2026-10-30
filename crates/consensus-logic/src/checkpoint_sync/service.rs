@@ -4,6 +4,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
+use strata_db_types::DbError;
 use strata_primitives::EpochCommitment;
 use strata_service::{
     AsyncService, Response, Service, ServiceBuilder, ServiceMonitor, TokioWatchInput,
@@ -96,11 +97,11 @@ where
 /// dependency on `NodeContext`; the binary assembles `ctx`.
 pub async fn start_css<C: CheckpointSyncCtx>(
     ctx: Arc<C>,
-    checkpoint_state_rx: watch::Receiver<CheckpointState>,
+    mut checkpoint_state_rx: watch::Receiver<CheckpointState>,
     texec: Arc<TaskExecutor>,
 ) -> anyhow::Result<ServiceMonitor<CheckpointSyncStatus>> {
     info!("initializing checkpoint sync service");
-    ctx.reconcile_ol_mmr_index().await?;
+    reconcile_before_start(ctx.as_ref(), &mut checkpoint_state_rx).await?;
 
     let resume = initialize_css_inner_state(ctx.as_ref()).await?;
     let last_finalized_and_applied = resume.last_applied;
@@ -139,6 +140,26 @@ pub(super) struct CssResume {
     /// First epoch this binary cannot apply because it runs a spec this
     /// binary does not implement, if checkpoint sync stopped there.
     pub(super) stopped_before: Option<EpochCommitment>,
+}
+
+/// Waits for a canonical client-state snapshot before completing MMR recovery.
+pub(super) async fn reconcile_before_start(
+    ctx: &impl CheckpointSyncCtx,
+    checkpoint_state_rx: &mut watch::Receiver<CheckpointState>,
+) -> anyhow::Result<()> {
+    loop {
+        // Mark updates seen before reading storage so an update arriving during
+        // reconciliation remains available to wake the retry.
+        checkpoint_state_rx.borrow_and_update();
+        match ctx.reconcile_ol_mmr_index().await {
+            Ok(()) => return Ok(()),
+            Err(CheckpointSyncError::Db(DbError::OLFinalizedClientStateUnavailable { block })) => {
+                debug!(%block, "waiting for client state to catch up with canonical L1 before MMR recovery");
+                checkpoint_state_rx.changed().await?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
 }
 
 /// Initializes css state by catching up on any unapplied finalized epochs at startup and returns

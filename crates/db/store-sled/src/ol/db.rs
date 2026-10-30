@@ -10,7 +10,7 @@ use super::schemas::{
     OLCanonicalBlockSchema, OLHistoryBaseSchema, OLTerminalHeaderSchema,
 };
 use crate::define_sled_database;
-use crate::utils::{conv_sled_err, first};
+use crate::utils::conv_sled_err;
 
 const OL_BLOCK_HIGH_WATERMARK_KEY: u8 = 0;
 const OL_HISTORY_BASE_KEY: u8 = 0;
@@ -328,16 +328,26 @@ impl OLBlockDatabase for OLBlockDBSled {
         self.blk_status_tree.get(&id).map_err(conv_sled_err)
     }
 
-    fn get_tip_slot(&self) -> DbResult<Slot> {
-        self.blk_canonical_tree
-            .last()
-            .map_err(conv_sled_err)?
-            .map(first)
-            .ok_or(DbError::NotBootstrapped)
-    }
-
     fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>> {
         self.blk_canonical_tree.get(&slot).map_err(conv_sled_err)
+    }
+
+    fn get_canonical_blocks(&self, slots: Vec<Slot>) -> DbResult<Vec<Option<OLBlockId>>> {
+        self.config
+            .with_retry((&self.blk_canonical_tree,), |(ct,)| {
+                Ok(slots
+                    .iter()
+                    .map(|slot| ct.get(slot))
+                    .collect::<Result<Vec<_>, _>>()?)
+            })
+    }
+
+    fn get_canonical_tip(&self) -> DbResult<Option<OLBlockCommitment>> {
+        Ok(self
+            .blk_canonical_tree
+            .last()
+            .map_err(conv_sled_err)?
+            .map(|(slot, id)| OLBlockCommitment::new(slot, id)))
     }
 
     fn replace_canonical_suffix_from(

@@ -48,38 +48,37 @@ class RevertCheckpointedBlockSeqTest(StrataNodeTest):
         signer_service.stop()
         seq_service.stop()
 
-        datadir = seq_service.props["datadir"]
         slots_per_epoch = seq_service.props.get("slots_per_epoch")
         if not isinstance(slots_per_epoch, int) or slots_per_epoch <= 0:
             raise AssertionError(f"Invalid slots_per_epoch in sequencer props: {slots_per_epoch!r}")
 
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(seq_service)
         latest_epoch_before_revert = int(latest_checkpoint["checkpoint_epoch"])
         post_restart_target_epoch = latest_epoch_before_revert + 1
         epoch_summary_before = run_dbtool_json(
-            datadir, "get-epoch-summary", str(latest_epoch_before_revert)
+            seq_service, "get-epoch-summary", str(latest_epoch_before_revert)
         )
         logger.info("Epoch summary before revert: %s", epoch_summary_before)
         target_block_id, _ = target_start_of_checkpointed_epoch(
-            datadir,
+            seq_service,
             latest_checkpoint,
             slots_per_epoch,
         )
-        target_before = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_before = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         logger.info("Executing revert -f -c to target block_id=%s", target_block_id)
 
         code, stdout, stderr = revert_ol_state(
-            datadir,
+            seq_service,
             target_block_id,
             revert_checkpointed=True,
         )
         assert code == 0, stderr or stdout
 
-        target_after = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        target_after = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         assert target_after["current_slot"] == target_before["current_slot"]
         logger.info("target OL state slot preserved after revert")
         # Reverting to start of checkpointed epoch should drop that epoch's checkpoint metadata.
-        assert verify_checkpoint_deleted(datadir, latest_epoch_before_revert)
+        assert verify_checkpoint_deleted(seq_service, latest_epoch_before_revert)
 
         # Restart and verify chain resumes and reorgs past old tip.
         seq_rpc, resumed_tip = restart_sequencer_after_revert(

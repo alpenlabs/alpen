@@ -273,16 +273,6 @@ impl OLBlockManager {
         self.ops.get_highest_block_slot_blocking()
     }
 
-    /// Gets the canonical tip slot. Async.
-    pub async fn get_tip_slot_async(&self) -> DbResult<Slot> {
-        self.ops.get_tip_slot_async().await
-    }
-
-    /// Gets the canonical tip slot. Blocking.
-    pub fn get_tip_slot_blocking(&self) -> DbResult<Slot> {
-        self.ops.get_tip_slot_blocking()
-    }
-
     /// Gets the block's verification status. Async.
     pub async fn get_block_status_async(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>> {
         self.ops.get_block_status_async(id).await
@@ -307,16 +297,14 @@ impl OLBlockManager {
         self.ops.set_block_status_blocking(id, status)
     }
 
-    /// Gets the canonical tip block commitment.
+    /// Gets the canonical tip block commitment, or `None` for an empty index.
     pub fn get_canonical_tip_blocking(&self) -> DbResult<Option<OLBlockCommitment>> {
-        let tip = self.get_tip_slot_blocking()?;
-        self.get_canonical_block_at_blocking(tip)
+        self.ops.get_canonical_tip_blocking()
     }
 
-    /// Gets the canonical tip block commitment.
+    /// Gets the canonical tip block commitment, or `None` for an empty index.
     pub async fn get_canonical_tip_async(&self) -> DbResult<Option<OLBlockCommitment>> {
-        let tip = self.get_tip_slot_async().await?;
-        self.get_canonical_block_at_async(tip).await
+        self.ops.get_canonical_tip_async().await
     }
 
     /// Gets the canonical block commitment at given slot. Blocking.
@@ -346,6 +334,22 @@ impl OLBlockManager {
             .get_canonical_block_async(slot)
             .await?
             .map(|id| OLBlockCommitment::new(slot, id)))
+    }
+
+    /// Returns canonical block IDs for `slots` in input order, read together. Blocking.
+    pub fn get_canonical_blocks_blocking(
+        &self,
+        slots: Vec<Slot>,
+    ) -> DbResult<Vec<Option<OLBlockId>>> {
+        self.ops.get_canonical_blocks_blocking(slots)
+    }
+
+    /// Returns canonical block IDs for `slots` in input order, read together. Async.
+    pub async fn get_canonical_blocks_async(
+        &self,
+        slots: Vec<Slot>,
+    ) -> DbResult<Vec<Option<OLBlockId>>> {
+        self.ops.get_canonical_blocks_async(slots).await
     }
 
     /// Replaces the canonical suffix from `start_slot`.
@@ -405,6 +409,52 @@ mod tests {
         let db = Arc::new(get_test_sled_backend());
         let ol_block_db = db.ol_block_db();
         OLBlockManager::new(handle, ol_block_db)
+    }
+
+    #[test]
+    fn test_canonical_blocks_async_and_blocking() {
+        let runtime = Runtime::new().unwrap();
+        let manager = setup_manager();
+        let block_id = OLBlockId::from(Buf32::from([0x42; 32]));
+        manager
+            .replace_canonical_suffix_from_blocking(5, vec![block_id])
+            .unwrap();
+        let slots = vec![5, 6, 5];
+        let expected = vec![Some(block_id), None, Some(block_id)];
+        assert_eq!(
+            manager
+                .get_canonical_blocks_blocking(slots.clone())
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            runtime
+                .block_on(manager.get_canonical_blocks_async(slots))
+                .unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn test_canonical_tip_async_and_blocking() {
+        let runtime = Runtime::new().unwrap();
+        let manager = setup_manager();
+        assert_eq!(manager.get_canonical_tip_blocking().unwrap(), None);
+        assert_eq!(
+            runtime.block_on(manager.get_canonical_tip_async()).unwrap(),
+            None
+        );
+
+        let block_id = OLBlockId::from(Buf32::from([0x42; 32]));
+        manager
+            .replace_canonical_suffix_from_blocking(5, vec![block_id])
+            .unwrap();
+        let expected_tip = Some(OLBlockCommitment::new(5, block_id));
+        assert_eq!(manager.get_canonical_tip_blocking().unwrap(), expected_tip);
+        assert_eq!(
+            runtime.block_on(manager.get_canonical_tip_async()).unwrap(),
+            expected_tip
+        );
     }
 
     proptest! {
@@ -577,7 +627,7 @@ mod tests {
         }
 
         #[test]
-        fn proptest_get_tip_slot_async(mut block1 in ol_test_utils::ol_block_strategy(), mut block2 in ol_test_utils::ol_block_strategy()) {
+        fn proptest_get_canonical_tip_async(mut block1 in ol_test_utils::ol_block_strategy(), mut block2 in ol_test_utils::ol_block_strategy()) {
             let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 let manager = setup_manager();
@@ -601,14 +651,14 @@ mod tests {
                     .await
                     .expect("seed canonical index");
 
-                // Get tip slot - should be 5 (highest canonical slot), not the higher valid fork.
-                let tip_slot = manager.get_tip_slot_async().await.expect("get tip slot");
-                assert_eq!(tip_slot, 5u64);
+                // The canonical tip is block1, despite the higher valid fork.
+                let tip = manager.get_canonical_tip_async().await.expect("get canonical tip");
+                assert_eq!(tip, Some(OLBlockCommitment::new(5, block_id1)));
             });
         }
 
         #[test]
-        fn proptest_get_tip_slot_blocking(mut block1 in ol_test_utils::ol_block_strategy(), mut block2 in ol_test_utils::ol_block_strategy()) {
+        fn proptest_get_canonical_tip_blocking(mut block1 in ol_test_utils::ol_block_strategy(), mut block2 in ol_test_utils::ol_block_strategy()) {
             let manager = setup_manager();
 
             // Override to different slots
@@ -629,9 +679,9 @@ mod tests {
                 .replace_canonical_suffix_from_blocking(5, vec![block_id1])
                 .expect("seed canonical index");
 
-            // Get tip slot - should be 5 (highest canonical slot), not the higher valid fork.
-            let tip_slot = manager.get_tip_slot_blocking().expect("get tip slot");
-            assert_eq!(tip_slot, 5u64);
+            // The canonical tip is block1, despite the higher valid fork.
+            let tip = manager.get_canonical_tip_blocking().expect("get canonical tip");
+            assert_eq!(tip, Some(OLBlockCommitment::new(5, block_id1)));
         }
     }
 

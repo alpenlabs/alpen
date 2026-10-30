@@ -10,13 +10,11 @@ use async_trait::async_trait;
 use strata_db_types::ol_block::BlockStatus;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
+use strata_ol_canonical_chain_provider::{OLCanonicalChainProvider, OLCanonicalChainProviderImpl};
 use strata_ol_sequencer::{BlockGenerationConfig, SequencerContext, SequencerContextError};
 use strata_ol_spec_selection::UpgradeRequired;
-use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
-
-use crate::sequencer::tip::resolve_canonical_tip;
 
 /// Percentage drift of block wall-clock spacing above the configured
 /// `ol_block_time_ms` that triggers a cadence warning.
@@ -26,7 +24,7 @@ const BLOCK_TS_DRIFT_TOLERANCE_PCT: u64 = 20;
 pub(crate) struct NodeSequencerContext {
     blockasm_handle: Arc<BlockasmHandle>,
     storage: Arc<NodeStorage>,
-    status_channel: Arc<StatusChannel>,
+    canonical_chain_provider: OLCanonicalChainProviderImpl,
     ol_block_time_ms: u64,
     /// Tip IDs already reported as blocked by an unsupported upgrade.
     /// Prevents repeating the warning on every block-generation tick.
@@ -39,13 +37,12 @@ impl NodeSequencerContext {
     pub(crate) fn new(
         blockasm_handle: Arc<BlockasmHandle>,
         storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
         ol_block_time_ms: u64,
     ) -> Self {
         Self {
             blockasm_handle,
+            canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
             storage,
-            status_channel,
             ol_block_time_ms,
             logged_upgrade_tips: Mutex::new(HashSet::new()),
         }
@@ -75,7 +72,9 @@ impl NodeSequencerContext {
 #[async_trait]
 impl SequencerContext for NodeSequencerContext {
     async fn generate_template_for_tip(&self) -> Result<Option<OLBlockId>, SequencerContextError> {
-        let Some(parent_commitment) = resolve_canonical_tip(&self.status_channel, &self.storage)
+        let Some(parent_commitment) = self
+            .canonical_chain_provider
+            .get_canonical_tip_async()
             .await
             .map_err(SequencerContextError::Db)?
         else {
@@ -266,20 +265,21 @@ mod tests {
     use std::time::Duration;
 
     use strata_config::{BlockAssemblyConfig, SequencerConfig};
-    use strata_csm_types::{ClientState, L1Status};
-    use strata_identifiers::{Buf32, Buf64, EpochCommitment, L1BlockCommitment, L1BlockId};
+    use strata_identifiers::{Buf32, Buf64};
     use strata_ol_block_assembly::{
         BlockCompletionData, BlockasmBuilder, FixedSlotSealing, LimitAwareSealing,
         test_utils::{MockMempoolProvider, TestStorageFixtureBuilder},
     };
     use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1, SignedOLBlockHeaderV1};
-    use strata_ol_params::OLParams;
+    use strata_ol_params::{OLParams, OLRuntimeParams};
     use strata_ol_sequencer::SequencerBuilder;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::OLSpecId;
+    use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
+    use strata_ol_stf_v1::test_utils::to_ol_block;
     use strata_predicate::PredicateKey;
     use strata_service::AsyncServiceInput;
-    use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
     use strata_storage::NodeStorage;
     use strata_tasks::TaskManager;
     use tokio::{runtime::Handle, time::timeout};
@@ -317,20 +317,6 @@ mod tests {
         (task_manager, Arc::new(blockasm))
     }
 
-    fn test_status_channel(l1_block: L1BlockCommitment) -> Arc<StatusChannel> {
-        Arc::new(StatusChannel::new(
-            ClientState::default(),
-            l1_block,
-            L1Status::default(),
-            None,
-            None,
-        ))
-    }
-
-    fn test_l1_commitment(height: u32, block_id: L1BlockId) -> L1BlockCommitment {
-        L1BlockCommitment::new(height, block_id)
-    }
-
     fn now_ms() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -342,7 +328,6 @@ mod tests {
         TaskManager,
         Arc<BlockasmHandle>,
         Arc<NodeStorage>,
-        Arc<StatusChannel>,
         OLBlockCommitment,
     ) {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
@@ -393,27 +378,17 @@ mod tests {
             .await
             .expect("test: store recent parent block");
 
-        let safe_l1 = test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32])));
-        let status_channel = test_status_channel(safe_l1);
-        let safe_l1 = status_channel.get_cur_checkpoint_state().block;
-        status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(OLSyncStatus::new(
-            recent_commitment,
-            recent_header.epoch(),
-            recent_header.is_terminal(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            safe_l1,
-        )));
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_async(
+                recent_commitment.slot(),
+                vec![*recent_commitment.blkid()],
+            )
+            .await
+            .expect("test: publish recent parent in canonical index");
 
         let (task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
-        (
-            task_manager,
-            blockasm_handle,
-            storage,
-            status_channel,
-            recent_commitment,
-        )
+        (task_manager, blockasm_handle, storage, recent_commitment)
     }
 
     async fn assert_no_pending_template(
@@ -514,6 +489,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn generation_uses_index_tip_before_sync_status_publication() {
+        let (fixture, genesis) = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(0)
+            .build_fixture()
+            .await;
+        let storage = fixture.storage().clone();
+        let genesis_header = storage
+            .ol_block()
+            .get_ol_header_async(*genesis.blkid())
+            .await
+            .unwrap()
+            .unwrap();
+        let genesis_state = storage
+            .ol_state()
+            .get_toplevel_ol_state_async(genesis)
+            .await
+            .unwrap()
+            .unwrap();
+        // Execute and persist a child, then advance the index past the last published
+        // status tip. Generation must use the index without waiting for status publication.
+        let mut state = MemoryStateBaseLayer::from_container(genesis_state.as_ref().clone());
+        let block_info = BlockInfo::new(
+            genesis_header.timestamp() + 1_000,
+            genesis.slot() + 1,
+            genesis_header.epoch() + 1,
+        );
+        let output = construct_block(
+            OLSpecId::V1,
+            &mut state,
+            BlockContext::new(&block_info, Some(&genesis_header)),
+            BlockComponents::new_empty(),
+            &OLRuntimeParams::test_default(),
+        )
+        .unwrap();
+        let block = to_ol_block(output.completed_block());
+        let child = block.header().compute_block_commitment();
+        storage
+            .ol_block()
+            .put_block_data_async(block)
+            .await
+            .unwrap();
+        storage
+            .ol_state()
+            .put_toplevel_ol_state_async(child, state.into_container())
+            .await
+            .unwrap();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_async(child.slot(), vec![*child.blkid()])
+            .await
+            .unwrap();
+        let (_task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
+        let ctx = NodeSequencerContext::new(blockasm_handle.clone(), storage.clone(), 1);
+
+        assert_eq!(
+            ctx.generate_template_for_tip().await.unwrap(),
+            Some(*child.blkid())
+        );
+        let template = blockasm_handle
+            .get_block_template(*child.blkid())
+            .await
+            .unwrap();
+        assert_eq!(template.header().parent_blkid(), child.blkid());
+
+        // An empty index produces no template.
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_async(0, vec![])
+            .await
+            .unwrap();
+        assert_eq!(ctx.generate_template_for_tip().await.unwrap(), None);
+    }
+
+    #[tokio::test]
     async fn generation_releases_invalid_completed_tombstone_and_retries() {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_genesis_parent_and_l1_manifest_count(0)
@@ -565,7 +614,6 @@ mod tests {
         let sequencer_context = NodeSequencerContext::new(
             blockasm_handle.clone(),
             storage,
-            test_status_channel(test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32])))),
             SequencerConfig::default().ol_block_time_ms,
         );
 
@@ -599,8 +647,6 @@ mod tests {
             .await
             .expect("test: fetch parent header")
             .expect("test: parent header exists");
-        let parent_epoch = parent_header.epoch();
-        let parent_is_terminal = parent_header.is_terminal();
         storage
             .ol_block()
             .put_terminal_header_async(*parent_commitment.blkid(), parent_header)
@@ -613,21 +659,17 @@ mod tests {
                 .await
                 .expect("test: delete parent block")
         );
+        // Body deletion removes its index entry; restore it to model a retained terminal tip.
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_async(
+                parent_commitment.slot(),
+                vec![*parent_commitment.blkid()],
+            )
+            .await
+            .expect("test: publish header-only canonical tip");
         let (_task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
-        let status_channel =
-            test_status_channel(test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32]))));
-        let safe_l1 = status_channel.get_cur_checkpoint_state().block;
-        status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(OLSyncStatus::new(
-            parent_commitment,
-            parent_epoch,
-            parent_is_terminal,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            safe_l1,
-        )));
-        let sequencer_context =
-            NodeSequencerContext::new(blockasm_handle.clone(), storage, status_channel, 1);
+        let sequencer_context = NodeSequencerContext::new(blockasm_handle.clone(), storage, 1);
 
         assert_eq!(
             sequencer_context
@@ -659,27 +701,8 @@ mod tests {
             .build_fixture()
             .await;
         let storage = fixture.storage().clone();
-        let parent_header = storage
-            .ol_block()
-            .get_ol_header_async(*parent_commitment.blkid())
-            .await
-            .expect("test: fetch parent header")
-            .expect("test: parent header exists");
         let (task_manager, blockasm_handle) = start_test_blockasm(storage.clone()).await;
-        let status_channel =
-            test_status_channel(test_l1_commitment(1, L1BlockId::from(Buf32::from([1; 32]))));
-        let safe_l1 = status_channel.get_cur_checkpoint_state().block;
-        status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(OLSyncStatus::new(
-            parent_commitment,
-            parent_header.epoch(),
-            parent_header.is_terminal(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            safe_l1,
-        )));
-        let sequencer_context =
-            NodeSequencerContext::new(blockasm_handle.clone(), storage, status_channel, 1);
+        let sequencer_context = NodeSequencerContext::new(blockasm_handle.clone(), storage, 1);
         (
             task_manager,
             blockasm_handle,
@@ -742,14 +765,10 @@ mod tests {
 
     #[tokio::test]
     async fn block_generation_is_skipped_when_interval_not_reached() {
-        let (_task_manager, blockasm_handle, storage, status_channel, parent_commitment) =
+        let (_task_manager, blockasm_handle, storage, parent_commitment) =
             prepare_recent_parent_fixture().await;
-        let sequencer_context = NodeSequencerContext::new(
-            blockasm_handle.clone(),
-            storage,
-            status_channel,
-            TEST_BLOCK_TIME_MS,
-        );
+        let sequencer_context =
+            NodeSequencerContext::new(blockasm_handle.clone(), storage, TEST_BLOCK_TIME_MS);
 
         let generated_parent = sequencer_context
             .generate_template_for_tip()
@@ -762,13 +781,12 @@ mod tests {
 
     #[tokio::test]
     async fn generation_tick_leaves_block_generation_skipped_when_interval_not_reached() {
-        let (task_manager, blockasm_handle, storage, status_channel, parent_commitment) =
+        let (task_manager, blockasm_handle, storage, parent_commitment) =
             prepare_recent_parent_fixture().await;
         let executor = task_manager.create_executor();
         let context = Arc::new(NodeSequencerContext::new(
             blockasm_handle.clone(),
             storage,
-            status_channel,
             TEST_BLOCK_TIME_MS,
         ));
         let monitor = SequencerBuilder::new(context, Duration::from_millis(TEST_TICK_INTERVAL_MS))

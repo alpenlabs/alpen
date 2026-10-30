@@ -6,6 +6,7 @@ use strata_db_types::{
     ol_state::OLStateDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
+use strata_ol_canonical_chain_provider::OLCanonicalChainProvider;
 
 use super::{
     checkpoint::{
@@ -16,7 +17,7 @@ use super::{
     ol::get_canonical_ol_tip,
 };
 use crate::{
-    cli::OutputFormat,
+    cli::{NodeRole, OutputFormat},
     output::{output, syncinfo::SyncInfo},
 };
 
@@ -24,6 +25,10 @@ use crate::{
 #[argh(subcommand, name = "get-syncinfo")]
 /// Get sync info
 pub(crate) struct GetSyncinfoArgs {
+    /// node's effective role: sequencer or checkpoint-sync
+    #[argh(option)]
+    pub(crate) node_role: NodeRole,
+
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
@@ -36,6 +41,7 @@ pub(crate) struct GetSyncinfoArgs {
 /// Show the latest sync information.
 pub(crate) fn get_syncinfo(
     db: &impl DatabaseBackend,
+    canonical_chain_provider: &impl OLCanonicalChainProvider,
     args: GetSyncinfoArgs,
 ) -> Result<(), DisplayedError> {
     // Get L1 tip
@@ -81,18 +87,27 @@ pub(crate) fn get_syncinfo(
     let previous_epoch = if previous_epoch_num == 0 {
         EpochCommitment::null()
     } else {
-        get_canonical_epoch_commitment_at(db, previous_epoch_num)?.ok_or_else(|| {
-            DisplayedError::InternalError(
-                "Previous epoch commitment missing in OL checkpoint DB".to_string(),
-                Box::new(previous_epoch_num),
-            )
-        })?
+        get_canonical_epoch_commitment_at(canonical_chain_provider, previous_epoch_num)?
+            .ok_or_else(|| {
+                DisplayedError::InternalError(
+                    "Previous epoch commitment missing in OL checkpoint DB".to_string(),
+                    Box::new(previous_epoch_num),
+                )
+            })?
     };
-    let previous_epoch_status =
-        get_checkpoint_status_at_epoch(db, previous_epoch_num, args.l1_reorg_safe_depth)?
-            .map(|status| status.as_str().to_string());
-    let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
-        .unwrap_or_else(EpochCommitment::null);
+    let previous_epoch_status = get_checkpoint_status_at_epoch(
+        db,
+        canonical_chain_provider,
+        previous_epoch_num,
+        args.l1_reorg_safe_depth,
+    )?
+    .map(|status| status.as_str().to_string());
+    let finalized_epoch = get_latest_finalized_checkpoint_epoch(
+        db,
+        canonical_chain_provider,
+        args.l1_reorg_safe_depth,
+    )?
+    .unwrap_or_else(EpochCommitment::null);
     let current_slot = chainstate.cur_slot();
     let ol_finalized_block_id = *finalized_epoch.last_blkid();
     let previous_block = OLBlockCommitment::new(
