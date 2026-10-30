@@ -2,6 +2,7 @@
 //! block after it.
 
 use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment};
+use strata_ol_canonical_chain_provider::{OLCanonicalChainProvider, OLCanonicalChainProviderImpl};
 use strata_ol_spec_selection::{
     SelectSpecAfterEpochError, SelectedSpec, select_block_spec_async,
     select_spec_after_unsummarized_epoch_async,
@@ -92,7 +93,8 @@ pub(crate) async fn select_tip_spec(
         Err(SelectSpecAfterEpochError::MissingEpochSummary(missing))
             if Some(missing) == tip_epoch =>
         {
-            let prev_epoch_summary = match checkpoints
+            let canonical_chain_provider = OLCanonicalChainProviderImpl::new(storage);
+            let prev_epoch_summary = match canonical_chain_provider
                 .get_canonical_epoch_commitment_at_async(missing.epoch() - 1)
                 .await?
             {

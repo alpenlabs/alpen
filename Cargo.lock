@@ -9819,6 +9819,7 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-log-budget",
  "strata-ol-params",

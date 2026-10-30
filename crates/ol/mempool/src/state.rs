@@ -2590,6 +2590,16 @@ mod tests {
                 .await
                 .unwrap();
         }
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_async(0, vec![*genesis.blkid()])
+            .await
+            .unwrap();
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_async(tip.slot(), vec![*tip.blkid()])
+            .await
+            .unwrap();
         (MempoolTip::new(tip, Some(1)), state.into_container())
     }
 
