@@ -25,6 +25,7 @@ debug-utils = [
   "strata-ol-sequencer?/debug-utils",
 ]
 prover = [
+  "dep:strata-ol-block-ancestry-provider",
   "dep:strata-paas",
   "dep:strata-proofimpl-checkpoint",
   "strata-ol-checkpoint-artifacts/native",
@@ -65,6 +66,7 @@ strata-identifiers.workspace = true
 strata-logging.workspace = true
 strata-metrics.workspace = true
 strata-node-context.workspace = true
+strata-ol-block-ancestry-provider = { workspace = true, optional = true }
 strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-canonical-chain-provider.workspace = true
 strata-ol-chain-types-v1.workspace = true
