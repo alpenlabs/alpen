@@ -20,7 +20,7 @@ use strata_checkpoint_types::{
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_CHAIN_WORKER_AFTER_MMR_INDEX, check_bail_trigger};
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Buf32, Epoch, L1BlockCommitment, OLBlockCommitment};
+use strata_identifiers::{AccountId, Buf32, L1BlockCommitment, OLBlockCommitment};
 use strata_msg_fmt::{Msg, MsgRef};
 use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog, OLLogType,
@@ -238,8 +238,12 @@ impl ChainWorkerServiceState {
         skip_all,
         fields(epoch = epoch.epoch(), slot = epoch.last_slot(), blkid = %epoch.last_blkid())
     )]
-    pub(crate) fn apply_checkpoint(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        let result = self.apply_and_store_checkpoint(epoch);
+    pub(crate) fn apply_checkpoint(
+        &mut self,
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+    ) -> WorkerResult<()> {
+        let result = self.apply_and_store_checkpoint(epoch, previous_epoch);
         // Checkpoint sync reports the upgrade-required stop once; it is not a
         // failure to log on every retry.
         if let Err(err) = &result
@@ -250,8 +254,12 @@ impl ChainWorkerServiceState {
         result
     }
 
-    fn apply_and_store_checkpoint(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        let artifacts = apply_checkpoint_epoch(&self.ctx, epoch)?;
+    fn apply_and_store_checkpoint(
+        &mut self,
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+    ) -> WorkerResult<()> {
+        let artifacts = apply_checkpoint_epoch(&self.ctx, epoch, previous_epoch)?;
         let terminal = artifacts.terminal();
 
         self.ctx
@@ -479,10 +487,10 @@ pub(crate) fn handle_accepted_block(
     let new_state = ctx
         .fetch_ol_state(block)?
         .ok_or(WorkerError::MissingPreState(block))?;
-    let prev_terminal = get_prev_terminal(ctx, header.epoch())?;
+    let (prev_terminal, blocks) = ctx.collect_epoch_block_commitments(&header)?.into_parts();
     let summary = build_epoch_summary(&header, &new_state, prev_terminal);
 
-    ctx.merge_epoch_data(&summary)?;
+    ctx.merge_epoch_data(&summary, &blocks)?;
     debug!(?summary, "completed chain epoch");
     ctx.store_summary(summary)?;
 
@@ -509,57 +517,44 @@ pub(crate) fn handle_rejected_block(
     Ok(())
 }
 
-/// Rebuilds an epoch's terminal state by applying the write batches of its
-/// canonical blocks, in order, to the previous terminal state.
+/// Rebuilds an epoch's terminal state from its block write batches.
 ///
-/// The merged state starts from the previous terminal state's spec versions,
-/// since it goes through the base layer rather than a bare chainstate, and
-/// takes any version write the blocks' batches carry, such as the first V1
-/// epoch's wrap of a V0 state.
+/// `blocks` must contain the summary's complete epoch branch in execution order,
+/// including its terminal and excluding its previous terminal.
+///
+/// Starts from the previous terminal's state, including its spec versions, and
+/// applies version changes carried by the batches.
 ///
 /// # Errors
 ///
-/// Returns [`WorkerError::MergedStateRootMismatch`] if the merged state does
-/// not hash to the summary's final state root, so a wrong or incomplete set of
-/// batches is never stored as the epoch's terminal state.
+/// Returns [`WorkerError::MergedStateRootMismatch`] if the resulting state root
+/// differs from the summary's final state root.
+///
+/// # Panics
+///
+/// Panics if `blocks` is empty or does not end at the summary's terminal.
 pub(crate) fn merge_epoch_state(
     ctx: &impl ChainWorkerContext,
     summary: &EpochSummary,
+    blocks: &[OLBlockCommitment],
 ) -> WorkerResult<OLStateContainer> {
-    let terminal = *summary.terminal();
+    assert!(!blocks.is_empty(), "epoch block list must not be empty");
+    assert_eq!(
+        blocks.last(),
+        Some(summary.terminal()),
+        "epoch block list must end at the summary's terminal"
+    );
     let prev_terminal = *summary.prev_terminal();
-
-    // Collect canonical chain by walking backwards from terminal via parent pointers.
-    // This ensures we only apply write batches for blocks in the canonical chain,
-    // not fork blocks that may also have write batches stored.
-    let mut chain: Vec<OLBlockCommitment> = Vec::new();
-    let mut current = terminal;
-
-    while current != prev_terminal && !current.is_null() {
-        chain.push(current);
-        // Get header to find parent
-        let header = ctx
-            .fetch_header(current.blkid())?
-            .ok_or(WorkerError::MissingOLBlock(*current.blkid()))?;
-        let parent_blkid = header.parent_blkid();
-        if parent_blkid.is_null() {
-            break;
-        }
-        current = OLBlockCommitment::new(current.slot().saturating_sub(1), *parent_blkid);
-    }
-
-    // Reverse to get forward order (excluding prev_terminal which is already finalized)
-    chain.reverse();
 
     let prev_state = ctx
         .fetch_ol_state(prev_terminal)?
         .ok_or(WorkerError::MissingPreState(prev_terminal))?;
     let mut cur_state = MemoryStateBaseLayer::from_container(prev_state);
 
-    // Apply write batches in canonical order.
-    // Every block in the canonical chain must have a write batch - a missing one
+    // Apply write batches in execution order.
+    // Every block on this branch must have a write batch - a missing one
     // indicates data corruption or a bug, so we error out rather than skip.
-    for commitment in chain {
+    for &commitment in blocks {
         let wb = ctx
             .fetch_write_batch(commitment)?
             .ok_or(WorkerError::MissingWriteBatch(commitment))?;
@@ -581,33 +576,23 @@ pub(crate) fn merge_epoch_state(
     Ok(merged)
 }
 
-/// Gets the terminal commitment of the epoch before `cur_epoch`.
-///
-/// Expects `cur_epoch > 0`; the chain worker executes blocks from slot 1, so
-/// the previous epoch's terminal is always already stored.
-pub(crate) fn get_prev_terminal(
-    ctx: &impl ChainWorkerContext,
-    cur_epoch: Epoch,
-) -> WorkerResult<OLBlockCommitment> {
-    if cur_epoch == 0 {
-        return Err(WorkerError::Unexpected(
-            "received prev terminal request for unexpected epoch 0".to_string(),
-        ));
-    }
-    let target_epoch = cur_epoch - 1;
-    ctx.fetch_canonical_epoch_summary_at(target_epoch)?
-        .map(|s| *s.terminal())
-        .ok_or(WorkerError::MissingSummaryForEpoch(target_epoch))
-}
-
 /// Reconstructs an epoch's OL state from its checkpoint, persisting nothing.
 pub(crate) fn apply_checkpoint_epoch(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
+    previous_epoch: EpochCommitment,
 ) -> WorkerResult<AppliedEpochArtifacts> {
     // Epoch 0 is genesis-initialized on every node, never checkpoint-applied.
     if epoch.epoch() == 0 {
         return Err(WorkerError::CannotApplyGenesisEpoch);
+    }
+    if previous_epoch.epoch().checked_add(1) != Some(epoch.epoch())
+        || previous_epoch.last_slot() >= epoch.last_slot()
+    {
+        return Err(WorkerError::InvalidCheckpointPredecessor {
+            epoch,
+            previous_epoch,
+        });
     }
 
     let payload = ctx
@@ -626,7 +611,7 @@ pub(crate) fn apply_checkpoint_epoch(
     }
 
     // Fetch previous terminal state.
-    let prev_terminal = get_prev_terminal(ctx, epoch.epoch())?;
+    let prev_terminal = previous_epoch.to_block_commitment();
     let base_state_raw = ctx
         .fetch_ol_state(prev_terminal)?
         .ok_or(WorkerError::MissingPreState(prev_terminal))?;
@@ -651,8 +636,7 @@ pub(crate) fn apply_checkpoint_epoch(
     // `ol_logs`, which records the changes made during the epoch.
     let pre_cursors = collect_pre_snark_account_cursors(&base_state, &ol_logs)?;
 
-    let parent = EpochCommitment::from_terminal(epoch.epoch() - 1, prev_terminal);
-    let spec = select_checkpoint_epoch_spec(ctx, epoch, parent, &base_state)?;
+    let spec = select_checkpoint_epoch_spec(ctx, epoch, previous_epoch, &base_state)?;
 
     // Reconstruct: wrap the base state in the write-tracking + indexer stack,
     // run apply_da_epoch, then extract the batch and indexer writes.

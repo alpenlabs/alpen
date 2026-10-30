@@ -9,6 +9,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
+use strata_ol_block_ancestry_provider::BlockAncestryProvider;
 use strata_ol_canonical_chain_provider::{OLCanonicalChainProvider, OLCanonicalChainProviderImpl};
 use strata_ol_checkpoint::compute_epoch_da;
 use strata_ol_params::OLRuntimeParams;
@@ -27,6 +28,7 @@ use super::errors::ProverError;
 pub(crate) struct CheckpointSpec {
     storage: Arc<NodeStorage>,
     canonical_chain_provider: OLCanonicalChainProviderImpl,
+    block_ancestry_provider: BlockAncestryProvider,
     runtime_params: OLRuntimeParams,
     assigned_spec: OLSpecId,
 }
@@ -39,6 +41,7 @@ impl CheckpointSpec {
     ) -> Self {
         Self {
             canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
+            block_ancestry_provider: BlockAncestryProvider::new(storage.ol_block().clone()),
             storage,
             runtime_params,
             assigned_spec,
@@ -58,6 +61,7 @@ impl ProofSpec for CheckpointSpec {
         let commitment = task.0;
         debug!(epoch = %commitment.epoch, "fetching checkpoint proof input");
         let storage = Arc::clone(&self.storage);
+        let block_ancestry_provider = self.block_ancestry_provider.clone();
         let runtime_params = self.runtime_params;
         let assigned_spec = self.assigned_spec;
         // Recovery takes this path before resuming a saved backend request too.
@@ -66,7 +70,13 @@ impl ProofSpec for CheckpointSpec {
                 .await
                 .map_err(PaasError::from)?;
             let input = spawn_blocking(move || {
-                fetch_input_blocking(storage, commitment, runtime_params, assigned_spec)
+                fetch_input_blocking(
+                    storage,
+                    &block_ancestry_provider,
+                    commitment,
+                    runtime_params,
+                    assigned_spec,
+                )
             })
             .await
             .map_err(|error| PaasError::Storage(format!("input fetch join: {error}")))?
@@ -123,6 +133,7 @@ pub(crate) fn checkpoint_task_spec(
 
 fn fetch_input_blocking(
     storage: Arc<NodeStorage>,
+    block_ancestry_provider: &BlockAncestryProvider,
     task_commitment: EpochCommitment,
     runtime_params: OLRuntimeParams,
     assigned_spec: OLSpecId,
@@ -144,10 +155,41 @@ fn fetch_input_blocking(
         .ol_checkpoint()
         .get_epoch_summary_blocking(task_commitment)?
         .ok_or(ProverError::EpochSummaryNotFound(epoch_index))?;
+    let summary_commitment = summary.get_epoch_commitment();
+    if summary_commitment != task_commitment {
+        return Err(ProverError::EpochCommitmentMismatch {
+            expected: task_commitment,
+            actual: summary_commitment,
+        });
+    }
     let terminal = summary.terminal();
     let prev_terminal = summary.prev_terminal();
-    let prev_terminal_slot = prev_terminal.slot();
-    let target_epoch = summary.epoch();
+    let terminal_header = storage
+        .ol_block()
+        .get_ol_header_blocking(*terminal.blkid())?
+        .ok_or(ProverError::BlockNotFound(terminal.slot()))?;
+    let terminal_commitment = terminal_header.compute_block_commitment();
+    let header_epoch_commitment =
+        EpochCommitment::from_terminal(terminal_header.epoch(), terminal_commitment);
+    if header_epoch_commitment != task_commitment {
+        return Err(ProverError::EpochCommitmentMismatch {
+            expected: task_commitment,
+            actual: header_epoch_commitment,
+        });
+    }
+    if !terminal_header.is_terminal() {
+        return Err(ProverError::MissingTerminalFlag {
+            block: terminal_commitment,
+        });
+    }
+    let ancestry =
+        block_ancestry_provider.collect_epoch_block_commitments_blocking(&terminal_header)?;
+    if ancestry.previous_terminal() != prev_terminal {
+        return Err(ProverError::EpochPredecessorMismatch {
+            expected: *prev_terminal,
+            actual: *ancestry.previous_terminal(),
+        });
+    }
 
     let start_state = storage
         .ol_state()
@@ -162,51 +204,28 @@ fn fetch_input_blocking(
         .get_ol_header_blocking(*prev_terminal.blkid())?
         .ok_or(ProverError::BlockNotFound(prev_terminal.slot()))?;
 
-    // Collect epoch blocks by walking the parent chain backwards from the
-    // terminal block to the previous terminal. This is the canonical,
-    // fork-safe approach: it follows actual parent pointers rather than
-    // iterating by slot, so it always produces the correct canonical
-    // sequence even during reorgs.
-    let mut blocks = Vec::new();
-    let mut cur_id = *terminal.blkid();
-
-    loop {
-        let block = storage
-            .ol_block()
-            .get_block_data_blocking(cur_id)?
-            .ok_or_else(|| {
-                ProverError::StateNotFound(format!(
-                    "block {cur_id:?} missing during epoch {epoch_index} chain traversal"
-                ))
-            })?;
-
-        let block_header = block.header();
-        let block_slot = block_header.slot();
-        let block_epoch = block_header.epoch();
-        if block_slot <= prev_terminal_slot {
-            return Err(ProverError::StateNotFound(format!(
-                "block at slot {block_slot} is at or below prev terminal slot \
-                 {prev_terminal_slot} while collecting epoch {epoch_index}"
-            )));
-        }
-        if block_epoch != target_epoch {
-            return Err(ProverError::StateNotFound(format!(
-                "obtained block from different epoch while collecting epoch {epoch_index}: \
-                 expected {target_epoch}, got {block_epoch}"
-            )));
-        }
-
-        let parent_id = *block.header().parent_blkid();
-        blocks.push(block);
-
-        if parent_id == *prev_terminal.blkid() {
-            break;
-        }
-
-        cur_id = parent_id;
-    }
-
-    blocks.reverse();
+    let blocks = ancestry
+        .blocks()
+        .iter()
+        .map(|commitment| {
+            let block = storage
+                .ol_block()
+                .get_block_data_blocking(*commitment.blkid())?
+                .ok_or_else(|| {
+                    ProverError::StateNotFound(format!(
+                        "block {commitment} missing during epoch {epoch_index} input assembly"
+                    ))
+                })?;
+            let actual = block.header().compute_block_commitment();
+            if actual != *commitment {
+                return Err(ProverError::BlockCommitmentMismatch {
+                    expected: *commitment,
+                    actual,
+                });
+            }
+            Ok(block)
+        })
+        .collect::<Result<Vec<_>, ProverError>>()?;
 
     let da_output = compute_epoch_da(
         spec,

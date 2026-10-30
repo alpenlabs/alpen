@@ -35,7 +35,8 @@ use tracing::{error, info};
 
 use crate::rpc::errors::{
     block_history_unavailable_error, db_error, internal_error, invalid_params_error,
-    map_mempool_error_to_rpc, not_available_on_node_error, not_found_error,
+    map_block_ancestry_error_to_rpc, map_mempool_error_to_rpc, not_available_on_node_error,
+    not_found_error,
 };
 
 /// Whether this node serves OL block body/data over RPC.
@@ -283,33 +284,38 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         self.ensure_history_available_at_slot(summary.terminal().slot())
             .await?;
 
-        let prev_terminal_blkid = *summary.prev_terminal().blkid();
-        let mut cur_blkid = *summary.terminal().blkid();
-        // Parent links should move from terminal toward prev_terminal within this slot span.
-        let max_hops = summary
-            .terminal()
-            .slot()
-            .saturating_sub(summary.prev_terminal().slot())
-            .saturating_add(1);
-        let mut hops = 0u64;
-
-        while hops <= max_hops {
-            let block = self.get_block(cur_blkid).await?;
-            let header = block.header();
-            let parent = *header.parent_blkid();
-
-            if parent == prev_terminal_blkid {
-                return Ok(L2BlockCommitment::new(header.slot(), cur_blkid));
-            }
-
-            cur_blkid = parent;
-            hops = hops.saturating_add(1);
+        let block = self.get_block(*summary.terminal().blkid()).await?;
+        let header = block.header();
+        let actual =
+            EpochCommitment::from_terminal(header.epoch(), header.compute_block_commitment());
+        let expected = summary.get_epoch_commitment();
+        if actual != expected {
+            return Err(internal_error(format!(
+                "epoch commitment mismatch (expected {expected}, got {actual})"
+            )));
         }
-
-        Err(internal_error(format!(
-            "Unable to derive first L2 block for epoch {} from terminal ancestry",
-            summary.epoch()
-        )))
+        if !header.is_terminal() {
+            return Err(internal_error(format!(
+                "expected terminal block flag on block {}",
+                summary.terminal()
+            )));
+        }
+        let ancestry = self
+            .provider
+            .collect_epoch_block_commitments(header)
+            .await
+            .map_err(map_block_ancestry_error_to_rpc)?;
+        if ancestry.previous_terminal() != summary.prev_terminal() {
+            return Err(internal_error(format!(
+                "previous terminal block mismatch (expected {}, got {})",
+                summary.prev_terminal(),
+                ancestry.previous_terminal()
+            )));
+        }
+        Ok(*ancestry
+            .blocks()
+            .first()
+            .expect("epoch ancestry includes the starting block"))
     }
 
     async fn get_prev_epoch_commitment(
@@ -1466,37 +1472,33 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             )));
         }
 
-        // Walk parents from the sync-status tip directly so we read a consistent
-        // chain anchored to the tip we observed (rather than re-resolving the
-        // canonical block at the tip slot, which costs an extra DB hit and could
-        // disagree with the snapshot if a reorg races us).
-        let mut cur_blkid = *self
+        let tip = self
             .provider
-            .get_ol_sync_status()
-            .ok_or_else(|| internal_error("OL sync status not available"))?
-            .tip()
-            .blkid();
+            .get_canonical_tip()
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error("No canonical tip found"))?;
         let history_base = self.provider.get_history_base().await.map_err(db_error)?;
 
-        // A freshly promoted node's tip is the bodyless anchor itself; there
-        // are no recent bodies to return yet.
-        if history_base.is_some_and(|base| *base.last_blkid() == cur_blkid) {
+        // Check before loading the starting body: a promoted tip may be the bodyless anchor.
+        if history_base.is_some_and(|base| tip.slot() <= base.last_slot()) {
             return Ok(Vec::new());
         }
-
-        let mut summaries = Vec::with_capacity(count as usize);
-        for _ in 0..count {
-            let block = self.get_block(cur_blkid).await?;
-            let header = block.header();
-            summaries.push(RpcOLBlockSummary::from(&block));
-            if header.slot() == 0
-                || history_base.is_some_and(|base| header.slot() == base.last_slot() + 1)
-            {
-                break;
+        let tip_block = self.get_block(*tip.blkid()).await?;
+        let commitments = self
+            .provider
+            .collect_block_commitments(tip_block.header(), count as usize)
+            .await
+            .map_err(map_block_ancestry_error_to_rpc)?;
+        let mut summaries = Vec::with_capacity(commitments.len());
+        for commitment in commitments {
+            if commitment == tip {
+                summaries.push(RpcOLBlockSummary::from(&tip_block));
+            } else {
+                let block = self.get_block(*commitment.blkid()).await?;
+                summaries.push(RpcOLBlockSummary::from(&block));
             }
-            cur_blkid = *header.parent_blkid();
         }
-        summaries.reverse();
         Ok(summaries)
     }
 

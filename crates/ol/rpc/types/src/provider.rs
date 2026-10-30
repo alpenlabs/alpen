@@ -15,7 +15,8 @@ use strata_db_types::ol_checkpoint::RejectedCheckpointEntry;
 use strata_db_types::ol_state_index::{AccountUpdateRecord, InboxMessageRecord};
 use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
-use strata_ol_chain_types_v1::OLBlockV1;
+use strata_ol_block_ancestry_provider::{BlockAncestryError, EpochBlockAncestry};
+use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_mempool::OLMempoolResult;
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_types_v1::WriteBatch;
@@ -27,11 +28,33 @@ use strata_status::OLSyncStatus;
 /// Provides all data access needed by the OL RPC server.
 #[async_trait]
 pub trait OLRpcProvider: Send + Sync + 'static {
+    /// Returns the canonical tip, or `None` before the canonical chain is initialized.
+    async fn get_canonical_tip(&self) -> DbResult<Option<OLBlockCommitment>>;
+
     /// Get the canonical block commitment at the given slot height.
     async fn get_canonical_block_at(&self, height: u64) -> DbResult<Option<OLBlockCommitment>>;
 
     /// Get block data by block ID.
     async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>>;
+
+    /// Collects `start`'s epoch in execution order and its preceding terminal block.
+    ///
+    /// Follows the supplied branch independently of canonicality. Missing or
+    /// inconsistent ancestry returns an error.
+    async fn collect_epoch_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+    ) -> Result<EpochBlockAncestry, BlockAncestryError>;
+
+    /// Collects up to `max_blocks` commitments from `start` in ascending slot order.
+    ///
+    /// Follows parent links through genesis or stops before the stored history base.
+    /// Missing or inconsistent ancestry returns an error, never a partial list.
+    async fn collect_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+        max_blocks: usize,
+    ) -> Result<Vec<OLBlockCommitment>, BlockAncestryError>;
 
     /// Classify full-block availability at a slot-aware block commitment.
     async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability>;

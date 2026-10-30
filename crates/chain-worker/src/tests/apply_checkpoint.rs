@@ -33,6 +33,7 @@ use strata_identifiers::{
     BRIDGE_GATEWAY_ACCT_SERIAL, Buf32, Epoch, EpochCommitment, L1BlockCommitment,
     OLBlockCommitment, OLBlockId,
 };
+use strata_ol_block_ancestry_provider::EpochBlockAncestry;
 use strata_ol_chain_types_v1::{
     MAX_SEALING_MANIFEST_COUNT, OLBlockHeaderV1, OLBlockV1, OLLog as ChainOLLog,
 };
@@ -112,14 +113,6 @@ impl ChainWorkerContext for MockChainWorkerContext {
             }))
     }
 
-    fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>> {
-        Ok(self
-            .epoch_summaries
-            .get(&epoch)
-            .and_then(|x| x.first())
-            .cloned())
-    }
-
     fn fetch_ol_state(
         &self,
         commitment: OLBlockCommitment,
@@ -165,6 +158,13 @@ impl ChainWorkerContext for MockChainWorkerContext {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
+    fn collect_epoch_block_commitments(
+        &self,
+        _start: &OLBlockHeaderV1,
+    ) -> WorkerResult<EpochBlockAncestry> {
+        unimplemented!("checkpoint replay uses its explicit predecessor")
+    }
+
     fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
@@ -205,7 +205,11 @@ impl ChainWorkerContext for MockChainWorkerContext {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
-    fn merge_epoch_data(&self, _summary: &EpochSummary) -> WorkerResult<()> {
+    fn merge_epoch_data(
+        &self,
+        _summary: &EpochSummary,
+        _blocks: &[OLBlockCommitment],
+    ) -> WorkerResult<()> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
@@ -228,9 +232,9 @@ fn mock_for(built: &BuiltEpoch) -> (MockChainWorkerContext, EpochCommitment) {
     let mut ctx = MockChainWorkerContext::new();
     ctx.genesis_l1_block = built.genesis_l1_block;
 
-    // Prev-epoch summary so get_prev_terminal resolves the base state.
+    // Spec selection reads the previous epoch's summary by exact commitment.
     ctx.epoch_summaries
-        .insert(built.prev_epoch_idx, vec![built.prev_summary]);
+        .insert(built.prev_summary.epoch(), vec![built.prev_summary]);
     ctx.ol_states
         .insert(built.prev_terminal, built.pre_epoch_state.clone());
 
@@ -255,7 +259,8 @@ fn test_apply_checkpoint_deposit_manifest_only() {
     let built = build_epoch(EpochPlan::new().terminal(BlockPlan::new().deposit_manifest()));
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -277,7 +282,8 @@ fn test_apply_checkpoint_wraps_v0_terminal() {
     );
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -295,7 +301,8 @@ fn test_apply_checkpoint_replays_empty_l1_range() {
     );
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -311,7 +318,8 @@ fn test_apply_checkpoint_snark_multi_update_and_deposit() {
     );
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 
     // Sanity: both modes genuinely produced 2 snark records.
@@ -343,7 +351,8 @@ fn test_apply_checkpoint_snark_updates_across_planned_blocks() {
     );
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
     assert_eq!(
         artifacts
@@ -365,7 +374,8 @@ fn test_apply_checkpoint_withdrawal_only() {
     assert_withdrawal_log_present(built.block_sync_logs());
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -379,7 +389,8 @@ fn test_apply_checkpoint_withdrawal_and_deposit() {
     assert_withdrawal_log_present(built.block_sync_logs());
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -397,7 +408,8 @@ fn test_apply_checkpoint_all() {
     assert_withdrawal_log_present(built.block_sync_logs());
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 
     // Three snark updates (two plain + one withdrawal-bearing) must reconstruct
@@ -440,7 +452,8 @@ fn test_apply_checkpoint_replays_manifests_spread_across_non_terminal_blocks() {
     );
     let (ctx, epoch) = mock_for(&built);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -460,7 +473,8 @@ fn test_apply_checkpoint_drains_non_terminal_deposit_at_terminal() {
     );
 
     let (ctx, epoch) = mock_for(&built);
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -480,7 +494,8 @@ fn test_apply_checkpoint_orders_mixed_manifest_placements_by_block_position() {
     );
 
     let (ctx, epoch) = mock_for(&built);
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("apply_checkpoint_epoch");
     assert_consistent(&built, &artifacts);
 }
 
@@ -498,7 +513,8 @@ fn test_apply_checkpoint_rejects_manifests_exceeding_epoch_cap() {
     );
     let (ctx, epoch) = mock_for(&built);
 
-    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("range should exceed manifest cap");
+    let err = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect_err("range should exceed manifest cap");
     assert!(
         matches!(
             err,
@@ -522,7 +538,8 @@ fn test_apply_checkpoint_missing_manifest_still_errors() {
         .remove_canonical_at(missing_height)
         .expect("stored manifest");
 
-    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("missing manifest should fail");
+    let err = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect_err("missing manifest should fail");
     assert!(
         matches!(err, WorkerError::MissingDependency("mock l1 manifest")),
         "expected missing manifest dependency, got {err:?}"
@@ -547,7 +564,8 @@ fn test_apply_checkpoint_inverted_l1_range_still_errors() {
     .expect("rebuild payload with inverted L1 tip");
     let (ctx, epoch) = mock_for(&built);
 
-    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("inverted L1 range should fail");
+    let err = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect_err("inverted L1 range should fail");
     assert!(
         matches!(err, WorkerError::L1RangeInverted { from: 2, to: 0, .. }),
         "expected inverted L1 range, got {err:?}"
@@ -578,7 +596,8 @@ fn test_apply_checkpoint_rejects_undecodable_da_payload() {
     .expect("rebuild payload with undecodable DA");
     let (ctx, epoch) = mock_for(&built);
 
-    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("undecodable DA should fail");
+    let err = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect_err("undecodable DA should fail");
     assert!(
         matches!(
             err,
@@ -641,7 +660,12 @@ fn test_apply_checkpoint_skips_non_snark_log_in_sidecar() {
     built_with_extra.checkpoint_payload = spliced_payload;
     let (ctx, epoch) = mock_for(&built_with_extra);
 
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("apply_checkpoint_epoch");
+    let artifacts = apply_checkpoint_epoch(
+        &ctx,
+        epoch,
+        built_with_extra.prev_summary.get_epoch_commitment(),
+    )
+    .expect("apply_checkpoint_epoch");
     // Logs are deliberately divergent here (the spliced log is checkpoint-only),
     // so compare everything except the log sequence.
     assert_state_consistent(&built_with_extra, &artifacts);
@@ -691,8 +715,10 @@ fn test_apply_checkpoint_epoch_is_deterministic() {
     );
     let (ctx, epoch) = mock_for(&built);
 
-    let a = apply_checkpoint_epoch(&ctx, epoch).expect("first apply");
-    let b = apply_checkpoint_epoch(&ctx, epoch).expect("second apply");
+    let a = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("first apply");
+    let b = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("second apply");
 
     assert_eq!(
         a.terminal(),
@@ -716,15 +742,59 @@ fn test_apply_checkpoint_epoch_is_deterministic() {
 fn test_apply_checkpoint_rejects_genesis_epoch() {
     let ctx = MockChainWorkerContext::new();
     let epoch0 = EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero()));
-    let err = apply_checkpoint_epoch(&ctx, epoch0).unwrap_err();
+    let err = apply_checkpoint_epoch(&ctx, epoch0, EpochCommitment::null()).unwrap_err();
     assert!(matches!(err, WorkerError::CannotApplyGenesisEpoch));
+}
+
+#[test]
+fn test_apply_checkpoint_rejects_invalid_predecessor() {
+    let ctx = MockChainWorkerContext::new();
+    let block_id = OLBlockId::from(Buf32::from([1u8; 32]));
+    let epoch = EpochCommitment::new(2, 10, block_id);
+
+    // Reject skipped epochs and predecessors whose terminal is not earlier.
+    for previous_epoch in [
+        EpochCommitment::new(0, 0, block_id),
+        EpochCommitment::new(2, 5, block_id),
+        EpochCommitment::new(1, 10, block_id),
+        EpochCommitment::new(1, 11, block_id),
+    ] {
+        let err = apply_checkpoint_epoch(&ctx, epoch, previous_epoch).unwrap_err();
+        assert!(matches!(
+            err,
+            WorkerError::InvalidCheckpointPredecessor {
+                epoch: actual_epoch,
+                previous_epoch: actual_previous,
+            } if actual_epoch == epoch && actual_previous == previous_epoch
+        ));
+    }
+}
+
+#[test]
+fn test_apply_checkpoint_uses_exact_predecessor_state() {
+    let built = build_epoch(EpochPlan::new().terminal(BlockPlan::new().deposit_manifest()));
+    let (ctx, epoch) = mock_for(&built);
+    let previous_epoch = built.prev_summary.get_epoch_commitment();
+
+    // The fixture's predecessor state exists, but the supplied branch's does not.
+    let other_predecessor = EpochCommitment::new(
+        previous_epoch.epoch(),
+        previous_epoch.last_slot(),
+        OLBlockId::from(Buf32::from([0xff; 32])),
+    );
+    let err = apply_checkpoint_epoch(&ctx, epoch, other_predecessor).unwrap_err();
+    assert!(matches!(
+        err,
+        WorkerError::MissingPreState(terminal)
+            if terminal == other_predecessor.to_block_commitment()
+    ));
 }
 
 #[test]
 fn test_apply_checkpoint_missing_payload() {
     let ctx = MockChainWorkerContext::new();
     let epoch = EpochCommitment::new(1, 5, OLBlockId::from(Buf32::from([1u8; 32])));
-    let err = apply_checkpoint_epoch(&ctx, epoch).unwrap_err();
+    let err = apply_checkpoint_epoch(&ctx, epoch, EpochCommitment::null()).unwrap_err();
     assert!(matches!(err, WorkerError::MissingCheckpointPayload(_)));
 }
 
@@ -754,7 +824,8 @@ fn test_apply_checkpoint_rejects_mismatched_payload_then_accepts_valid_retry() {
     .expect("rebuild payload with mismatched tip");
     ctx.checkpoint_payloads.insert(epoch, mismatched_payload);
 
-    let err = apply_checkpoint_epoch(&ctx, epoch).expect_err("mismatched payload must be rejected");
+    let err = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect_err("mismatched payload must be rejected");
     assert!(
         matches!(err, WorkerError::CheckpointTipMismatch { .. }),
         "expected CheckpointTipMismatch, got {err:?}"
@@ -763,7 +834,8 @@ fn test_apply_checkpoint_rejects_mismatched_payload_then_accepts_valid_retry() {
     // A corrected payload for the same CSM update must be applicable on a
     // later retry; a failed attempt must not poison reconstruction state.
     ctx.checkpoint_payloads.insert(epoch, valid_payload);
-    let artifacts = apply_checkpoint_epoch(&ctx, epoch).expect("valid retry must apply");
+    let artifacts = apply_checkpoint_epoch(&ctx, epoch, built.prev_summary.get_epoch_commitment())
+        .expect("valid retry must apply");
     assert_consistent(&built, &artifacts);
 }
 
@@ -999,7 +1071,7 @@ mod db_idempotency {
         toplevel_state_root: Option<strata_identifiers::Buf32>,
         terminal_header: Option<super::OLBlockHeaderV1>,
         summary: Option<strata_checkpoint_types::EpochSummary>,
-        canonical_epoch_commitment: Option<EpochCommitment>,
+        epoch_commitments: Vec<EpochCommitment>,
         per_account: Vec<(
             AccountId,
             Vec<AccountUpdateRecord>,
@@ -1123,10 +1195,10 @@ mod db_idempotency {
                 .ol_checkpoint
                 .get_epoch_summary_blocking(epoch)
                 .expect("get_epoch_summary");
-            let canonical = self
+            let epoch_commitments = self
                 .ol_checkpoint
-                .get_canonical_epoch_commitment_at_blocking(epoch.epoch())
-                .expect("get_canonical_epoch_commitment");
+                .get_epoch_commitments_at_blocking(epoch.epoch())
+                .expect("get_epoch_commitments");
             let mut per_account = Vec::new();
             for &acct in accounts {
                 let updates = self
@@ -1172,7 +1244,7 @@ mod db_idempotency {
                 toplevel_state_root,
                 terminal_header,
                 summary,
-                canonical_epoch_commitment: canonical,
+                epoch_commitments,
                 per_account,
                 l1_block_refs_leaf_count,
                 l1_block_refs,
@@ -1226,7 +1298,9 @@ mod db_idempotency {
                 .terminal(BlockPlan::new().deposit_manifest()),
         );
         let (mock_ctx, epoch) = mock_for(&built);
-        let artifacts = apply_checkpoint_epoch(&mock_ctx, epoch).expect("apply_checkpoint_epoch");
+        let artifacts =
+            apply_checkpoint_epoch(&mock_ctx, epoch, built.prev_summary.get_epoch_commitment())
+                .expect("apply_checkpoint_epoch");
 
         // Accounts touched by the fixture's writes — used to scope snapshot reads.
         let touched_accounts: Vec<AccountId> = artifacts

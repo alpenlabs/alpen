@@ -65,6 +65,7 @@ strata-identifiers.workspace = true
 strata-logging.workspace = true
 strata-metrics.workspace = true
 strata-node-context.workspace = true
+strata-ol-block-ancestry-provider.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-canonical-chain-provider.workspace = true
 strata-ol-chain-types-v1.workspace = true

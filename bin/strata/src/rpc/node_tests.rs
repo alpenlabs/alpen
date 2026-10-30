@@ -17,6 +17,7 @@ use strata_acct_types::{L1BlockRecord, MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
+use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{
     DbError, DbResult,
     ol_block::BlockAvailability,
@@ -24,6 +25,9 @@ use strata_db_types::{
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::*;
+use strata_ol_block_ancestry_provider::{
+    BlockAncestryError, BlockAncestryProvider, EpochBlockAncestry,
+};
 use strata_ol_chain_types_v1::*;
 use strata_ol_log_budget::{TxLogBudgetError, check_tx_log_budget};
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
@@ -48,7 +52,8 @@ use strata_snark_acct_types::{
     UpdateOutputs, UpdateStateData,
 };
 use strata_status::OLSyncStatus;
-use tokio::runtime::Builder;
+use strata_storage::{create_node_storage, test_runtime_handle};
+use tokio::{runtime::Builder, task::spawn_blocking};
 
 use super::{OLBlockDataAccess, OLRpcServer, REJECTED_CHECKPOINTS_PAGE_SIZE};
 use crate::rpc::errors::{
@@ -90,6 +95,7 @@ fn update_record_with_prev(
 }
 
 struct MockProvider {
+    block_ancestry_provider: Option<BlockAncestryProvider>,
     blocks: HashMap<OLBlockId, OLBlockV1>,
     canonical_slots: HashMap<Slot, OLBlockCommitment>,
     history_base: Option<EpochCommitment>,
@@ -115,6 +121,7 @@ struct MockProvider {
 impl MockProvider {
     fn new() -> Self {
         Self {
+            block_ancestry_provider: None,
             blocks: HashMap::new(),
             canonical_slots: HashMap::new(),
             history_base: None,
@@ -138,8 +145,55 @@ impl MockProvider {
         }
     }
 
+    async fn with_epoch_blocks(mut self, previous: &OLBlockHeaderV1, blocks: &[OLBlockV1]) -> Self {
+        for block in blocks {
+            self = self.with_block_and_state(block, genesis_ol_state());
+        }
+        let previous = previous.clone();
+        let blocks = blocks.to_vec();
+        self.block_ancestry_provider = Some(
+            spawn_blocking(move || {
+                let storage =
+                    create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap();
+                let manager = storage.ol_block().clone();
+                manager
+                    .put_terminal_header_blocking(previous.compute_blkid(), previous)
+                    .unwrap();
+                for block in blocks {
+                    manager.put_block_data_blocking(block).unwrap();
+                }
+                BlockAncestryProvider::new(manager)
+            })
+            .await
+            .unwrap(),
+        );
+        self
+    }
+
     fn with_sync_status(mut self, status: OLSyncStatus) -> Self {
         self.sync_status = Some(status);
+        self
+    }
+
+    async fn with_block_ancestry(mut self) -> Self {
+        let blocks: Vec<_> = self.blocks.values().cloned().collect();
+        let history_base = self.history_base;
+        self.block_ancestry_provider = Some(
+            spawn_blocking(move || {
+                let storage =
+                    create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap();
+                let manager = storage.ol_block().clone();
+                for block in blocks {
+                    manager.put_block_data_blocking(block).unwrap();
+                }
+                if let Some(base) = history_base {
+                    manager.promote_to_history_anchor_blocking(base).unwrap();
+                }
+                BlockAncestryProvider::new(manager)
+            })
+            .await
+            .unwrap(),
+        );
         self
     }
 
@@ -389,12 +443,43 @@ impl MockProvider {
 
 #[async_trait]
 impl OLRpcProvider for MockProvider {
+    async fn get_canonical_tip(&self) -> DbResult<Option<OLBlockCommitment>> {
+        Ok(self
+            .canonical_slots
+            .values()
+            .max_by_key(|block| block.slot())
+            .copied())
+    }
+
+    async fn collect_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+        max_blocks: usize,
+    ) -> Result<Vec<OLBlockCommitment>, BlockAncestryError> {
+        self.block_ancestry_provider
+            .as_ref()
+            .expect("block ancestry fixture must be configured")
+            .collect_block_commitments_async(start, max_blocks)
+            .await
+    }
+
     async fn get_canonical_block_at(&self, height: u64) -> DbResult<Option<OLBlockCommitment>> {
         Ok(self.canonical_slots.get(&height).copied())
     }
 
     async fn get_block_data(&self, id: OLBlockId) -> DbResult<Option<OLBlockV1>> {
         Ok(self.blocks.get(&id).cloned())
+    }
+
+    async fn collect_epoch_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+    ) -> Result<EpochBlockAncestry, BlockAncestryError> {
+        self.block_ancestry_provider
+            .as_ref()
+            .expect("epoch ancestry fixture must be configured")
+            .collect_epoch_block_commitments_async(start)
+            .await
     }
 
     async fn get_block_at(&self, commitment: OLBlockCommitment) -> DbResult<BlockAvailability> {
@@ -627,13 +712,6 @@ fn make_epoch_blocks(
         blocks.push(block);
     }
     blocks
-}
-
-fn with_blocks(mut provider: MockProvider, blocks: &[OLBlockV1]) -> MockProvider {
-    for block in blocks {
-        provider = provider.with_block_and_state(block, genesis_ol_state());
-    }
-    provider
 }
 
 fn make_block_with_gam_tx(
@@ -1215,7 +1293,8 @@ async fn checkpoint_info_returns_none_when_epoch_missing() {
 async fn checkpoint_info_with_l1_advance() {
     // With fixed-slot sealing at 10 slots/epoch, epoch 0 is slot 0, epoch 1
     // terminates at slot 10, and epoch 2 terminates at slot 20.
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let previous = make_terminal_block(10, 1, fixed_ol_block_id(0x11));
+    let prev_terminal = previous.header().compute_block_commitment();
     let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
     let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
     let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
@@ -1269,7 +1348,9 @@ async fn checkpoint_info_with_l1_advance() {
             .expect("test manifest should be valid"),
         )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider
+        .with_epoch_blocks(previous.header(), &epoch_blocks)
+        .await;
 
     let rpc = make_rpc(provider);
 
@@ -1288,7 +1369,8 @@ async fn checkpoint_info_with_l1_advance() {
 
 #[tokio::test]
 async fn checkpoint_info_no_l1_advance() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let previous = make_terminal_block(10, 1, fixed_ol_block_id(0x11));
+    let prev_terminal = previous.header().compute_block_commitment();
     let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
     let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
     let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
@@ -1312,7 +1394,9 @@ async fn checkpoint_info_no_l1_advance() {
         .with_epoch_commitment(2, cur_commitment)
         .with_epoch_summary(prev_summary)
         .with_epoch_summary(cur_summary);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider
+        .with_epoch_blocks(previous.header(), &epoch_blocks)
+        .await;
 
     let rpc = make_rpc(provider);
 
@@ -1334,7 +1418,8 @@ async fn checkpoint_info_no_l1_advance() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let previous = make_terminal_block(10, 1, fixed_ol_block_id(0x11));
+    let prev_terminal = previous.header().compute_block_commitment();
     let observed_height = 505;
     let l1_tip_height = 510;
     let checkpoint_txid = fixed_buf32(0xAA);
@@ -1394,7 +1479,9 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
         )
         .with_canonical_l1_block(observed_height, fixed_l1_block_id(0x50))
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider
+        .with_epoch_blocks(previous.header(), &epoch_blocks)
+        .await;
 
     let rpc = make_rpc(provider);
 
@@ -1416,7 +1503,8 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_pending_when_observation_block_is_orphaned() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let previous = make_terminal_block(10, 1, fixed_ol_block_id(0x11));
+    let prev_terminal = previous.header().compute_block_commitment();
     let observed_height = 505;
     let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
     let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
@@ -1468,7 +1556,11 @@ async fn checkpoint_info_returns_pending_when_observation_block_is_orphaned() {
         )
         .with_canonical_l1_block(observed_height, canonical_blkid)
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let rpc = make_rpc(with_blocks(provider, &epoch_blocks));
+    let rpc = make_rpc(
+        provider
+            .with_epoch_blocks(previous.header(), &epoch_blocks)
+            .await,
+    );
 
     let info = rpc
         .get_checkpoint_info(2)
@@ -1481,7 +1573,8 @@ async fn checkpoint_info_returns_pending_when_observation_block_is_orphaned() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_pending_when_observation_missing() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let previous = make_terminal_block(10, 1, fixed_ol_block_id(0x11));
+    let prev_terminal = previous.header().compute_block_commitment();
     let epoch_blocks = make_epoch_blocks(prev_terminal, 2, 20);
     let terminal_block = epoch_blocks.last().expect("epoch should have blocks");
     let terminal = L2BlockCommitment::new(20, terminal_block.header().compute_blkid());
@@ -1523,7 +1616,9 @@ async fn checkpoint_info_returns_pending_when_observation_missing() {
             AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
                 .expect("test manifest should be valid"),
         );
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider
+        .with_epoch_blocks(previous.header(), &epoch_blocks)
+        .await;
 
     let rpc = make_rpc(provider);
 
@@ -1541,7 +1636,8 @@ async fn checkpoint_info_returns_pending_when_observation_missing() {
 
 #[tokio::test]
 async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let previous = make_terminal_block(10, 1, fixed_ol_block_id(0x11));
+    let prev_terminal = previous.header().compute_block_commitment();
     let observed_height = 505;
     let l1_tip_height = 510;
     let checkpoint_txid = fixed_buf32(0xAA);
@@ -1595,7 +1691,9 @@ async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
         )
         .with_canonical_l1_block(observed_height, fixed_l1_block_id(0x50))
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider
+        .with_epoch_blocks(previous.header(), &epoch_blocks)
+        .await;
 
     let rpc = make_rpc(provider);
 
@@ -1887,7 +1985,8 @@ async fn checkpoint_info_epoch_0_ok_on_checkpoint_sync() {
 
 #[tokio::test]
 async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
-    let prev_terminal = L2BlockCommitment::new(10, fixed_ol_block_id(0x10));
+    let previous = make_terminal_block(10, 1, fixed_ol_block_id(0x11));
+    let prev_terminal = previous.header().compute_block_commitment();
     let observed_height = 505;
     let checkpoint_txid = fixed_buf32(0xAA);
     let checkpoint_wtxid = fixed_buf32(0xBB);
@@ -1940,7 +2039,9 @@ async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
         )
         .with_canonical_l1_block(observed_height, fixed_l1_block_id(0x50))
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
-    let provider = with_blocks(provider, &epoch_blocks);
+    let provider = provider
+        .with_epoch_blocks(previous.header(), &epoch_blocks)
+        .await;
 
     let rpc = make_rpc(provider);
 
@@ -4752,20 +4853,11 @@ async fn get_recent_blocks_walks_backwards_in_order() {
     let block2 = make_block(2, 0, blkid1);
     let blkid2 = block2.header().compute_blkid();
 
-    let tip = OLBlockCommitment::new(2, blkid2);
     let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(
-            tip,
-            0,
-            false,
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-            EpochCommitment::null(),
-        ))
         .with_block_and_state(&block0, genesis_ol_state())
         .with_block_and_state(&block1, genesis_ol_state())
         .with_block_and_state(&block2, genesis_ol_state());
-    let rpc = make_rpc(provider);
+    let rpc = make_rpc(provider.with_block_ancestry().await);
 
     let summaries = rpc.get_recent_blocks(3).await.expect("recent blocks");
     assert_eq!(summaries.len(), 3);
@@ -4786,7 +4878,7 @@ async fn get_recent_blocks_zero_returns_empty() {
         EpochCommitment::null(),
         EpochCommitment::null(),
     ));
-    let rpc = make_rpc(provider);
+    let rpc = make_rpc(provider.with_block_ancestry().await);
 
     let summaries = rpc.get_recent_blocks(0).await.expect("rpc call");
     assert!(summaries.is_empty());
@@ -4811,7 +4903,7 @@ async fn get_recent_blocks_caps_at_genesis_when_count_exceeds_tip() {
         ))
         .with_block_and_state(&block0, genesis_ol_state())
         .with_block_and_state(&block1, genesis_ol_state());
-    let rpc = make_rpc(provider);
+    let rpc = make_rpc(provider.with_block_ancestry().await);
 
     let summaries = rpc.get_recent_blocks(10).await.expect("rpc call");
     assert_eq!(summaries.len(), 2);
@@ -4842,7 +4934,7 @@ async fn get_recent_blocks_stops_before_history_base_anchor() {
         .with_block_and_state(&block11, genesis_ol_state())
         .with_block_and_state(&block12, genesis_ol_state())
         .with_block_and_state(&block13, genesis_ol_state());
-    let rpc = make_rpc(provider);
+    let rpc = make_rpc(provider.with_block_ancestry().await);
 
     let summaries = rpc
         .get_recent_blocks(10)
@@ -4861,6 +4953,7 @@ async fn get_recent_blocks_returns_empty_when_tip_is_the_anchor() {
     let tip = history_base.to_block_commitment();
     let provider = MockProvider::new()
         .with_history_base(history_base)
+        .with_canonical_commitment(tip)
         .with_sync_status(make_sync_status(
             tip,
             2,
@@ -4869,7 +4962,7 @@ async fn get_recent_blocks_returns_empty_when_tip_is_the_anchor() {
             history_base,
             history_base,
         ));
-    let rpc = make_rpc(provider);
+    let rpc = make_rpc(provider.with_block_ancestry().await);
 
     let summaries = rpc
         .get_recent_blocks(10)
@@ -4901,7 +4994,7 @@ async fn get_recent_blocks_without_history_base_preserves_missing_parent_error()
         ))
         .with_block_and_state(&block11, genesis_ol_state())
         .with_block_and_state(&block12, genesis_ol_state());
-    let rpc = make_rpc(provider);
+    let rpc = make_rpc(provider.with_block_ancestry().await);
 
     let err = rpc
         .get_recent_blocks(3)
@@ -4912,6 +5005,35 @@ async fn get_recent_blocks_without_history_base_preserves_missing_parent_error()
     assert_eq!(
         err.message(),
         format!("block not found: {}", former_anchor.last_blkid())
+    );
+}
+
+#[tokio::test]
+async fn get_recent_blocks_requires_canonical_tip_even_with_sync_status() {
+    let status_tip = OLBlockCommitment::new(5, fixed_ol_block_id(1));
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        status_tip,
+        1,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+    let error = rpc.get_recent_blocks(1).await.unwrap_err();
+    assert_eq!(error.code(), INVALID_PARAMS_CODE);
+    assert_eq!(error.message(), "No canonical tip found");
+}
+
+#[tokio::test]
+async fn get_recent_blocks_rejects_excessive_count_before_lookup() {
+    let rpc = make_rpc(MockProvider::new());
+    let count = TEST_MAX_HEADERS_RANGE as u64 + 1;
+    let error = rpc.get_recent_blocks(count).await.unwrap_err();
+    assert_eq!(error.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        error.message(),
+        format!("count {count} exceeds max_headers_range {TEST_MAX_HEADERS_RANGE}")
     );
 }
 

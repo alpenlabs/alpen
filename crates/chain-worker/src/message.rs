@@ -28,5 +28,9 @@ pub enum ChainWorkerMessage {
     /// Reconstruct an epoch's OL state from its checkpoint and persist it.
     ///
     /// Used by checkpoint sync. Reconstructs, persists, and records the epoch summary.
-    ApplyCheckpoint(EpochCommitment, CommandCompletionSender<WorkerResult<()>>),
+    ApplyCheckpoint {
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+        completion: CommandCompletionSender<WorkerResult<()>>,
+    },
 }

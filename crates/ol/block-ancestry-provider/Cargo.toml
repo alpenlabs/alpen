@@ -1,0 +1,21 @@
+[package]
+name = "strata-ol-block-ancestry-provider"
+version = "0.1.0"
+edition = "2024"
+description = "Parent-linked OL block ancestry queries"
+
+[dependencies]
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-ol-chain-types-v1.workspace = true
+strata-storage.workspace = true
+
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+strata-db-store-sled.workspace = true
+strata-storage = { workspace = true, features = ["test-utils"] }
+
+[lints]
+workspace = true
