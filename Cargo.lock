@@ -1494,11 +1494,11 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bdk_bitcoind_rpc"
-version = "0.17.1"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ac1a1da33a22949c3e2b3a715431eaed50c2c9278c8cdac06f0254b7659291f"
+checksum = "a216369a99680aab5fbc22957bef1a9bd557b56d5e306f9da89435176b8d65ff"
 dependencies = [
- "bdk_core",
+ "bdk_core 0.6.4",
  "bitcoin",
  "bitcoincore-rpc",
 ]
@@ -1509,7 +1509,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4955734f97b2baed3f36d16ae7c203fdde31ae85391ac44ee3cbcaf0886db5ce"
 dependencies = [
- "bdk_core",
+ "bdk_core 0.4.1",
  "bitcoin",
  "miniscript",
  "serde",
@@ -1524,6 +1524,15 @@ dependencies = [
  "bitcoin",
  "hashbrown 0.14.5",
  "serde",
+]
+
+[[package]]
+name = "bdk_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cbb1373ac1fafacd7adab91f58ab18d455dfb6434d47a647e75315613599cad"
+dependencies = [
+ "bitcoin",
 ]
 
 [[package]]
@@ -10866,7 +10875,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.2",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
