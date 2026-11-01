@@ -112,7 +112,7 @@ jobs:
 
       - name: Preserve checkpoint runtime params for the build
         if: steps.preflight.outputs.exists == 'false'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: sp1-runtime-params
           path: ${{ runner.temp }}/checkpoint-runtime-params.json
@@ -144,7 +144,7 @@ jobs:
           persist-credentials: false
 
       - name: Download checkpoint runtime params
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sp1-runtime-params
           path: ${{ runner.temp }}
@@ -207,7 +207,7 @@ jobs:
         run: python3 .github/scripts/sp1_artifact_publish.py summarize
 
       - name: Upload artifacts as workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: sp1-artifacts-${{ steps.summarize.outputs.version }}
           path: artifacts/sp1/
@@ -234,7 +234,7 @@ jobs:
           persist-credentials: false
 
       - name: Download SP1 artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: sp1-artifacts-${{ needs.build-sp1-artifacts.outputs.version }}
           path: artifacts/sp1/
