@@ -362,21 +362,29 @@ It runs daily at 02:17 UTC and supports manual dispatch. Merging the workflow
 onto the default branch enables its daily paid proof requests. Ordinary
 functional CI continues to use native execution.
 
-Configure a repository Actions secret named `NETWORK_PRIVATE_KEY`, or give
-this repository access to an organization Actions secret with that name.
-The workflow passes that secret into the test step explicitly. No local
-network key is needed to trigger CI. Optional repository Actions variables
-`NETWORK_RPC_URL` and `SP1_PROOF_STRATEGY` select a custom endpoint or fulfillment
-strategy; leaving them unset uses the SDK defaults.
+Before enabling paid runs, a repository admin must configure the
+`sp1-network` GitHub environment:
 
-No environment approval gate is configured. A user with repository write
-access can trigger the workflow. Adding required reviewers later would need
-a GitHub environment and repository-admin configuration; using that same
-protected environment for the daily job would require approval each day too.
+1. Under **Deployment branches and tags**, select **Selected branches and tags**
+   and add a **Branch** rule for exactly `main`, with no tag rules.
+2. Leave **Required reviewers** disabled so daily runs need no approval.
+3. Add `NETWORK_PRIVATE_KEY` as an **environment secret**. Remove any
+   repository-level copy and any organization-secret grant exposing the same
+   key to this repository; those copies would bypass the environment policy.
+
+The job references this environment, so GitHub checks its branch policy before
+starting the job or exposing the key. Merely adding `environment:` to the YAML
+does not configure that policy. See
+[GitHub's environment setup documentation](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
+Manual runs must select `main`; feature-branch runs are rejected by the policy.
+No local network key is needed to trigger CI. Optional repository Actions
+variables `NETWORK_RPC_URL` and `SP1_PROOF_STRATEGY` select a custom endpoint or
+fulfillment strategy; leaving them unset uses the SDK defaults.
 
 The CI runner needs the usual functional-test dependencies (Rust, bitcoind,
 uv, and protoc), plus the matching SP1 `v6.8.1` toolchain. With those installed,
-the SP1 job runs only the upgrade test using this step:
+the job protected by `environment: sp1-network` runs only the upgrade test
+using this step:
 
 ```yaml
 - name: Run V1 to V2 upgrade with SP1 network proofs
@@ -394,8 +402,8 @@ installation or builds. SP1 toolchain and core-runner versions come from
 `Cargo.lock`, using the same resolver as artifact publishing.
 
 After the workflow file lands on the default branch, open **Actions → SP1
-checkpoint upgrade → Run workflow**, select the branch to test, and start the
-run. To trigger it with the GitHub CLI:
+checkpoint upgrade → Run workflow**, select `main`, and start the run. To trigger
+it with the GitHub CLI:
 
 ```sh
 gh workflow run checkpoint-upgrade-sp1.yml --repo alpenlabs/alpen --ref main

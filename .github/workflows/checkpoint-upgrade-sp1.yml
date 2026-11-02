@@ -21,6 +21,8 @@ jobs:
     name: V1 to V2 with SP1 network proofs
     runs-on: ubuntu-latest-m
     timeout-minutes: 180
+    # Configure this environment with a main-only branch policy and its own key.
+    environment: sp1-network
     env:
       OL_PROVER_BACKEND: sp1
       SP1_PROVER: network
@@ -37,7 +39,7 @@ jobs:
           NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
         run: |
           if [[ -z "$NETWORK_PRIVATE_KEY" ]]; then
-            echo "::error::NETWORK_PRIVATE_KEY must be available to this repository for SP1 network proving."
+            echo "::error::Configure NETWORK_PRIVATE_KEY in the main-only sp1-network environment."
             exit 1
           fi
 
