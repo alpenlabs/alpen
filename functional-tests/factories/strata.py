@@ -114,10 +114,14 @@ class StrataFactory(flexitest.Factory):
                 dormant service that a test starts later.
             service_type: Optional distinct service label used for its directory and logs.
             bridge_params: Overrides the standard test bridge parameters when generating
-                OL params. Shared or existing parameter files already include them.
+                OL params. Cannot be combined with ol_params, which already includes them.
+                Shared or existing parameter files already include them.
             prover_config: Checkpoint prover backend and resident artifacts.
             checkpoint_predicate_file: Genesis checkpoint predicate matching the prover.
         """
+        if ol_params is not None and bridge_params is not None:
+            raise ValueError("pass bridge parameters through ol_params or bridge_params, not both")
+
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
 
@@ -158,9 +162,6 @@ class StrataFactory(flexitest.Factory):
         # Leave log_dir/log_file_prefix unset so strata writes tracing to
         # stdout/stderr; the harness captures both into service.log.
         logging_config = LoggingConfig()
-        # Enable the integrated native prover so the strata sequencer produces
-        # real BIP-340 Schnorr witnesses for checkpoint payloads against the
-        # Bip340Schnorr checkpoint predicate baked into the ASM params.
         btcio_config = (
             BtcioConfig(l1_reorg_safe_depth=l1_reorg_safe_depth)
             if l1_reorg_safe_depth is not None
