@@ -15,7 +15,7 @@ fn test_signing_key(spec: OLSpecId) -> SigningKey {
     // Keep the deployed V1 test key stable while making stale-key routing observable.
     let byte = match spec {
         OLSpecId::V0 | OLSpecId::V1 => 0x01,
-        OLSpecId::V2 => 0x02,
+        OLSpecId::V2 => 0x03,
     };
     SigningKey::from_bytes(&[byte; 32]).expect("valid test signing key")
 }
@@ -73,15 +73,17 @@ impl CheckpointProgram {
         })
     }
 
-    /// Returns the V1 native predicate used by existing functional-test genesis params.
+    /// Returns the V1 native test predicate for Rust tests and compatibility callers.
     pub fn test_predicate_key() -> PredicateKey {
         Self::test_predicate_key_for_spec(OLSpecId::V1)
     }
 
     /// Returns the predicate for the fixed-spec native program.
     ///
-    /// Each supported upgrade uses a different test key so verification catches
-    /// proofs routed to the preceding spec's host. These keys are public test fixtures.
+    /// V1 and V2 use distinct test keys so verification catches proofs routed to
+    /// the preceding spec's host. V0 shares V1's key for compatibility, but the
+    /// native checkpoint registry does not register a V0 program.
+    /// These keys are public test fixtures.
     pub fn test_predicate_key_for_spec(spec: OLSpecId) -> PredicateKey {
         let pk = test_signing_key(spec).verifying_key().to_bytes().to_vec();
         PredicateKey::try_new(PredicateTypeId::Bip340Schnorr, pk)
