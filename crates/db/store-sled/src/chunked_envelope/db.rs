@@ -3,7 +3,7 @@ use strata_db_types::chunked_envelope::{ChunkedEnvelopeEntry, L1ChunkedEnvelopeD
 
 use super::schemas::ChunkedEnvelopeSchema;
 use crate::define_sled_database;
-use crate::utils::{conv_sled_err, first};
+use crate::utils::{conv_sled_err, find_next_available_id, first};
 
 define_sled_database!(
     pub struct L1ChunkedEnvelopeDBSled {
@@ -12,6 +12,15 @@ define_sled_database!(
 );
 
 impl L1ChunkedEnvelopeDatabase for L1ChunkedEnvelopeDBSled {
+    fn append_chunked_envelope_entry(&self, entry: ChunkedEnvelopeEntry) -> DbResult<u64> {
+        let next_idx = self.get_next_chunked_envelope_idx()?;
+        self.config.with_retry((&self.entry_tree,), |(tree,)| {
+            let idx = find_next_available_id(&tree, next_idx)?;
+            tree.insert(&idx, &entry)?;
+            Ok(idx)
+        })
+    }
+
     fn put_chunked_envelope_entry(&self, idx: u64, entry: ChunkedEnvelopeEntry) -> DbResult<()> {
         self.entry_tree
             .insert(&idx, &entry)

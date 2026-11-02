@@ -130,18 +130,14 @@ impl ChunkedEnvelopeHandle {
 
     /// Stores a new unsigned entry and returns the assigned index.
     pub async fn submit_entry(&self, entry: ChunkedEnvelopeEntry) -> anyhow::Result<u64> {
-        let idx = self.ops.get_next_chunked_envelope_idx_async().await?;
-        self.ops
-            .put_chunked_envelope_entry_async(idx, entry)
-            .await?;
+        let idx = self.ops.append_chunked_envelope_entry_async(entry).await?;
         debug!(%idx, "submitted chunked envelope entry");
         Ok(idx)
     }
 
     /// Blocking variant of [`submit_entry`](Self::submit_entry).
     pub fn submit_entry_blocking(&self, entry: ChunkedEnvelopeEntry) -> anyhow::Result<u64> {
-        let idx = self.ops.get_next_chunked_envelope_idx_blocking()?;
-        self.ops.put_chunked_envelope_entry_blocking(idx, entry)?;
+        let idx = self.ops.append_chunked_envelope_entry_blocking(entry)?;
         debug!(%idx, "submitted chunked envelope entry");
         Ok(idx)
     }
@@ -1234,6 +1230,7 @@ mod tests {
         common::{L1TxId, L1WtxId},
     };
     use strata_l1_txfmt::MagicBytes;
+    use tokio::{spawn, sync::Barrier, task::spawn_blocking};
 
     use super::*;
     use crate::{
@@ -1277,6 +1274,76 @@ mod tests {
             }];
         }
         entry
+    }
+
+    async fn assert_concurrent_submissions(blocking_count: u8) {
+        const SUBMISSION_COUNT: u8 = 16;
+
+        let ops = get_chunked_envelope_ops();
+        let handles = [
+            Arc::new(ChunkedEnvelopeHandle::new(ops.clone())),
+            Arc::new(ChunkedEnvelopeHandle::new(ops.clone())),
+        ];
+        let barrier = Arc::new(Barrier::new(usize::from(SUBMISSION_COUNT)));
+        let mut tasks = Vec::new();
+        for payload_tag in 0..SUBMISSION_COUNT {
+            let handle = handles[usize::from(payload_tag) % handles.len()].clone();
+            let barrier = barrier.clone();
+            tasks.push(spawn(async move {
+                let entry =
+                    make_recovery_entry(ChunkedEnvelopeStatus::Unsigned, payload_tag, false);
+                let submitted_entry = entry.clone();
+                barrier.wait().await;
+                let idx = if payload_tag < blocking_count {
+                    spawn_blocking(move || handle.submit_entry_blocking(entry))
+                        .await
+                        .unwrap()
+                        .unwrap()
+                } else {
+                    handle.submit_entry(entry).await.unwrap()
+                };
+                (idx, submitted_entry)
+            }));
+        }
+
+        let mut indices = Vec::new();
+        for task in tasks {
+            let (idx, entry) = task.await.unwrap();
+            assert_eq!(
+                ops.get_chunked_envelope_entry_async(idx).await.unwrap(),
+                Some(entry)
+            );
+            indices.push(idx);
+        }
+        indices.sort_unstable();
+        let expected_indices: Vec<_> = (0..u64::from(SUBMISSION_COUNT)).collect();
+        assert_eq!(indices, expected_indices);
+
+        let state = spawn_blocking(move || ChunkedEnvelopeWatcherState::recover(&ops))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(state.next_db_idx, u64::from(SUBMISSION_COUNT));
+        assert_eq!(state.forward_frontier, 0);
+        assert_eq!(
+            state.active_envelopes,
+            expected_indices.into_iter().collect()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_concurrent_async_submissions_preserve_entries() {
+        assert_concurrent_submissions(0).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_concurrent_blocking_submissions_preserve_entries() {
+        assert_concurrent_submissions(16).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_concurrent_mixed_submissions_preserve_entries() {
+        assert_concurrent_submissions(8).await;
     }
 
     #[test]
