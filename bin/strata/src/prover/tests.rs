@@ -333,7 +333,7 @@ fn first_checkpoint_after_upgrade_uses_successor_after_restart() {
         let fixture = EpochFixture::with_specs(start_spec, epoch_spec);
         fixture.put_asm_checkpoint(
             PredicateKey::never_accept(),
-            Some(CheckpointProgram::test_predicate_key()),
+            Some(CheckpointProgram::test_predicate_key_for_spec(epoch_spec)),
         );
         let restarted = Arc::new(
             create_node_storage(Arc::clone(fixture.storage.db()), test_runtime_handle()).unwrap(),
