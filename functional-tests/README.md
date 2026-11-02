@@ -335,6 +335,7 @@ Then, from `functional-tests/`, run:
 
 ```sh
 OL_PROVER_BACKEND=sp1 SP1_PROVER=network \
+SP1_PROOF_STRATEGY=reserved NETWORK_RPC_URL=https://rpc.production.succinct.xyz \
 ./run_tests.sh -t test_checkpoint_predicate_rotation
 ```
 
@@ -377,9 +378,11 @@ starting the job or exposing the key. Merely adding `environment:` to the YAML
 does not configure that policy. See
 [GitHub's environment setup documentation](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
 Manual runs must select `main`; feature-branch runs are rejected by the policy.
-No local network key is needed to trigger CI. Optional repository Actions
-variables `NETWORK_RPC_URL` and `SP1_PROOF_STRATEGY` select a custom endpoint or
-fulfillment strategy; leaving them unset uses the SDK defaults.
+No local network key is needed to trigger CI. The workflow defaults to
+`SP1_PROOF_STRATEGY=reserved` and `NETWORK_RPC_URL=https://rpc.production.succinct.xyz`,
+matching the reserved proving setup used by `e2e-runner`. The key must be authorized
+for that reserved account. Optional repository Actions variables `NETWORK_RPC_URL`
+and `SP1_PROOF_STRATEGY` override these defaults.
 
 The CI runner needs the usual functional-test dependencies (Rust, bitcoind,
 uv, and protoc), plus the matching SP1 `v6.8.1` toolchain. With those installed,
@@ -392,6 +395,8 @@ using this step:
   env:
     OL_PROVER_BACKEND: sp1
     SP1_PROVER: network
+    NETWORK_RPC_URL: https://rpc.production.succinct.xyz
+    SP1_PROOF_STRATEGY: reserved
     NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
   run: ./run_tests.sh -t test_checkpoint_predicate_rotation
 ```
