@@ -27,6 +27,7 @@ from common.test_cli import create_checkpoint_predicate_update
 from common.wait import wait_until_with_value
 from envconfigs.checkpoint_sync import CheckpointSyncEnv
 from tests.checkpoint.helpers import mine_until_finalized_epoch, tx_block_height
+from tests.dbtool.helpers import run_dbtool_json
 
 logger = logging.getLogger(__name__)
 PROGRAMS = checkpoint_rotation_programs()
@@ -151,22 +152,49 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         assert self._checkpoint_status(rpc.strata_getCheckpointInfo(last_v1_epoch)) == "pending"
         assert self._checkpoint_status(rpc.strata_getCheckpointInfo(in_flight_epoch)) == "pending"
 
-        # No further L1 block can accept a V2 checkpoint before this crash.
-        # Kill the sequencer with the transition enacted but not settled;
-        # restart must recover the boundary and pending old/new proof work.
+        # Submission succeeds only after the boundary proof is stored. The RPC
+        # ignores the signature; the Bitcoin envelope authenticates publication.
+        admin_rpc = strata.create_admin_rpc()
+        wait_until_with_value(
+            lambda: admin_rpc.strata_strataadmin_completeCheckpointSignature(
+                last_v1_epoch, "00" * 64
+            ),
+            lambda _: True,
+            error_with="boundary checkpoint was not ready for submission",
+            timeout=FINALIZATION_TIMEOUT_SECONDS,
+        )
+
+        # Kill with the boundary checkpoint proven but still awaiting L1
+        # acceptance. Recovery must reuse this work, rather than proving it again.
         signer.stop()
         assert strata.proc is not None
         strata.proc.kill()
         strata.wait_for_down(timeout=30)
         strata.stop()
+        # Dbtool requires the node to be stopped. Snapshot durable records after
+        # the crash, then compare them after recovery and further V2 progress.
+        datadir = strata.props["datadir"]
+        checkpoint_before_restart = run_dbtool_json(datadir, "get-checkpoint", str(last_v1_epoch))
+        proof_before_restart = run_dbtool_json(datadir, "get-checkpoint-proof", str(last_v1_epoch))
+        completed_tasks = run_dbtool_json(
+            datadir, "get-prover-tasks-summary", "--status", "completed", "--limit", "100"
+        )["entries"]
+        assert "intent_index" in checkpoint_before_restart, checkpoint_before_restart
+        assert proof_before_restart["proof_len"] > 0, proof_before_restart
+        assert completed_tasks, "expected completed checkpoint proof tasks before restart"
+
         strata.start()
         rpc = strata.wait_for_rpc_ready(timeout=60 * PROGRAMS.proof_wait_scale)
+        # Record the recovered tip before signing resumes, so blocks built
+        # before the crash cannot satisfy the progress check.
+        restart_slot = strata.get_cur_block_height(rpc)
         signer.start()
         signer.wait_for_ready(timeout=20)
         recovered_epoch, recovered_terminal = self._wait_for_epoch_ending_at(
             rpc, boundary, baseline["epoch"]
         )
         assert (recovered_epoch, recovered_terminal) == (last_v1_epoch, last_v1_terminal)
+        strata.wait_for_block_height(restart_slot + 1, rpc=rpc, timeout=V2_BLOCK_TIMEOUT_SECONDS)
         self._wait_for_v2_tip(rpc, last_v1_epoch)
 
         # Both the first V2 epoch (V1 start state) and a later V2 epoch
@@ -214,6 +242,27 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                     node.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch, rpc=node_rpc),
                 )
         logger.info("V1 to V2 rotation replayed through epoch %s on both followers", target_epoch)
+
+        strata.stop()
+        checkpoint_after_restart = run_dbtool_json(datadir, "get-checkpoint", str(last_v1_epoch))
+        # Confirmation fields legitimately change when L1 accepts the checkpoint;
+        # its epoch, terminal block, and payload must remain the same.
+        for field in (
+            "tip_epoch",
+            "tip_l1_height",
+            "tip_ol_slot",
+            "tip_ol_blkid",
+            "ol_state_diff_len",
+            "ol_logs_len",
+            "proof_len",
+        ):
+            assert checkpoint_after_restart[field] == checkpoint_before_restart[field], field
+        assert (
+            run_dbtool_json(datadir, "get-checkpoint-proof", str(last_v1_epoch))
+            == proof_before_restart
+        )
+        for task in completed_tasks:
+            assert run_dbtool_json(datadir, "get-prover-task", task["key_hex"]) == task
         return True
 
     def _pace_l1_to(
