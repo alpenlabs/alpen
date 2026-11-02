@@ -31,14 +31,34 @@ from tests.checkpoint.helpers import mine_until_finalized_epoch, tx_block_height
 logger = logging.getLogger(__name__)
 PROGRAMS = checkpoint_rotation_programs()
 POST_ADMIN_UPDATE_L1_BLOCKS = 5
+PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
+
+# Budget for pacing L1 from the reveal up to the enactment height.
 ENACTMENT_TIMEOUT_SECONDS = 180
+
+# The boundary epoch seals when the OL processes the enactment's manifest,
+# without waiting for the slot cadence. SP1 mode uses longer proof waits.
 EPOCH_SEAL_TIMEOUT_SECONDS = 120 * PROGRAMS.proof_wait_scale
+
+# Block assembly reads ASM manifests at this depth. The manifest at B becomes
+# eligible when L1 reaches B + depth - 1. Pin the setting because this test
+# mines exactly that far, even though it currently equals the default.
 L1_REORG_SAFE_DEPTH = 6
+
+# The admin update enacts at its reveal block height plus this depth.
 ADMIN_CONFIRMATION_DEPTH = 24
+
+# Budget for in-flight V1 and two V2 checkpoints to finalize once L1 moves on.
 FINALIZATION_TIMEOUT_SECONDS = 240 * PROGRAMS.proof_wait_scale
+
+# A V2 block can be built without further L1 progress after the boundary epoch.
 V2_BLOCK_TIMEOUT_SECONDS = 60
 PACE_L1_BLOCKS_PER_STEP = 1
+
+# Keep the OL in step with L1 so it seals promptly when the manifest is eligible.
 PACE_STEP_SLEEP_SECONDS = 1.5
+
+# Cross-check the independently calculated boundary against the ASM log.
 ENACTMENT_LOG = "recording checkpoint predicate transition"
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 BOUNDARY_FIELD_RE = re.compile(r"\bboundary=(\d+)")
@@ -96,7 +116,12 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         log_path = Path(strata.props["datadir"]) / "service.log"
         log_offset = log_path.stat().st_size
         self._mine_l1_and_wait_for_asm(
-            strata, rpc, btc_rpc, mine_addr, POST_ADMIN_UPDATE_L1_BLOCKS, 120
+            strata,
+            rpc,
+            btc_rpc,
+            mine_addr,
+            POST_ADMIN_UPDATE_L1_BLOCKS,
+            PREDICATE_SETTLE_TIMEOUT_SECONDS,
         )
         boundary = tx_block_height(btc_rpc, result["reveal_txid"]) + ADMIN_CONFIRMATION_DEPTH
         assert btc_rpc.proxy.getblockcount() < boundary
@@ -109,7 +134,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         in_flight_end = self._coverage_end(in_flight)
         assert in_flight_end is not None and in_flight_end < boundary
         assert self._checkpoint_status(in_flight) == "pending"
-        self._pace_l1_to(strata, rpc, btc_rpc, mine_addr, boundary, empty_blocks=True)
+        self._pace_l1_to(strata, rpc, btc_rpc, mine_addr, boundary)
         assert rpc.strata_getSpecStatus()["cur_spec_version"] == 1
         self._assert_enactment_boundary(log_path, log_offset, boundary)
         self._pace_l1_to(
@@ -118,7 +143,6 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             btc_rpc,
             mine_addr,
             boundary + L1_REORG_SAFE_DEPTH - 1,
-            empty_blocks=True,
         )
         last_v1_epoch, last_v1_terminal = self._wait_for_epoch_ending_at(
             rpc, boundary, baseline["epoch"]
@@ -199,9 +223,8 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         btc_rpc,
         mine_addr: str,
         height: int,
-        empty_blocks: bool = False,
     ) -> None:
-        """Mines up to L1 `height`, one block at a time, waiting for the ASM after each."""
+        """Mines empty L1 blocks up to `height`, waiting for the ASM after each."""
         deadline = time.monotonic() + ENACTMENT_TIMEOUT_SECONDS
         tip = btc_rpc.proxy.getblockcount()
 
@@ -218,7 +241,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 mine_addr=mine_addr,
                 blocks=PACE_L1_BLOCKS_PER_STEP,
                 timeout=60,
-                empty_blocks=empty_blocks,
+                empty_blocks=True,
             )
             time.sleep(PACE_STEP_SLEEP_SECONDS)
             tip = btc_rpc.proxy.getblockcount()
@@ -303,8 +326,6 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         `run_tests.sh` use) — if the line is there but unparsable, that is a
         format change worth failing on rather than silently ignoring.
         """
-        if not log_path.exists():
-            return
         with log_path.open("r", errors="replace") as handle:
             handle.seek(offset)
             tail = handle.read()
@@ -345,10 +366,6 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         if not admin_xpriv:
             raise AssertionError(f"admin key file is empty: {admin_key_path}")
         return admin_xpriv
-
-    @staticmethod
-    def _finalized_epoch(strata: StrataService, strata_rpc) -> int:
-        return strata.get_sync_status(strata_rpc)["finalized"]["epoch"]
 
     @staticmethod
     def _mine_l1_and_wait_for_asm(
