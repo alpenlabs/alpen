@@ -113,12 +113,9 @@ jobs:
         working-directory: functional-tests
         env:
           NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
-          NETWORK_RPC_URL: ${{ vars.NETWORK_RPC_URL }}
-          SP1_PROOF_STRATEGY: ${{ vars.SP1_PROOF_STRATEGY }}
+          NETWORK_RPC_URL: ${{ vars.NETWORK_RPC_URL || 'https://rpc.production.succinct.xyz' }}
+          SP1_PROOF_STRATEGY: ${{ vars.SP1_PROOF_STRATEGY || 'reserved' }}
         run: |
-          # Unset empty optional variables so the SDK keeps its defaults.
-          if [[ -z "$NETWORK_RPC_URL" ]]; then unset NETWORK_RPC_URL; fi
-          if [[ -z "$SP1_PROOF_STRATEGY" ]]; then unset SP1_PROOF_STRATEGY; fi
           set -o pipefail
           ./run_tests.sh -t test_checkpoint_predicate_rotation 2>&1 | tee sp1-checkpoint-upgrade.log
 
