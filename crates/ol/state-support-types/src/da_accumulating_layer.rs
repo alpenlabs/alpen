@@ -638,9 +638,28 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
         &self.epoch_acc
     }
 
+    /// Returns the first DA accumulation error recorded by a write, if any.
+    ///
+    /// State writes cannot fail on DA grounds, so the wrapper records the
+    /// first such error and lets execution continue. A caller that stages
+    /// writes, such as block assembly, checks this after each unit of work so
+    /// it can roll back work whose writes the epoch's DA cannot encode.
+    pub fn pending_error(&self) -> Option<&DaAccumulationError> {
+        self.pending_epoch_error.as_ref()
+    }
+
     /// Consumes self and returns accumulator and state.
-    pub fn into_parts(self) -> (EpochDaAccumulator, S) {
-        (self.epoch_acc, self.inner)
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`pending_error`](Self::pending_error) if a write recorded
+    /// one, because the accumulator then no longer covers every write in the
+    /// state.
+    pub fn into_parts(self) -> Result<(EpochDaAccumulator, S), DaAccumulationError> {
+        if let Some(err) = self.pending_epoch_error {
+            return Err(err);
+        }
+        Ok((self.epoch_acc, self.inner))
     }
 
     /// Consumes self and returns the wrapped state accessor.

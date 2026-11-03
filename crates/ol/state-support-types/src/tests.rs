@@ -13,13 +13,16 @@ use strata_identifiers::{AccountSerial, Buf32, EpochCommitment, L1BlockId, L1Hei
 use strata_merkle::CompactMmr64;
 use strata_ol_da_types_v1::{AccountTypeInitV1, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
 use strata_ol_state_types::*;
-use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, OLSnarkAccountStateV1, WriteBatch};
+use strata_ol_state_types_v1::{
+    MAX_PENDING_ASM_LOGS, OLSnarkAccountStateV1, OLStateV1, WriteBatch,
+};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::Seqno;
 
 use crate::test_utils::*;
 use crate::{
-    BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,
+    BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, MemoryStateBaseLayer,
+    WriteTrackingState,
 };
 
 // =============================================================================
@@ -1228,8 +1231,14 @@ fn test_special_message_source_is_encoded() {
     assert_eq!(entries[0].source, special_source);
 }
 
-#[test]
-fn test_message_payload_size_limit() {
+/// Builds a DA state over a snark account whose inbox received one message
+/// with `payload_len` payload bytes.
+///
+/// The message comes from a special account, which needs no ledger record, so
+/// the payload size is the only thing the DA write can reject.
+fn da_state_with_inbox_payload(
+    payload_len: usize,
+) -> DaAccumulatingState<MemoryStateBaseLayer<OLStateV1>> {
     let account_id = test_account_id(1);
     let (layer, _) = setup_layer_with_snark_account(
         account_id,
@@ -1240,10 +1249,10 @@ fn test_message_payload_size_limit() {
 
     let payload = MsgPayload::from_bytes(
         BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
-        vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
+        vec![0u8; payload_len],
     )
     .expect("message payload bytes must fit within SSZ max length");
-    let msg = MessageEntry::new(test_account_id(2), 0, payload);
+    let msg = MessageEntry::new(AccountId::special(0x10), 0, payload);
     da_state
         .update_account(account_id, |acct| {
             acct.as_snark_account_mut()
@@ -1252,10 +1261,36 @@ fn test_message_payload_size_limit() {
         })
         .unwrap()
         .unwrap();
+    da_state
+}
+
+#[test]
+fn test_message_payload_size_limit() {
+    let mut da_state = da_state_with_inbox_payload(MAX_MSG_PAYLOAD_BYTES + 1);
 
     let result = da_state.take_completed_epoch_da_blob();
     assert!(matches!(
         result,
+        Err(DaAccumulationError::MessagePayloadTooLarge { .. })
+    ));
+}
+
+#[test]
+fn test_pending_error_surfaces_through_into_parts() {
+    let da_state = da_state_with_inbox_payload(MAX_MSG_PAYLOAD_BYTES);
+    assert!(da_state.pending_error().is_none());
+    da_state
+        .into_parts()
+        .expect("a payload at the bound records no error");
+
+    let da_state = da_state_with_inbox_payload(MAX_MSG_PAYLOAD_BYTES + 1);
+    assert!(matches!(
+        da_state.pending_error(),
+        Some(DaAccumulationError::MessagePayloadTooLarge { provided, max })
+            if *provided == MAX_MSG_PAYLOAD_BYTES + 1 && *max == MAX_MSG_PAYLOAD_BYTES
+    ));
+    assert!(matches!(
+        da_state.into_parts(),
         Err(DaAccumulationError::MessagePayloadTooLarge { .. })
     ));
 }
