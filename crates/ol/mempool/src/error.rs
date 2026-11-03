@@ -21,6 +21,14 @@ pub enum OLMempoolError {
     #[error(transparent)]
     EffectsOverflow(#[from] TxEffectsOverflow),
 
+    /// A message payload is larger than the epoch DA can encode.
+    #[error("message {index} payload is {len} bytes, above the DA limit of {max} bytes")]
+    MessagePayloadTooLarge {
+        index: usize,
+        len: usize,
+        max: usize,
+    },
+
     /// Mempool is full (transaction count limit reached).
     #[error("mempool is full: current={current}, limit={limit}")]
     MempoolFull { current: usize, limit: usize },

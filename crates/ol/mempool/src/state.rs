@@ -24,7 +24,7 @@ use tracing::{debug, info, instrument, warn};
 
 use crate::tip::{MempoolTip, select_tip_spec};
 use crate::types::{MempoolEntry, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats};
-use crate::validation::validate_transaction;
+use crate::validation::{check_message_payloads, validate_transaction};
 use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
 
 /// Per-account mempool state tracking.
@@ -429,6 +429,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     fn validate_admission(&self, txid: OLTxId, tx: &OLTransactionV1) -> OLMempoolResult<()> {
         let spec = self.select_spec()?;
         spec_limits(spec).check_tx_effects(tx.data().effects())?;
+        check_message_payloads(tx)?;
         check_tx_log_budget(spec, tx, &self.ctx.bridge_params)?;
         validate_transaction(spec, txid, tx, &self.state_accessor, &self.account_state)
     }
@@ -966,6 +967,7 @@ mod tests {
     use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_checkpoint_types::EpochSummary;
     use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, EpochCommitment, OLBlockId};
+    use strata_ol_da_types_v1::MAX_MSG_PAYLOAD_BYTES;
     use strata_ol_log_budget::TxLogBudgetError;
     use strata_ol_params::BridgeParams;
     use strata_ol_state_container::OLStateContainer;
@@ -2739,6 +2741,90 @@ mod tests {
             .await
             .expect("admitted at the V2 capacity");
         assert!(state.contains(&txid));
+    }
+
+    /// Builds an update from account 1 that sends one zero-value message with
+    /// `len` payload bytes to account 2.
+    fn create_test_snark_tx_with_message_payload(len: usize) -> OLTransactionV1 {
+        let payload = MsgPayload::from_bytes_valueless(vec![0; len]).unwrap();
+        let outputs = UpdateOutputs::new_empty().with_messages(vec![OutputMessage::new(
+            create_test_account_id_with(2),
+            payload,
+        )]);
+        let operation = UpdateOperationData::new(
+            0,
+            ProofState::new(Buf32::zero(), 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            outputs,
+            vec![],
+        );
+        create_test_snark_tx_from_update(
+            create_test_account_id_with(1),
+            SnarkAccountUpdate::new(operation, vec![]),
+            create_test_constraints_with_slots(None, None),
+        )
+    }
+
+    /// The mempool admits message payloads up to the DA bound and rejects a
+    /// larger one in a GAM or a snark account update, under every spec.
+    #[tokio::test]
+    async fn test_mempool_rejects_message_payloads_over_the_da_bound() {
+        for (spec, next_epoch_enacts) in [(OLSpecId::V1, false), (OLSpecId::V1, true)] {
+            let (mut state, _) = mempool_on_terminal_tip(spec, next_epoch_enacts).await;
+            let selected = state.select_spec().unwrap();
+
+            let at_bound = create_test_generic_tx_with_size(
+                create_test_account_id_with(2),
+                MAX_MSG_PAYLOAD_BYTES,
+                create_test_constraints_with_slots(None, None),
+            );
+            let txid = state
+                .add_transaction(at_bound)
+                .await
+                .unwrap_or_else(|err| panic!("{selected:?}: GAM at the bound admitted: {err}"));
+            assert!(state.contains(&txid));
+
+            for tx in [
+                create_test_generic_tx_with_size(
+                    create_test_account_id_with(2),
+                    MAX_MSG_PAYLOAD_BYTES + 1,
+                    create_test_constraints_with_slots(None, None),
+                ),
+                create_test_snark_tx_with_message_payload(MAX_MSG_PAYLOAD_BYTES + 1),
+            ] {
+                let txid = tx.compute_txid();
+                let err = state
+                    .add_transaction(tx)
+                    .await
+                    .expect_err("payload above the DA bound rejected");
+                assert!(
+                    matches!(
+                        err,
+                        OLMempoolError::MessagePayloadTooLarge { index: 0, len, max }
+                            if len == MAX_MSG_PAYLOAD_BYTES + 1 && max == MAX_MSG_PAYLOAD_BYTES
+                    ),
+                    "{selected:?}: {err}"
+                );
+                assert!(!state.contains(&txid));
+            }
+            assert_eq!(
+                state
+                    .stats()
+                    .rejects_by_reason()
+                    .get(OLMempoolRejectReason::MessagePayloadTooLarge),
+                2,
+                "{selected:?}"
+            );
+
+            let txid = state
+                .add_transaction(create_test_snark_tx_with_message_payload(
+                    MAX_MSG_PAYLOAD_BYTES,
+                ))
+                .await
+                .unwrap_or_else(|err| panic!("{selected:?}: update at the bound admitted: {err}"));
+            assert!(state.contains(&txid));
+        }
     }
 
     /// After a terminal tip whose epoch processed no enactment, the next block

@@ -9806,6 +9806,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types-v1",
+ "strata-ol-da-types-v1",
  "strata-ol-log-budget",
  "strata-ol-params",
  "strata-ol-spec-selection",
