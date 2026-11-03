@@ -43,3 +43,4 @@ strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-storage = { workspace = true, features = ["test-utils"] }
 strata-test-utils.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
