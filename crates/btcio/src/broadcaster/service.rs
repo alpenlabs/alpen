@@ -48,9 +48,28 @@ where
 
     /// Delegates one service input message to broadcaster state processing.
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
-        state.process_input(input).await.inspect_err(|e| {
-            error!(%e, "broadcaster service exiting");
-        })?;
+        if !state.retry.is_ready() {
+            // Notifications follow DB writes; recovery reloads their persisted state.
+            return Ok(Response::Continue);
+        }
+
+        match state.process_input(input).await {
+            Ok(()) => {
+                if state.retry.reset() {
+                    info!("broadcaster dependencies recovered");
+                }
+            }
+            Err(error) if error.is_retryable() => {
+                state.reload_required = true;
+                if state.retry.record_failure() {
+                    warn!(%error, "broadcaster dependency unavailable; retrying with backoff");
+                }
+            }
+            Err(error) => {
+                error!(%error, "broadcaster service exiting");
+                return Err(error.into());
+            }
+        }
 
         Ok(Response::Continue)
     }

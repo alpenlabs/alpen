@@ -3,6 +3,8 @@ use bitcoind_async_client::error::ClientError;
 use strata_db_types::{common::L1TxId, errors::DbError};
 use thiserror::Error;
 
+use crate::rpc_error::is_retryable_client_error;
+
 #[derive(Debug, Error)]
 pub enum BroadcasterError {
     #[error("db: {0}")]
@@ -28,6 +30,17 @@ pub enum BroadcasterError {
 
     #[error("replacement chain from {txid} exceeded {max_hops} hops")]
     ReplacementChainTooLong { txid: L1TxId, max_hops: usize },
+}
+
+impl BroadcasterError {
+    /// Reports whether the dependency failure may be resolved by retrying later.
+    pub(crate) fn is_retryable(&self) -> bool {
+        match self {
+            Self::Db(error) => error.is_retryable(),
+            Self::Rpc(error) => is_retryable_client_error(error),
+            _ => false,
+        }
+    }
 }
 
 pub(crate) type BroadcasterResult<T> = Result<T, BroadcasterError>;
