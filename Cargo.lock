@@ -10071,7 +10071,6 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
- "strata-ol-da-types-v1",
  "strata-ol-log-budget",
  "strata-ol-params",
  "strata-ol-spec-selection",
