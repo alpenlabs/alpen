@@ -81,26 +81,61 @@ mod tests {
     use std::io::{Error as IoError, ErrorKind};
 
     use sled::Error as SledError;
+    use sled::transaction::UnabortableTransactionError;
 
     use super::*;
 
     #[test]
-    fn transaction_errors_preserve_storage_and_domain_classification() {
-        let storage = SledError::Io(IoError::new(ErrorKind::WouldBlock, "storage busy"));
-        let error = tx_error_to_db_error(TransactionError::Storage(storage));
-        assert!(error.is_retryable());
-        assert!(matches!(
-            error,
-            DbError::Io {
-                kind: ErrorKind::WouldBlock,
-                ..
+    fn io_classification_survives_direct_and_transactional_storage_errors() {
+        for (kind, retryable) in [
+            (ErrorKind::Interrupted, true),
+            (ErrorKind::WouldBlock, true),
+            (ErrorKind::TimedOut, true),
+            (ErrorKind::PermissionDenied, false),
+            (ErrorKind::NotFound, false),
+            (ErrorKind::InvalidData, false),
+            (ErrorKind::StorageFull, false),
+            (ErrorKind::Other, false),
+        ] {
+            let storage = || SledError::Io(IoError::new(kind, "storage failed"));
+            for error in [
+                conv_sled_err(Error::SledError(storage())),
+                conv_sled_err(Error::TransactionError(
+                    UnabortableTransactionError::Storage(storage()),
+                )),
+                tx_error_to_db_error(TransactionError::Storage(storage())),
+            ] {
+                assert_eq!(error.is_retryable(), retryable, "{kind:?}");
+                assert!(matches!(error, DbError::Io { kind: actual, message }
+                    if actual == kind && message == "storage failed"));
             }
-        ));
+        }
+    }
 
-        let aborted = TransactionError::Abort(Error::abort(DbError::InvalidArgument));
-        let error = tx_error_to_db_error(aborted);
-        assert!(!error.is_retryable());
-        assert!(matches!(error, DbError::InvalidArgument));
+    #[test]
+    fn wrapping_domain_errors_preserves_the_retry_policy() {
+        for error in [
+            DbError::Busy,
+            DbError::CodecError("invalid stored value".into()),
+            DbError::WorkerFailedStrangely("worker panicked".into()),
+            DbError::Other("inconsistent database".into()),
+            DbError::InvalidArgument,
+        ] {
+            let retryable = matches!(error, DbError::Busy);
+            for converted in [
+                conv_sled_err(Error::abort(error.clone())),
+                tx_error_to_db_error(TransactionError::Abort(Error::abort(error.clone()))),
+            ] {
+                assert_eq!(converted.is_retryable(), retryable);
+                assert_eq!(converted.to_string(), error.to_string());
+            }
+
+            let exhausted = DbError::RetriesExhausted {
+                attempts: 3,
+                last_error: Box::new(error),
+            };
+            assert_eq!(exhausted.is_retryable(), retryable);
+        }
 
         let storage = SledError::ReportableBug("storage invariant violated".into());
         let error = tx_error_to_db_error(TransactionError::Storage(storage));

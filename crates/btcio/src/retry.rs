@@ -34,6 +34,10 @@ impl RetryBackoff {
             .is_none_or(|retry_at| Instant::now() >= retry_at)
     }
 
+    pub(crate) fn is_retrying(&self) -> bool {
+        self.retry_at.is_some()
+    }
+
     /// Schedules a retry and reports whether this is the first failure of an outage.
     pub(crate) fn record_failure(&mut self) -> bool {
         let first_failure = self.retry_at.is_none();
@@ -65,6 +69,7 @@ mod tests {
     async fn retries_are_delayed_capped_and_reset_after_recovery() {
         let mut backoff = RetryBackoff::new();
         assert!(backoff.is_ready());
+        assert!(!backoff.is_retrying());
 
         for attempt in 0..10 {
             assert_eq!(backoff.record_failure(), attempt == 0);
@@ -76,10 +81,12 @@ mod tests {
 
             advance(delay).await;
             assert!(backoff.is_ready());
+            assert!(backoff.is_retrying());
         }
 
         assert!(backoff.reset());
         assert!(backoff.is_ready());
+        assert!(!backoff.is_retrying());
         assert!(!backoff.reset());
 
         assert!(backoff.record_failure());

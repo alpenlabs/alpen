@@ -60,39 +60,3 @@ where
     }
     Ok(next_id)
 }
-
-#[cfg(test)]
-mod tests {
-    use std::io::{Error as IoError, ErrorKind};
-
-    use super::*;
-
-    #[test]
-    fn io_kind_survives_typed_sled_wrappers() {
-        let io_error = || SledError::Io(IoError::new(ErrorKind::TimedOut, "read timed out"));
-
-        for error in [
-            Error::SledError(io_error()),
-            Error::TransactionError(UnabortableTransactionError::Storage(io_error())),
-        ] {
-            let converted = conv_sled_err(error);
-            assert!(converted.is_retryable());
-            assert!(matches!(
-                converted,
-                DbError::Io { kind: ErrorKind::TimedOut, message } if message == "read timed out"
-            ));
-        }
-    }
-
-    #[test]
-    fn aborted_domain_errors_keep_their_classification() {
-        for error in [DbError::Busy, DbError::Other("missing predecessor".into())] {
-            let retryable = error.is_retryable();
-            let message = error.to_string();
-            let converted = conv_sled_err(Error::abort(error));
-
-            assert_eq!(converted.is_retryable(), retryable);
-            assert_eq!(converted.to_string(), message);
-        }
-    }
-}

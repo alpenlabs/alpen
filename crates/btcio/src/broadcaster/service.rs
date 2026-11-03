@@ -60,7 +60,6 @@ where
                 }
             }
             Err(error) if error.is_retryable() => {
-                state.reload_required = true;
                 if state.retry.record_failure() {
                     warn!(%error, "broadcaster dependency unavailable; retrying with backoff");
                 }

@@ -45,10 +45,8 @@ pub(crate) struct BroadcasterServiceState<C> {
     pub(crate) config: BtcioParams,
     /// Concrete IO context used for DB reads/writes and RPC calls.
     pub(crate) io: C,
-    /// Paces recovery attempts after a transient dependency failure.
+    /// Paces recovery; pending retries require reloading persisted tracking before polling.
     pub(crate) retry: RetryBackoff,
-    /// Requires a full DB reload before polling after an uncertain processing pass.
-    pub(crate) reload_required: bool,
 }
 
 impl<C> BroadcasterServiceState<C>
@@ -65,7 +63,6 @@ where
             config,
             io,
             retry: RetryBackoff::new(),
-            reload_required: false,
         })
     }
 
@@ -74,11 +71,10 @@ where
         &mut self,
         input: TickMsg<BroadcasterInputMessage>,
     ) -> BroadcasterResult<()> {
-        if self.reload_required {
+        if self.retry.is_retrying() {
             // A pass may have committed writes or an ancestor adoption before failing. Notices
             // consumed during backoff are also covered by this snapshot, including old indexes.
             update_state(&mut self.inner, empty(), &self.io, true).await?;
-            self.reload_required = false;
 
             // The input's cached row may be older than the snapshot; use persisted state instead.
             return self.process_unfinalized_entries().await;
@@ -859,6 +855,12 @@ mod test {
         }
     }
 
+    async fn tick<C: BroadcasterIoContext>(state: &mut BroadcasterServiceState<C>) -> Response {
+        BroadcasterService::process_input(state, TickMsg::Tick)
+            .await
+            .unwrap()
+    }
+
     #[tokio::test(start_paused = true)]
     async fn service_reloads_tracking_and_notices_after_dependency_failure() {
         for point in [
@@ -887,9 +889,7 @@ mod test {
             };
             *state.io.failure.lock().unwrap() = Some((point, error));
 
-            let response = BroadcasterService::process_input(&mut state, TickMsg::Tick)
-                .await
-                .unwrap();
+            let response = tick(&mut state).await;
             assert!(matches!(response, Response::Continue));
             let calls = state.io.calls.load(Ordering::Relaxed);
 
@@ -906,20 +906,16 @@ mod test {
                     .await
                     .unwrap();
             }
-            BroadcasterService::process_input(&mut state, TickMsg::Tick)
-                .await
-                .unwrap();
+            tick(&mut state).await;
             assert_eq!(state.io.calls.load(Ordering::Relaxed), calls);
 
             advance(Duration::from_secs(1)).await;
 
             // A failed recovery scan must remain pending and back off again.
             *state.io.failure.lock().unwrap() = Some((FailurePoint::Read, DbError::Busy.into()));
-            let response = BroadcasterService::process_input(&mut state, TickMsg::Tick)
-                .await
-                .unwrap();
+            let response = tick(&mut state).await;
             assert!(matches!(response, Response::Continue));
-            assert!(state.reload_required);
+            assert!(state.retry.is_retrying());
 
             advance(Duration::from_secs(2)).await;
             // The recovery snapshot must override even a stale row on the recovery input.
@@ -934,9 +930,7 @@ mod test {
             assert_eq!(state.inner.unfinalized_entries.len(), 1);
 
             state.io.inner = make_io(ops.clone(), TestBitcoinClient::new(6));
-            BroadcasterService::process_input(&mut state, TickMsg::Tick)
-                .await
-                .unwrap();
+            tick(&mut state).await;
             assert!(matches!(
                 ops.get_tx_entry_by_id_async(replacement_txid)
                     .await
@@ -957,6 +951,19 @@ mod test {
                 L1TxStatus::Replaced { .. }
             ));
             assert!(state.inner.unfinalized_entries.is_empty());
+
+            // Recovery must not turn permanent storage failures into retries.
+            *state.io.failure.lock().unwrap() = Some((
+                FailurePoint::Index,
+                DbError::CodecError("corrupt row".into()).into(),
+            ));
+            let error = BroadcasterService::process_input(&mut state, TickMsg::Tick)
+                .await
+                .unwrap_err();
+            assert!(matches!(
+                error.downcast_ref::<BroadcasterError>(),
+                Some(BroadcasterError::Db(DbError::CodecError(_)))
+            ));
         }
     }
 
@@ -985,9 +992,7 @@ mod test {
         *state.io.failure.lock().unwrap() =
             Some((FailurePoint::AfterAdoption, DbError::Busy.into()));
 
-        BroadcasterService::process_input(&mut state, TickMsg::Tick)
-            .await
-            .unwrap();
+        tick(&mut state).await;
         assert!(
             state.io.failure.lock().unwrap().is_none(),
             "adoption must have committed before failure"
@@ -996,9 +1001,7 @@ mod test {
         // The winner is below the discovery cursor and was absent from the failed pass's state.
         advance(Duration::from_secs(1)).await;
         state.io.inner = make_io(ops.clone(), TestBitcoinClient::new(6));
-        BroadcasterService::process_input(&mut state, TickMsg::Tick)
-            .await
-            .unwrap();
+        tick(&mut state).await;
         assert!(matches!(
             ops.get_tx_entry_by_id_async(original_txid)
                 .await
@@ -1011,27 +1014,5 @@ mod test {
             }
         ));
         assert!(state.inner.unfinalized_entries.is_empty());
-    }
-
-    #[tokio::test]
-    async fn service_propagates_fatal_database_errors() {
-        let ops = get_ops();
-        populate_broadcast_db(ops.clone()).await;
-        let io = FailingIo::new(make_io(ops, TestBitcoinClient::new(1)));
-        let mut state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
-            .await
-            .unwrap();
-        *state.io.failure.lock().unwrap() = Some((
-            FailurePoint::Read,
-            DbError::CodecError("corrupt row".into()).into(),
-        ));
-
-        let error = BroadcasterService::process_input(&mut state, TickMsg::Tick)
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            error.downcast_ref::<BroadcasterError>(),
-            Some(BroadcasterError::Db(DbError::CodecError(_)))
-        ));
     }
 }
