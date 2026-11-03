@@ -7,14 +7,14 @@ use typed_sled::error::Error;
 use typed_sled::transaction::{Backoff, ConstantBackoff, SledTransactional};
 
 use crate::instrumentation::components;
-use crate::utils::conv_sled_err;
+use crate::utils::{conv_sled_err, conv_sled_storage_err};
 
 /// Flattens a `TransactionError<typed_sled::Error>` into a `DbError`,
 /// preserving aborted `DbError` variants via [`conv_sled_err`].
 fn tx_error_to_db_error(err: TransactionError<Error>) -> DbError {
     match err {
         TransactionError::Abort(e) => conv_sled_err(e),
-        TransactionError::Storage(e) => DbError::Other(format!("sled storage: {e:?}")),
+        TransactionError::Storage(e) => conv_sled_storage_err(e),
     }
 }
 
@@ -73,5 +73,37 @@ impl SledDbConfig {
         trees
             .transaction_with_retry(self.backoff.as_ref(), self.retry_count.into(), f)
             .map_err(tx_error_to_db_error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Error as IoError, ErrorKind};
+
+    use sled::Error as SledError;
+
+    use super::*;
+
+    #[test]
+    fn transaction_errors_preserve_storage_and_domain_classification() {
+        let storage = SledError::Io(IoError::new(ErrorKind::WouldBlock, "storage busy"));
+        let error = tx_error_to_db_error(TransactionError::Storage(storage));
+        assert!(error.is_retryable());
+        assert!(matches!(
+            error,
+            DbError::Io {
+                kind: ErrorKind::WouldBlock,
+                ..
+            }
+        ));
+
+        let aborted = TransactionError::Abort(Error::abort(DbError::InvalidArgument));
+        let error = tx_error_to_db_error(aborted);
+        assert!(!error.is_retryable());
+        assert!(matches!(error, DbError::InvalidArgument));
+
+        let storage = SledError::ReportableBug("storage invariant violated".into());
+        let error = tx_error_to_db_error(TransactionError::Storage(storage));
+        assert!(!error.is_retryable());
     }
 }

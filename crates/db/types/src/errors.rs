@@ -1,3 +1,5 @@
+use std::io::ErrorKind;
+
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_primitives::epoch::EpochCommitment;
 use strata_primitives::L1Height;
@@ -55,6 +57,10 @@ pub enum DbError {
 
     #[error("resource busy")]
     Busy,
+
+    /// A storage I/O failure with its original error kind preserved for classification.
+    #[error("storage I/O ({kind:?}): {message}")]
+    Io { kind: ErrorKind, message: String },
 
     /// A database worker task did not return a result.
     ///
@@ -145,6 +151,24 @@ pub enum DbError {
     Other(String),
 }
 
+impl DbError {
+    /// Reports whether the failure may be resolved by retrying the operation later.
+    ///
+    /// Callers must ensure replay is safe after partial writes. An I/O error kind does not
+    /// guarantee recovery: a backend may retain the failure until it is reopened.
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Busy => true,
+            Self::Io { kind, .. } => matches!(
+                kind,
+                ErrorKind::Interrupted | ErrorKind::WouldBlock | ErrorKind::TimedOut
+            ),
+            Self::RetriesExhausted { last_error, .. } => last_error.is_retryable(),
+            _ => false,
+        }
+    }
+}
+
 // TODO(STR-4241): this conversion is inverted -- the ops layer should map into
 // `DbError`, not the other way around. Part 10 owns the move.
 impl From<OpsError> for DbError {
@@ -159,5 +183,50 @@ impl From<OpsError> for DbError {
 impl From<JoinError> for DbError {
     fn from(err: JoinError) -> Self {
         DbError::WorkerFailedStrangely(err.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retryable_io_kinds_are_explicit() {
+        for (kind, retryable) in [
+            (ErrorKind::Interrupted, true),
+            (ErrorKind::WouldBlock, true),
+            (ErrorKind::TimedOut, true),
+            (ErrorKind::PermissionDenied, false),
+            (ErrorKind::NotFound, false),
+            (ErrorKind::InvalidData, false),
+            (ErrorKind::StorageFull, false),
+            (ErrorKind::Other, false),
+        ] {
+            let error = DbError::Io {
+                kind,
+                message: "storage operation failed".into(),
+            };
+
+            assert_eq!(error.is_retryable(), retryable, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn retry_exhaustion_preserves_the_underlying_classification() {
+        for error in [
+            DbError::Busy,
+            DbError::CodecError("invalid stored value".into()),
+            DbError::WorkerFailedStrangely("worker panicked".into()),
+            DbError::Other("inconsistent database".into()),
+        ] {
+            let retryable = matches!(error, DbError::Busy);
+            assert_eq!(error.is_retryable(), retryable);
+
+            let exhausted = DbError::RetriesExhausted {
+                attempts: 3,
+                last_error: Box::new(error),
+            };
+            assert_eq!(exhausted.is_retryable(), retryable);
+        }
     }
 }
