@@ -5,6 +5,8 @@
 
 use std::hint::black_box;
 
+#[cfg(feature = "sled")]
+use alpen_benchmarks::db::sled::{create_temp_sled, default_sled_ops_config};
 use alpen_benchmarks::db::DatabaseBackend;
 use arbitrary::Arbitrary;
 // Suppress unused crate warnings
@@ -16,6 +18,8 @@ use arbitrary::Arbitrary;
 use bitcoin as _;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use strata_asm_manifest_types::AsmManifest;
+#[cfg(feature = "sled")]
+use strata_db_store_sled::l1::db::L1DBSled;
 use strata_db_types::l1::L1Database;
 #[allow(
     unused_imports,
@@ -24,13 +28,8 @@ use strata_db_types::l1::L1Database;
 )]
 use strata_primitives as _;
 use tempfile::TempDir;
-// Feature-gated imports
 #[cfg(feature = "sled")]
-use {
-    alpen_benchmarks::db::sled::{create_temp_sled, default_sled_ops_config},
-    strata_db_store_sled::l1::db::L1DBSled,
-    typed_sled as _,
-};
+use typed_sled as _;
 
 /// Transaction counts to test across benchmarks.
 const TX_COUNTS: &[usize] = &[1, 2, 3, 5, 10, 20, 50, 100, 250, 1_000];

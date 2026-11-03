@@ -1,9 +1,7 @@
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use bitcoin::{BlockHash, Network};
-use bitcoind_async_client::{
-    Client, corepc_types::model::GetBlockchainInfo, error::ClientError, traits::Reader,
-};
+use bitcoind_async_client::{Client, corepc_types::model, error::ClientError, traits::Reader};
 use strata_btc_types::BlockHashExt;
 use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
 use strata_checkpoint_types::EpochSummary;
@@ -23,13 +21,13 @@ use tracing::{info, warn};
 
 #[async_trait]
 pub(crate) trait StartupBitcoinClient {
-    async fn get_blockchain_info_for_startup(&self) -> Result<GetBlockchainInfo>;
+    async fn get_blockchain_info_for_startup(&self) -> Result<model::GetBlockchainInfo>;
     async fn get_block_hash_for_startup(&self, height: u64) -> Result<BlockHash>;
 }
 
 #[async_trait]
 impl StartupBitcoinClient for Client {
-    async fn get_blockchain_info_for_startup(&self) -> Result<GetBlockchainInfo> {
+    async fn get_blockchain_info_for_startup(&self) -> Result<model::GetBlockchainInfo> {
         Reader::get_blockchain_info(self).await.map_err(Into::into)
     }
 

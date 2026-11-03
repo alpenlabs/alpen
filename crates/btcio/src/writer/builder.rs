@@ -21,7 +21,7 @@ use bitcoin::{
     Txid, Witness,
 };
 use bitcoind_async_client::{
-    corepc_types::model::ListUnspentItem,
+    corepc_types::model,
     error::ClientError,
     traits::{Reader, Signer, Wallet},
 };
@@ -340,7 +340,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
 // TODO(STR-3411): make OL node resilient against the Bitcoin node not being available.
 async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
     ctx: &WriterContext<R>,
-) -> Result<(Network, Vec<ListUnspentItem>, FeeRate), EnvelopeError> {
+) -> Result<(Network, Vec<model::ListUnspentItem>, FeeRate), EnvelopeError> {
     let network = ctx
         .client
         .network()
@@ -523,7 +523,7 @@ pub(crate) fn rebind_single_reveal(envelope: &mut EnvelopeData) -> Result<(), En
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
     payload: &L1Payload,
-    utxos: Vec<ListUnspentItem>,
+    utxos: Vec<model::ListUnspentItem>,
 ) -> Result<EnvelopeData, EnvelopeError> {
     let public_key = env_config
         .envelope_pubkey
@@ -627,7 +627,7 @@ pub fn create_envelope_transactions(
     ))
 }
 
-fn calculate_transaction_fee_from_utxos(tx: &Transaction, utxos: &[ListUnspentItem]) -> u64 {
+fn calculate_transaction_fee_from_utxos(tx: &Transaction, utxos: &[model::ListUnspentItem]) -> u64 {
     let input_total = utxos.iter().map(|utxo| utxo.amount.to_sat()).sum::<u64>();
     let output_total = tx
         .output
@@ -691,7 +691,7 @@ pub(crate) fn get_size(
 /// Reveals are built before the wallet signs the commit, so commit inputs must put their entire
 /// satisfaction in the witness. The sequencer wallet normally produces P2WPKH outputs; P2TR key
 /// spends are also safe and have a known witness shape.
-fn is_supported_commit_utxo(utxo: &ListUnspentItem) -> bool {
+fn is_supported_commit_utxo(utxo: &model::ListUnspentItem) -> bool {
     utxo.script_pubkey.is_p2wpkh() || utxo.script_pubkey.is_p2tr()
 }
 
@@ -699,14 +699,14 @@ fn is_supported_commit_utxo(utxo: &ListUnspentItem) -> bool {
 ///
 /// Outputs of exactly [`BITCOIN_DUST_LIMIT`] qualify: every reveal returns that amount to the
 /// sequencer address, so the wallet accumulates outputs of that size.
-pub(crate) fn is_commit_funding_utxo(utxo: &ListUnspentItem) -> bool {
+pub(crate) fn is_commit_funding_utxo(utxo: &model::ListUnspentItem) -> bool {
     utxo.spendable
         && utxo.solvable
         && utxo.amount.to_sat() >= BITCOIN_DUST_LIMIT
         && is_supported_commit_utxo(utxo)
 }
 
-fn commit_inputs(utxos: &[ListUnspentItem]) -> Vec<TxIn> {
+fn commit_inputs(utxos: &[model::ListUnspentItem]) -> Vec<TxIn> {
     utxos
         .iter()
         .map(|utxo| TxIn {
@@ -725,7 +725,7 @@ fn commit_inputs(utxos: &[ListUnspentItem]) -> Vec<TxIn> {
 ///
 /// P2WPKH uses Bitcoin Core's conservative high-R witness shape. The exact fee is corrected after
 /// signing if the shorter real witness would otherwise breach the broadcast ceiling.
-pub(crate) fn signed_commit_vsize(utxos: &[ListUnspentItem], outputs: &[TxOut]) -> usize {
+pub(crate) fn signed_commit_vsize(utxos: &[model::ListUnspentItem], outputs: &[TxOut]) -> usize {
     let mut inputs = commit_inputs(utxos);
     for (input, utxo) in inputs.iter_mut().zip(utxos) {
         if utxo.script_pubkey.is_p2wpkh() {
@@ -749,10 +749,10 @@ pub(crate) fn signed_commit_vsize(utxos: &[ListUnspentItem], outputs: &[TxOut]) 
 
 /// Choose utxos almost naively.
 pub(crate) fn choose_utxos(
-    utxos: &[ListUnspentItem],
+    utxos: &[model::ListUnspentItem],
     amount: u64,
-) -> Result<(Vec<ListUnspentItem>, u64), EnvelopeError> {
-    let mut bigger_utxos: Vec<&ListUnspentItem> = utxos
+) -> Result<(Vec<model::ListUnspentItem>, u64), EnvelopeError> {
+    let mut bigger_utxos: Vec<&model::ListUnspentItem> = utxos
         .iter()
         .filter(|utxo| utxo.amount.to_sat() >= amount)
         .collect();
@@ -769,7 +769,7 @@ pub(crate) fn choose_utxos(
 
         Ok((vec![utxo.clone()], sum))
     } else {
-        let mut smaller_utxos: Vec<&ListUnspentItem> = utxos
+        let mut smaller_utxos: Vec<&model::ListUnspentItem> = utxos
             .iter()
             .filter(|utxo| utxo.amount.to_sat() < amount)
             .collect();
@@ -777,7 +777,7 @@ pub(crate) fn choose_utxos(
         // sort vec by amount (large first)
         smaller_utxos.sort_by_key(|x| Reverse(&x.amount));
 
-        let mut chosen_utxos: Vec<ListUnspentItem> = vec![];
+        let mut chosen_utxos: Vec<model::ListUnspentItem> = vec![];
 
         for utxo in smaller_utxos {
             sum += utxo.amount.to_sat();
@@ -797,12 +797,12 @@ pub(crate) fn choose_utxos(
 }
 
 fn build_commit_transaction(
-    utxos: Vec<ListUnspentItem>,
+    utxos: Vec<model::ListUnspentItem>,
     recipient: Address,
     change_address: Address,
     output_value: u64,
     fee_rate: FeeRate,
-) -> Result<(Transaction, Vec<ListUnspentItem>), EnvelopeError> {
+) -> Result<(Transaction, Vec<model::ListUnspentItem>), EnvelopeError> {
     let (transaction, consumed_utxos, _) = fund_commit_transaction(
         utxos,
         vec![TxOut {
@@ -819,12 +819,12 @@ fn build_commit_transaction(
 
 /// Selects enough wallet outputs to fund `outputs` and the fee implied by their signed input size.
 fn select_commit_utxos(
-    utxos: &[ListUnspentItem],
+    utxos: &[model::ListUnspentItem],
     outputs: &[TxOut],
     base_output_total: u64,
     minimum_excess: u64,
     fee_rate: FeeRate,
-) -> Result<(Vec<ListUnspentItem>, u64, u64), EnvelopeError> {
+) -> Result<(Vec<model::ListUnspentItem>, u64, u64), EnvelopeError> {
     // The outputs alone are a lower bound, independent of the wallet's input ordering.
     let mut estimated_size = signed_commit_vsize(&[], outputs);
 
@@ -854,18 +854,19 @@ fn select_commit_utxos(
 
 /// Funds fixed commit outputs at the requested rate and prefers bumpable change.
 pub(crate) fn fund_commit_transaction(
-    utxos: Vec<ListUnspentItem>,
+    utxos: Vec<model::ListUnspentItem>,
     base_outputs: Vec<TxOut>,
     change_script: ScriptBuf,
     carry_output_index: usize,
     fee_rate: FeeRate,
-) -> Result<(Transaction, Vec<ListUnspentItem>, Amount), EnvelopeError> {
+) -> Result<(Transaction, Vec<model::ListUnspentItem>, Amount), EnvelopeError> {
     let base_output_total = base_outputs.iter().try_fold(0u64, |total, output| {
         total.checked_add(output.value.to_sat())
     });
     let base_output_total = base_output_total.ok_or(EnvelopeError::FeeOverflow)?;
 
-    let utxos: Vec<ListUnspentItem> = utxos.into_iter().filter(is_commit_funding_utxo).collect();
+    let utxos: Vec<model::ListUnspentItem> =
+        utxos.into_iter().filter(is_commit_funding_utxo).collect();
 
     // Prefer a standalone change output even when doing so requires another wallet input. The fee
     // bumper can shrink that output without racing another writer for an unlocked input.

@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use bitcoin::{Block, BlockHash, Network};
-use bitcoind_async_client::{corepc_types::model::GetBlockchainInfo, traits::Reader};
+use bitcoind_async_client::{corepc_types::model, traits::Reader};
 use strata_btc_types::{BlockHashExt, L1BlockIdBitcoinExt};
 use strata_config::btcio::ReaderConfig;
 use strata_db_types::DbResult;
@@ -384,7 +384,7 @@ async fn init_reader_state<R: Reader>(
 /// Validates Bitcoin client chain properties before reader ingestion starts.
 async fn validate_bitcoind<R: Reader>(
     ctx: &ReaderContext<R>,
-    chain_info: &GetBlockchainInfo,
+    chain_info: &model::GetBlockchainInfo,
 ) -> anyhow::Result<()> {
     if chain_info.chain != ctx.expected_network {
         bail!(
@@ -469,7 +469,7 @@ async fn seed_queue_from_stored_chain<R: Reader>(
 async fn seed_queue_from_client<R: Reader>(
     ctx: &ReaderContext<R>,
     target_next_block: L1Height,
-    chain_info: &GetBlockchainInfo,
+    chain_info: &model::GetBlockchainInfo,
     lookback: L1Height,
 ) -> anyhow::Result<(VecDeque<BlockHash>, L1Height)> {
     let client = ctx.client.as_ref();
