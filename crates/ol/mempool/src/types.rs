@@ -162,10 +162,6 @@ pub enum OLMempoolRejectReason {
     /// block's spec allows.
     EffectCapacityExceeded,
 
-    /// Rejected because a message payload is larger than the epoch DA can
-    /// encode.
-    MessagePayloadTooLarge,
-
     /// Rejected due to mempool size limit exceeded.
     MempoolFull,
 
@@ -201,7 +197,6 @@ impl OLMempoolRejectReason {
         match self {
             Self::LogBudgetExceeded => "log_budget_exceeded",
             Self::EffectCapacityExceeded => "effect_capacity_exceeded",
-            Self::MessagePayloadTooLarge => "message_payload_too_large",
             Self::MempoolFull => "mempool_full",
             Self::AccountDoesNotExist => "account_does_not_exist",
             Self::AccountTypeMismatch => "account_type_mismatch",
@@ -232,7 +227,6 @@ impl OLMempoolRejectReason {
             ) => Some(Self::LogBudgetExceeded),
             OLMempoolError::LogBudget(TxLogBudgetError::Prediction(_)) => None,
             OLMempoolError::EffectsOverflow(_) => Some(Self::EffectCapacityExceeded),
-            OLMempoolError::MessagePayloadTooLarge { .. } => Some(Self::MessagePayloadTooLarge),
             OLMempoolError::MempoolFull { .. } => Some(Self::MempoolFull),
             OLMempoolError::MempoolByteLimitExceeded { .. } => Some(Self::MempoolFull),
             OLMempoolError::AccountDoesNotExist { .. } => Some(Self::AccountDoesNotExist),

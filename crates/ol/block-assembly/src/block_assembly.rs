@@ -704,10 +704,10 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
 
 /// Processes transactions with per-tx staging, filtering out failed ones.
 ///
-/// A transaction whose writes the epoch's DA cannot encode, such as a message
-/// payload above the DA bound, fails like one the STF rejects. The STF accepts
-/// it, but a block that included it would leave an epoch no checkpoint can
-/// cover.
+/// A transaction whose writes the epoch's DA cannot encode fails like one the
+/// STF rejects. V1 accepts a message payload above the DA bound, which V2
+/// rejects, and no spec checks the epoch's inbox buffer, but a block that
+/// included such a transaction would leave an epoch no checkpoint can cover.
 ///
 /// Consumes `accumulated_da` and returns it with the updated accumulator.
 /// Logs from this block are NOT appended here — they go into `output_buffer`
@@ -3805,9 +3805,10 @@ mod tests {
         }
     }
 
-    /// Tests that a GAM whose payload exceeds the DA bound is rolled back and
-    /// reported invalid under every spec, while a GAM at the bound is included
-    /// and the epoch's DA still encodes.
+    /// Tests that a GAM whose payload exceeds the DA bound is reported invalid
+    /// under every spec, while a GAM at the bound is included and the epoch's
+    /// DA still encodes. V1 executes the oversized GAM, so assembly rolls it
+    /// back on the DA error; V2 rejects it in the STF.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_message_payload_over_da_bound_is_invalid() {
         for spec in [OLSpecId::V1, OLSpecId::V2] {

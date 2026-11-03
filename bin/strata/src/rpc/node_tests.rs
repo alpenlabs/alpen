@@ -920,6 +920,14 @@ fn effects_overflow_maps_to_invalid_params_with_data() {
             },
             "message_count",
         ),
+        (
+            TxEffectsOverflow::MessagePayload {
+                index: 0,
+                len: 256,
+                max: 255,
+            },
+            "message_payload_bytes",
+        ),
     ] {
         let error = mempool_error_to_rpc(OLMempoolError::EffectsOverflow(overflow));
         assert_eq!(error.code(), INVALID_PARAMS_CODE);
@@ -929,21 +937,6 @@ fn effects_overflow_maps_to_invalid_params_with_data() {
             json!({"resource": resource, "actual": 256, "limit": 255})
         );
     }
-}
-
-#[test]
-fn message_payload_too_large_maps_to_invalid_params_with_data() {
-    let error = mempool_error_to_rpc(OLMempoolError::MessagePayloadTooLarge {
-        index: 0,
-        len: 4_097,
-        max: 4_096,
-    });
-    assert_eq!(error.code(), INVALID_PARAMS_CODE);
-    let data: Value = serde_json::from_str(error.data().unwrap().get()).unwrap();
-    assert_eq!(
-        data,
-        json!({"resource": "message_payload_bytes", "actual": 4_097, "limit": 4_096})
-    );
 }
 
 #[test]

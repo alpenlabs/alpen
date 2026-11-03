@@ -3,7 +3,6 @@ use std::collections::HashMap;
 
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
-use strata_ol_da_types_v1::MAX_MSG_PAYLOAD_BYTES;
 use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
 use strata_ol_stf::sequencer::check_tx_constraints;
 use strata_ol_stf::{ExecError, ExecResult, OLSpecId};
@@ -106,33 +105,6 @@ fn validate_snark_account_update_tx_seq_no(
         }
     }
 
-    Ok(())
-}
-
-/// Checks every message payload against the per-message bound of the epoch DA.
-///
-/// The STF enforces only the SSZ bound on message payloads, which is far
-/// larger than the bound the DA encoding of an inbox message allows. A block
-/// that delivered a larger payload to an inbox would leave an epoch no
-/// checkpoint can cover, so the mempool rejects such a transaction for every
-/// spec. Block assembly also rolls back a transaction whose writes the epoch's
-/// DA cannot encode; this check rejects the payload case at submission.
-///
-/// # Errors
-///
-/// Returns [`OLMempoolError::MessagePayloadTooLarge`] for the first message
-/// above the bound.
-pub(crate) fn check_message_payloads(tx: &OLTransactionV1) -> OLMempoolResult<()> {
-    for (index, message) in tx.data().effects().messages_iter().enumerate() {
-        let len = message.payload().data().len();
-        if len > MAX_MSG_PAYLOAD_BYTES {
-            return Err(OLMempoolError::MessagePayloadTooLarge {
-                index,
-                len,
-                max: MAX_MSG_PAYLOAD_BYTES,
-            });
-        }
-    }
     Ok(())
 }
 

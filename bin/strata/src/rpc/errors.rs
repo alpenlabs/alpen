@@ -91,7 +91,7 @@ pub(crate) fn mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
         OLMempoolError::EffectsOverflow(TxEffectsOverflow::Messages { count, max }) => {
             resource_limit_error(err.to_string(), "message_count", *count, *max)
         }
-        OLMempoolError::MessagePayloadTooLarge { len, max, .. } => {
+        OLMempoolError::EffectsOverflow(TxEffectsOverflow::MessagePayload { len, max, .. }) => {
             resource_limit_error(err.to_string(), "message_payload_bytes", *len, *max)
         }
         OLMempoolError::AccountDoesNotExist { .. }
