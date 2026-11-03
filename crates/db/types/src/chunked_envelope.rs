@@ -175,6 +175,9 @@ impl fmt::Display for ChunkedEnvelopeStatus {
     gen_proxy(error = DbError, tracing_component = "storage:chunked_envelope")
 )]
 pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
+    /// Atomically allocates an index and stores an entry without replacing an existing entry.
+    fn append_chunked_envelope_entry(&self, entry: ChunkedEnvelopeEntry) -> DbResult<u64>;
+
     /// Stores a [`ChunkedEnvelopeEntry`] at the given index.
     fn put_chunked_envelope_entry(&self, idx: u64, entry: ChunkedEnvelopeEntry) -> DbResult<()>;
 
@@ -191,7 +194,7 @@ pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
         max_count: usize,
     ) -> DbResult<Vec<(u64, ChunkedEnvelopeEntry)>>;
 
-    /// Gets the next available index.
+    /// Gets the next available index without reserving it.
     fn get_next_chunked_envelope_idx(&self) -> DbResult<u64>;
 
     /// Deletes a single entry by index.

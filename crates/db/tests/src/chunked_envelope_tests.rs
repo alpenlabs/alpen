@@ -13,6 +13,31 @@ fn make_entry(status: ChunkedEnvelopeStatus) -> ChunkedEnvelopeEntry {
     entry
 }
 
+pub fn test_append_entries(db: &impl L1ChunkedEnvelopeDatabase) {
+    let first = make_entry(ChunkedEnvelopeStatus::Unsigned);
+    let second = make_entry(ChunkedEnvelopeStatus::Unpublished);
+
+    assert_eq!(db.append_chunked_envelope_entry(first.clone()).unwrap(), 0);
+    assert_eq!(db.append_chunked_envelope_entry(second.clone()).unwrap(), 1);
+    assert_eq!(db.get_chunked_envelope_entry(0).unwrap(), Some(first));
+    assert_eq!(db.get_chunked_envelope_entry(1).unwrap(), Some(second));
+    assert_eq!(db.get_next_chunked_envelope_idx().unwrap(), 2);
+}
+
+pub fn test_append_after_existing_tip(db: &impl L1ChunkedEnvelopeDatabase) {
+    let existing = make_entry(ChunkedEnvelopeStatus::Finalized);
+    db.put_chunked_envelope_entry(7, existing.clone()).unwrap();
+    let appended = make_entry(ChunkedEnvelopeStatus::Unsigned);
+
+    assert_eq!(
+        db.append_chunked_envelope_entry(appended.clone()).unwrap(),
+        8
+    );
+    assert_eq!(db.get_chunked_envelope_entry(7).unwrap(), Some(existing));
+    assert_eq!(db.get_chunked_envelope_entry(8).unwrap(), Some(appended));
+    assert_eq!(db.get_next_chunked_envelope_idx().unwrap(), 9);
+}
+
 pub fn test_put_and_get_entry(db: &impl L1ChunkedEnvelopeDatabase) {
     let entry = make_entry(ChunkedEnvelopeStatus::Unsigned);
 
@@ -129,6 +154,18 @@ pub fn test_del_entries_from_idx_empty(db: &impl L1ChunkedEnvelopeDatabase) {
 #[macro_export]
 macro_rules! l1_chunked_envelope_db_tests {
     ($setup_expr:expr) => {
+        #[test]
+        fn test_append_entries() {
+            let db = $setup_expr;
+            $crate::chunked_envelope_tests::test_append_entries(&db);
+        }
+
+        #[test]
+        fn test_append_after_existing_tip() {
+            let db = $setup_expr;
+            $crate::chunked_envelope_tests::test_append_after_existing_tip(&db);
+        }
+
         #[test]
         fn test_put_and_get_entry() {
             let db = $setup_expr;
