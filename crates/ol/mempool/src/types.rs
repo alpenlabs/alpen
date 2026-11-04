@@ -27,8 +27,8 @@ pub const DEFAULT_MAX_MEMPOOL_BYTES: usize = 1024 * 1024 * 1024; // 1 GB
 /// [`MAX_ACC_PROOF_COUNT`]: strata_ol_tx_types_v1::MAX_ACC_PROOF_COUNT
 pub const DEFAULT_MAX_L1_BLOCK_REF_CLAIMS: usize = 256;
 
-/// Default maximum reorg depth for finding common ancestor.
-/// OL chain doesn't expect reorgs, so this is a safety limit.
+/// Default maximum number of blocks a reorg may revert for the mempool to
+/// restore their transactions.
 pub const DEFAULT_MAX_REORG_DEPTH: u64 = 50;
 
 /// Default command channel buffer size.
@@ -49,8 +49,12 @@ pub struct OLMempoolConfig {
     /// Maximum number of L1 block ref claims in one snark account update.
     pub max_l1_block_ref_claims: usize,
 
-    /// Maximum reorg depth for finding common ancestor during reorg handling.
-    /// OL chain doesn't expect reorgs, so this is a safety limit to prevent infinite loops.
+    /// Maximum number of old-branch blocks the mempool walks to find a reorg's
+    /// common ancestor.
+    ///
+    /// A deeper reorg leaves the mempool unable to tell which held
+    /// transactions the new branch already includes, so it evicts every held
+    /// transaction and restores none.
     pub max_reorg_depth: u64,
 
     /// Command channel buffer size.
@@ -116,6 +120,10 @@ pub struct OLMempoolStats {
 
     /// Total evictions due to capacity limits.
     pub(crate) evictions: u64,
+
+    /// Total transactions evicted because a chain update moved the tip to a
+    /// fork whose common ancestor the mempool could not find.
+    pub(crate) reorg_evictions: u64,
 }
 
 impl OLMempoolStats {
@@ -129,6 +137,7 @@ impl OLMempoolStats {
             enqueues_rejected: 0,
             rejects_by_reason: OLMempoolRejectCounts::default(),
             evictions: 0,
+            reorg_evictions: 0,
         }
     }
 
@@ -160,6 +169,11 @@ impl OLMempoolStats {
     /// Get evictions count.
     pub fn evictions(&self) -> u64 {
         self.evictions
+    }
+
+    /// Get the count of transactions evicted by unresolved reorgs.
+    pub fn reorg_evictions(&self) -> u64 {
+        self.reorg_evictions
     }
 }
 
@@ -263,6 +277,7 @@ impl OLMempoolRejectReason {
             | OLMempoolError::Serialization(_)
             | OLMempoolError::ServiceClosed(_)
             | OLMempoolError::NotAvailable
+            | OLMempoolError::OutOfSync
             | OLMempoolError::UpgradeRequired(_)
             | OLMempoolError::SpecSelection(_) => None,
         }

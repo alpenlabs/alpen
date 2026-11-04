@@ -1,18 +1,22 @@
 //! Sled-backed mempool database implementation.
 
 use strata_db_types::DbResult;
-use strata_db_types::mempool::{MempoolDatabase, MempoolTxData};
-use strata_identifiers::OLTxId;
+use strata_db_types::mempool::{MempoolDatabase, MempoolTxData, MempoolWriteBatch};
+use strata_identifiers::{OLBlockCommitment, OLTxId};
 
-use super::schemas::{MempoolTxEntry, MempoolTxSchema};
+use super::schemas::{MempoolTipSchema, MempoolTxEntry, MempoolTxSchema};
 use crate::define_sled_database;
 use crate::utils::conv_sled_err;
 
 define_sled_database!(
     pub struct MempoolDBSled {
         tx_tree: MempoolTxSchema,
+        tip_tree: MempoolTipSchema,
     }
 );
+
+/// Key of the only entry in the mempool tip table.
+const MEMPOOL_TIP_KEY: u8 = 0;
 
 impl MempoolDatabase for MempoolDBSled {
     fn put_tx(&self, data: MempoolTxData) -> DbResult<()> {
@@ -51,6 +55,34 @@ impl MempoolDatabase for MempoolDBSled {
             self.tx_tree.remove(&txid).map_err(conv_sled_err)?;
         }
         Ok(existed)
+    }
+
+    fn apply_batch(&self, batch: MempoolWriteBatch) -> DbResult<()> {
+        let puts: Vec<(OLTxId, MempoolTxEntry)> = batch
+            .puts()
+            .iter()
+            .map(|data| {
+                let entry = MempoolTxEntry::new(data.tx_bytes().to_vec(), data.timestamp_micros());
+                (data.txid(), entry)
+            })
+            .collect();
+        self.config
+            .with_retry((&self.tx_tree, &self.tip_tree), |(tx_tree, tip_tree)| {
+                for txid in batch.deletes() {
+                    tx_tree.remove(txid)?;
+                }
+                for (txid, entry) in &puts {
+                    tx_tree.insert(txid, entry)?;
+                }
+                if let Some(tip) = batch.tip() {
+                    tip_tree.insert(&MEMPOOL_TIP_KEY, &tip)?;
+                }
+                Ok(())
+            })
+    }
+
+    fn get_tip(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.tip_tree.get(&MEMPOOL_TIP_KEY).map_err(conv_sled_err)
     }
 }
 
