@@ -89,7 +89,8 @@ impl MempoolBuilder {
         let mut state =
             MempoolServiceState::new_with_context(ctx.clone(), self.current_tip).await?;
 
-        // Load existing transactions from database
+        // Load the stored transactions, catch up from the mempool's last
+        // recorded tip, and readmit them against the current tip.
         state.load_from_db().await?;
 
         // Create command channel manually

@@ -887,6 +887,14 @@ fn byte_limit_exceeded_maps_to_capacity_code() {
 }
 
 #[test]
+fn out_of_sync_maps_to_not_available_code() {
+    assert_eq!(
+        mempool_error_to_rpc(OLMempoolError::OutOfSync).code(),
+        NOT_AVAILABLE_ON_NODE_CODE
+    );
+}
+
+#[test]
 fn account_does_not_exist_maps_to_invalid_params() {
     let err = OLMempoolError::AccountDoesNotExist {
         account: test_account_id(1),

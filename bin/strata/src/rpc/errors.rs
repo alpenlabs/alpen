@@ -99,8 +99,11 @@ pub(crate) fn mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
         | OLMempoolError::UsedSequenceNumber { .. }
         | OLMempoolError::SequenceNumberGap { .. } => invalid_params_error(err.to_string()),
         // Service unavailable on this node — not an error condition. A node
-        // that needs an upgrade for the next block admits nothing either.
-        OLMempoolError::NotAvailable | OLMempoolError::UpgradeRequired(_) => {
+        // that needs an upgrade for the next block admits nothing either, nor
+        // does a mempool waiting for a chain update to succeed.
+        OLMempoolError::NotAvailable
+        | OLMempoolError::OutOfSync
+        | OLMempoolError::UpgradeRequired(_) => {
             ErrorObjectOwned::owned(NOT_AVAILABLE_ON_NODE_CODE, err.to_string(), None::<()>)
         }
         // Internal errors

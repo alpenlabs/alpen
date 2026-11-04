@@ -1,7 +1,8 @@
 //! Mempool service state management.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
+use std::mem;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -9,17 +10,17 @@ use metrics::{counter, gauge};
 use ssz::{Decode, Encode};
 use strata_acct_types::AccountId;
 use strata_bridge_params::BridgeParams;
-use strata_db_types::mempool::MempoolTxData;
+use strata_db_types::mempool::{MempoolTxData, MempoolWriteBatch};
 use strata_identifiers::{L1BlockCommitment, OLBlockCommitment, OLTxId};
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_log_budget::check_tx_log_budget;
 use strata_ol_spec_selection::SelectedSpec;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
-use strata_ol_state_types::{IStateAccessor, OLSpecId};
+use strata_ol_state_types::OLSpecId;
 use strata_ol_stf::{UpgradeRequired, spec_limits};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_service::ServiceState;
-use strata_storage::NodeStorage;
+use strata_storage::{MempoolDbManager, NodeStorage};
 use tracing::{debug, info, instrument, warn};
 
 use crate::tip::{MempoolTip, select_tip_spec};
@@ -66,6 +67,10 @@ pub(crate) struct MempoolContext<P: StateProvider> {
     /// Storage backend for database operations (transactions, blocks).
     pub(crate) storage: Arc<NodeStorage>,
 
+    /// Mempool transaction database, the one in [`Self::storage`] outside
+    /// tests, which replace it to inject storage failures.
+    pub(crate) mempool_db: Arc<MempoolDbManager>,
+
     /// State provider for fetching OL state at different chain tips.
     pub(crate) provider: Arc<P>,
 
@@ -86,6 +91,7 @@ impl<P: StateProvider> MempoolContext<P> {
         MempoolContext {
             config,
             bridge_params,
+            mempool_db: storage.mempool().clone(),
             storage,
             provider,
             genesis_l1_block,
@@ -107,6 +113,7 @@ impl MempoolContext<OLStateManagerProviderImpl> {
         Self {
             config,
             bridge_params,
+            mempool_db: storage.mempool().clone(),
             storage,
             provider,
             genesis_l1_block,
@@ -140,6 +147,10 @@ pub(crate) struct MempoolServiceState<P: StateProvider> {
     /// Tracks all txids and sequence numbers for each account.
     account_state: HashMap<AccountId, AccountMempoolState>,
 
+    /// Chain tip the mempool admits transactions for. Chain updates find the
+    /// blocks they revert and adopt from it.
+    tip: MempoolTip,
+
     /// State accessor for validation. Updated when chain tip changes.
     state_accessor: P::State,
 
@@ -149,6 +160,15 @@ pub(crate) struct MempoolServiceState<P: StateProvider> {
     /// Whether loading the stored transactions waits for a tip whose next
     /// block this binary can run.
     deferred_load: bool,
+
+    /// Whether memory holds stored transactions nothing has validated yet,
+    /// which the next chain update readmits even if the tip did not move.
+    needs_readmit: bool,
+
+    /// Whether the last chain update failed. The mempool then cannot tell
+    /// which held transactions the chain includes, so it serves no candidates
+    /// and admits nothing until an update succeeds.
+    out_of_sync: bool,
 
     /// Mempool statistics.
     stats: OLMempoolStats,
@@ -191,9 +211,12 @@ impl<P: StateProvider> MempoolServiceState<P> {
             ctx,
             entries: HashMap::new(),
             account_state: HashMap::new(),
+            tip,
             state_accessor,
             tip_spec,
             deferred_load: false,
+            needs_readmit: false,
+            out_of_sync: false,
             stats: OLMempoolStats::default(),
         };
         state.record_mempool_gauges();
@@ -201,18 +224,76 @@ impl<P: StateProvider> MempoolServiceState<P> {
         Ok(state)
     }
 
-    /// Load existing transactions from database.
+    /// Loads the stored transactions and catches the mempool up from the tip
+    /// its database last recorded to the current tip, then readmits
+    /// everything against the current tip.
     ///
-    /// Deserializes and validates each transaction. Invalid transactions are skipped and
-    /// removed from the database.
-    #[instrument(skip(self), fields(component = "ol_mempool"))]
+    /// The node can stop after a block lands and before the mempool commits
+    /// the chain update for it, so the database can still hold transactions
+    /// that block includes, or lack ones a reorg since then reverted. A
+    /// generic account message carries no sequence number, so readmitting an
+    /// included one would let block assembly apply it twice. Each chain
+    /// update records its tip in the same batch as its writes, so the
+    /// recorded tip is the last tip the stored transactions reflect.
+    ///
+    /// Loading does not validate, because the stored transactions reflect the
+    /// recorded tip, not the current one: an update whose predecessor a reorg
+    /// reverted would look like a gap until the catch-up restores the
+    /// predecessor. The catch-up is the chain update from the recorded tip to
+    /// the current tip, which removes what the blocks in between include,
+    /// restores what a reorg reverted, or evicts everything if the two tips
+    /// share no ancestor within the maximum reorg depth. It then readmits the
+    /// loaded and restored transactions once, in account order, and writes the
+    /// result and the current tip in one batch. Without a recorded tip, as on
+    /// the first launch after an upgrade, it readmits against the current tip
+    /// and records it.
+    ///
+    /// When the next block needs an upgrade, nothing is loaded until a tip's
+    /// next block runs a spec this binary implements, as
+    /// [`Self::load_stored`] describes.
+    ///
+    /// A failed catch-up leaves the mempool out of sync at the recorded tip,
+    /// and the next chain update retries it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the stored transactions or the recorded tip
+    /// fails.
     pub(crate) async fn load_from_db(&mut self) -> OLMempoolResult<()> {
-        let all_txs = self.ctx.storage.mempool().get_all_txs()?;
+        self.load_stored()?;
+        let current_tip = self.tip;
+        if let Some(recorded) = self.ctx.mempool_db.get_tip()?
+            && recorded != current_tip.block()
+        {
+            info!(
+                %recorded,
+                current_tip = %current_tip.block(),
+                "catching the mempool up from its recorded tip"
+            );
+            self.tip = MempoolTip::new(recorded, None);
+        }
+        // A failure is logged and leaves the mempool out of sync.
+        let _ = self.handle_chain_update(current_tip).await;
+        Ok(())
+    }
+
+    /// Loads the stored transactions into memory without validating them, and
+    /// marks them for the readmission the next chain update runs.
+    ///
+    /// Malformed rows are skipped and deleted. When the next block needs an
+    /// upgrade, admission cannot run, so nothing is loaded: the stored
+    /// transactions stay in the database until a chain update reaches a tip
+    /// whose next block runs a spec this binary implements, which loads and
+    /// readmits them.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if listing the stored transactions fails.
+    #[instrument(skip(self), fields(component = "ol_mempool"))]
+    fn load_stored(&mut self) -> OLMempoolResult<()> {
+        let all_txs = self.ctx.mempool_db.get_all_txs()?;
         let total_in_db = all_txs.len();
         if let SelectedSpec::Unsupported(upgrade) = &self.tip_spec {
-            // Admission cannot run, so keep the stored transactions instead of
-            // dropping them, and load them once a tip's next block runs a spec
-            // this binary implements.
             debug!(
                 %total_in_db,
                 %upgrade,
@@ -224,17 +305,11 @@ impl<P: StateProvider> MempoolServiceState<P> {
         self.deferred_load = false;
         info!(%total_in_db, "loading mempool transactions from database");
 
-        let mut pending = HashMap::new();
-
-        let mut loaded_count = 0;
-        let mut skipped_count = 0;
-
+        let mut loaded_count = 0usize;
         for tx_data in all_txs {
             if self.contains(&tx_data.txid()) {
                 continue;
             }
-
-            // Parse transaction from bytes
             let tx: OLTransactionV1 = match Decode::from_ssz_bytes(tx_data.tx_bytes()) {
                 Ok(tx) => tx,
                 Err(e) => {
@@ -244,66 +319,23 @@ impl<P: StateProvider> MempoolServiceState<P> {
                         ?e,
                         "Skipping malformed transaction from database"
                     );
-                    if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid()) {
+                    if let Err(del_err) = self.ctx.mempool_db.del_tx(tx_data.txid()) {
                         warn!(
                             txid = ?tx_data.txid(),
                             error = %del_err,
                             "failed to delete malformed tx from mempool db; will retry on next reload"
                         );
                     }
-                    skipped_count += 1;
                     continue;
                 }
             };
-
             let entry = MempoolEntry::new(tx, tx_data.timestamp_micros(), tx_data.tx_bytes().len());
-            pending.insert(tx_data.txid(), entry);
-        }
-
-        // A replacement can arrive after its successors. Validate in account order on reload too.
-        let candidates = MempoolCandidates::build_snapshot(
-            pending
-                .iter()
-                .map(|(&txid, entry)| (txid, &entry.tx, entry.timestamp_micros)),
-        );
-        for candidate in candidates {
-            let txid = candidate.txid();
-            let entry = pending
-                .remove(&txid)
-                .expect("candidate was decoded from storage");
-            if let Err(e) = self.validate_admission(txid, &entry.tx) {
-                // Skip invalid transaction and remove from DB
-                warn!(?txid, ?e, "Skipping invalid transaction from database");
-                if let Err(del_err) = self.ctx.storage.mempool().del_tx(txid) {
-                    warn!(
-                        ?txid,
-                        error = %del_err,
-                        "failed to delete invalid tx from mempool db; will retry on next reload"
-                    );
-                }
-
-                // Update reject stats if this is a trackable rejection reason
-                if let Some(reason) = OLMempoolRejectReason::from_error(&e) {
-                    self.update_stats_on_reject(reason);
-                }
-
-                skipped_count += 1;
-                continue;
-            }
-
-            // Add to in-memory state (already in DB, so no write needed)
-            self.add_tx_to_in_memory_state(txid, entry);
-
+            self.add_tx_to_in_memory_state(tx_data.txid(), entry);
             loaded_count += 1;
         }
-
-        info!(
-            %loaded_count,
-            %skipped_count,
-            %total_in_db,
-            "loaded mempool transactions from database"
-        );
-
+        self.stats.enqueues_accepted += loaded_count as u64;
+        self.needs_readmit = true;
+        debug!(%loaded_count, "loaded mempool transactions for readmission");
         Ok(())
     }
 
@@ -319,7 +351,14 @@ impl<P: StateProvider> MempoolServiceState<P> {
     }
 
     /// Shares the current transaction bodies with one candidate snapshot.
+    ///
+    /// The snapshot is empty while the mempool is out of sync, since a held
+    /// transaction may be one the chain already includes.
     pub(crate) fn handle_get_candidates(&self) -> MempoolCandidates {
+        if self.out_of_sync {
+            debug!("serving no candidates while out of sync with the chain");
+            return MempoolCandidates::default();
+        }
         MempoolCandidates::build_snapshot(
             self.entries
                 .iter()
@@ -440,6 +479,14 @@ impl<P: StateProvider> MempoolServiceState<P> {
     pub(crate) async fn add_transaction(&mut self, tx: OLTransactionV1) -> OLMempoolResult<OLTxId> {
         let txid = tx.compute_txid();
 
+        if self.out_of_sync {
+            debug!(
+                ?txid,
+                "rejecting transaction while out of sync with the chain"
+            );
+            return Err(OLMempoolError::OutOfSync);
+        }
+
         // Nothing is admitted while the next block needs an upgrade, not even
         // a transaction the mempool already holds.
         self.select_spec()?;
@@ -496,20 +543,16 @@ impl<P: StateProvider> MempoolServiceState<P> {
             self.remove_transactions(&[old_txid], false);
         }
 
-        // Generate timestamp for ordering
-        let timestamp_micros = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before UNIX epoch")
-            .as_micros() as u64;
-
+        let timestamp_micros = now_micros();
         let entry = MempoolEntry::new(tx, timestamp_micros, tx_size);
 
         // Persist to database first
         let tx_data = MempoolTxData::new(txid, tx_bytes, timestamp_micros);
-        self.ctx.storage.mempool().put_tx(tx_data)?;
+        self.ctx.mempool_db.put_tx(tx_data)?;
 
         // Add to in-memory state
         self.add_tx_to_in_memory_state(txid, entry);
+        self.stats.enqueues_accepted += 1;
         counter!("strata_mempool_enqueued_total").increment(1);
 
         debug!(
@@ -528,7 +571,9 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// - entries: Main transaction storage
     /// - account_state: Per-account tracking for validation
     ///
-    /// Also updates statistics. Does NOT write to database or perform validation.
+    /// Also updates the size statistics, but not the accepted count, which
+    /// depends on whether the caller admits a new transaction or re-admits a
+    /// held one. Does NOT write to database or perform validation.
     fn add_tx_to_in_memory_state(&mut self, txid: OLTxId, entry: MempoolEntry) {
         let target_account = entry
             .tx
@@ -563,8 +608,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
         );
 
         // Remove from database first
-        self.ctx.storage.mempool().del_tx(txid)?;
+        self.ctx.mempool_db.del_tx(txid)?;
+        self.remove_from_memory(txid, entry);
+        Ok(())
+    }
 
+    /// Removes a transaction from the in-memory state only.
+    fn remove_from_memory(&mut self, txid: OLTxId, entry: &MempoolEntry) {
         let size_bytes = entry.size_bytes;
         let account_id = entry
             .tx
@@ -593,8 +643,6 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         // Update stats
         self.update_stats_on_remove(size_bytes);
-
-        Ok(())
     }
 
     /// Remove transactions from the mempool.
@@ -705,11 +753,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
         Ok(())
     }
 
-    /// Update stats when a transaction is added successfully.
+    /// Update stats when a transaction enters the in-memory state.
     fn update_stats_on_add(&mut self, tx_size: usize) {
         self.stats.mempool_size += 1;
         self.stats.total_bytes += tx_size;
-        self.stats.enqueues_accepted += 1;
         self.record_mempool_gauges();
     }
 
@@ -732,158 +779,677 @@ impl<P: StateProvider> MempoolServiceState<P> {
         gauge!("strata_mempool_size_bytes").set(self.stats.total_bytes() as f64);
     }
 
-    /// Revalidates all transactions in the mempool against the current state.
+    /// Admits `pending` in account sequence order against the tip state and
+    /// returns the transactions that fail admission.
     ///
-    /// This is necessary after state changes (new block, slot change) because:
-    /// - Slot bounds (`min_slot`, `max_slot`) depend on `state.cur_slot()`
-    /// - Effect capacities depend on the spec of the next block, which a tip at
-    ///   a spec activation lowers
+    /// The mempool checks an update against the account's pending range when
+    /// it holds updates for the account, and against the chain state only
+    /// otherwise. Admitting from an empty account index in sequence order
+    /// therefore checks each account's first update against the chain and the
+    /// rest for contiguity.
     ///
-    /// Returns a list of transaction IDs that failed validation.
+    /// Each transaction must also fit the count and byte limits, as a
+    /// submission must. Admission follows arrival order, with each account's
+    /// updates in sequence order, so once the mempool is full every later
+    /// transaction that does not fit is rejected, and a rejected update's
+    /// successors fail for the gap it leaves. A later, smaller transaction may
+    /// still fit the byte limit.
     ///
-    /// When the next block needs an upgrade, nothing is revalidated and every
-    /// transaction stays for a binary that implements the next spec.
-    fn revalidate_all_transactions(&self) -> Vec<OLTxId> {
-        let SelectedSpec::Supported(spec) = self.tip_spec else {
-            return Vec::new();
-        };
-        let limits = spec_limits(spec);
-        self.entries
-            .iter()
-            .filter_map(|(txid, entry)| {
-                let valid = limits.check_tx_effects(entry.tx.data().effects()).is_ok()
-                    && validate_transaction(
-                        spec,
-                        *txid,
-                        &entry.tx,
-                        &self.state_accessor,
-                        &self.account_state,
-                    )
-                    .is_ok();
-                (!valid).then_some(*txid)
+    /// Admitted transactions only enter the in-memory state; the caller owns
+    /// persistence and the accepted count.
+    fn admit_in_account_order(
+        &mut self,
+        mut pending: HashMap<OLTxId, MempoolEntry>,
+    ) -> Vec<(OLTxId, OLMempoolError)> {
+        let candidates = MempoolCandidates::build_snapshot(
+            pending
+                .iter()
+                .map(|(&txid, entry)| (txid, &entry.tx, entry.timestamp_micros)),
+        );
+        let mut rejected = Vec::new();
+        for candidate in candidates {
+            let txid = candidate.txid();
+            let entry = pending
+                .remove(&txid)
+                .expect("candidate was taken from the pending set");
+            let admission = self
+                .validate_admission(txid, &entry.tx)
+                .and_then(|()| self.check_capacity_limits(entry.size_bytes));
+            match admission {
+                Ok(()) => self.add_tx_to_in_memory_state(txid, entry),
+                Err(e) => rejected.push((txid, e)),
+            }
+        }
+        rejected
+    }
+
+    /// Re-admits every held transaction together with `restored`, the
+    /// transactions of reverted blocks, against the tip state, and returns
+    /// how many restored transactions it admitted.
+    ///
+    /// The chain state can move an account's sequence number away from the
+    /// updates the mempool holds for it: an extension may include a
+    /// conflicting update, and a reorg can lower it below the held ones,
+    /// which then only stay valid behind the restored updates. Readmitting
+    /// everything in account order with [`Self::admit_in_account_order`]
+    /// checks each account's first update against the chain, restores the
+    /// dependency order, and evicts whatever the new state invalidates, along
+    /// with its successors.
+    ///
+    /// Restored transactions count against the capacity limits like any
+    /// admission. They arrived before everything the mempool holds, so a
+    /// mempool that cannot fit both keeps the restored transactions and evicts
+    /// its most recently arrived held ones.
+    ///
+    /// When the next block needs an upgrade, admission cannot run. The
+    /// restored transactions are then held without validation, like every
+    /// other held transaction, for a binary that implements the next spec, and
+    /// the reorg or restart that resumes admission revalidates them.
+    ///
+    /// This only changes memory. It records the rows to delete for evicted
+    /// transactions and the rows to store for admitted restored ones in
+    /// `changes`, which the chain update writes before it commits.
+    fn readmit_against_tip(
+        &mut self,
+        restored: Vec<(OLTxId, MempoolEntry)>,
+        changes: &mut StorageChanges,
+    ) -> usize {
+        if !matches!(self.tip_spec, SelectedSpec::Supported(_)) {
+            let restored_count = restored.len();
+            for (txid, entry) in restored {
+                changes.puts.push(txid);
+                self.add_tx_to_in_memory_state(txid, entry);
+            }
+            return restored_count;
+        }
+
+        self.needs_readmit = false;
+        let restored_txids: HashSet<OLTxId> = restored.iter().map(|(txid, _)| *txid).collect();
+        let mut pending = mem::take(&mut self.entries);
+        self.account_state.clear();
+        self.stats.mempool_size = 0;
+        self.stats.total_bytes = 0;
+        pending.extend(restored);
+
+        let rejected = self.admit_in_account_order(pending);
+        let mut dropped_restored = 0usize;
+        for (txid, e) in &rejected {
+            if matches!(
+                e,
+                OLMempoolError::MempoolFull { .. }
+                    | OLMempoolError::MempoolByteLimitExceeded { .. }
+            ) {
+                self.stats.evictions += 1;
+            }
+            if restored_txids.contains(txid) {
+                dropped_restored += 1;
+                debug!(
+                    ?txid,
+                    ?e,
+                    "dropping reverted transaction invalid on the new tip"
+                );
+            } else {
+                debug!(?txid, ?e, "evicting transaction the new tip invalidates");
+                changes.deletes.insert(*txid);
+            }
+        }
+
+        let restored_count = restored_txids.len() - dropped_restored;
+        changes.puts.extend(
+            restored_txids
+                .into_iter()
+                .filter(|txid| self.entries.contains_key(txid)),
+        );
+        self.stats.enqueues_accepted += restored_count as u64;
+        self.record_mempool_gauges();
+
+        debug!(
+            %restored_count,
+            %dropped_restored,
+            evicted = rejected.len() - dropped_restored,
+            "readmitted mempool transactions against the new tip"
+        );
+        restored_count
+    }
+
+    /// Writes `changes` and `tip` to the mempool database in one atomic
+    /// batch: the deletes, the restored transactions memory now holds, and
+    /// the tip they reflect, which a restart catches up from.
+    ///
+    /// # Errors
+    ///
+    /// Returns the storage error if the batch fails, in which case it wrote
+    /// nothing.
+    fn apply_storage_changes(
+        &self,
+        changes: &StorageChanges,
+        tip: OLBlockCommitment,
+    ) -> OLMempoolResult<()> {
+        let mut batch = MempoolWriteBatch::default();
+        for txid in &changes.deletes {
+            batch.delete(*txid);
+        }
+        for txid in &changes.puts {
+            let entry = self
+                .entries
+                .get(txid)
+                .expect("restored transactions to store are held");
+            batch.put(MempoolTxData::new(
+                *txid,
+                Encode::as_ssz_bytes(entry.tx.as_ref()),
+                entry.timestamp_micros,
+            ));
+        }
+        batch.set_tip(tip);
+        self.ctx.mempool_db.apply_batch(batch)?;
+        Ok(())
+    }
+
+    /// Collects the transactions of `reverted`, oldest block first, that the
+    /// mempool should restore.
+    ///
+    /// Skips transactions the adopted branch includes, ones the mempool already
+    /// holds, updates whose account and sequence number a held or earlier
+    /// restored update already takes, and ones over the size limit. Restored
+    /// transactions arrived before everything the mempool holds, so they get
+    /// timestamps just before the oldest held one, in chain order.
+    fn collect_restored(
+        &self,
+        reverted: &[OLBlockV1],
+        adopted_txids: &HashSet<OLTxId>,
+    ) -> Vec<(OLTxId, MempoolEntry)> {
+        let mut taken_seq_nos: HashSet<(AccountId, u64)> = self
+            .entries
+            .values()
+            .filter_map(|entry| snark_update_key(&entry.tx))
+            .collect();
+
+        let mut restored = Vec::new();
+        for block in reverted {
+            let Some(tx_segment) = block.body().tx_segment() else {
+                continue;
+            };
+            for tx in tx_segment.txs() {
+                let tx = tx.clone().with_accumulator_proofs(None);
+                let txid = tx.compute_txid();
+                if adopted_txids.contains(&txid) || self.contains(&txid) {
+                    continue;
+                }
+                if let Some(key) = snark_update_key(&tx)
+                    && !taken_seq_nos.insert(key)
+                {
+                    debug!(?txid, "not restoring reverted update whose seq_no is taken");
+                    continue;
+                }
+                let tx_size = tx.ssz_bytes_len();
+                if tx_size > self.ctx.config.max_tx_size {
+                    debug!(?txid, %tx_size, "not restoring oversized reverted transaction");
+                    continue;
+                }
+                restored.push((txid, tx, tx_size));
+            }
+        }
+
+        let oldest_held = self
+            .entries
+            .values()
+            .map(|entry| entry.timestamp_micros)
+            .min()
+            .unwrap_or(u64::MAX);
+        let base = oldest_held.min(now_micros());
+        let count = restored.len() as u64;
+        restored
+            .into_iter()
+            .zip(0..)
+            .map(|((txid, tx, tx_size), index)| {
+                let timestamp_micros = base.saturating_sub(count - index);
+                (txid, MempoolEntry::new(tx, timestamp_micros, tx_size))
             })
             .collect()
     }
 
-    /// Handles a new block: removes included transactions and revalidates remaining ones.
+    /// Evicts every held transaction from memory, records every row of the
+    /// mempool database for deletion in `changes`, and returns how many
+    /// transactions it evicted.
     ///
-    /// This method:
-    /// 1. Fetches the new block from OL block database
-    /// 2. Extracts transaction IDs from the block
-    /// 3. Removes those transactions from the mempool (they're now in a block)
-    /// 4. Revalidates remaining transactions (state may have changed)
-    #[instrument(skip(self), fields(component = "ol_mempool", slot = new_tip.slot()))]
-    async fn handle_new_block(&mut self, new_tip: OLBlockCommitment) -> OLMempoolResult<()> {
-        // Step 1: Fetch new block from OL block database
-        let block = self
-            .ctx
-            .storage
-            .ol_block()
-            .get_block_data_async(*new_tip.blkid())
-            .await
-            .map_err(|e| {
-                OLMempoolError::AccountStateAccess(format!(
-                    "Failed to get block for tip {:?}: {e}",
-                    new_tip
-                ))
-            })?
-            .ok_or_else(|| {
-                OLMempoolError::AccountStateAccess(format!("Block not found for tip {:?}", new_tip))
-            })?;
+    /// A chain update without a common ancestor leaves the mempool unable to
+    /// tell which held transactions the new branch already includes. Generic
+    /// account messages carry no sequence number, so revalidation cannot catch
+    /// one the branch included, and keeping it could apply it twice. The
+    /// database rows go too, including ones a deferred load has not read yet,
+    /// so a reload cannot bring them back.
+    ///
+    /// # Errors
+    ///
+    /// Returns the storage error if listing the rows fails, before memory
+    /// changes.
+    fn evict_all(&mut self, changes: &mut StorageChanges) -> OLMempoolResult<usize> {
+        let mut evicted: HashSet<OLTxId> = self.entries.keys().copied().collect();
+        let stored = self.ctx.mempool_db.get_all_txs()?;
+        evicted.extend(stored.iter().map(|tx_data| tx_data.txid()));
 
-        // Step 2: Extract transaction IDs grouped by account
-        let txids_by_account = extract_account_txs_from_block(&block);
+        self.entries.clear();
+        self.account_state.clear();
+        self.stats.mempool_size = 0;
+        self.stats.total_bytes = 0;
+        self.deferred_load = false;
+        self.needs_readmit = false;
 
-        // Step 3: Remove included transactions from mempool (no cascade)
-        let included_txids: Vec<OLTxId> = txids_by_account.values().flatten().copied().collect();
-        if !included_txids.is_empty() {
-            debug!(
-                included_count = %included_txids.len(),
-                "removing block-included transactions from mempool"
-            );
-            self.remove_transactions(&included_txids, false);
-        }
-
-        // Step 4: Revalidate all transactions
-        let invalid_txids: Vec<OLTxId> = self.revalidate_all_transactions();
-        if !invalid_txids.is_empty() {
-            debug!(
-                invalid_count = %invalid_txids.len(),
-                "evicting transactions invalidated by new state"
-            );
-            // Remove invalid transactions with cascade (dependents are also invalid)
-            self.remove_transactions(&invalid_txids, true);
-        }
-
-        Ok(())
+        let count = evicted.len();
+        self.stats.reorg_evictions += count as u64;
+        changes.deletes.extend(evicted);
+        self.record_mempool_gauges();
+        Ok(count)
     }
 
-    /// Get parent block commitment by fetching block header.
-    async fn get_parent_commitment(
+    /// Removes the transactions `blocks` include from memory, without
+    /// cascade, records their rows for deletion in `changes`, and returns
+    /// their IDs.
+    ///
+    /// The rows include ones memory does not hold, which a deferred load would
+    /// otherwise read back. A generic account message carries no sequence
+    /// number, so a row left behind could reload and apply it twice.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a block cannot be read, before memory changes.
+    async fn remove_included(
+        &mut self,
+        blocks: &[OLBlockCommitment],
+        changes: &mut StorageChanges,
+    ) -> OLMempoolResult<HashSet<OLTxId>> {
+        let mut included = HashSet::new();
+        for &commitment in blocks {
+            let block = self.get_block(commitment).await?;
+            included.extend(
+                extract_account_txs_from_block(&block)
+                    .into_values()
+                    .flatten(),
+            );
+        }
+        let held: Vec<(OLTxId, MempoolEntry)> = included
+            .iter()
+            .filter_map(|txid| Some((*txid, self.entries.get(txid)?.clone())))
+            .collect();
+        if !held.is_empty() {
+            debug!(
+                included_count = %held.len(),
+                "removing block-included transactions from mempool"
+            );
+        }
+        for (txid, entry) in &held {
+            self.remove_from_memory(*txid, entry);
+        }
+        changes.deletes.extend(included.iter().copied());
+        Ok(included)
+    }
+
+    /// Fetches the block at `commitment`, failing if storage lacks it.
+    async fn get_block(&self, commitment: OLBlockCommitment) -> OLMempoolResult<OLBlockV1> {
+        self.try_get_block(commitment).await?.ok_or_else(|| {
+            OLMempoolError::AccountStateAccess(format!("Block not found for tip {commitment:?}"))
+        })
+    }
+
+    /// Fetches the block at `commitment`, if storage has it.
+    async fn try_get_block(
         &self,
         commitment: OLBlockCommitment,
-    ) -> OLMempoolResult<OLBlockCommitment> {
-        let block = self
-            .ctx
+    ) -> OLMempoolResult<Option<OLBlockV1>> {
+        self.ctx
             .storage
             .ol_block()
             .get_block_data_async(*commitment.blkid())
-            .await?
-            .ok_or_else(|| {
+            .await
+            .map_err(|e| {
                 OLMempoolError::AccountStateAccess(format!(
-                    "Block not found for commitment {:?}",
-                    commitment
+                    "Failed to get block for tip {commitment:?}: {e}"
                 ))
-            })?;
+            })
+    }
 
-        let parent_slot = commitment.slot() - 1;
-        let parent_blkid = *block.header().parent_blkid();
-        Ok(OLBlockCommitment::new(parent_slot, parent_blkid))
+    /// Finds how the chain moved from the mempool tip to `new_tip`.
+    ///
+    /// Walks the new branch down to the mempool tip's slot. If it meets the
+    /// mempool tip, the update extends the chain. Otherwise it walks both
+    /// branches down to their common ancestor, reverting at most
+    /// [`OLMempoolConfig::max_reorg_depth`] blocks of the old branch. OL slots
+    /// are contiguous, so each step lowers the slot by one. A deeper ancestor,
+    /// or a branch block storage lacks, leaves the change unresolved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if storage lacks a block between the mempool tip's
+    /// slot and `new_tip`, as a forward walk always has.
+    async fn find_tip_change(&self, new_tip: OLBlockCommitment) -> OLMempoolResult<TipChange> {
+        let old_tip = self.tip.block();
+        let mut adopted = Vec::new();
+        let mut new_walk = new_tip;
+        while new_walk.slot() > old_tip.slot() {
+            adopted.push(new_walk);
+            new_walk = parent_commitment(new_walk, &self.get_block(new_walk).await?);
+        }
+        if new_walk == old_tip {
+            adopted.reverse();
+            return Ok(TipChange::Extend { adopted });
+        }
+
+        // The new tip does not descend from the old one. The old walk stays at
+        // or above the new walk's slot, and both step down while they share it.
+        let max_depth = self.ctx.config.max_reorg_depth;
+        let mut reverted = Vec::new();
+        let mut old_walk = old_tip;
+        while old_walk != new_walk {
+            if reverted.len() as u64 >= max_depth {
+                return Ok(TipChange::Unresolved { missing: None });
+            }
+            let same_slot = old_walk.slot() == new_walk.slot();
+            let Some(old_block) = self.walkable_block(old_walk).await? else {
+                return Ok(TipChange::Unresolved {
+                    missing: Some(old_walk),
+                });
+            };
+            let old_parent = parent_commitment(old_walk, &old_block);
+            reverted.push(old_block);
+            if same_slot {
+                let Some(new_block) = self.walkable_block(new_walk).await? else {
+                    return Ok(TipChange::Unresolved {
+                        missing: Some(new_walk),
+                    });
+                };
+                adopted.push(new_walk);
+                new_walk = parent_commitment(new_walk, &new_block);
+            }
+            old_walk = old_parent;
+        }
+
+        reverted.reverse();
+        adopted.reverse();
+        Ok(TipChange::Reorg { reverted, adopted })
+    }
+
+    /// Fetches the block at `commitment` if a branch walk can step past it,
+    /// which it cannot at genesis or when storage lacks the block.
+    async fn walkable_block(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> OLMempoolResult<Option<OLBlockV1>> {
+        if commitment.slot() == 0 {
+            return Ok(None);
+        }
+        self.try_get_block(commitment).await
     }
 
     /// Handle chain update.
     ///
-    /// 1. Load state for new tip and update state accessor
-    /// 2. Walk backwards from new tip to current tip via parent links
-    /// 3. Process all blocks in chronological order (oldest to newest)
+    /// 1. Find the blocks the update reverts and adopts relative to the mempool tip
+    /// 2. Load state for new tip and install it
+    /// 3. Remove what the adopted blocks include
+    /// 4. On a reorg, restore what the reverted blocks included
+    /// 5. Readmit everything against the new state
+    /// 6. Write the database changes and the new tip in one atomic batch, then commit
+    ///
+    /// Without a common ancestor, the mempool cannot tell which held
+    /// transactions the new branch includes, so it evicts all of them and
+    /// restores nothing.
+    ///
+    /// Steps 2 to 5 change only memory, and step 6 writes every database
+    /// change they imply, all or nothing, before the update commits. The
+    /// recorded tip lets a restart catch up on blocks the mempool never
+    /// processed, as [`Self::load_from_db`] describes. If a step fails, memory
+    /// goes back to the old tip, its state and what it held, and the mempool
+    /// is out of sync: it serves no candidates and admits nothing, since it
+    /// cannot tell which held transactions the new chain includes. The next
+    /// update starts from the old tip again, so it retries the same removals
+    /// and writes, and its success brings the mempool back in sync.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a block, a state, or a mempool database operation
+    /// fails.
     #[instrument(skip(self), fields(component = "ol_mempool", slot = new_tip.block().slot()))]
     pub(crate) async fn handle_chain_update(&mut self, new_tip: MempoolTip) -> OLMempoolResult<()> {
-        let current_slot = self.state_accessor.cur_slot();
+        let result = self.apply_chain_update(new_tip).await;
+        match &result {
+            Ok(()) => {
+                if self.out_of_sync {
+                    self.out_of_sync = false;
+                    gauge!("strata_mempool_out_of_sync").set(0.0);
+                    info!(tip = %self.tip.block(), "mempool back in sync with the chain");
+                }
+            }
+            Err(error) => {
+                counter!("strata_mempool_chain_update_failures_total").increment(1);
+                if self.out_of_sync {
+                    debug!(
+                        %error,
+                        mempool_tip = %self.tip.block(),
+                        new_tip = %new_tip.block(),
+                        "chain update failed again; the mempool stays out of sync"
+                    );
+                } else {
+                    self.out_of_sync = true;
+                    gauge!("strata_mempool_out_of_sync").set(1.0);
+                    warn!(
+                        %error,
+                        mempool_tip = %self.tip.block(),
+                        new_tip = %new_tip.block(),
+                        "chain update failed; the mempool serves no candidates and admits \
+                         nothing until an update succeeds"
+                    );
+                }
+            }
+        }
+        result
+    }
+
+    /// Applies a chain update as [`Self::handle_chain_update`] describes,
+    /// rolling memory back if it fails.
+    async fn apply_chain_update(&mut self, new_tip: MempoolTip) -> OLMempoolResult<()> {
         debug!(
-            %current_slot,
-            new_slot = %new_tip.block().slot(),
+            old_tip = %self.tip.block(),
+            new_tip = %new_tip.block(),
             "handling chain update"
         );
+        let old_tip = self.tip.block();
+        let tip_change = self.find_tip_change(new_tip.block()).await?;
 
         // Load the new tip's state and the spec of the block after it, and
         // install them together so admission never mixes two tips.
         let (new_state, tip_spec) = load_tip(&self.ctx, new_tip).await?;
-        log_upgrade_required(new_tip.block(), self.tip_spec.upgrade_required(), &tip_spec);
-        self.state_accessor = new_state;
-        self.tip_spec = tip_spec;
-        if self.deferred_load && matches!(self.tip_spec, SelectedSpec::Supported(_)) {
-            self.load_from_db().await?;
+        let held = self.install_tip(new_state, tip_spec);
+        let outcome = match self.apply_tip_change(tip_change, new_tip.block()).await {
+            Ok(outcome) => outcome,
+            Err(e) => {
+                self.roll_back(held);
+                return Err(e);
+            }
+        };
+
+        self.tip = new_tip;
+        log_upgrade_required(
+            new_tip.block(),
+            held.tip_spec.upgrade_required(),
+            &self.tip_spec,
+        );
+        match outcome {
+            TipChangeOutcome::Unchanged | TipChangeOutcome::Extended => {}
+            TipChangeOutcome::Reorged {
+                reverted_blocks,
+                adopted_blocks,
+                restored,
+            } => {
+                counter!("strata_mempool_restored_total").increment(restored as u64);
+                info!(
+                    %reverted_blocks,
+                    %adopted_blocks,
+                    %restored,
+                    "restored transactions from reverted blocks"
+                );
+            }
+            TipChangeOutcome::Unresolved { missing, evicted } => {
+                counter!("strata_mempool_reorg_evicted_total").increment(evicted as u64);
+                warn!(
+                    %old_tip,
+                    new_tip = %new_tip.block(),
+                    max_depth = %self.ctx.config.max_reorg_depth,
+                    ?missing,
+                    %evicted,
+                    "no common ancestor with the new tip; evicted every held transaction"
+                );
+            }
         }
-
-        // Walk backwards from new tip to current tip, collecting all block commitments
-        let mut blocks_to_process = Vec::new();
-        let mut walk = new_tip.block();
-
-        while walk.slot() > current_slot {
-            blocks_to_process.push(walk);
-            walk = self.get_parent_commitment(walk).await?;
-        }
-
-        // Reverse to get chronological order (oldest first)
-        blocks_to_process.reverse();
-
-        // Process each block in chronological order
-        for block in blocks_to_process {
-            self.handle_new_block(block).await?;
-        }
-
         Ok(())
     }
+
+    /// Installs the new tip's state and spec and returns what memory held
+    /// before, for [`Self::roll_back`].
+    fn install_tip(&mut self, state: P::State, tip_spec: SelectedSpec) -> HeldState<P::State> {
+        HeldState {
+            entries: self.entries.clone(),
+            account_state: self.account_state.clone(),
+            stats: self.stats.clone(),
+            state_accessor: mem::replace(&mut self.state_accessor, state),
+            tip_spec: mem::replace(&mut self.tip_spec, tip_spec),
+            deferred_load: self.deferred_load,
+            needs_readmit: self.needs_readmit,
+        }
+    }
+
+    /// Restores what memory held before a failed chain update.
+    fn roll_back(&mut self, held: HeldState<P::State>) {
+        self.entries = held.entries;
+        self.account_state = held.account_state;
+        self.stats = held.stats;
+        self.state_accessor = held.state_accessor;
+        self.tip_spec = held.tip_spec;
+        self.deferred_load = held.deferred_load;
+        self.needs_readmit = held.needs_readmit;
+        self.record_mempool_gauges();
+    }
+
+    /// Applies `tip_change` to memory against the installed tip state, then
+    /// writes the database changes it implies together with `new_tip`.
+    async fn apply_tip_change(
+        &mut self,
+        tip_change: TipChange,
+        new_tip: OLBlockCommitment,
+    ) -> OLMempoolResult<TipChangeOutcome> {
+        if self.deferred_load && matches!(self.tip_spec, SelectedSpec::Supported(_)) {
+            self.load_stored()?;
+        }
+
+        let mut changes = StorageChanges::default();
+        let outcome = match tip_change {
+            // A repeated tip leaves the state, and so every admission, as it
+            // was, unless memory holds stored transactions nothing validated.
+            TipChange::Extend { adopted } if adopted.is_empty() && !self.needs_readmit => {
+                TipChangeOutcome::Unchanged
+            }
+            TipChange::Extend { adopted } => {
+                self.remove_included(&adopted, &mut changes).await?;
+                self.readmit_against_tip(Vec::new(), &mut changes);
+                TipChangeOutcome::Extended
+            }
+            TipChange::Reorg { reverted, adopted } => {
+                let adopted_txids = self.remove_included(&adopted, &mut changes).await?;
+                let restored = self.collect_restored(&reverted, &adopted_txids);
+                let restored = self.readmit_against_tip(restored, &mut changes);
+                TipChangeOutcome::Reorged {
+                    reverted_blocks: reverted.len(),
+                    adopted_blocks: adopted.len(),
+                    restored,
+                }
+            }
+            TipChange::Unresolved { missing } => TipChangeOutcome::Unresolved {
+                missing,
+                evicted: self.evict_all(&mut changes)?,
+            },
+        };
+        self.apply_storage_changes(&changes, new_tip)?;
+        Ok(outcome)
+    }
+}
+
+/// Mempool database writes a chain update makes before it commits.
+#[derive(Debug, Default)]
+pub(crate) struct StorageChanges {
+    /// Rows to delete: transactions the new chain includes or evicts.
+    deletes: HashSet<OLTxId>,
+
+    /// Restored transactions to store, whose entries memory holds.
+    puts: Vec<OLTxId>,
+}
+
+/// What memory held before a chain update, to restore if it fails.
+struct HeldState<S> {
+    entries: HashMap<OLTxId, MempoolEntry>,
+    account_state: HashMap<AccountId, AccountMempoolState>,
+    stats: OLMempoolStats,
+    state_accessor: S,
+    tip_spec: SelectedSpec,
+    deferred_load: bool,
+    needs_readmit: bool,
+}
+
+/// What a committed chain update did, for its logs and metrics.
+#[derive(Debug)]
+enum TipChangeOutcome {
+    Unchanged,
+    Extended,
+    Reorged {
+        reverted_blocks: usize,
+        adopted_blocks: usize,
+        restored: usize,
+    },
+    Unresolved {
+        missing: Option<OLBlockCommitment>,
+        evicted: usize,
+    },
+}
+
+/// How the chain moved from the mempool tip to a new tip.
+#[derive(Debug)]
+enum TipChange {
+    /// The new tip descends from the mempool tip through `adopted`, oldest
+    /// first. A repeated tip adopts nothing.
+    Extend { adopted: Vec<OLBlockCommitment> },
+
+    /// The new tip forks from the mempool tip. `reverted` holds the old
+    /// branch's blocks above the common ancestor and `adopted` the new
+    /// branch's, both oldest first. A revert to an ancestor adopts nothing.
+    Reorg {
+        reverted: Vec<OLBlockV1>,
+        adopted: Vec<OLBlockCommitment>,
+    },
+
+    /// The common ancestor is deeper than the maximum reorg depth, or storage
+    /// lacks the branch block `missing`. The walk reached only part of the new
+    /// branch, so the mempool cannot tell which transactions it includes.
+    Unresolved { missing: Option<OLBlockCommitment> },
+}
+
+/// Returns the parent of `block`, which `commitment` commits to.
+fn parent_commitment(commitment: OLBlockCommitment, block: &OLBlockV1) -> OLBlockCommitment {
+    OLBlockCommitment::new(commitment.slot() - 1, *block.header().parent_blkid())
+}
+
+/// Returns the account and sequence number of a snark account update.
+fn snark_update_key(tx: &OLTransactionV1) -> Option<(AccountId, u64)> {
+    match tx.payload() {
+        TransactionPayloadV1::SnarkAccountUpdate(payload) => {
+            Some((*payload.target(), payload.operation().update().seq_no()))
+        }
+        TransactionPayloadV1::GenericAccountMessage(_) => None,
+    }
+}
+
+/// Returns the current Unix time in microseconds, which orders arrivals.
+fn now_micros() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time before UNIX epoch")
+        .as_micros() as u64
 }
 
 /// Loads the state at `tip` and selects the spec of the block after it.
@@ -965,25 +1531,31 @@ fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
 mod tests {
     use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_checkpoint_types::EpochSummary;
-    use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, EpochCommitment, OLBlockId};
+    use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, Buf64, EpochCommitment, Hash};
+    use strata_ol_chain_types_v1::{
+        BlockFlagsV1, OLBlockBodyV1, OLBlockHeaderV1, OLTxSegmentV1, SignedOLBlockHeaderV1,
+    };
     use strata_ol_log_budget::TxLogBudgetError;
-    use strata_ol_params::BridgeParams;
+    use strata_ol_params::{BridgeParams, OLParams};
     use strata_ol_state_container::OLStateContainer;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
+    use strata_ol_state_types::{
+        IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, IStateAccessorMut, OLSpecVersions,
+    };
     use strata_ol_stf::TxEffectsOverflow;
     use strata_ol_stf_v1::test_utils::{
         make_checkpoint_predicate_enactment_manifest, make_empty_manifest,
         make_op_return_bosd_descriptor, make_withdrawal_payload,
     };
     use strata_snark_acct_types::{
-        LedgerRefs, OutputMessage, ProofState, SnarkAccountUpdate, UpdateOperationData,
+        LedgerRefs, OutputMessage, ProofState, Seqno, SnarkAccountUpdate, UpdateOperationData,
         UpdateOutputs,
     };
 
     use super::*;
     use crate::test_utils::{
-        InMemoryStateProvider, create_test_account_id_with, create_test_block_commitment,
+        InMemoryStateProvider, MempoolDbFaults, create_faulty_mempool_db,
+        create_test_account_id_with, create_test_block_commitment,
         create_test_constraints_with_slots, create_test_context,
         create_test_generic_tx_for_account, create_test_generic_tx_with_size,
         create_test_ol_state_for_tip, create_test_snark_tx_from_update,
@@ -1150,8 +1722,7 @@ mod tests {
         .enumerate()
         {
             context
-                .storage
-                .mempool()
+                .mempool_db
                 .put_tx(MempoolTxData::new(
                     tx.compute_txid(),
                     tx.as_ssz_bytes(),
@@ -1170,7 +1741,7 @@ mod tests {
             .map(|candidate| candidate.txid())
             .collect();
         assert_eq!(pending, vec![independent_id, message_id]);
-        let persisted = context.storage.mempool().get_all_txs().unwrap();
+        let persisted = context.mempool_db.get_all_txs().unwrap();
         assert_eq!(
             persisted
                 .iter()
@@ -1946,11 +2517,8 @@ mod tests {
             .unwrap();
         state.state_accessor = state_accessor_111;
 
-        // Revalidate all transactions - should find expired tx1
-        let invalid_txids: Vec<OLTxId> = state.revalidate_all_transactions();
-        assert_eq!(invalid_txids.len(), 1); // tx1 is invalid (expired)
-
-        state.remove_transactions(&invalid_txids, true);
+        // Readmit all transactions - expired tx1 is evicted
+        readmit(&mut state);
 
         // Should remove tx1 AND tx2 (cascade because tx1 expired creates gap)
         assert_eq!(state.stats().mempool_size(), 1);
@@ -2592,7 +3160,7 @@ mod tests {
         spec: OLSpecId,
         enactment: bool,
     ) -> (MempoolTip, OLStateContainer) {
-        let tip = OLBlockCommitment::new(100, OLBlockId::from(Buf32::from([0xee; 32])));
+        let tip = store_child_block(storage, create_test_block_commitment(99), 1, &[]).await;
         let mut state =
             MemoryStateBaseLayer::from_container(create_test_ol_state_for_tip(tip.slot()));
         state.set_spec_versions(OLSpecVersions::uniform(spec));
@@ -2625,6 +3193,18 @@ mod tests {
         (MempoolTip::new(tip, Some(1)), state.into_container())
     }
 
+    /// Stores a mid-epoch block at slot 100 that is a sibling of the terminal
+    /// tip [`store_terminal_tip`] stores, gives it a state, and returns it.
+    /// Moving between the two is a one-block reorg.
+    async fn store_mid_epoch_sibling(
+        storage: &NodeStorage,
+        provider: &InMemoryStateProvider,
+    ) -> OLBlockCommitment {
+        let tip = store_child_block(storage, create_test_block_commitment(99), 0, &[]).await;
+        provider.insert_state(tip, create_test_ol_state_for_tip(tip.slot()));
+        tip
+    }
+
     /// Builds a mempool on the terminal tip [`store_terminal_tip`] stores, and
     /// returns it with its state provider.
     async fn mempool_on_terminal_tip(
@@ -2649,12 +3229,20 @@ mod tests {
         (state, provider)
     }
 
+    /// Readmits what `state` holds against its tip and writes the changes.
+    fn readmit(state: &mut MempoolServiceState<InMemoryStateProvider>) {
+        let mut changes = StorageChanges::default();
+        state.readmit_against_tip(Vec::new(), &mut changes);
+        state
+            .apply_storage_changes(&changes, state.tip.block())
+            .unwrap();
+    }
+
     /// Stores `tx` in the mempool database, as an earlier run admitted it.
     fn store_tx(state: &MempoolServiceState<InMemoryStateProvider>, tx: &OLTransactionV1) {
         state
             .ctx
-            .storage
-            .mempool()
+            .mempool_db
             .put_tx(MempoolTxData::new(tx.compute_txid(), tx.as_ssz_bytes(), 1))
             .unwrap();
     }
@@ -2676,7 +3264,7 @@ mod tests {
         store_tx(&state, &stored);
         state.load_from_db().await.unwrap();
         assert!(!state.contains(&stored.compute_txid()), "nothing is loaded");
-        assert_eq!(state.ctx.storage.mempool().get_all_txs().unwrap().len(), 1);
+        assert_eq!(state.ctx.mempool_db.get_all_txs().unwrap().len(), 1);
     }
 
     /// A transaction above the V2 effect capacities, admitted under V1, is
@@ -2693,12 +3281,11 @@ mod tests {
             .add_transaction(create_test_snark_tx_with_seq_no(1, 1))
             .await
             .expect("successor admitted under V1");
-        assert!(state.revalidate_all_transactions().is_empty());
+        readmit(&mut state);
+        assert!(state.contains(&over) && state.contains(&successor));
 
         state.tip_spec = SelectedSpec::Supported(OLSpecId::V2);
-        let invalid_txids = state.revalidate_all_transactions();
-        assert_eq!(invalid_txids, vec![over]);
-        state.remove_transactions(&invalid_txids, true);
+        readmit(&mut state);
         assert!(!state.contains(&over));
         assert!(!state.contains(&successor), "the successor is evicted too");
     }
@@ -2825,12 +3412,14 @@ mod tests {
     /// runs V1 resumes admission.
     #[tokio::test]
     async fn test_mempool_follows_the_tip_into_and_out_of_an_upgrade() {
-        let mid_epoch_tip = create_test_block_commitment(100);
-        let provider = Arc::new(create_test_state_provider(mid_epoch_tip));
+        let provider = Arc::new(create_test_state_provider(create_test_block_commitment(
+            100,
+        )));
         let context = Arc::new(create_test_context(
             OLMempoolConfig::default(),
             provider.clone(),
         ));
+        let mid_epoch_tip = store_mid_epoch_sibling(&context.storage, &provider).await;
         let mut state = MempoolServiceState::new_with_context(
             context.clone(),
             MempoolTip::new(mid_epoch_tip, None),
@@ -2871,19 +3460,713 @@ mod tests {
     /// stored transactions once a tip's next block runs V1 again.
     #[tokio::test]
     async fn test_mempool_loads_deferred_transactions_when_admission_resumes() {
-        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V2, true).await;
+        let (mut state, provider) = mempool_on_terminal_tip(OLSpecId::V2, true).await;
         let stored = create_test_snark_tx_with_seq_no(1, 0);
         store_tx(&state, &stored);
         state.load_from_db().await.unwrap();
         assert!(!state.contains(&stored.compute_txid()));
 
+        let mid_epoch_tip = store_mid_epoch_sibling(&state.ctx.storage, &provider).await;
         state
-            .handle_chain_update(MempoolTip::new(create_test_block_commitment(100), None))
+            .handle_chain_update(MempoolTip::new(mid_epoch_tip, None))
             .await
             .unwrap();
         assert!(
             state.contains(&stored.compute_txid()),
             "loaded once admission resumes"
         );
+    }
+
+    /// A mempool on a stored base block at slot 10, with a state provider and
+    /// storage to build branches on.
+    struct ReorgFixture {
+        state: MempoolServiceState<InMemoryStateProvider>,
+        provider: Arc<InMemoryStateProvider>,
+        storage: Arc<NodeStorage>,
+        base: OLBlockCommitment,
+        /// Makes mempool database writes fail while on.
+        faults: Arc<MempoolDbFaults>,
+    }
+
+    impl ReorgFixture {
+        async fn new(max_reorg_depth: u64) -> Self {
+            Self::with_config(OLMempoolConfig {
+                max_reorg_depth,
+                ..OLMempoolConfig::default()
+            })
+            .await
+        }
+
+        async fn with_config(config: OLMempoolConfig) -> Self {
+            let root = create_test_block_commitment(9);
+            let probe = Arc::new(create_test_state_provider(root));
+            let storage = create_test_context(config.clone(), probe).storage;
+            let base = store_child_block(&storage, root, 0, &[]).await;
+            let provider = Arc::new(InMemoryStateProvider::from_initial_state(
+                base,
+                reorg_state_at(base, &[]),
+            ));
+            let mut context = MempoolContext::new(
+                config,
+                BridgeParams::default(),
+                storage.clone(),
+                provider.clone(),
+                OLParams::test_default().genesis_l1_block(),
+            );
+            let (mempool_db, faults) = create_faulty_mempool_db();
+            context.mempool_db = mempool_db;
+            let context = Arc::new(context);
+            let mut state =
+                MempoolServiceState::new_with_context(context, MempoolTip::new(base, None))
+                    .await
+                    .unwrap();
+            state.load_from_db().await.unwrap();
+            Self {
+                state,
+                provider,
+                storage,
+                base,
+                faults,
+            }
+        }
+
+        /// Stores a block on top of `parent` that includes `txs`.
+        async fn block(
+            &self,
+            parent: OLBlockCommitment,
+            salt: u64,
+            txs: &[&OLTransactionV1],
+        ) -> OLBlockCommitment {
+            let txs: Vec<_> = txs.iter().map(|&tx| tx.clone()).collect();
+            store_child_block(&self.storage, parent, salt, &txs).await
+        }
+
+        /// Moves the mempool to `tip`, whose state carries `seq_nos`.
+        async fn move_tip(&mut self, tip: OLBlockCommitment, seq_nos: &[(u8, u64)]) {
+            self.try_move_tip(tip, seq_nos).await.unwrap();
+        }
+
+        async fn try_move_tip(
+            &mut self,
+            tip: OLBlockCommitment,
+            seq_nos: &[(u8, u64)],
+        ) -> OLMempoolResult<()> {
+            self.provider
+                .insert_state(tip, reorg_state_at(tip, seq_nos));
+            self.state
+                .handle_chain_update(MempoolTip::new(tip, None))
+                .await
+        }
+
+        /// Restarts the mempool at `tip`, whose state carries `seq_nos`, over
+        /// the same storage, as the node does after a stop.
+        async fn restart_at(&mut self, tip: OLBlockCommitment, seq_nos: &[(u8, u64)]) {
+            self.provider
+                .insert_state(tip, reorg_state_at(tip, seq_nos));
+            self.state = MempoolServiceState::new_with_context(
+                self.state.ctx.clone(),
+                MempoolTip::new(tip, None),
+            )
+            .await
+            .unwrap();
+            self.state.load_from_db().await.unwrap();
+        }
+
+        fn recorded_tip(&self) -> Option<OLBlockCommitment> {
+            self.state.ctx.mempool_db.get_tip().unwrap()
+        }
+
+        /// Asserts the mempool is out of sync: it serves no candidates and
+        /// rejects a submission.
+        async fn assert_out_of_sync(&mut self) {
+            assert_eq!(self.candidate_txids(), Vec::<OLTxId>::new());
+            let err = self
+                .state
+                .add_transaction(create_test_snark_tx_with_seq_no(9, 0))
+                .await
+                .expect_err("rejected while out of sync");
+            assert!(matches!(err, OLMempoolError::OutOfSync), "{err}");
+        }
+
+        async fn add(&mut self, tx: &OLTransactionV1) -> OLTxId {
+            self.state.add_transaction(tx.clone()).await.unwrap()
+        }
+
+        fn candidate_txids(&self) -> Vec<OLTxId> {
+            self.state
+                .handle_get_candidates()
+                .map(|candidate| candidate.txid())
+                .collect()
+        }
+
+        fn stored_txids(&self) -> HashSet<OLTxId> {
+            self.state
+                .ctx
+                .mempool_db
+                .get_all_txs()
+                .unwrap()
+                .iter()
+                .map(|tx_data| tx_data.txid())
+                .collect()
+        }
+
+        /// Asserts the mempool holds exactly `txs`, in memory and in storage.
+        fn assert_holds(&self, txs: &[&OLTransactionV1]) {
+            let expected: HashSet<OLTxId> = txs.iter().map(|tx| tx.compute_txid()).collect();
+            let held: HashSet<OLTxId> = self.state.entries.keys().copied().collect();
+            assert_eq!(held, expected, "in-memory transactions");
+            assert_eq!(self.stored_txids(), expected, "stored transactions");
+            assert_eq!(self.state.stats().mempool_size(), expected.len());
+        }
+    }
+
+    /// Stores a block on top of `parent` that includes `txs`. `salt` tells
+    /// sibling blocks apart.
+    async fn store_child_block(
+        storage: &NodeStorage,
+        parent: OLBlockCommitment,
+        salt: u64,
+        txs: &[OLTransactionV1],
+    ) -> OLBlockCommitment {
+        let body = OLBlockBodyV1::new_common(OLTxSegmentV1::new(txs.to_vec()).unwrap());
+        let header = OLBlockHeaderV1::new(
+            salt,
+            BlockFlagsV1::zero(),
+            parent.slot() + 1,
+            0,
+            *parent.blkid(),
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        let commitment = header.compute_block_commitment();
+        let block = OLBlockV1::new(SignedOLBlockHeaderV1::new(header, Buf64::zero()), body);
+        storage
+            .ol_block()
+            .put_block_data_async(block)
+            .await
+            .unwrap();
+        commitment
+    }
+
+    /// Builds the state at `tip` where each listed account expects the given
+    /// sequence number next and every other test account expects 0.
+    fn reorg_state_at(tip: OLBlockCommitment, seq_nos: &[(u8, u64)]) -> OLStateContainer {
+        let mut state =
+            MemoryStateBaseLayer::from_container(create_test_ol_state_for_tip(tip.slot()));
+        for &(account, seq_no) in seq_nos {
+            state
+                .update_account(create_test_account_id_with(account), |account| {
+                    account.as_snark_account_mut().unwrap().set_proof_state(
+                        Hash::zero(),
+                        0,
+                        Seqno::from(seq_no),
+                    );
+                })
+                .unwrap();
+        }
+        state.into_container()
+    }
+
+    /// An extension removes what the new block includes, and a same-height
+    /// reorg to a sibling that includes nothing restores it.
+    #[tokio::test]
+    async fn test_same_height_reorg_restores_reverted_transactions() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        f.add(&tx0).await;
+        f.add(&tx1).await;
+
+        let a1 = f.block(f.base, 1, &[&tx0, &tx1]).await;
+        f.move_tip(a1, &[(1, 2)]).await;
+        f.assert_holds(&[]);
+
+        let b1 = f.block(f.base, 2, &[]).await;
+        f.move_tip(b1, &[]).await;
+        f.assert_holds(&[&tx0, &tx1]);
+        assert_eq!(
+            f.candidate_txids(),
+            vec![tx0.compute_txid(), tx1.compute_txid()]
+        );
+    }
+
+    /// Restored updates go back ahead of the successor the mempool admitted
+    /// after the reverted block, which only stays valid behind them.
+    #[tokio::test]
+    async fn test_reorg_restores_reverted_updates_ahead_of_held_successors() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        let other = create_test_generic_tx_for_account(2);
+        let a1 = f.block(f.base, 1, &[&tx0, &tx1]).await;
+        f.move_tip(a1, &[(1, 2)]).await;
+        let tx2 = create_test_snark_tx_with_seq_no(1, 2);
+        f.add(&tx2).await;
+        f.add(&other).await;
+
+        let b1 = f.block(f.base, 2, &[]).await;
+        f.move_tip(b1, &[]).await;
+        f.assert_holds(&[&tx0, &tx1, &tx2, &other]);
+
+        let account_1 = create_test_account_id_with(1);
+        let account_1_order: Vec<OLTxId> = f
+            .state
+            .handle_get_candidates()
+            .filter(|candidate| tx_target(candidate.transaction()) == account_1)
+            .map(|candidate| candidate.txid())
+            .collect();
+        assert_eq!(
+            account_1_order,
+            vec![tx0.compute_txid(), tx1.compute_txid(), tx2.compute_txid()]
+        );
+        assert_eq!(
+            f.state.account_state[&account_1].seq_no_range(),
+            Some((0, 2))
+        );
+        assert_eq!(
+            f.candidate_txids()[0],
+            tx0.compute_txid(),
+            "restored transactions arrived before held ones"
+        );
+    }
+
+    /// A reorg to a branch shorter than the reverted one restores every
+    /// reverted block's transactions.
+    #[tokio::test]
+    async fn test_shorter_tip_reorg_restores_reverted_transactions() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        let a1 = f.block(f.base, 1, &[&tx0]).await;
+        let a2 = f.block(a1, 1, &[&tx1]).await;
+        f.move_tip(a2, &[(1, 2)]).await;
+        f.assert_holds(&[]);
+
+        let b1 = f.block(f.base, 2, &[]).await;
+        f.move_tip(b1, &[]).await;
+        f.assert_holds(&[&tx0, &tx1]);
+    }
+
+    /// A revert to an ancestor of the tip restores the reverted blocks'
+    /// transactions without adopting any block.
+    #[tokio::test]
+    async fn test_revert_to_ancestor_restores_reverted_transactions() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        let a1 = f.block(f.base, 1, &[&tx0]).await;
+        let a2 = f.block(a1, 1, &[&tx1]).await;
+        f.move_tip(a2, &[(1, 2)]).await;
+
+        f.move_tip(f.base, &[]).await;
+        f.assert_holds(&[&tx0, &tx1]);
+    }
+
+    /// A reorg that reverts several blocks for a longer branch restores all
+    /// their transactions in dependency order.
+    #[tokio::test]
+    async fn test_deeper_reorg_restores_reverted_transactions() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let txs: Vec<_> = (0..3)
+            .map(|seq_no| create_test_snark_tx_with_seq_no(1, seq_no))
+            .collect();
+        let message = create_test_generic_tx_for_account(3);
+        let a1 = f.block(f.base, 1, &[&txs[0]]).await;
+        let a2 = f.block(a1, 1, &[&txs[1], &message]).await;
+        let a3 = f.block(a2, 1, &[&txs[2]]).await;
+        f.move_tip(a3, &[(1, 3)]).await;
+        f.assert_holds(&[]);
+
+        let mut b = f.base;
+        for _ in 0..4 {
+            b = f.block(b, 2, &[]).await;
+        }
+        f.move_tip(b, &[]).await;
+        f.assert_holds(&[&txs[0], &txs[1], &txs[2], &message]);
+        let order: Vec<OLTxId> = f
+            .candidate_txids()
+            .into_iter()
+            .filter(|txid| *txid != message.compute_txid())
+            .collect();
+        let expected: Vec<OLTxId> = txs.iter().map(OLTransactionV1::compute_txid).collect();
+        assert_eq!(order, expected);
+    }
+
+    /// A reverted transaction the adopted branch includes too stays out of the
+    /// mempool. Messages carry no sequence number, so only this check keeps
+    /// one from being included twice.
+    #[tokio::test]
+    async fn test_reorg_does_not_restore_transactions_the_adopted_branch_includes() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let message = create_test_generic_tx_for_account(3);
+        let update = create_test_snark_tx_with_seq_no(1, 0);
+        let reverted_only = create_test_snark_tx_with_seq_no(2, 0);
+        let a1 = f
+            .block(f.base, 1, &[&message, &update, &reverted_only])
+            .await;
+        f.move_tip(a1, &[(1, 1), (2, 1)]).await;
+
+        let b1 = f.block(f.base, 2, &[&message, &update]).await;
+        let b2 = f.block(b1, 2, &[]).await;
+        f.move_tip(b2, &[(1, 1)]).await;
+        f.assert_holds(&[&reverted_only]);
+    }
+
+    /// A reverted transaction the new tip invalidates is dropped with its
+    /// successors instead of being restored, and never reaches storage.
+    #[tokio::test]
+    async fn test_reorg_drops_reverted_transactions_invalid_on_the_new_tip() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let expiring = create_test_snark_tx_with_seq_no_and_slots(1, 0, None, Some(11));
+        let successor = create_test_snark_tx_with_seq_no(1, 1);
+        let valid = create_test_snark_tx_with_seq_no(2, 0);
+        f.add(&expiring).await;
+        f.add(&successor).await;
+        f.add(&valid).await;
+        let a1 = f.block(f.base, 1, &[&expiring, &successor, &valid]).await;
+        f.move_tip(a1, &[(1, 2), (2, 1)]).await;
+        f.assert_holds(&[]);
+
+        // The new branch reaches slot 12, past the expiring update's max slot.
+        let b1 = f.block(f.base, 2, &[]).await;
+        let b2 = f.block(b1, 2, &[]).await;
+        f.move_tip(b2, &[]).await;
+        f.assert_holds(&[&valid]);
+    }
+
+    /// A reorg deeper than the maximum depth evicts every held transaction.
+    /// The walk stops before the adopted block that includes a held message,
+    /// which carries no sequence number, so keeping it could apply it twice.
+    /// The mempool still follows the new branch afterwards.
+    #[tokio::test]
+    async fn test_reorg_beyond_max_depth_evicts_everything() {
+        let mut f = ReorgFixture::new(1).await;
+        let message = create_test_generic_tx_for_account(3);
+        let update = create_test_snark_tx_with_seq_no(2, 0);
+        f.add(&message).await;
+        f.add(&update).await;
+        let a1 = f.block(f.base, 1, &[]).await;
+        let a2 = f.block(a1, 1, &[]).await;
+        f.move_tip(a2, &[]).await;
+        f.assert_holds(&[&message, &update]);
+
+        // The walk visits b3 and b2, then stops at the depth limit before b1.
+        let b1 = f.block(f.base, 2, &[&message]).await;
+        let b2 = f.block(b1, 2, &[]).await;
+        let b3 = f.block(b2, 2, &[]).await;
+        f.move_tip(b3, &[]).await;
+        f.assert_holds(&[]);
+        assert_eq!(f.state.stats().reorg_evictions(), 2);
+
+        let next = create_test_snark_tx_with_seq_no(4, 0);
+        f.add(&next).await;
+        let b4 = f.block(b3, 2, &[&next]).await;
+        f.move_tip(b4, &[(4, 1)]).await;
+        f.assert_holds(&[]);
+    }
+
+    /// A reorg whose old-branch block storage lacks evicts every held
+    /// transaction, including stored ones a load has not read.
+    #[tokio::test]
+    async fn test_reorg_with_a_missing_block_evicts_everything() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let unstored_tip = create_test_block_commitment(11);
+        f.provider
+            .insert_state(unstored_tip, reorg_state_at(unstored_tip, &[]));
+        f.state = MempoolServiceState::new_with_context(
+            f.state.ctx.clone(),
+            MempoolTip::new(unstored_tip, None),
+        )
+        .await
+        .unwrap();
+        let message = create_test_generic_tx_for_account(3);
+        let update = create_test_snark_tx_with_seq_no(2, 0);
+        f.add(&message).await;
+        f.add(&update).await;
+        let unloaded = create_test_snark_tx_with_seq_no(5, 0);
+        store_tx(&f.state, &unloaded);
+
+        let b1 = f.block(f.base, 2, &[]).await;
+        f.move_tip(b1, &[]).await;
+        f.assert_holds(&[]);
+        assert_eq!(f.state.stats().reorg_evictions(), 3);
+    }
+
+    /// A one-block reorg is within a maximum depth of one and restores.
+    #[tokio::test]
+    async fn test_reorg_at_max_depth_restores() {
+        let mut f = ReorgFixture::new(1).await;
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let a1 = f.block(f.base, 1, &[&tx0]).await;
+        f.move_tip(a1, &[(1, 1)]).await;
+
+        let b1 = f.block(f.base, 2, &[]).await;
+        let b2 = f.block(b1, 2, &[]).await;
+        f.move_tip(b2, &[]).await;
+        f.assert_holds(&[&tx0]);
+    }
+
+    /// Restored transactions count against the transaction limit. They
+    /// arrived before the held ones, so a full mempool keeps them and evicts
+    /// its most recently arrived held transactions.
+    #[tokio::test]
+    async fn test_reorg_restores_within_the_count_limit_by_arrival() {
+        let mut f = ReorgFixture::with_config(OLMempoolConfig {
+            max_tx_count: 3,
+            ..OLMempoolConfig::default()
+        })
+        .await;
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let tx1 = create_test_snark_tx_with_seq_no(1, 1);
+        let a1 = f.block(f.base, 1, &[&tx0, &tx1]).await;
+        f.move_tip(a1, &[(1, 2)]).await;
+        let older = create_test_generic_tx_for_account(2);
+        let newer = create_test_generic_tx_for_account(3);
+        f.add(&older).await;
+        f.add(&newer).await;
+
+        let b1 = f.block(f.base, 2, &[]).await;
+        f.move_tip(b1, &[]).await;
+        f.assert_holds(&[&tx0, &tx1, &older]);
+        assert_eq!(f.state.stats().evictions(), 1);
+    }
+
+    /// Restored transactions count against the byte limit, and a held one
+    /// that no longer fits is evicted.
+    #[tokio::test]
+    async fn test_reorg_restores_within_the_byte_limit() {
+        let tx0 = create_test_snark_tx_with_seq_no(1, 0);
+        let held = create_test_snark_tx_with_seq_no(2, 0);
+        let mut f = ReorgFixture::with_config(OLMempoolConfig {
+            max_mempool_bytes: tx0.ssz_bytes_len() + held.ssz_bytes_len() - 1,
+            ..OLMempoolConfig::default()
+        })
+        .await;
+        let a1 = f.block(f.base, 1, &[&tx0]).await;
+        f.move_tip(a1, &[(1, 1)]).await;
+        f.add(&held).await;
+
+        let b1 = f.block(f.base, 2, &[]).await;
+        f.move_tip(b1, &[]).await;
+        f.assert_holds(&[&tx0]);
+        assert_eq!(f.state.stats().evictions(), 1);
+    }
+
+    /// When the reverted transactions alone exceed the limit, the mempool
+    /// restores them in chain order until it is full.
+    #[tokio::test]
+    async fn test_reorg_restores_reverted_transactions_up_to_the_limit() {
+        let mut f = ReorgFixture::with_config(OLMempoolConfig {
+            max_tx_count: 2,
+            ..OLMempoolConfig::default()
+        })
+        .await;
+        let first = create_test_snark_tx_with_seq_no(1, 0);
+        let second = create_test_snark_tx_with_seq_no(2, 0);
+        let third = create_test_snark_tx_with_seq_no(3, 0);
+        let a1 = f.block(f.base, 1, &[&first, &second]).await;
+        let a2 = f.block(a1, 1, &[&third]).await;
+        f.move_tip(a2, &[(1, 1), (2, 1), (3, 1)]).await;
+
+        f.move_tip(f.base, &[]).await;
+        f.assert_holds(&[&first, &second]);
+        assert_eq!(f.state.stats().evictions(), 1);
+    }
+
+    /// An extension checks each account's first held update against the
+    /// chain. A block that includes a conflicting update for a held sequence
+    /// number evicts the held one, and the held successor stays valid on top
+    /// of the chain.
+    #[tokio::test]
+    async fn test_extension_evicts_held_updates_the_chain_supersedes() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let held0 = create_test_snark_tx_with_seq_no(1, 0);
+        let held1 = create_test_snark_tx_with_seq_no(1, 1);
+        f.add(&held0).await;
+        f.add(&held1).await;
+
+        let conflicting = create_test_snark_tx_with_seq_no(1, 0);
+        assert_ne!(conflicting.compute_txid(), held0.compute_txid());
+        let a1 = f.block(f.base, 1, &[&conflicting]).await;
+        f.move_tip(a1, &[(1, 1)]).await;
+        f.assert_holds(&[&held1]);
+    }
+
+    /// An extension that moves an account past every held update evicts them
+    /// all, while other accounts' transactions stay.
+    #[tokio::test]
+    async fn test_extension_evicts_held_updates_behind_the_chain() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let held0 = create_test_snark_tx_with_seq_no(1, 0);
+        let held1 = create_test_snark_tx_with_seq_no(1, 1);
+        let other = create_test_snark_tx_with_seq_no(2, 0);
+        f.add(&held0).await;
+        f.add(&held1).await;
+        f.add(&other).await;
+
+        let conflicting0 = create_test_snark_tx_with_seq_no(1, 0);
+        let conflicting1 = create_test_snark_tx_with_seq_no(1, 1);
+        let a1 = f.block(f.base, 1, &[&conflicting0]).await;
+        let a2 = f.block(a1, 1, &[&conflicting1]).await;
+        f.move_tip(a2, &[(1, 2)]).await;
+        f.assert_holds(&[&other]);
+    }
+
+    /// A failed delete during an unresolved reorg keeps the old tip and every
+    /// held transaction, in memory and in storage, so a reload still sees the
+    /// rows and nothing counts as evicted. The mempool is out of sync until
+    /// the next chain update evicts everything.
+    #[tokio::test]
+    async fn test_unresolved_reorg_keeps_the_tip_when_a_delete_fails() {
+        let mut f = ReorgFixture::new(1).await;
+        let message = create_test_generic_tx_for_account(3);
+        let update = create_test_snark_tx_with_seq_no(2, 0);
+        f.add(&message).await;
+        f.add(&update).await;
+        let a1 = f.block(f.base, 1, &[]).await;
+        let a2 = f.block(a1, 1, &[]).await;
+        f.move_tip(a2, &[]).await;
+        let b1 = f.block(f.base, 2, &[&message]).await;
+        let b2 = f.block(b1, 2, &[]).await;
+        let b3 = f.block(b2, 2, &[]).await;
+
+        f.faults.set_fail_deletes(true);
+        let err = f.try_move_tip(b3, &[]).await.expect_err("the delete fails");
+        assert!(matches!(err, OLMempoolError::Database(_)), "{err}");
+        assert_eq!(f.state.tip.block(), a2, "the tip stays");
+        f.assert_holds(&[&message, &update]);
+        assert_eq!(f.state.stats().reorg_evictions(), 0);
+        f.assert_out_of_sync().await;
+
+        f.faults.set_fail_deletes(false);
+        f.move_tip(b3, &[]).await;
+        assert_eq!(f.state.tip.block(), b3);
+        f.assert_holds(&[]);
+        assert_eq!(f.state.stats().reorg_evictions(), 2);
+        assert!(!f.state.out_of_sync);
+    }
+
+    /// A failed delete of a block-included message leaves the old tip, its
+    /// state, and everything held as they were, and the mempool out of sync:
+    /// it serves no candidates, so the included message cannot be proposed
+    /// again, and rejects submissions. The next chain update removes the
+    /// message and brings the mempool back.
+    #[tokio::test]
+    async fn test_extension_keeps_the_tip_when_an_included_delete_fails() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let message = create_test_generic_tx_for_account(3);
+        let held = create_test_snark_tx_with_seq_no(2, 0);
+        f.add(&message).await;
+        f.add(&held).await;
+        let a1 = f.block(f.base, 1, &[&message]).await;
+
+        f.faults.set_fail_deletes(true);
+        let err = f.try_move_tip(a1, &[]).await.expect_err("the delete fails");
+        assert!(matches!(err, OLMempoolError::Database(_)), "{err}");
+        assert_eq!(f.state.tip.block(), f.base, "the tip stays");
+        assert_eq!(
+            f.state.state_accessor.cur_slot(),
+            f.base.slot(),
+            "the state stays"
+        );
+        f.assert_holds(&[&message, &held]);
+        f.assert_out_of_sync().await;
+
+        f.faults.set_fail_deletes(false);
+        f.move_tip(a1, &[]).await;
+        assert_eq!(f.state.tip.block(), a1);
+        f.assert_holds(&[&held]);
+        assert_eq!(f.candidate_txids(), vec![held.compute_txid()]);
+        let next = create_test_snark_tx_with_seq_no(4, 0);
+        f.add(&next).await;
+        f.assert_holds(&[&held, &next]);
+    }
+
+    /// A reorg's database writes land in one atomic batch. When the second
+    /// restored transaction cannot be stored, the first is not stored either,
+    /// and the recorded tip stays, so nothing the old tip's chain includes is
+    /// left behind for a restart to reload. The mempool is out of sync at the
+    /// old tip, and the next chain update stores both.
+    #[tokio::test]
+    async fn test_reorg_writes_nothing_when_a_restored_write_fails() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let message = create_test_generic_tx_for_account(3);
+        let update = create_test_snark_tx_with_seq_no(1, 0);
+        let a1 = f.block(f.base, 1, &[&message, &update]).await;
+        f.move_tip(a1, &[(1, 1)]).await;
+        assert_eq!(f.recorded_tip(), Some(a1));
+        let b1 = f.block(f.base, 2, &[]).await;
+
+        // One restored write succeeds and the next fails, and so would any
+        // delete that tried to undo the first.
+        f.faults.set_put_budget(1);
+        f.faults.set_fail_deletes(true);
+        let err = f.try_move_tip(b1, &[]).await.expect_err("the write fails");
+        assert!(matches!(err, OLMempoolError::Database(_)), "{err}");
+        assert_eq!(f.state.tip.block(), a1, "the tip stays");
+        f.assert_holds(&[]);
+        assert_eq!(f.recorded_tip(), Some(a1));
+        assert_eq!(f.state.stats().enqueues_accepted(), 0);
+        f.assert_out_of_sync().await;
+
+        f.faults.set_fail_puts(false);
+        f.faults.set_fail_deletes(false);
+        f.move_tip(b1, &[]).await;
+        assert_eq!(f.state.tip.block(), b1);
+        f.assert_holds(&[&message, &update]);
+        assert_eq!(f.recorded_tip(), Some(b1));
+        assert!(!f.state.out_of_sync);
+    }
+
+    /// A node that stops after a block lands but before the mempool commits
+    /// the chain update for it restarts with that block's transactions still
+    /// stored. Loading catches up from the recorded tip and removes the
+    /// included generic message before the mempool serves candidates.
+    #[tokio::test]
+    async fn test_restart_catches_up_on_blocks_the_mempool_missed() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let message = create_test_generic_tx_for_account(3);
+        let held = create_test_snark_tx_with_seq_no(2, 0);
+        f.add(&message).await;
+        f.add(&held).await;
+        assert_eq!(f.recorded_tip(), Some(f.base));
+
+        // a1 includes the message, and the node stops before the mempool
+        // processes it, then restarts at a1.
+        let a1 = f.block(f.base, 1, &[&message]).await;
+        f.restart_at(a1, &[]).await;
+        assert_eq!(f.state.tip.block(), a1);
+        assert_eq!(f.candidate_txids(), vec![held.compute_txid()]);
+        f.assert_holds(&[&held]);
+        assert_eq!(f.recorded_tip(), Some(a1));
+    }
+
+    /// A restart that coincides with a reorg: the recorded branch included
+    /// seq 0, the database holds its successor seq 1, and the launch branch
+    /// reverted seq 0. Loading validates nothing before the catch-up restores
+    /// seq 0, so seq 1 is not mistaken for a gap, and both are readmitted in
+    /// order.
+    #[tokio::test]
+    async fn test_restart_during_a_reorg_keeps_stored_successors() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let seq0 = create_test_snark_tx_with_seq_no(1, 0);
+        let seq1 = create_test_snark_tx_with_seq_no(1, 1);
+        let a1 = f.block(f.base, 1, &[&seq0]).await;
+        f.move_tip(a1, &[(1, 1)]).await;
+        f.add(&seq1).await;
+        assert_eq!(f.recorded_tip(), Some(a1));
+
+        // Fork choice moves to b1, which reverts a1, and the node stops before
+        // the mempool processes it, then restarts at b1.
+        let b1 = f.block(f.base, 2, &[]).await;
+        f.restart_at(b1, &[]).await;
+        assert_eq!(f.state.tip.block(), b1);
+        f.assert_holds(&[&seq0, &seq1]);
+        assert_eq!(
+            f.candidate_txids(),
+            vec![seq0.compute_txid(), seq1.compute_txid()]
+        );
+        assert_eq!(f.recorded_tip(), Some(b1));
     }
 }
