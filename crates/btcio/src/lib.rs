@@ -3,7 +3,6 @@
 pub mod broadcaster;
 pub mod params;
 pub mod reader;
-mod retry;
 pub(crate) mod rpc_error;
 pub mod status;
 

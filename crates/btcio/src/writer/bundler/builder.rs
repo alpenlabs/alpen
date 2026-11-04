@@ -11,7 +11,6 @@ use super::{
     logic::{get_initial_unbundled_entries, PendingIntent},
     service::{BundlerService, BundlerState, BundlerStatus},
 };
-use crate::retry::RetryBackoff;
 
 #[expect(missing_debug_implementations, reason = "mpsc::Receiver lacks Debug")]
 pub struct BundlerBuilder {
@@ -41,12 +40,11 @@ impl BundlerBuilder {
 
         let state = BundlerState {
             ops: self.ops,
-            unbundled: unbundled.into_iter().collect(),
-            retry: RetryBackoff::new(),
+            unbundled,
         };
         let input = TickingInput::new(self.bundle_interval, TokioMpscInput::new(self.intent_rx));
 
-        ServiceBuilder::<BundlerService<EnvelopeDataOps>, _>::new()
+        ServiceBuilder::<BundlerService, _>::new()
             .with_state(state)
             .with_input(input)
             .launch_async("btcio_bundler", executor)

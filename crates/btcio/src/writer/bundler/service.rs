@@ -3,36 +3,34 @@
 //! Accumulates unbundled intents and flushes them into payload entries on each
 //! timer tick.
 
-use std::{collections::BTreeSet, marker::PhantomData, sync::Arc};
+use std::{mem, sync::Arc};
 
 use serde::Serialize;
 use strata_service::{AsyncService, Response, Service, ServiceState, TickMsg};
-use tracing::{info, warn};
+use strata_storage::ops::writer::EnvelopeDataOps;
 
-use super::logic::{process_unbundled_entries, BundlerStorage, PendingIntent};
-use crate::retry::{is_retryable_db_error, RetryBackoff};
+use super::logic::{process_unbundled_entries, PendingIntent};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct BundlerStatus {
     pub(crate) pending_intents: usize,
 }
 
-pub(crate) struct BundlerState<C> {
-    pub(crate) ops: Arc<C>,
-    pub(crate) unbundled: BTreeSet<PendingIntent>,
-    pub(crate) retry: RetryBackoff,
+pub(crate) struct BundlerState {
+    pub(crate) ops: Arc<EnvelopeDataOps>,
+    pub(crate) unbundled: Vec<PendingIntent>,
 }
 
-impl<C: BundlerStorage> ServiceState for BundlerState<C> {
+impl ServiceState for BundlerState {
     fn name(&self) -> &str {
         "btcio_bundler"
     }
 }
 
-pub(crate) struct BundlerService<C>(PhantomData<C>);
+pub(crate) struct BundlerService;
 
-impl<C: BundlerStorage> Service for BundlerService<C> {
-    type State = BundlerState<C>;
+impl Service for BundlerService {
+    type State = BundlerState;
     type Msg = TickMsg<PendingIntent>;
     type Status = BundlerStatus;
 
@@ -43,30 +41,15 @@ impl<C: BundlerStorage> Service for BundlerService<C> {
     }
 }
 
-impl<C: BundlerStorage> AsyncService for BundlerService<C> {
+impl AsyncService for BundlerService {
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
             TickMsg::Tick => {
-                if state.unbundled.is_empty() || !state.retry.is_ready() {
-                    return Ok(Response::Continue);
-                }
-
-                match process_unbundled_entries(state.ops.as_ref(), &mut state.unbundled).await {
-                    Ok(()) => {
-                        if state.retry.reset() {
-                            info!("bundler storage recovered");
-                        }
-                    }
-                    Err(error) if is_retryable_db_error(&error) => {
-                        if state.retry.record_failure() {
-                            warn!(%error, "bundler storage unavailable; retrying with backoff");
-                        }
-                    }
-                    Err(error) => return Err(error),
-                }
+                let pending = mem::take(&mut state.unbundled);
+                state.unbundled = process_unbundled_entries(state.ops.as_ref(), pending).await?;
             }
             TickMsg::Msg(intent) => {
-                state.unbundled.insert(intent);
+                state.unbundled.push(intent);
             }
         }
         Ok(Response::Continue)

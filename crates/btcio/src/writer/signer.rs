@@ -94,14 +94,12 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 /// them in the broadcaster DB.
 ///
 /// Used when no external signer is required.
-/// Retains the signed envelope in `cached` across persistence failures so retries use the same
-/// txids.
+/// Returns `(commit_txid, reveal_txid)`.
 pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wallet>(
     payload_idx: u64,
     payloadentry: &BundledPayloadEntry,
     ctx: Arc<WriterContext<R>>,
     broadcast_handle: &L1BroadcastHandle,
-    cached: &mut Option<EnvelopeData>,
 ) -> Result<(L1TxId, L1TxId), EnvelopeError> {
     let span = debug_span!(
         "btcio_payload_envelope_unchecked",
@@ -110,36 +108,31 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
     );
 
     async {
-        if cached.is_none() {
-            let envelope = build_and_sign_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
-            ensure_built_fee_rate_within_max(
-                &envelope.commit_tx,
-                envelope.commit_fee,
-                ctx.max_fee_rate,
-            )?;
-            ensure_built_fee_rate_within_max(
-                &envelope.reveal_tx,
-                envelope.reveal_fee,
-                ctx.max_fee_rate,
-            )?;
-            *cached = Some(envelope);
-        }
-
-        let envelope = cached
-            .as_ref()
-            .expect("signed envelope was built or retained for retry");
+        let envelope = build_and_sign_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
+        ensure_built_fee_rate_within_max(
+            &envelope.commit_tx,
+            envelope.commit_fee,
+            ctx.max_fee_rate,
+        )?;
+        ensure_built_fee_rate_within_max(
+            &envelope.reveal_tx,
+            envelope.reveal_fee,
+            ctx.max_fee_rate,
+        )?;
         let commit_fee_rate = effective_fee_rate(&envelope.commit_tx, envelope.commit_fee)?;
         let reveal_fee_rate = effective_fee_rate(&envelope.reveal_tx, envelope.reveal_fee)?;
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
-        put_tx_entry_if_missing(
-            broadcast_handle,
-            cid,
-            &envelope.commit_tx,
-            envelope.commit_fee,
-            commit_fee_rate,
-        )
-        .await?;
+        broadcast_handle
+            .put_tx_entry(
+                to_raw_buf32(cid),
+                L1TxEntry::from_tx_with_fee(
+                    &envelope.commit_tx,
+                    commit_fee_rate,
+                    envelope.commit_fee,
+                ),
+            )
+            .await?;
         put_tx_node(
             broadcast_handle,
             TxNodeKind::SingleEnvelopeCommit { payload_idx },
@@ -150,14 +143,16 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
         .await?;
 
         let rid = to_l1_txid(envelope.reveal_tx.compute_txid());
-        put_tx_entry_if_missing(
-            broadcast_handle,
-            rid,
-            &envelope.reveal_tx,
-            envelope.reveal_fee,
-            reveal_fee_rate,
-        )
-        .await?;
+        broadcast_handle
+            .put_tx_entry(
+                to_raw_buf32(rid),
+                L1TxEntry::from_tx_with_fee(
+                    &envelope.reveal_tx,
+                    reveal_fee_rate,
+                    envelope.reveal_fee,
+                ),
+            )
+            .await?;
 
         info!(?cid, reveal_txid = ?rid, "envelope signed and stored for broadcast");
         Ok((cid, rid))
@@ -535,7 +530,7 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_unchecked_retry_keeps_its_pair_and_published_commit() {
+    async fn test_sign_and_broadcast_payload_envelopes() {
         let iops = get_envelope_ops();
         let bcast_handle = get_broadcast_handle();
         let ctx = get_writer_context();
@@ -546,36 +541,9 @@ mod test {
             .await
             .unwrap();
 
-        let envelope = build_and_sign_envelope_txs(&entry.payload, ctx.as_ref())
+        let (cid, rid) = sign_and_broadcast_payload_envelopes(0, &entry, ctx, &bcast_handle)
             .await
             .unwrap();
-        let cid = to_l1_txid(envelope.commit_tx.compute_txid());
-        let rid = to_l1_txid(envelope.reveal_tx.compute_txid());
-        let mut commit_entry = L1TxEntry::from_tx_with_fee(
-            &envelope.commit_tx,
-            effective_fee_rate(&envelope.commit_tx, envelope.commit_fee).unwrap(),
-            envelope.commit_fee,
-        );
-        commit_entry.status = L1TxStatus::Published;
-        bcast_handle
-            .put_tx_entry(to_raw_buf32(cid), commit_entry)
-            .await
-            .unwrap();
-
-        // A partial attempt must resume even when rebuilding from fresh UTXOs would fail.
-        let ctx = get_writer_context_with_client(Arc::new(
-            TestBitcoinClient::new(1).with_utxo_amount_sats(0),
-        ));
-        let mut cached = Some(envelope);
-        let resumed =
-            sign_and_broadcast_payload_envelopes(0, &entry, ctx, &bcast_handle, &mut cached)
-                .await
-                .unwrap();
-        assert_eq!(resumed, (cid, rid));
-        assert_eq!(
-            bcast_handle.get_tx_status(to_raw_buf32(cid)).await.unwrap(),
-            Some(L1TxStatus::Published)
-        );
 
         // Both txids should be non-zero
         assert_ne!(cid, L1TxId::zero());
@@ -616,7 +584,7 @@ mod test {
         let bcast_handle = get_broadcast_handle();
         let entry = unsigned_test_entry();
 
-        let err = sign_and_broadcast_payload_envelopes(0, &entry, ctx, &bcast_handle, &mut None)
+        let err = sign_and_broadcast_payload_envelopes(0, &entry, ctx, &bcast_handle)
             .await
             .unwrap_err();
 
@@ -630,10 +598,9 @@ mod test {
 
         let entry = unsigned_test_entry();
 
-        let (cid, rid) =
-            sign_and_broadcast_payload_envelopes(7, &entry, ctx, &bcast_handle, &mut None)
-                .await
-                .unwrap();
+        let (cid, rid) = sign_and_broadcast_payload_envelopes(7, &entry, ctx, &bcast_handle)
+            .await
+            .unwrap();
 
         let commit_entry = bcast_handle
             .get_tx_entry_by_id_async(to_raw_buf32(cid))

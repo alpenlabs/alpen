@@ -1,5 +1,3 @@
-use std::io::ErrorKind;
-
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId, Slot};
 use strata_primitives::epoch::EpochCommitment;
 use strata_primitives::L1Height;
@@ -57,10 +55,6 @@ pub enum DbError {
 
     #[error("resource busy")]
     Busy,
-
-    /// A storage I/O failure with its original error kind preserved for classification.
-    #[error("storage I/O ({kind:?}): {message}")]
-    Io { kind: ErrorKind, message: String },
 
     /// A database worker task did not return a result.
     ///
@@ -149,24 +143,6 @@ pub enum DbError {
 
     #[error("{0}")]
     Other(String),
-}
-
-impl DbError {
-    /// Reports whether the failure may be resolved by retrying the operation later.
-    ///
-    /// Callers must ensure replay is safe after partial writes. An I/O error kind does not
-    /// guarantee recovery: a backend may retain the failure until it is reopened.
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::Busy => true,
-            Self::Io { kind, .. } => matches!(
-                kind,
-                ErrorKind::Interrupted | ErrorKind::WouldBlock | ErrorKind::TimedOut
-            ),
-            Self::RetriesExhausted { last_error, .. } => last_error.is_retryable(),
-            _ => false,
-        }
-    }
 }
 
 // TODO(STR-4241): this conversion is inverted -- the ops layer should map into

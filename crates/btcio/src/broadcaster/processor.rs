@@ -496,11 +496,13 @@ where
     }
 
     if resync_required {
-        // Rebuild from persisted state after adoption or a failed pass. An adopted winner or a
-        // notification consumed during backoff can change a row below the discovery cursor.
-        // Keep the current view until the full scan succeeds, since recovery can fail again.
+        // Rebuild from the whole range rather than the incremental window. The adopted winner
+        // sits at an index below the cursor, so nothing else would pick it back up. Callers have
+        // already written this pass's statuses back, so the DB is authoritative here.
         //
-        // Normal polls remain incremental; only adoption and dependency recovery scan history.
+        // A full scan is affordable because adoption is a rare recovery path: it needs either a
+        // superseded transaction to win on-chain, or a replacement to be refused outright, and the
+        // replacement pass only builds one per transaction per bump interval.
         state.unfinalized_entries = fetch_unfinalized_entries(io, 0, next_idx).await?;
         state.next_idx = next_idx;
         return Ok(());

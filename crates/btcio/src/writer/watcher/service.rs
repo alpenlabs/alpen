@@ -29,8 +29,7 @@ use tracing::*;
 
 use crate::{
     broadcaster::L1BroadcastHandle,
-    retry::{is_retryable_db_error, RetryBackoff},
-    rpc_error::{is_retryable_anyhow_error, is_retryable_envelope_error, retryable_reason},
+    rpc_error::{is_retryable_envelope_error, retryable_reason},
     status::{apply_status_updates, L1StatusUpdate},
     writer::{
         builder::{EnvelopeData, EnvelopeError},
@@ -94,7 +93,6 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-        cached: &mut Option<EnvelopeData>,
     ) -> impl Future<Output = Result<(L1TxId, L1TxId), EnvelopeError>> + Send;
     fn complete_reveal_and_broadcast(
         &self,
@@ -228,14 +226,12 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-        cached: &mut Option<EnvelopeData>,
     ) -> Result<(L1TxId, L1TxId), EnvelopeError> {
         sign_and_broadcast_payload_envelopes(
             idx,
             entry,
             self.context.clone(),
             &self.broadcast_handle,
-            cached,
         )
         .await
     }
@@ -321,9 +317,6 @@ pub(crate) struct WatcherState<C: WatcherServiceContext> {
     pub(crate) ctx: C,
     pub(crate) envelope_cache: HashMap<u64, EnvelopeData>,
     pub(crate) curr_payloadidx: u64,
-    /// Holds an in-process attempt until its broadcast entries and payload row are saved.
-    in_process_envelope: Option<EnvelopeData>,
-    retry: RetryBackoff,
 }
 
 impl<C: WatcherServiceContext> WatcherState<C> {
@@ -332,8 +325,6 @@ impl<C: WatcherServiceContext> WatcherState<C> {
             ctx,
             envelope_cache: HashMap::new(),
             curr_payloadidx,
-            in_process_envelope: None,
-            retry: RetryBackoff::new(),
         }
     }
 }
@@ -354,91 +345,47 @@ impl<C: WatcherServiceContext> Service for WatcherService<C> {
     fn get_status(state: &Self::State) -> Self::Status {
         WatcherStatus {
             current_payload_idx: state.curr_payloadidx,
-            cache_size: state.envelope_cache.len()
-                + usize::from(state.in_process_envelope.is_some()),
+            cache_size: state.envelope_cache.len(),
         }
     }
 }
 
 impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
     async fn process_input(state: &mut Self::State, _: Self::Msg) -> anyhow::Result<Response> {
-        if !state.retry.is_ready() {
-            return Ok(Response::Continue);
-        }
-
-        match state.process_payload().await {
-            Ok(()) => {
-                if state.retry.reset() {
-                    info!("watcher dependencies recovered");
-                }
-            }
-            Err(error)
-                if is_retryable_db_error(&error)
-                    || is_retryable_anyhow_error(&error)
-                    || error
-                        .downcast_ref::<EnvelopeError>()
-                        .is_some_and(is_retryable_envelope_error) =>
-            {
-                if state.retry.record_failure() {
-                    warn!(%error, "watcher dependency unavailable; retrying with backoff");
-                }
-            }
-            Err(error) => return Err(error),
-        }
-
-        Ok(Response::Continue)
-    }
-}
-
-impl<C: WatcherServiceContext> WatcherState<C> {
-    async fn process_payload(&mut self) -> anyhow::Result<()> {
-        let dspan = debug_span!("process payload", idx=%self.curr_payloadidx);
+        let dspan = debug_span!("process payload", idx=%state.curr_payloadidx);
         let _ = dspan.enter();
 
-        // Finish uncertain writes before allowing the fee bumper to change the transaction pair.
-        if !self.retry.is_retrying() {
-            if let Err(error) = self.ctx.run_replacement_pass().await {
-                warn!(%error, "payload envelope replacement pass failed");
-            }
+        // A failed pass must not stall payload processing; the next tick retries it.
+        if let Err(error) = state.ctx.run_replacement_pass().await {
+            warn!(%error, "payload envelope replacement pass failed");
         }
 
-        if let Some(payloadentry) = self.ctx.get_payload_entry(self.curr_payloadidx).await? {
-            if matches!(
-                payloadentry.status,
-                L1BundleStatus::Unpublished
-                    | L1BundleStatus::Published
-                    | L1BundleStatus::Confirmed
-                    | L1BundleStatus::Finalized
-            ) {
-                // The payload row may have committed even though its write returned an error.
-                self.in_process_envelope = None;
-                self.envelope_cache.remove(&self.curr_payloadidx);
-            }
+        if let Some(payloadentry) = state.ctx.get_payload_entry(state.curr_payloadidx).await? {
             match payloadentry.status {
                 // If unsigned or needs resign, build envelope txs, sign commit with
                 // wallet, and transition to PendingRevealTxSign awaiting the external
                 // signer's Schnorr signature on the reveal tx.
                 L1BundleStatus::Unsigned | L1BundleStatus::NeedsResign => {
-                    self.handle_unsigned_or_needs_resign(payloadentry).await?;
+                    state.handle_unsigned_or_needs_resign(payloadentry).await?;
                 }
 
                 // Waiting for the external signer to provide the reveal signature.
                 // When the signature arrives (via RPC), complete the reveal tx and
                 // transition to Unpublished.
                 L1BundleStatus::PendingRevealTxSign(_) => {
-                    self.handle_pending_reveal_tx_sign(payloadentry).await?;
+                    state.handle_pending_reveal_tx_sign(payloadentry).await?;
                 }
 
                 // If finalized, nothing to do, move on to process next entry
                 L1BundleStatus::Finalized => {
-                    self.curr_payloadidx += 1;
+                    state.curr_payloadidx += 1;
                 }
 
                 // If entry is signed but not finalized or excluded yet, check broadcast txs status
                 L1BundleStatus::Published
                 | L1BundleStatus::Confirmed
                 | L1BundleStatus::Unpublished => {
-                    self.handle_broadcast_status(payloadentry).await?;
+                    state.handle_broadcast_status(payloadentry).await?;
                 }
             }
         } else {
@@ -446,9 +393,11 @@ impl<C: WatcherServiceContext> WatcherState<C> {
             debug!("Waiting for payloadentry to be present in db");
         }
 
-        Ok(())
+        Ok(Response::Continue)
     }
+}
 
+impl<C: WatcherServiceContext> WatcherState<C> {
     /// Resolves the current envelope signing mode, deferring on failure.
     ///
     /// The signing mode is derived from dynamic ASM state, so a transient
@@ -479,14 +428,8 @@ impl<C: WatcherServiceContext> WatcherState<C> {
     ) -> anyhow::Result<()> {
         debug!(current_status=?payloadentry.status);
 
-        let signing_mode = if self.in_process_envelope.is_some() {
-            // Finish the existing attempt before considering a new signing mode or fresh UTXOs.
-            EnvelopeSigningMode::InProcess
-        } else {
-            let Some(mode) = self.resolve_signing_mode() else {
-                return Ok(());
-            };
-            mode
+        let Some(signing_mode) = self.resolve_signing_mode() else {
+            return Ok(());
         };
         match signing_mode {
             EnvelopeSigningMode::External { pubkey } => match self
@@ -520,8 +463,8 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 }
                 Err(err) if is_retryable_envelope_error(&err) => {
                     let reason = retryable_reason(&err);
+                    warn!(%reason, "retrying envelope creation after Bitcoin RPC error");
                     self.ctx.report_rpc_error(reason).await;
-                    return Err(err.into());
                 }
                 Err(err) => {
                     return Err(err.into());
@@ -529,11 +472,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
             },
             EnvelopeSigningMode::InProcess => match self
                 .ctx
-                .sign_and_broadcast(
-                    self.curr_payloadidx,
-                    &payloadentry,
-                    &mut self.in_process_envelope,
-                )
+                .sign_and_broadcast(self.curr_payloadidx, &payloadentry)
                 .await
             {
                 Ok((cid, rid)) => {
@@ -544,7 +483,6 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     self.ctx
                         .put_payload_entry(self.curr_payloadidx, updated_entry)
                         .await?;
-                    self.in_process_envelope = None;
 
                     debug!(?cid, reveal_txid = ?rid, "envelope signed and queued for broadcast");
                 }
@@ -556,8 +494,8 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 }
                 Err(err) if is_retryable_envelope_error(&err) => {
                     let reason = retryable_reason(&err);
+                    warn!(%reason, "retrying envelope signing after Bitcoin RPC error");
                     self.ctx.report_rpc_error(reason).await;
-                    return Err(err.into());
                 }
                 Err(err) => {
                     return Err(err.into());
@@ -797,21 +735,23 @@ impl<C: WatcherServiceContext> WatcherState<C> {
             return Ok(());
         }
 
-        let result = self
+        match self
             .ctx
             .complete_reveal_and_broadcast(self.curr_payloadidx, &envelope, sig.as_ref())
-            .await;
-        // Completion may have queued either transaction before failing; retain the same pair.
-        self.envelope_cache.insert(self.curr_payloadidx, envelope);
-        result?;
-
-        let mut updated_entry = payloadentry;
-        updated_entry.status = L1BundleStatus::Unpublished;
-        self.ctx
-            .put_payload_entry(self.curr_payloadidx, updated_entry)
-            .await?;
-        self.envelope_cache.remove(&self.curr_payloadidx);
-        debug!("reveal signed and stored for broadcast");
+            .await
+        {
+            Ok(_rid) => {
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.status = L1BundleStatus::Unpublished;
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+                debug!("reveal signed and stored for broadcast");
+            }
+            Err(e) => {
+                error!(%e, "failed to attach reveal signature");
+            }
+        }
         Ok(())
     }
 
@@ -1076,12 +1016,10 @@ mod tests {
     };
     use strata_l1_txfmt::TagData;
     use strata_primitives::buf::{Buf32, Buf64};
-    use tokio::time::{advance, Duration};
 
     use super::*;
     use crate::{
         broadcaster::{BroadcasterError, L1BroadcastHandle},
-        test_utils::test_context::get_writer_context,
         tx_entry::L1TxEntryExt,
         writer::{
             builder::{EnvelopeData, EnvelopeError},
@@ -1193,15 +1131,6 @@ mod tests {
         create_failure: Option<MockEnvelopeFailure>,
         sign_failure: Option<MockEnvelopeFailure>,
         rpc_errors: Mutex<Vec<String>>,
-        storage_failure: Mutex<Option<StorageFailure>>,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    enum StorageFailure {
-        Read,
-        BeforeWrite,
-        AfterWrite,
-        AfterCommit,
     }
 
     impl MockWatcherContext {
@@ -1221,7 +1150,6 @@ mod tests {
                 create_failure: None,
                 sign_failure: None,
                 rpc_errors: Mutex::new(Vec::new()),
-                storage_failure: Mutex::new(None),
             }
         }
 
@@ -1275,15 +1203,6 @@ mod tests {
         fn set_signing_mode_failure(&self, fails: bool) {
             *self.signing_mode_fails.lock().unwrap() = fails;
         }
-
-        fn fail_storage(&self, point: StorageFailure) -> anyhow::Result<()> {
-            let mut failure = self.storage_failure.lock().unwrap();
-            if *failure == Some(point) {
-                *failure = None;
-                return Err(DbError::Busy.into());
-            }
-            Ok(())
-        }
     }
 
     impl WatcherServiceContext for MockWatcherContext {
@@ -1294,7 +1213,6 @@ mod tests {
         }
 
         async fn get_payload_entry(&self, idx: u64) -> anyhow::Result<Option<BundledPayloadEntry>> {
-            self.fail_storage(StorageFailure::Read)?;
             Ok(self.stored.lock().unwrap().get(&idx).cloned())
         }
 
@@ -1303,9 +1221,8 @@ mod tests {
             idx: u64,
             entry: BundledPayloadEntry,
         ) -> anyhow::Result<()> {
-            self.fail_storage(StorageFailure::BeforeWrite)?;
             self.stored.lock().unwrap().insert(idx, entry);
-            self.fail_storage(StorageFailure::AfterWrite)
+            Ok(())
         }
 
         fn signing_mode(&self) -> anyhow::Result<EnvelopeSigningMode> {
@@ -1329,23 +1246,13 @@ mod tests {
 
         async fn sign_and_broadcast(
             &self,
-            idx: u64,
-            entry: &BundledPayloadEntry,
-            cached: &mut Option<EnvelopeData>,
+            _idx: u64,
+            _entry: &BundledPayloadEntry,
         ) -> Result<(L1TxId, L1TxId), EnvelopeError> {
-            if cached.is_none() {
-                if let Some(failure) = self.sign_failure {
-                    return Err(failure.into_error());
-                }
+            if let Some(failure) = self.sign_failure {
+                return Err(failure.into_error());
             }
-            sign_and_broadcast_payload_envelopes(
-                idx,
-                entry,
-                get_writer_context(),
-                &self.broadcast_handle,
-                cached,
-            )
-            .await
+            Ok((L1TxId::from([1u8; 32]), L1TxId::from([2u8; 32])))
         }
 
         async fn complete_reveal_and_broadcast(
@@ -1354,15 +1261,6 @@ mod tests {
             envelope: &EnvelopeData,
             sig: &[u8; 64],
         ) -> anyhow::Result<L1TxId> {
-            if *self.storage_failure.lock().unwrap() == Some(StorageFailure::AfterCommit) {
-                self.broadcast_handle
-                    .put_tx_entry(
-                        to_raw_buf32(to_l1_txid(envelope.commit_tx.compute_txid())),
-                        L1TxEntry::from_tx(&envelope.commit_tx),
-                    )
-                    .await?;
-                self.fail_storage(StorageFailure::AfterCommit)?;
-            }
             complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
                 .await
                 .map_err(Into::into)
@@ -1424,76 +1322,6 @@ mod tests {
         BundledPayloadEntry::new_unsigned(payload)
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn watcher_retries_storage_failures_with_the_same_signed_attempt() {
-        for external in [false, true] {
-            for point in [
-                StorageFailure::Read,
-                StorageFailure::BeforeWrite,
-                StorageFailure::AfterWrite,
-                StorageFailure::AfterCommit,
-            ] {
-                if !external && point == StorageFailure::AfterCommit {
-                    continue; // The signer replay test covers in-process partial publication.
-                }
-                let mut state = WatcherState::new(MockWatcherContext::new(external), 0);
-                let mut entry = test_unsigned_entry();
-                if external {
-                    let envelope = minimal_envelope_data();
-                    entry.commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
-                    entry.reveal_txid = to_l1_txid(envelope.reveal_tx.compute_txid());
-                    entry.status = L1BundleStatus::PendingRevealTxSign(envelope.sighash);
-                    entry.payload_signature = Some(Buf64([1; 64]));
-                    state.envelope_cache.insert(0, envelope);
-                }
-                state.ctx.stored.lock().unwrap().insert(0, entry);
-                *state.ctx.storage_failure.lock().unwrap() = Some(point);
-
-                let response = WatcherService::process_input(&mut state, ()).await.unwrap();
-                assert!(matches!(response, Response::Continue));
-                assert_eq!(state.curr_payloadidx, 0);
-                let cached = if external {
-                    state.envelope_cache.get(&0)
-                } else {
-                    state.in_process_envelope.as_ref()
-                };
-                let expected_txids = cached.map(|envelope| {
-                    (
-                        to_l1_txid(envelope.commit_tx.compute_txid()),
-                        to_l1_txid(envelope.reveal_tx.compute_txid()),
-                    )
-                });
-                if point != StorageFailure::Read {
-                    assert!(expected_txids.is_some(), "{external}, {point:?}");
-                    state.ctx.sign_failure = Some(MockEnvelopeFailure::Other);
-                }
-
-                // A tick during backoff must not even consume the next injected read failure.
-                *state.ctx.storage_failure.lock().unwrap() = Some(StorageFailure::Read);
-                WatcherService::process_input(&mut state, ()).await.unwrap();
-                assert_eq!(
-                    *state.ctx.storage_failure.lock().unwrap(),
-                    Some(StorageFailure::Read)
-                );
-                *state.ctx.storage_failure.lock().unwrap() = None;
-
-                advance(Duration::from_secs(1)).await;
-                WatcherService::process_input(&mut state, ()).await.unwrap();
-                let stored = state.ctx.get_stored(0).unwrap();
-                assert_eq!(
-                    stored.status,
-                    L1BundleStatus::Unpublished,
-                    "{external}, {point:?}"
-                );
-                if let Some(txids) = expected_txids {
-                    assert_eq!((stored.commit_txid, stored.reveal_txid), txids);
-                }
-                assert!(state.envelope_cache.is_empty());
-                assert!(state.in_process_envelope.is_none());
-            }
-        }
-    }
-
     #[tokio::test]
     async fn test_unchecked_transitions_to_unpublished() {
         let ctx = MockWatcherContext::new(false);
@@ -1505,8 +1333,8 @@ mod tests {
 
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unpublished);
-        assert_ne!(stored.commit_txid, L1TxId::zero());
-        assert_ne!(stored.reveal_txid, L1TxId::zero());
+        assert_eq!(stored.commit_txid, L1TxId::from([1u8; 32]));
+        assert_eq!(stored.reveal_txid, L1TxId::from([2u8; 32]));
         // No cache entry — ephemeral path does not use the envelope cache
         assert!(state.envelope_cache.is_empty());
     }

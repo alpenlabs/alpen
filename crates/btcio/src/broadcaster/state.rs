@@ -1,5 +1,3 @@
-use std::iter::empty;
-
 use bitcoin::hashes::Hash;
 use strata_db_types::l1_broadcast::{L1TxEntry, L1TxStatus};
 use strata_primitives::{buf::Buf32, indexed::Indexed};
@@ -12,7 +10,7 @@ use super::{
     io::BroadcasterIoContext,
     processor::{fetch_unfinalized_entries, process_unfinalized_entries, update_state},
 };
-use crate::{retry::RetryBackoff, tx_entry::L1TxEntryExt, BtcioParams};
+use crate::{tx_entry::L1TxEntryExt, BtcioParams};
 
 /// Transaction entry coupled with its broadcast DB index.
 pub(crate) type IndexedEntry = Indexed<L1TxEntry, u64>;
@@ -45,8 +43,6 @@ pub(crate) struct BroadcasterServiceState<C> {
     pub(crate) config: BtcioParams,
     /// Concrete IO context used for DB reads/writes and RPC calls.
     pub(crate) io: C,
-    /// Paces recovery; pending retries require reloading persisted tracking before polling.
-    pub(crate) retry: RetryBackoff,
 }
 
 impl<C> BroadcasterServiceState<C>
@@ -62,7 +58,6 @@ where
             inner: BroadcasterState::new(next_idx, unfinalized_entries),
             config,
             io,
-            retry: RetryBackoff::new(),
         })
     }
 
@@ -71,15 +66,6 @@ where
         &mut self,
         input: TickMsg<BroadcasterInputMessage>,
     ) -> BroadcasterResult<()> {
-        if self.retry.is_retrying() {
-            // A pass may have committed writes or an ancestor adoption before failing. Notices
-            // consumed during backoff are also covered by this snapshot, including old indexes.
-            update_state(&mut self.inner, empty(), &self.io, true).await?;
-
-            // The input's cached row may be older than the snapshot; use persisted state instead.
-            return self.process_unfinalized_entries().await;
-        }
-
         match input {
             TickMsg::Tick => {}
             TickMsg::Msg(BroadcasterInputMessage::NotifyNewEntry { idx, txentry }) => {
@@ -219,35 +205,19 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::{
-        iter::once,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc, Mutex,
-        },
-        time::Duration,
-    };
+    use std::{iter::once, sync::Arc};
 
-    use bitcoin::{FeeRate, Transaction, Txid};
-    use bitcoind_async_client::error::ClientError;
+    use bitcoin::FeeRate;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{
-        backend::DatabaseBackend, common::L1TxId, l1_broadcast::L1TxStatus, DbError,
-    };
+    use strata_db_types::{backend::DatabaseBackend, common::L1TxId, l1_broadcast::L1TxStatus};
     use strata_l1_txfmt::MagicBytes;
     use strata_primitives::buf::Buf32;
-    use strata_service::{AsyncService, Response};
     use strata_storage::BroadcastDbOps;
-    use tokio::{runtime::Handle, time::advance};
+    use tokio::runtime::Handle;
 
     use super::*;
     use crate::{
-        broadcaster::{
-            error::BroadcasterError,
-            io::{BroadcasterIo, PublishTxOutcome, TxLookupOutcome},
-            service::BroadcasterService,
-            L1BroadcastHandle,
-        },
+        broadcaster::{io::BroadcasterIo, L1BroadcastHandle},
         test_utils::{
             compute_entry_txid, gen_l1_tx_entry_with_status, gen_replacement_tx_entry,
             SendRawTransactionMode, TestBitcoinClient,
@@ -398,10 +368,7 @@ mod test {
             .await
             .unwrap();
 
-        let response = BroadcasterService::process_input(&mut service_state, TickMsg::Tick)
-            .await
-            .unwrap();
-        assert!(matches!(response, Response::Continue));
+        service_state.process_input(TickMsg::Tick).await.unwrap();
 
         let statuses: Vec<_> = service_state
             .inner
@@ -759,260 +726,5 @@ mod test {
             ops.get_tx_entry_async(idx).await.unwrap().unwrap().status,
             L1TxStatus::Replaced { .. }
         ));
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    enum FailurePoint {
-        Index,
-        Read,
-        BeforeWrite,
-        AfterWrite,
-        Lookup,
-        AfterAdoption,
-    }
-
-    struct FailingIo {
-        inner: BroadcasterIo<TestBitcoinClient>,
-        failure: Mutex<Option<(FailurePoint, BroadcasterError)>>,
-        calls: AtomicUsize,
-    }
-
-    impl FailingIo {
-        fn new(inner: BroadcasterIo<TestBitcoinClient>) -> Self {
-            Self {
-                inner,
-                failure: Mutex::new(None),
-                calls: AtomicUsize::new(0),
-            }
-        }
-
-        fn fail_at(&self, point: FailurePoint) -> BroadcasterResult<()> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            let mut failure = self.failure.lock().unwrap();
-            if failure
-                .as_ref()
-                .is_some_and(|(configured, _)| *configured == point)
-            {
-                return Err(failure.take().unwrap().1);
-            }
-
-            Ok(())
-        }
-    }
-
-    impl BroadcasterIoContext for FailingIo {
-        async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
-            self.fail_at(FailurePoint::Index)?;
-            self.inner.get_next_tx_idx().await
-        }
-
-        async fn get_tx_entry(&self, idx: u64) -> BroadcasterResult<Option<L1TxEntry>> {
-            self.fail_at(FailurePoint::Read)?;
-            self.inner.get_tx_entry(idx).await
-        }
-
-        async fn put_tx_entry_by_idx(&self, idx: u64, entry: L1TxEntry) -> BroadcasterResult<()> {
-            self.fail_at(FailurePoint::BeforeWrite)?;
-            self.inner.put_tx_entry_by_idx(idx, entry).await?;
-            self.fail_at(FailurePoint::AfterWrite)
-        }
-
-        async fn get_tx_entry_by_id(&self, txid: Buf32) -> BroadcasterResult<Option<L1TxEntry>> {
-            self.fail_at(FailurePoint::Read)?;
-            self.inner.get_tx_entry_by_id(txid).await
-        }
-
-        async fn adopt_confirmed_ancestor(
-            &self,
-            loser_txid: Buf32,
-            winner_txid: Buf32,
-            winner_status: L1TxStatus,
-        ) -> BroadcasterResult<bool> {
-            let adopted = self
-                .inner
-                .adopt_confirmed_ancestor(loser_txid, winner_txid, winner_status)
-                .await?;
-            if adopted {
-                self.fail_at(FailurePoint::AfterAdoption)?;
-            }
-
-            Ok(adopted)
-        }
-
-        async fn get_transaction<'a>(
-            &'a self,
-            txid: &'a Txid,
-        ) -> BroadcasterResult<TxLookupOutcome> {
-            self.fail_at(FailurePoint::Lookup)?;
-            self.inner.get_transaction(txid).await
-        }
-
-        async fn send_raw_transaction<'a>(
-            &'a self,
-            tx: &'a Transaction,
-        ) -> BroadcasterResult<PublishTxOutcome> {
-            self.inner.send_raw_transaction(tx).await
-        }
-    }
-
-    async fn tick<C: BroadcasterIoContext>(state: &mut BroadcasterServiceState<C>) -> Response {
-        BroadcasterService::process_input(state, TickMsg::Tick)
-            .await
-            .unwrap()
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn service_reloads_tracking_and_notices_after_dependency_failure() {
-        for point in [
-            FailurePoint::Index,
-            FailurePoint::Read,
-            FailurePoint::BeforeWrite,
-            FailurePoint::AfterWrite,
-            FailurePoint::Lookup,
-        ] {
-            let ops = get_ops();
-            let original = gen_l1_tx_entry_with_status(L1TxStatus::Published);
-            let original_txid = compute_entry_txid(&original);
-            let original_idx = ops
-                .put_tx_entry_async(original_txid, original.clone())
-                .await
-                .unwrap()
-                .unwrap();
-            let io = FailingIo::new(make_io(ops.clone(), TestBitcoinClient::new(0)));
-            let mut state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
-                .await
-                .unwrap();
-            let error = if point == FailurePoint::Lookup {
-                BroadcasterError::Rpc(ClientError::Timeout)
-            } else {
-                BroadcasterError::Db(DbError::Busy)
-            };
-            *state.io.failure.lock().unwrap() = Some((point, error));
-
-            let response = tick(&mut state).await;
-            assert!(matches!(response, Response::Continue));
-            let calls = state.io.calls.load(Ordering::Relaxed);
-
-            // A replacement changes an old row and adds a new one while the worker backs off.
-            let (handle, mut receiver) = L1BroadcastHandle::new_for_test(ops.clone());
-            let (replacement, replacement_txid) = gen_replacement_tx_entry(&original);
-            assert!(handle
-                .put_replacement_tx_entry(original_txid, replacement_txid, replacement)
-                .await
-                .unwrap());
-            drop(handle);
-            while let Some(notice) = receiver.recv().await {
-                BroadcasterService::process_input(&mut state, TickMsg::Msg(notice))
-                    .await
-                    .unwrap();
-            }
-            tick(&mut state).await;
-            assert_eq!(state.io.calls.load(Ordering::Relaxed), calls);
-
-            advance(Duration::from_secs(1)).await;
-
-            // A failed recovery scan must remain pending and back off again.
-            *state.io.failure.lock().unwrap() = Some((FailurePoint::Read, DbError::Busy.into()));
-            let response = tick(&mut state).await;
-            assert!(matches!(response, Response::Continue));
-            assert!(state.retry.is_retrying());
-
-            advance(Duration::from_secs(2)).await;
-            // The recovery snapshot must override even a stale row on the recovery input.
-            let stale_notice = BroadcasterInputMessage::NotifyNewEntry {
-                idx: original_idx,
-                txentry: original,
-            };
-            BroadcasterService::process_input(&mut state, TickMsg::Msg(stale_notice))
-                .await
-                .unwrap();
-            assert_eq!(tracked_copies(&state, original_idx), 0, "{point:?}");
-            assert_eq!(state.inner.unfinalized_entries.len(), 1);
-
-            state.io.inner = make_io(ops.clone(), TestBitcoinClient::new(6));
-            tick(&mut state).await;
-            assert!(matches!(
-                ops.get_tx_entry_by_id_async(replacement_txid)
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .status,
-                L1TxStatus::Finalized {
-                    confirmations: 6,
-                    ..
-                }
-            ));
-            assert!(matches!(
-                ops.get_tx_entry_async(original_idx)
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .status,
-                L1TxStatus::Replaced { .. }
-            ));
-            assert!(state.inner.unfinalized_entries.is_empty());
-
-            // Recovery must not turn permanent storage failures into retries.
-            *state.io.failure.lock().unwrap() = Some((
-                FailurePoint::Index,
-                DbError::CodecError("corrupt row".into()).into(),
-            ));
-            let error = BroadcasterService::process_input(&mut state, TickMsg::Tick)
-                .await
-                .unwrap_err();
-            assert!(matches!(
-                error.downcast_ref::<BroadcasterError>(),
-                Some(BroadcasterError::Db(DbError::CodecError(_)))
-            ));
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn service_recovers_a_winner_after_an_adoption_response_fails() {
-        let ops = get_ops();
-        let original = gen_l1_tx_entry_with_status(L1TxStatus::Published);
-        let original_txid = compute_entry_txid(&original);
-        ops.put_tx_entry_async(original_txid, original.clone())
-            .await
-            .unwrap();
-        let (handle, _receiver) = L1BroadcastHandle::new_for_test(ops.clone());
-        let (replacement, replacement_txid) = gen_replacement_tx_entry(&original);
-        assert!(handle
-            .put_replacement_tx_entry(original_txid, replacement_txid, replacement)
-            .await
-            .unwrap());
-
-        let client = TestBitcoinClient::new(1)
-            .with_send_raw_transaction_mode(SendRawTransactionMode::MissingOrInvalidInput);
-        let io = FailingIo::new(make_io(ops.clone(), client));
-        let mut state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
-            .await
-            .unwrap();
-        assert_eq!(state.inner.unfinalized_entries.len(), 1);
-        *state.io.failure.lock().unwrap() =
-            Some((FailurePoint::AfterAdoption, DbError::Busy.into()));
-
-        tick(&mut state).await;
-        assert!(
-            state.io.failure.lock().unwrap().is_none(),
-            "adoption must have committed before failure"
-        );
-
-        // The winner is below the discovery cursor and was absent from the failed pass's state.
-        advance(Duration::from_secs(1)).await;
-        state.io.inner = make_io(ops.clone(), TestBitcoinClient::new(6));
-        tick(&mut state).await;
-        assert!(matches!(
-            ops.get_tx_entry_by_id_async(original_txid)
-                .await
-                .unwrap()
-                .unwrap()
-                .status,
-            L1TxStatus::Finalized {
-                confirmations: 6,
-                ..
-            }
-        ));
-        assert!(state.inner.unfinalized_entries.is_empty());
     }
 }
