@@ -218,15 +218,36 @@ mod tests {
     }
 
     fn make_update(seq_no: Seqno, new_state_root: Hash) -> SnarkAccountUpdateData {
+        make_update_with_effects(seq_no, new_state_root, TxEffects::default())
+    }
+
+    fn make_update_with_effects(
+        seq_no: Seqno,
+        new_state_root: Hash,
+        effects: TxEffects,
+    ) -> SnarkAccountUpdateData {
         SnarkAccountUpdateData::new(
             seq_no,
             ProofState::new(new_state_root, 0),
             Vec::new(),
             LedgerRefs::new_empty(),
-            TxEffects::default(),
+            effects,
             Vec::new(),
             None,
         )
+    }
+
+    fn make_transfer_effects(transfers: &[(AccountId, u64)]) -> TxEffects {
+        let mut effects = TxEffects::default();
+        for &(dest, sats) in transfers {
+            assert!(
+                effects
+                    .push_transfer(dest, sats)
+                    .expect("test transfer amount should be within the money supply"),
+                "test transfers should fit within the effects capacity"
+            );
+        }
+        effects
     }
 
     fn verify_and_apply_update(
@@ -287,5 +308,63 @@ mod tests {
             Err(ExecError::Acct(AcctError::InvalidUpdateProof { account_id }))
                 if account_id == target
         ));
+    }
+
+    /// Regression test for SECFND-758: the proof claim commits to the transfers,
+    /// so a transaction can only carry, and the OL can only execute, the exact
+    /// transfers the update proof attested to.
+    #[test]
+    fn rejects_update_whose_transfers_differ_from_proven_outputs() {
+        let target = AccountId::zero();
+        let recipient = AccountId::from([7; 32]);
+        let other_recipient = AccountId::from([8; 32]);
+        let new_state_root = Hash::from([2; 32]);
+        let state =
+            OLSnarkAccountStateV1::new_fresh(PredicateKey::always_accept(), Hash::from([1; 32]));
+
+        let proven_update = make_update_with_effects(
+            Seqno::zero(),
+            new_state_root,
+            make_transfer_effects(&[(recipient, 1_000)]),
+        );
+        let proven_claim = compute_update_claim(&state, &proven_update);
+
+        let mut verifier = ClaimVerifier {
+            accepted_claim: proven_claim.clone(),
+        };
+        verify_update_correctness(target, &state, &proven_update, &mut verifier)
+            .expect("update carrying the proven transfers must verify");
+
+        let tampered_cases = [
+            ("dropped transfer", make_transfer_effects(&[])),
+            (
+                "changed value",
+                make_transfer_effects(&[(recipient, 2_000)]),
+            ),
+            (
+                "redirected destination",
+                make_transfer_effects(&[(other_recipient, 1_000)]),
+            ),
+            (
+                "extra transfer",
+                make_transfer_effects(&[(recipient, 1_000), (other_recipient, 1)]),
+            ),
+        ];
+
+        for (case, effects) in tampered_cases {
+            let update = make_update_with_effects(Seqno::zero(), new_state_root, effects);
+            let mut verifier = ClaimVerifier {
+                accepted_claim: proven_claim.clone(),
+            };
+            let result = verify_update_correctness(target, &state, &update, &mut verifier);
+            assert!(
+                matches!(
+                    result,
+                    Err(ExecError::Acct(AcctError::InvalidUpdateProof { account_id }))
+                        if account_id == target
+                ),
+                "{case}: expected InvalidUpdateProof, got {result:?}"
+            );
+        }
     }
 }
