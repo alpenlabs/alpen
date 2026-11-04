@@ -6,7 +6,7 @@ import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import EpochSealingConfig, ServiceType
-from common.wait import wait_until_with_value
+from common.wait import wait_until, wait_until_with_value
 from envconfigs.strata import StrataEnvConfig
 from tests.checkpoint.helpers import mine_until_finalized_epoch
 
@@ -49,10 +49,13 @@ class TestBitcoinRpcOutage(StrataNodeTest):
             # Connection refusals exhaust the client's three one-second retries.
             # Stay down for several worker polls and check liveness throughout.
             deadline = time.monotonic() + 20
-            while time.monotonic() < deadline:
+
+            def node_survived_outage():
                 assert strata.check_status(), "Strata exited during Bitcoin RPC outage"
                 rpc.strata_protocolVersion()
-                time.sleep(0.5)
+                return time.monotonic() >= deadline
+
+            wait_until(node_survived_outage, timeout=25)
         finally:
             bitcoin.start()
 
