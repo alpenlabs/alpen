@@ -1001,7 +1001,6 @@ mod tests {
         hashes::Hash,
         key::UntweakedKeypair,
         secp256k1::{XOnlyPublicKey, SECP256K1},
-        taproot::TaprootBuilder,
         transaction::Version,
         Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
     };
@@ -1022,7 +1021,7 @@ mod tests {
         broadcaster::{BroadcasterError, L1BroadcastHandle},
         tx_entry::L1TxEntryExt,
         writer::{
-            builder::{EnvelopeData, EnvelopeError},
+            builder::{envelope_spend_info, EnvelopeData, EnvelopeError},
             replacement::build::build_pending_single_reveal_replacement,
             signer::{complete_pending_reveal_replacement, complete_reveal_and_broadcast},
             test_utils::get_broadcast_handle,
@@ -1078,11 +1077,7 @@ mod tests {
             .push_slice(pubkey.serialize())
             .push_opcode(opcodes::all::OP_CHECKSIG)
             .into_script();
-        let taproot_spend_info = TaprootBuilder::new()
-            .add_leaf(0, reveal_script.clone())
-            .expect("valid leaf")
-            .finalize(SECP256K1, pubkey)
-            .expect("valid taproot");
+        let taproot_spend_info = envelope_spend_info(&reveal_script).expect("valid taproot");
         let dummy_input = TxIn {
             previous_output: OutPoint {
                 txid: Txid::all_zeros(),

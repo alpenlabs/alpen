@@ -13,21 +13,20 @@ use bitcoin::{
     blockdata::script,
     hashes::Hash,
     key::Keypair,
-    secp256k1::{XOnlyPublicKey, SECP256K1},
-    taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
+    secp256k1::XOnlyPublicKey,
+    taproot::{LeafVersion, TaprootSpendInfo},
     transaction::Version,
     Address, Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 use strata_config::btcio::FeeBumpingConfig;
-use strata_crypto::keys::constants::UNSPENDABLE_PUBLIC_KEY;
 use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 use strata_l1_txfmt::MagicBytes;
 
 use super::commit_op_return::build_commit_op_return;
 use crate::writer::builder::{
-    fee_sats_for_vsize, fund_commit_transaction, get_size, reveal_fee_headroom,
-    sign_reveal_transaction, EnvelopeConfig, EnvelopeError,
+    envelope_spend_info, fee_sats_for_vsize, fund_commit_transaction, get_size,
+    reveal_fee_headroom, sign_reveal_transaction, EnvelopeConfig, EnvelopeError,
 };
 
 /// Intermediate state for each reveal before tx construction.
@@ -104,11 +103,7 @@ fn build_reveal_artifacts(
             .add_envelopes([chunk])?
             .build_without_min_check()?;
 
-        // Disable key-path spending so spending the output reveals the payload script.
-        let spend_info = TaprootBuilder::new()
-            .add_leaf(0, reveal_script.clone())?
-            .finalize(SECP256K1, *UNSPENDABLE_PUBLIC_KEY)
-            .map_err(|_| EnvelopeError::TaprootFinalize)?;
+        let spend_info = envelope_spend_info(&reveal_script)?;
 
         // A reveal has one sequencer-address output plus its tapscript spend.
         let commit_value = calculate_reveal_commit_value(
@@ -266,17 +261,9 @@ fn build_multi_output_commit(
 ) -> Result<(Transaction, Amount), EnvelopeError> {
     let p2tr_outputs: Vec<TxOut> = artifacts
         .iter()
-        .map(|a| {
-            let addr = Address::p2tr(
-                SECP256K1,
-                a.spend_info.internal_key(),
-                a.spend_info.merkle_root(),
-                config.network,
-            );
-            TxOut {
-                value: Amount::from_sat(a.commit_value),
-                script_pubkey: addr.script_pubkey(),
-            }
+        .map(|artifact| TxOut {
+            value: Amount::from_sat(artifact.commit_value),
+            script_pubkey: ScriptBuf::new_p2tr_tweaked(artifact.spend_info.output_key()),
         })
         .collect();
 
@@ -315,7 +302,7 @@ mod tests {
 
     use bitcoin::{
         opcodes::all::OP_RETURN,
-        secp256k1::{rand, Keypair, Secp256k1},
+        secp256k1::{rand, Keypair, Secp256k1, SECP256K1},
         Network, Txid,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
@@ -575,6 +562,7 @@ mod tests {
         )
         .unwrap();
         let repriced_reveal = &result.reveal_txs[0];
+        assert_reveal_requires_script_path(repriced_reveal, &result.commit_tx.output[1], &keypair);
         let repriced_output_total: Amount = repriced_reveal
             .output
             .iter()

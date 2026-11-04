@@ -3,10 +3,10 @@ use std::sync::Arc;
 use bitcoin::{
     hashes::Hash,
     key::TapTweak,
-    secp256k1::{schnorr::Signature, Keypair, Message, XOnlyPublicKey, SECP256K1},
+    secp256k1::{schnorr::Signature, Keypair, Message, SECP256K1},
     sighash::{Prevouts, SighashCache, TapSighashType},
     taproot::TapNodeHash,
-    Transaction, TxOut,
+    ScriptBuf, Transaction, TxOut,
 };
 use strata_crypto::keys::constants::UNSPENDABLE_PUBLIC_KEY;
 use strata_db_store_sled::{
@@ -33,11 +33,19 @@ pub(crate) fn assert_reveal_requires_script_path(
     signer: &Keypair,
 ) {
     let (script, control_block) = extract_reveal_witness(reveal).unwrap();
-    let output_key =
-        XOnlyPublicKey::from_slice(&commit_output.script_pubkey.as_bytes()[2..]).unwrap();
+    assert_eq!(control_block.internal_key, *UNSPENDABLE_PUBLIC_KEY);
+    assert!(control_block.merkle_branch.is_empty());
+    let merkle_root = TapNodeHash::from_script(&script, control_block.leaf_version);
+    let (output_key, _) = UNSPENDABLE_PUBLIC_KEY.tap_tweak(SECP256K1, Some(merkle_root));
+    assert_eq!(
+        commit_output.script_pubkey,
+        ScriptBuf::new_p2tr_tweaked(output_key),
+    );
+    let output_key = output_key.to_x_only_public_key();
+    assert!(control_block.verify_taproot_commitment(SECP256K1, output_key, &script));
+
     let signer_pubkey = signer.x_only_public_key().0;
     assert_eq!(reveal_script_pubkey(&script).unwrap(), signer_pubkey);
-    assert!(control_block.verify_taproot_commitment(SECP256K1, output_key, &script));
 
     let script_sighash =
         compute_taproot_script_spend_sighash(reveal, commit_output, &script).unwrap();
@@ -47,10 +55,7 @@ pub(crate) fn assert_reveal_requires_script_path(
         .verify_schnorr(&signature, &message, &signer_pubkey)
         .unwrap();
 
-    // Both builders use one leaf. Try spending with only a tweaked-key signature,
-    // omitting the script and its payload entirely.
-    assert!(control_block.merkle_branch.is_empty());
-    let merkle_root = TapNodeHash::from_script(&script, control_block.leaf_version);
+    // Try spending with only a tweaked-key signature, omitting the script and its payload.
     let tweaked_signer = signer.tap_tweak(SECP256K1, Some(merkle_root)).to_keypair();
     let key_sighash = SighashCache::new(reveal)
         .taproot_key_spend_signature_hash(
@@ -67,7 +72,6 @@ pub(crate) fn assert_reveal_requires_script_path(
             .is_err(),
         "reveal signer can bypass the payload script through a key-path spend"
     );
-    assert_eq!(control_block.internal_key, *UNSPENDABLE_PUBLIC_KEY);
 }
 
 /// Returns [`Arc`] of [`EnvelopeDataOps`] for testing
