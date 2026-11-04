@@ -27,6 +27,7 @@ use bitcoind_async_client::{
 };
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeeBumpingConfig;
+use strata_crypto::keys::constants::UNSPENDABLE_PUBLIC_KEY;
 use strata_csm_types::L1Payload;
 use strata_db_types::common::L1TxId;
 use strata_l1_envelope_fmt::{EnvelopeBuildError, EnvelopeScriptBuilder};
@@ -536,19 +537,14 @@ pub fn create_envelope_transactions(
     let tag_script =
         ParseConfig::new(env_config.magic_bytes).encode_script_buf(&payload.tag().as_ref())?;
 
-    // Create spend info for tapscript
+    // Disable key-path spending so spending the output reveals the payload script.
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())?
-        .finalize(SECP256K1, public_key)
+        .finalize(SECP256K1, *UNSPENDABLE_PUBLIC_KEY)
         .map_err(|_| EnvelopeError::TaprootFinalize)?;
 
     // Create reveal address
-    let reveal_address = Address::p2tr(
-        SECP256K1,
-        public_key,
-        taproot_spend_info.merkle_root(),
-        env_config.network,
-    );
+    let reveal_address = Address::p2tr_tweaked(taproot_spend_info.output_key(), env_config.network);
 
     // Calculate commit value
     let commit_value = calculate_commit_output_value(
@@ -1183,7 +1179,7 @@ mod tests {
     use super::*;
     use crate::{
         test_utils::{test_context::get_writer_context, TestBitcoinClient},
-        writer::builder::EnvelopeError,
+        writer::{builder::EnvelopeError, test_utils::assert_reveal_requires_script_path},
     };
 
     fn get_mock_data() -> (
@@ -2156,16 +2152,23 @@ mod tests {
         let mut unsigned =
             super::create_envelope_transactions(&env_config, &payload, utxos.to_vec()).unwrap();
 
+        let signer = UntweakedKeypair::from_seckey_slice(SECP256K1, &[0x01; 32]).unwrap();
+        let signature = SECP256K1.sign_schnorr(&Message::from_digest(unsigned.sighash.0), &signer);
         super::attach_reveal_signature(
             &mut unsigned.reveal_tx,
             &unsigned.reveal_script,
             &unsigned.taproot_spend_info,
-            &[0x11; SCHNORR_SIGNATURE_SIZE],
+            signature.as_ref(),
         )
         .unwrap();
 
         let witness = &unsigned.reveal_tx.input[0].witness;
         assert_eq!(witness.len(), 3);
         assert_eq!(witness.iter().next().unwrap().len(), SCHNORR_SIGNATURE_SIZE);
+        assert_reveal_requires_script_path(
+            &unsigned.reveal_tx,
+            &unsigned.commit_tx.output[0],
+            &signer,
+        );
     }
 }

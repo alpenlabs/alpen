@@ -20,6 +20,7 @@ use bitcoin::{
 };
 use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 use strata_config::btcio::FeeBumpingConfig;
+use strata_crypto::keys::constants::UNSPENDABLE_PUBLIC_KEY;
 use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
 use strata_l1_txfmt::MagicBytes;
 
@@ -103,9 +104,10 @@ fn build_reveal_artifacts(
             .add_envelopes([chunk])?
             .build_without_min_check()?;
 
+        // Disable key-path spending so spending the output reveals the payload script.
         let spend_info = TaprootBuilder::new()
             .add_leaf(0, reveal_script.clone())?
-            .finalize(SECP256K1, sequencer_xonly)
+            .finalize(SECP256K1, *UNSPENDABLE_PUBLIC_KEY)
             .map_err(|_| EnvelopeError::TaprootFinalize)?;
 
         // A reveal has one sequencer-address output plus its tapscript spend.
@@ -324,6 +326,7 @@ mod tests {
         writer::{
             builder::{signed_commit_vsize, BITCOIN_DUST_LIMIT},
             chunked_envelope::commit_op_return::COMMIT_OP_RETURN_PAYLOAD_LEN,
+            test_utils::assert_reveal_requires_script_path,
         },
     };
 
@@ -462,6 +465,7 @@ mod tests {
                 config.reveal_amount + headroom
             );
             assert_eq!(initial_fee, base_fee);
+            assert_reveal_requires_script_path(reveal, commit_output, &kp);
         }
     }
 
