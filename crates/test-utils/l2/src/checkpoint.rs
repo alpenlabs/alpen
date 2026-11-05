@@ -1,4 +1,4 @@
-use k256::schnorr::SigningKey;
+use k256::{elliptic_curve::Generate, schnorr::SigningKey};
 use rand::{thread_rng, Rng};
 use ssz::Encode;
 use strata_asm_checkpoint_types::{
@@ -46,10 +46,10 @@ impl CheckpointTestHarness {
         let genesis_ol_blkid = ArbitraryGenerator::new().generate();
         let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
 
-        let sequencer_key = SigningKey::random(&mut rng);
+        let sequencer_key = SigningKey::generate();
         let sequencer_secret_key = sequencer_key.to_bytes().into();
         let sequencer_pubkey = sequencer_key.verifying_key().to_bytes().to_vec();
-        let checkpoint_predicate = SigningKey::random(&mut rng);
+        let checkpoint_predicate = SigningKey::generate();
 
         let genesis_tip = CheckpointTip::new(0, genesis_l1_height, genesis_blk);
         Self {
@@ -67,13 +67,12 @@ impl CheckpointTestHarness {
     /// provided genesis values. This ensures the harness's `verified_tip` matches
     /// the live ASM's checkpoint state when used in integration tests.
     pub fn new_with_genesis(genesis_l1_height: u32, genesis_ol_blkid: OLBlockId) -> Self {
-        let mut rng = thread_rng();
         let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
 
-        let sequencer_key = SigningKey::random(&mut rng);
+        let sequencer_key = SigningKey::generate();
         let sequencer_secret_key = sequencer_key.to_bytes().into();
         let sequencer_pubkey = sequencer_key.verifying_key().to_bytes().to_vec();
-        let checkpoint_predicate = SigningKey::random(&mut rng);
+        let checkpoint_predicate = SigningKey::generate();
 
         let genesis_tip = CheckpointTip::new(0, genesis_l1_height, genesis_blk);
         Self {
