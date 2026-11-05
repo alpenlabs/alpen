@@ -8,7 +8,6 @@ use strata_asm_checkpoint_types::{
 use strata_asm_common::{
     AsmHistoryAccumulatorState, AuxData, VerifiableManifestHash, VerifiedAuxData,
 };
-use strata_asm_proto_checkpoint_txs::EnvelopeCheckpoint;
 use strata_crypto::hash;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_merkle::{CompactMmr64, Mmr, Sha256Hasher};
@@ -318,18 +317,6 @@ impl CheckpointTestHarness {
             .to_vec();
 
         CheckpointPayload::new(new_tip, sidecar, proof).unwrap()
-    }
-
-    /// Wraps a checkpoint payload into an [`EnvelopeCheckpoint`] with the sequencer's pubkey.
-    ///
-    /// This simulates the extraction that would happen on the ASM side when parsing
-    /// an SPS-51 envelope transaction where the sequencer's pubkey is used as the
-    /// taproot key.
-    pub fn wrap_in_envelope(&self, payload: CheckpointPayload) -> EnvelopeCheckpoint {
-        EnvelopeCheckpoint {
-            payload,
-            envelope_pubkey: self.sequencer_pubkey.clone(),
-        }
     }
 }
 
