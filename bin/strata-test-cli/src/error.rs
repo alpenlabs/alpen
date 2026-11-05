@@ -37,6 +37,12 @@ pub(crate) enum Error {
     #[error("transaction builder: taproot finalization failed")]
     TaprootFinalization,
 
+    #[error("PSBT signing failed: {0}")]
+    PsbtSigning(String),
+
+    #[error("PSBT finalization failed")]
+    PsbtFinalization,
+
     #[error("Invalid hex string: {0}")]
     InvalidHex(String),
 

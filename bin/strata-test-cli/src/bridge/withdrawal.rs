@@ -16,7 +16,7 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 use super::types::BitcoinDConfig;
 use crate::{
     constants::MAGIC_BYTES,
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+    taproot::{new_bitcoind_client, sign_and_finalize_psbt, sync_wallet, taproot_wallet},
 };
 
 /// Creates a withdrawal fulfillment transaction (CLI wrapper)
@@ -94,9 +94,7 @@ fn create_withdrawal_fulfillment_inner(
     };
 
     // Sign the PSBT
-    wallet
-        .sign(&mut psbt, Default::default())
-        .context("signing failed")?;
+    sign_and_finalize_psbt(&wallet, &mut psbt).context("signing failed")?;
 
     let tx = psbt.extract_tx().context("transaction extraction failed")?;
 

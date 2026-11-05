@@ -1,18 +1,18 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use bdk_bitcoind_rpc::{
     bitcoincore_rpc::{Auth, Client},
-    Emitter,
+    Emitter, NO_EXPECTED_MEMPOOL_TXS,
 };
 use bdk_wallet::{
-    bitcoin::{key::Parity, Address, AddressType, PublicKey, XOnlyPublicKey},
+    bitcoin::{bip32::Xpriv, key::Parity, Address, AddressType, Psbt, PublicKey, XOnlyPublicKey},
     miniscript::ToPublicKey,
-    KeychainKind, Wallet,
+    KeychainKind, SignOptions, Wallet,
 };
 use musig2::KeyAggContext;
 
 use crate::{
-    constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK},
+    constants::{CHANGE_DESCRIPTOR, DESCRIPTOR, NETWORK, XPRIV},
     error::Error,
     parse::{parse_pk, parse_xonly_pk},
 };
@@ -55,7 +55,7 @@ pub(crate) fn taproot_wallet() -> Result<Wallet, Error> {
 /// This function should be only used with Regtest.
 pub(crate) fn sync_wallet(wallet: &mut Wallet, rpc_client: &Client) -> Result<(), Error> {
     let wallet_tip = wallet.latest_checkpoint();
-    let mut emitter = Emitter::new(rpc_client, wallet_tip, 0);
+    let mut emitter = Emitter::new(rpc_client, wallet_tip, 0, NO_EXPECTED_MEMPOOL_TXS);
     while let Some(block) = emitter.next_block().expect("valid block") {
         let height = block.block_height();
         let connected_to = block.connected_to();
@@ -63,6 +63,25 @@ pub(crate) fn sync_wallet(wallet: &mut Wallet, rpc_client: &Client) -> Result<()
             .apply_block_connected_to(&block.block, height, connected_to)
             .map_err(|_| Error::BitcoinD)?
     }
+    Ok(())
+}
+
+/// Signs the [`taproot_wallet`] inputs of `psbt` and finalizes it.
+///
+/// `bdk_wallet` no longer acts as a key store, so this signs with [`XPRIV`], the master key
+/// behind [`DESCRIPTOR`] and [`CHANGE_DESCRIPTOR`], and uses the wallet only to finalize.
+pub(crate) fn sign_and_finalize_psbt(wallet: &Wallet, psbt: &mut Psbt) -> Result<(), Error> {
+    let xpriv = Xpriv::from_str(XPRIV).map_err(|_| Error::InvalidXpriv)?;
+    psbt.sign(&xpriv, wallet.secp_ctx())
+        .map_err(|(_, errors)| Error::PsbtSigning(format!("{errors:?}")))?;
+
+    let finalized = wallet
+        .finalize_psbt(psbt, SignOptions::default())
+        .map_err(|e| Error::PsbtSigning(e.to_string()))?;
+    if !finalized {
+        return Err(Error::PsbtFinalization);
+    }
+
     Ok(())
 }
 
@@ -157,7 +176,13 @@ pub(crate) fn extract_p2tr_pubkey_inner(address: String) -> Result<String, Error
 mod tests {
     use std::str::FromStr;
 
-    use bdk_wallet::KeychainKind;
+    use bdk_wallet::{
+        bitcoin::{
+            absolute::LockTime, hashes::Hash, transaction::Version, Amount, FeeRate, OutPoint,
+            Transaction, TxIn, TxOut, Txid,
+        },
+        KeychainKind,
+    };
     use shrex_macros::hex;
 
     use super::*;
@@ -193,6 +218,45 @@ mod tests {
             .to_string();
         let expected = "bcrt1pz449kexzydh2kaypatup5ultru3ej284t6eguhnkn6wkhswt0l7q3a7j76";
         assert_eq!(change_address, expected);
+    }
+
+    #[test]
+    fn sign_and_finalize_psbt_key_spends_wallet_inputs() {
+        let mut wallet = super::taproot_wallet().unwrap();
+        let funding_script = wallet
+            .reveal_next_address(KeychainKind::External)
+            .script_pubkey();
+        let funding_tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::all_zeros(), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(100_000),
+                script_pubkey: funding_script,
+            }],
+        };
+        wallet.apply_unconfirmed_txs([(funding_tx, 0)]);
+
+        let recipient = wallet
+            .peek_address(KeychainKind::External, 1)
+            .script_pubkey();
+        let mut psbt = {
+            let mut builder = wallet.build_tx();
+            builder.add_recipient(recipient, Amount::from_sat(50_000));
+            builder.fee_rate(FeeRate::from_sat_per_vb_u32(2));
+            builder.finish().unwrap()
+        };
+
+        sign_and_finalize_psbt(&wallet, &mut psbt).unwrap();
+
+        let tx = psbt.extract_tx().unwrap();
+        assert_eq!(tx.input.len(), 1);
+        // A BIP 341 key-path spend with the default sighash carries one 64-byte signature.
+        assert_eq!(tx.input[0].witness.len(), 1);
+        assert_eq!(tx.input[0].witness.nth(0).unwrap().len(), 64);
     }
 
     #[test]
