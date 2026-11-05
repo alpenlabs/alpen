@@ -6,13 +6,16 @@ use strata_asm_checkpoint_types::{
 };
 use strata_asm_common::{TxInputRef, VerifiedAuxData};
 use strata_asm_proto_checkpoint::{
-    CheckpointEnvelopeError, CheckpointState, authenticate_checkpoint_tx,
+    CheckpointEnvelopeError, CheckpointState, authenticate_checkpoint_tx, verify_envelope_key,
 };
-use strata_asm_proto_checkpoint_txs::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
+use strata_asm_proto_checkpoint_txs::{
+    CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, decode_checkpoint_payload,
+    parse_checkpoint_envelope,
+};
 use strata_checkpoint_verification::{CheckpointL1Range, verify_progression};
-use strata_identifiers::RBuf32;
+use strata_identifiers::{Buf32, RBuf32};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::errors::CsmWorkerResult;
 
@@ -72,15 +75,31 @@ pub(crate) fn extract_matching_checkpoint(
             &ctx.verified_aux_data,
         ) {
             Ok(payload) => payload,
-            // ASM requests the spent output of every sequencer-keyed envelope, so
-            // the stored aux data for this block should carry it.
-            Err(e @ CheckpointEnvelopeError::MissingSpentOutput { .. }) => {
-                warn!(
-                    txid = %tx.compute_txid(),
-                    error = %e,
-                    "checkpoint envelope spent output missing from ASM aux data; skipping"
-                );
-                continue;
+            // The ASM requests the spent output of every sequencer-keyed envelope, so aux data
+            // it stored with that rule carries it. Aux data stored by an earlier ASM binary,
+            // which a lagging CSM replays after an upgrade, predates the request: that ASM
+            // accepted the checkpoint without the spent-output check, so match it the same way.
+            // Progression and the proof are still verified below.
+            Err(CheckpointEnvelopeError::MissingSpentOutput { outpoint, .. }) => {
+                match match_pre_upgrade_checkpoint(ctx.checkpoint_state.sequencer_key(), &tx_input)
+                {
+                    Ok(payload) => {
+                        debug!(
+                            txid = %tx.compute_txid(),
+                            %outpoint,
+                            "spent output not in ASM aux data stored before the spent-output request; matching without it"
+                        );
+                        payload
+                    }
+                    Err(e) => {
+                        debug!(
+                            txid = %tx.compute_txid(),
+                            error = %e,
+                            "checkpoint envelope not authenticated; skipping"
+                        );
+                        continue;
+                    }
+                }
             }
             Err(e) => {
                 // Anyone can post an envelope, so a rejected one is not actionable.
@@ -162,6 +181,22 @@ fn verify_checkpoint(
     };
     checkpoint_state.advance(payload, asm_manifests_hash)?;
     Ok(())
+}
+
+/// Parses a sequencer checkpoint the way the ASM did before it requested spent outputs: the
+/// envelope must parse and carry the sequencer key, and its spent output is not checked.
+///
+/// Only for blocks whose stored ASM aux data predates the spent-output request; see
+/// [`extract_matching_checkpoint`].
+fn match_pre_upgrade_checkpoint(
+    sequencer_key: &Buf32,
+    tx: &TxInputRef<'_>,
+) -> Result<CheckpointPayload, CheckpointEnvelopeError> {
+    let spend = parse_checkpoint_envelope(tx)?;
+    verify_envelope_key(sequencer_key, &spend)?;
+    Ok(decode_checkpoint_payload(
+        spend.unverified_leaf().payload(),
+    )?)
 }
 
 #[cfg(test)]
@@ -374,6 +409,32 @@ mod tests {
             result.wtxid,
             RBuf32::from(tx.compute_wtxid().to_byte_array())
         );
+    }
+
+    /// A lagging CSM replays blocks the ASM processed before it requested spent outputs, so
+    /// their aux data lacks the funding tx. The checkpoint that ASM accepted must still match.
+    #[test]
+    fn matches_checkpoint_from_aux_stored_before_spent_output_request() {
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
+        let expected = *payload.new_tip();
+        let funding = funding_tx(p2tr_script(), 0);
+        let tx = legit_envelope_tx(&harness, &payload, &funding);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![tx.clone()]),
+            aux_with_funding(&harness, &expected, &[]),
+            harness_checkpoint_state(&harness),
+        );
+
+        let result = extract_matching_checkpoint(
+            &mut ctx,
+            TEST_MAGIC_BYTES,
+            &expected,
+            current_l1_height_for(&expected),
+        )
+        .expect("checkpoint accepted by the pre-upgrade ASM should match");
+
+        assert_eq!(result.txid, RBuf32::from(tx.compute_txid().to_byte_array()));
     }
 
     /// If no envelope matches the expected tip on (epoch, l2_commitment),
