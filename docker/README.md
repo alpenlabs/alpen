@@ -87,5 +87,6 @@ network's trusted catalog. The node loads the file before opening its database.
 ASM v0.4.0 also changes `asm-params.json`: admin `signers` are P2WPKH
 addresses on the anchor's Bitcoin network. The bridge address is named
 `safe_harbor_address`, and its admin confirmation depth is named
-`safe_harbor_address_update`. Datatool emits the new format; existing parameter
-files must be converted separately.
+`safe_harbor_address_update`. Since ASM v0.5.0, `safe_harbor_address` is a
+P2TR address on the anchor's network, not a descriptor. Datatool emits the new
+format; existing parameter files must be converted separately.
