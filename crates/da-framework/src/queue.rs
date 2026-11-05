@@ -1,7 +1,7 @@
 //! Queue DA pattern.
 
 use crate::{
-    BuilderError, Codec, CodecResult, CompoundMember, DaBuilder, DaWrite, Decoder, Encoder,
+    BuilderError, Codec, CodecResult, CompoundMember, DaBuilder, DaError, DaWrite, Decoder, Encoder,
 };
 
 // TODO(STR-2148): make this generic over the queue type
@@ -37,6 +37,10 @@ pub trait DaQueueTarget {
     fn cur_next(&self) -> IncrTy; // TODO(STR-2148): make a `IdxTy`
 
     /// Increments the index of the front of the queue.
+    ///
+    /// [`DaQueue::apply`] only calls this with an `incr` of at most the number
+    /// of entries the queue held before the write, so the front never passes
+    /// the next index.
     fn increment_front(&mut self, incr: IncrTy);
 
     /// Gets the entry at the given index, if it exists and hasn't been removed.
@@ -80,7 +84,7 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
 
     type Context = ();
 
-    type Error = crate::DaError;
+    type Error = DaError;
 
     fn is_default(&self) -> bool {
         self.tail.is_empty() && self.incr_front == 0
@@ -91,6 +95,30 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
         target: &mut Self::Target,
         _context: &Self::Context,
     ) -> Result<(), Self::Error> {
+        let front = target.cur_front() as u64;
+        let next = target.cur_next() as u64;
+        if front > next {
+            return Err(DaError::QueueFrontPastNext { front, next });
+        }
+
+        // A decoded write carries whatever increment was on the wire. The
+        // builder never counts an entry appended in the same write (those are
+        // dropped from the tail instead), so a canonical write's increment is
+        // at most the entries the queue already held; bound it the same way.
+        // The front may reach the next index (an empty queue) but not pass it.
+        let incr = self.incr_front as u64;
+        let len = next - front;
+        if incr > len {
+            return Err(DaError::QueueFrontOverrun { incr, len });
+        }
+
+        // Indices are `IncrTy` for now (STR-2148); refuse a tail they cannot
+        // hold rather than let the target's counters wrap.
+        let added = self.tail.len() as u64;
+        if next + added > IncrTy::MAX as u64 {
+            return Err(DaError::QueueIndexOverflow { next, added });
+        }
+
         target.insert_entries(&self.tail);
         if self.incr_front > 0 {
             target.increment_front(self.incr_front);
@@ -239,22 +267,16 @@ impl<Q: DaQueueTarget> DaQueueBuilder<Q> {
         self.new_entries.push(f());
         true
     }
-
-    /// Returns the count of new entries we added that would be consumed.
-    fn consumed_new_entries(&self) -> usize {
-        let new_front = self.new_front_pos as i64;
-        let orig_next = self.original_next_pos as i64;
-        if new_front <= orig_next {
-            return 0;
-        }
-        (new_front - orig_next) as usize
-    }
 }
 
 impl<Q: DaQueueTarget> DaBuilder<Q> for DaQueueBuilder<Q> {
     type Write = DaQueue<Q>;
 
     fn from_source(t: Q) -> Self {
+        debug_assert!(
+            t.cur_front() <= t.cur_next(),
+            "da/queue: source front is past its next index"
+        );
         Self {
             original_front_pos: t.cur_front() as IdxTy,
             new_front_pos: t.cur_front() as IdxTy,
@@ -264,11 +286,15 @@ impl<Q: DaQueueTarget> DaBuilder<Q> for DaQueueBuilder<Q> {
     }
 
     fn into_write(mut self) -> Result<Self::Write, BuilderError> {
-        // Remove things from this that are redundant.
-        self.new_entries.drain(..self.consumed_new_entries());
-
+        // Entries appended and consumed in the same write never reach the
+        // queue: drop them from the tail and leave them out of the increment,
+        // which then counts only the entries the queue already held. Counting
+        // them would push the front past the next index on apply.
+        let consumed_new = self.new_front_pos.saturating_sub(self.original_next_pos);
+        self.new_entries.drain(..consumed_new);
         let tail = self.new_entries;
-        let incr_front_idx = self.new_front_pos - self.original_front_pos;
+        let incr_front_idx =
+            (self.new_front_pos - self.original_front_pos).saturating_sub(consumed_new);
 
         // Convert from IdxTy (usize) to IncrTy (u16)
         // This should always succeed because add_front_incr enforces
@@ -825,6 +851,158 @@ mod tests {
     }
 
     #[test]
+    fn test_queue_apply_rejects_front_overrun() {
+        // A write off the wire is not bounded by the builder, so apply has to
+        // bound the increment itself.
+        let scenarios = vec![
+            // (tail, incr_front, target)
+            (
+                vec![],
+                1,
+                MockQueue {
+                    front: 0,
+                    next: 0,
+                    entries: vec![],
+                },
+            ),
+            (
+                vec![],
+                4,
+                MockQueue {
+                    front: 10,
+                    next: 13,
+                    entries: vec![1, 2, 3],
+                },
+            ),
+            // The tail does not count: the builder never consumes an entry
+            // it appends in the same write.
+            (
+                vec![7, 8],
+                4,
+                MockQueue {
+                    front: 0,
+                    next: 3,
+                    entries: vec![1, 2, 3],
+                },
+            ),
+            (
+                vec![],
+                HEAD_WORD_INCR_MASK,
+                MockQueue {
+                    front: 5,
+                    next: 7,
+                    entries: vec![1, 2],
+                },
+            ),
+        ];
+
+        for (tail, incr_front, target) in scenarios {
+            let write = DaQueue::<MockQueue> { tail, incr_front };
+            let buf = encode_set_cm_to_vec(&write).expect("test: encode");
+            let decoded: DaQueue<MockQueue> = decode_set_cm_from_vec(&buf).expect("test: decode");
+
+            let mut applied = target.clone();
+            let err = decoded
+                .apply(&mut applied, &())
+                .expect_err("test: apply must reject the overrun");
+            assert!(
+                matches!(err, DaError::QueueFrontOverrun { .. }),
+                "unexpected error {err:?}"
+            );
+            assert_eq!(
+                applied, target,
+                "a rejected write must not touch the target"
+            );
+        }
+
+        // Consuming exactly what the queue held, with a tail, is fine.
+        let write = DaQueue::<MockQueue> {
+            tail: vec![7, 8],
+            incr_front: 3,
+        };
+        let mut target = MockQueue {
+            front: 0,
+            next: 3,
+            entries: vec![1, 2, 3],
+        };
+        write.apply(&mut target, &()).expect("test: apply");
+        assert_eq!(target.front, 3);
+        assert_eq!(target.next, 5);
+        assert_eq!(target.entries, vec![1, 2, 3, 7, 8]);
+    }
+
+    #[test]
+    fn test_queue_apply_rejects_corrupt_target_and_index_overflow() {
+        // A target whose front is already past its next index is not extended.
+        let corrupt = MockQueue {
+            front: 10,
+            next: 5,
+            entries: vec![],
+        };
+        let write = DaQueue::<MockQueue> {
+            tail: vec![7, 8],
+            incr_front: 0,
+        };
+        let mut applied = corrupt.clone();
+        assert!(matches!(
+            write.apply(&mut applied, &()),
+            Err(DaError::QueueFrontPastNext { front: 10, next: 5 })
+        ));
+        assert_eq!(applied, corrupt);
+
+        // A tail the index type cannot hold is refused before the counters wrap.
+        let near_max = MockQueue {
+            front: IncrTy::MAX - 5,
+            next: IncrTy::MAX,
+            entries: vec![1, 2, 3, 4, 5],
+        };
+        let write = DaQueue::<MockQueue> {
+            tail: vec![9],
+            incr_front: 5,
+        };
+        let mut applied = near_max.clone();
+        assert!(matches!(
+            write.apply(&mut applied, &()),
+            Err(DaError::QueueIndexOverflow { added: 1, .. })
+        ));
+        assert_eq!(applied, near_max);
+
+        // Without the tail the same increment empties the queue at the limit.
+        let write = DaQueue::<MockQueue> {
+            tail: vec![],
+            incr_front: 5,
+        };
+        write.apply(&mut applied, &()).expect("test: apply");
+        assert_eq!(applied.front, IncrTy::MAX);
+        assert_eq!(applied.next, IncrTy::MAX);
+    }
+
+    #[test]
+    fn test_queue_builder_consumed_new_entries_into_write_applies() {
+        // Entries appended and consumed in the same write are dropped from the
+        // tail, so the increment must not count them either.
+        let source = MockQueue {
+            front: 0,
+            next: 3,
+            entries: vec![1, 2, 3],
+        };
+        let mut builder = DaQueueBuilder::from_source(source.clone());
+        assert!(builder.append_entry(100));
+        assert!(builder.append_entry(200));
+        assert!(builder.add_front_incr(4));
+
+        let write = builder.into_write().expect("test: into_write");
+        assert_eq!(write.incr_front, 3);
+        assert_eq!(write.tail, vec![200]);
+
+        let mut target = source;
+        write.apply(&mut target, &()).expect("test: apply");
+        assert_eq!(target.front, 3);
+        assert_eq!(target.next, 4);
+        assert_eq!(target.entries, vec![1, 2, 3, 200]);
+    }
+
+    #[test]
     fn test_queue_builder_full_roundtrip() {
         let mut queue = MockQueue {
             front: 5,
@@ -987,7 +1165,34 @@ mod tests {
             write.apply(&mut applied_original, &()).expect("test: apply original write");
             decoded.apply(&mut applied_decoded, &()).expect("test: apply decoded write");
 
+            prop_assert!(applied_original.front <= applied_original.next);
             prop_assert_eq!(applied_decoded, applied_original);
+        }
+
+        /// Any decoded write is accepted iff its increment fits the entries
+        /// the queue already holds, and an accepted write never leaves the
+        /// front past the next index.
+        #[test]
+        fn proptest_queue_apply_bounds_the_front_increment(
+            base in base_queue_strategy(),
+            tail in tail_strategy(),
+            incr_front in 0u16..=HEAD_WORD_INCR_MASK,
+        ) {
+            let write = DaQueue::<MockQueue> { tail: tail.clone(), incr_front };
+            let encoded = encode_set_cm_to_vec(&write).expect("test: encode");
+            let decoded: DaQueue<MockQueue> = decode_set_cm_from_vec(&encoded).expect("test: decode");
+
+            let mut applied = base.clone();
+            let result = decoded.apply(&mut applied, &());
+            let fits = usize::from(incr_front) <= base.entries.len();
+            prop_assert_eq!(result.is_ok(), fits);
+            if fits {
+                prop_assert!(applied.front <= applied.next);
+                prop_assert_eq!(applied.front, base.front + incr_front);
+                prop_assert_eq!(applied.next, base.next + tail.len() as IncrTy);
+            } else {
+                prop_assert_eq!(applied, base);
+            }
         }
 
         #[test]
@@ -1008,7 +1213,7 @@ mod tests {
 
             let write = builder.into_write().expect("test: builder into_write");
 
-            prop_assert_eq!(write.incr_front, consumed_total as IncrTy);
+            prop_assert_eq!(write.incr_front, consumed_total.min(base_len) as IncrTy);
             prop_assert_eq!(write.tail, appended[consumed_new..].to_vec());
         }
     }
