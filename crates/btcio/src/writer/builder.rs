@@ -27,6 +27,7 @@ use bitcoind_async_client::{
 };
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeeBumpingConfig;
+use strata_crypto::keys::constants::UNSPENDABLE_PUBLIC_KEY;
 use strata_csm_types::L1Payload;
 use strata_db_types::common::L1TxId;
 use strata_l1_envelope_fmt::{EnvelopeBuildError, EnvelopeScriptBuilder};
@@ -516,6 +517,17 @@ pub(crate) fn rebind_single_reveal(envelope: &mut EnvelopeData) -> Result<(), En
     Ok(())
 }
 
+/// Builds single-leaf spend information that requires revealing the payload script.
+pub(crate) fn envelope_spend_info(
+    reveal_script: &ScriptBuf,
+) -> Result<TaprootSpendInfo, EnvelopeError> {
+    // Disable key-path spending so the reveal signer cannot bypass the payload script.
+    TaprootBuilder::new()
+        .add_leaf(0, reveal_script.clone())?
+        .finalize(SECP256K1, *UNSPENDABLE_PUBLIC_KEY)
+        .map_err(|_| EnvelopeError::TaprootFinalize)
+}
+
 /// Builds unsigned envelope transactions (commit + reveal) and computes the sighash.
 ///
 /// Returns an [`EnvelopeData`] containing the transactions and intermediate data
@@ -536,19 +548,10 @@ pub fn create_envelope_transactions(
     let tag_script =
         ParseConfig::new(env_config.magic_bytes).encode_script_buf(&payload.tag().as_ref())?;
 
-    // Create spend info for tapscript
-    let taproot_spend_info = TaprootBuilder::new()
-        .add_leaf(0, reveal_script.clone())?
-        .finalize(SECP256K1, public_key)
-        .map_err(|_| EnvelopeError::TaprootFinalize)?;
+    let taproot_spend_info = envelope_spend_info(&reveal_script)?;
 
     // Create reveal address
-    let reveal_address = Address::p2tr(
-        SECP256K1,
-        public_key,
-        taproot_spend_info.merkle_root(),
-        env_config.network,
-    );
+    let reveal_address = Address::p2tr_tweaked(taproot_spend_info.output_key(), env_config.network);
 
     // Calculate commit value
     let commit_value = calculate_commit_output_value(
@@ -1169,13 +1172,8 @@ mod tests {
     };
 
     use bitcoin::{
-        absolute::LockTime,
-        script,
-        secp256k1::{constants::SCHNORR_SIGNATURE_SIZE, Secp256k1, SecretKey},
-        taproot::ControlBlock,
-        transaction::Version,
-        Address, Network, OutPoint, PubkeyHash, ScriptBuf, ScriptHash, Sequence, Transaction, TxIn,
-        TxOut, Witness,
+        absolute::LockTime, script, taproot::ControlBlock, transaction::Version, Address, Network,
+        OutPoint, PubkeyHash, ScriptBuf, ScriptHash, Sequence, Transaction, TxIn, TxOut, Witness,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
     use strata_l1_txfmt::{MagicBytes, TagData, TagDataRef};
@@ -1183,7 +1181,7 @@ mod tests {
     use super::*;
     use crate::{
         test_utils::{test_context::get_writer_context, TestBitcoinClient},
-        writer::builder::EnvelopeError,
+        writer::{builder::EnvelopeError, test_utils::assert_reveal_requires_script_path},
     };
 
     fn get_mock_data() -> (
@@ -1259,11 +1257,12 @@ mod tests {
         L1Payload::new(vec![vec![0u8; 150]], tag).unwrap()
     }
 
+    fn test_envelope_keypair() -> UntweakedKeypair {
+        UntweakedKeypair::from_seckey_slice(SECP256K1, &[0x01; 32]).unwrap()
+    }
+
     fn test_envelope_pubkey() -> XOnlyPublicKey {
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
-        let (pubkey, _) = sk.x_only_public_key(&secp);
-        pubkey
+        test_envelope_keypair().x_only_public_key().0
     }
 
     /// Rewrites a mock UTXO as a P2TR key-path output.
@@ -2149,23 +2148,30 @@ mod tests {
     }
 
     #[test]
-    fn test_attach_reveal_signature_populates_witness() {
+    fn test_envelope_reveal_requires_script_path() {
         let (ctx, _, _, utxos) = get_mock_data();
         let payload = test_payload();
         let env_config = test_envelope_config(&ctx, Some(test_envelope_pubkey()));
         let mut unsigned =
             super::create_envelope_transactions(&env_config, &payload, utxos.to_vec()).unwrap();
 
+        let signer = test_envelope_keypair();
+        let signature = SECP256K1.sign_schnorr(&Message::from_digest(unsigned.sighash.0), &signer);
         super::attach_reveal_signature(
             &mut unsigned.reveal_tx,
             &unsigned.reveal_script,
             &unsigned.taproot_spend_info,
-            &[0x11; SCHNORR_SIGNATURE_SIZE],
+            signature.as_ref(),
         )
         .unwrap();
 
         let witness = &unsigned.reveal_tx.input[0].witness;
         assert_eq!(witness.len(), 3);
         assert_eq!(witness.iter().next().unwrap().len(), SCHNORR_SIGNATURE_SIZE);
+        assert_reveal_requires_script_path(
+            &unsigned.reveal_tx,
+            &unsigned.commit_tx.output[0],
+            &signer,
+        );
     }
 }

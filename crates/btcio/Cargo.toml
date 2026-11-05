@@ -10,6 +10,7 @@ workspace = true
 strata-btc-types.workspace = true
 strata-common.workspace = true
 strata-config.workspace = true
+strata-crypto.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true

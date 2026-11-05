@@ -8915,6 +8915,7 @@ dependencies = [
  "strata-btc-types",
  "strata-common",
  "strata-config",
+ "strata-crypto",
  "strata-csm-types",
  "strata-db-store-sled",
  "strata-db-types",
