@@ -188,11 +188,37 @@ pub trait TaskStore: Send + Sync + 'static {
     fn insert(&self, record: TaskRecord) -> ProverResult<()>;
     fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()>;
     fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()>;
+    /// Parks the task for a later rescan: writes `status` (a
+    /// [`TaskStatus::TransientFailure`] or [`TaskStatus::Blocked`]) together
+    /// with the `retry_after` the scanner selects on.
+    ///
+    /// A rescan status must never land without its timestamp, or the scanner
+    /// never selects the record and the task is stranded. The default writes
+    /// the timestamp first, so a failure between the two leaves the record in
+    /// its previous status: `Proving`, which startup recovery re-spawns, or
+    /// (on the path that retries a failed receipt hook before any `Proving`
+    /// write) the old rescan status with its old timestamp, which the scanner
+    /// re-spawns. Backends that can write the record in one operation should
+    /// override this so neither write can land without the other.
+    fn schedule_rescan(
+        &self,
+        key: &[u8],
+        status: TaskStatus,
+        retry_after_secs: u64,
+    ) -> ProverResult<()> {
+        self.set_retry_after(key, retry_after_secs)?;
+        self.update_status(key, status)
+    }
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()>;
     /// Drop any persisted strategy metadata (e.g. a remote `ProofId`) for the
     /// task, so the next attempt starts fresh instead of resuming a dead
     /// request. Used by the resubmit (`RetryFresh`) retry path.
     fn clear_metadata(&self, key: &[u8]) -> ProverResult<()>;
+    /// Every record the scanner should re-spawn now, as
+    /// [`TaskRecordData::is_due_for_rescan`](crate::TaskRecordData::is_due_for_rescan)
+    /// decides: a
+    /// [`TaskStatus::TransientFailure`] or [`TaskStatus::Blocked`] whose
+    /// `retry_after` is at or before `now_secs`, or missing.
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>>;
     /// Every record that was submitted but hasn't reached a terminal state —
     /// Pending or Proving. Used by startup recovery to re-spawn
@@ -216,6 +242,14 @@ impl<T: TaskStore + ?Sized> TaskStore for Arc<T> {
     }
     fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
         (**self).set_retry_after(key, when_secs)
+    }
+    fn schedule_rescan(
+        &self,
+        key: &[u8],
+        status: TaskStatus,
+        retry_after_secs: u64,
+    ) -> ProverResult<()> {
+        (**self).schedule_rescan(key, status, retry_after_secs)
     }
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
         (**self).set_metadata(key, data)

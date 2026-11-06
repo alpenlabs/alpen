@@ -92,6 +92,16 @@ impl TaskStore for VersionedTaskStore {
         self.inner.set_retry_after(&self.prefixed(key)?, when_secs)
     }
 
+    fn schedule_rescan(
+        &self,
+        key: &[u8],
+        status: TaskStatus,
+        retry_after_secs: u64,
+    ) -> ProverResult<()> {
+        self.inner
+            .schedule_rescan(&self.prefixed(key)?, status, retry_after_secs)
+    }
+
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
         self.inner.set_metadata(&self.prefixed(key)?, data)
     }
@@ -351,12 +361,15 @@ mod tests {
         assert_eq!(raw.count().unwrap(), 0);
     }
     mod recovery {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Mutex;
         use std::time::Duration;
 
         use async_trait::async_trait;
         use strata_paas::{
-            InMemoryReceiptStore, InputResolution, ProofSpec, Prover, ProverBuilder,
+            InMemoryReceiptStore, InputResolution, ProofSpec, Prover, ProverBuilder, RetryConfig,
         };
+        use tokio::sync::oneshot;
         use tokio::time::timeout;
         use zkaleido::{
             ProofType, PublicValues, ZkVmEnvSerde, ZkVmHost, ZkVmInputBuilder, ZkVmInputResult,
@@ -414,6 +427,141 @@ mod tests {
                     .receipt_store(InMemoryReceiptStore::new())
                     .native(host),
             )
+        }
+
+        /// A store whose `set_retry_after` fails once, as a transient database
+        /// error would, and that leaves `schedule_rescan` to the trait default.
+        struct FaultyRetryAfter {
+            inner: VersionedTaskStore,
+            fail_once: AtomicBool,
+            failed: Mutex<Option<oneshot::Sender<()>>>,
+        }
+
+        impl TaskStore for FaultyRetryAfter {
+            fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
+                self.inner.get(key)
+            }
+            fn insert(&self, record: TaskRecord) -> ProverResult<()> {
+                self.inner.insert(record)
+            }
+            fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
+                self.inner.update_status(key, status)
+            }
+            fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
+                if self.fail_once.swap(false, Ordering::SeqCst) {
+                    if let Some(tx) = self.failed.lock().unwrap().take() {
+                        let _ = tx.send(());
+                    }
+                    return Err(ProverError::Storage("injected retry_after failure".into()));
+                }
+                self.inner.set_retry_after(key, when_secs)
+            }
+            fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+                self.inner.set_metadata(key, data)
+            }
+            fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+                self.inner.clear_metadata(key)
+            }
+            fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
+                self.inner.list_retriable(now_secs)
+            }
+            fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
+                self.inner.list_unfinished()
+            }
+            fn count(&self) -> ProverResult<usize> {
+                self.inner.count()
+            }
+        }
+
+        /// Every input resolution fails with a storage error, which schedules
+        /// a resume-class retry.
+        struct FailingSpec;
+
+        #[async_trait]
+        impl ProofSpec for FailingSpec {
+            type Task = CheckpointProofTask;
+            type Program = TestProgram;
+
+            async fn resolve_input(
+                &self,
+                _task: &CheckpointProofTask,
+            ) -> ProverResult<InputResolution<u32>> {
+                Err(ProverError::Storage("injected read failure".into()))
+            }
+        }
+
+        fn failing_service(store: impl TaskStore) -> Arc<Prover<FailingSpec>> {
+            let host = NativeHost::new_with_random_key(|machine| {
+                let epoch: u32 = machine.read_serde();
+                machine.commit_serde(&epoch);
+            });
+            Arc::new(
+                ProverBuilder::new(FailingSpec)
+                    .task_store(store)
+                    // A backoff well past the test's lifetime, so the restart's
+                    // tick schedules the retry without also running it.
+                    .retry(RetryConfig {
+                        max_retries: 3,
+                        base_delay_secs: 60,
+                        max_delay_secs: 60,
+                        jitter_frac: 0.0,
+                        ..RetryConfig::default()
+                    })
+                    .native(host),
+            )
+        }
+
+        /// Zellic: a failed `retry_after` write after the `TransientFailure`
+        /// status landed left a record no scan selects. Now the retry is one
+        /// store write (or, through the default, the timestamp first), so the
+        /// record stays `Proving` and startup recovery schedules the retry.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_retry_after_write_does_not_strand_the_task() {
+            let (_, v1, _) = stores();
+            let (failed_tx, failed_rx) = oneshot::channel();
+            let store = Arc::new(FaultyRetryAfter {
+                inner: v1.clone(),
+                fail_once: AtomicBool::new(true),
+                failed: Mutex::new(Some(failed_tx)),
+            });
+            let task = task(5);
+            let key = task.to_key_bytes();
+
+            let first = failing_service(Arc::clone(&store));
+            let waiter = tokio::spawn({
+                let first = Arc::clone(&first);
+                async move { first.execute(task).await }
+            });
+            // The injected failure is the attempt's last store write: the
+            // Proving write came before resolve_input, and the default
+            // schedule_rescan stops at the failed timestamp write.
+            timeout(Duration::from_secs(5), failed_rx)
+                .await
+                .expect("the retry reaches the store")
+                .unwrap();
+
+            let record = v1.get(&key).unwrap().unwrap();
+            assert!(
+                matches!(record.status(), TaskStatus::Proving { .. }),
+                "the rescan status must not land without its timestamp: {:?}",
+                record.status()
+            );
+            assert_eq!(record.retry_after_secs(), None);
+            assert!(v1.list_retriable(u64::MAX).unwrap().is_empty());
+            assert_eq!(v1.list_unfinished().unwrap().len(), 1);
+            waiter.abort();
+
+            // A restart recovers the Proving record and schedules the retry,
+            // this time with both fields.
+            let second = failing_service(v1.clone());
+            second.tick().await;
+            let record = v1.get(&key).unwrap().unwrap();
+            match record.status() {
+                TaskStatus::TransientFailure { counts, .. } => assert_eq!(counts.retry, 1),
+                other => panic!("expected a scheduled retry, got {other:?}"),
+            }
+            assert!(record.retry_after_secs().is_some());
+            assert_eq!(v1.list_retriable(u64::MAX).unwrap().len(), 1);
         }
 
         #[tokio::test(flavor = "multi_thread")]

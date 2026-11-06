@@ -326,7 +326,10 @@ impl<H: ProofSpec> Prover<H> {
                                 return;
                             }
                         }
-                        let _ = self.task_store.update_status(&key, TaskStatus::Completed);
+                        Self::persist(
+                            "completed",
+                            self.task_store.update_status(&key, TaskStatus::Completed),
+                        );
                         info!("task completed (from checkpointed receipt)");
                         self.notify(&key, &task, &TaskStatus::Completed);
                         return;
@@ -356,9 +359,18 @@ impl<H: ProofSpec> Prover<H> {
             // after the overwrite, and `recover` needs them to survive a crash.
             let counts = self.read_attempt_counts(&key);
 
-            let _ = self
+            // Without the Proving status on disk a record the scanner picked
+            // keeps its due rescan status, and the next tick would spawn a
+            // second attempt of the same task against this one. Give up this
+            // attempt instead: the scanner re-spawns a rescan record, and
+            // startup recovery a Pending one.
+            if let Err(e) = self
                 .task_store
-                .update_status(&key, TaskStatus::Proving { counts });
+                .update_status(&key, TaskStatus::Proving { counts })
+            {
+                error!(%e, "failed to persist Proving status; abandoning this attempt");
+                return;
+            }
 
             // 1. Resolve input: ready, blocked on a dependency, or rejected.
             let input = match self.spec.resolve_input(&task).await {
@@ -375,7 +387,10 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(InputResolution::Rejected { reason }) => {
                     error!(%reason, "input rejected");
                     let status = TaskStatus::PermanentFailure { error: reason };
-                    let _ = self.task_store.update_status(&key, status.clone());
+                    Self::persist(
+                        "permanent_failure",
+                        self.task_store.update_status(&key, status.clone()),
+                    );
                     self.notify(&key, &task, &status);
                     return;
                 }
@@ -397,7 +412,9 @@ impl<H: ProofSpec> Prover<H> {
             let store = self.task_store.clone();
             let persist_key = key.clone();
             let ctx = ProveContext::new(saved_metadata, move |data| {
-                let _ = store.set_metadata(&persist_key, data);
+                if let Err(e) = store.set_metadata(&persist_key, data) {
+                    error!(%e, key = ?persist_key, "failed to persist prove metadata");
+                }
             });
 
             let strategy = self.strategy.clone();
@@ -416,7 +433,10 @@ impl<H: ProofSpec> Prover<H> {
                     let status = TaskStatus::PermanentFailure {
                         error: e.to_string(),
                     };
-                    let _ = self.task_store.update_status(&key, status.clone());
+                    Self::persist(
+                        "permanent_failure",
+                        self.task_store.update_status(&key, status.clone()),
+                    );
                     self.notify(&key, &task, &status);
                     return;
                 }
@@ -443,7 +463,10 @@ impl<H: ProofSpec> Prover<H> {
             }
 
             // 5. Done
-            let _ = self.task_store.update_status(&key, TaskStatus::Completed);
+            Self::persist(
+                "completed",
+                self.task_store.update_status(&key, TaskStatus::Completed),
+            );
             info!("task completed");
             self.notify(&key, &task, &TaskStatus::Completed);
         }
@@ -489,7 +512,10 @@ impl<H: ProofSpec> Prover<H> {
                 let status = TaskStatus::PermanentFailure {
                     error: format!("blocked dependency unresolved after {max} rechecks: {reason}"),
                 };
-                let _ = self.task_store.update_status(key, status.clone());
+                Self::persist(
+                    "permanent_failure",
+                    self.task_store.update_status(key, status.clone()),
+                );
                 self.notify(key, task, &status);
                 return;
             }
@@ -507,12 +533,14 @@ impl<H: ProofSpec> Prover<H> {
             recheck_count = counts.recheck,
             "task blocked on dependency"
         );
-        let _ = self
-            .task_store
-            .update_status(key, TaskStatus::Blocked { reason, counts });
-        let _ = self
-            .task_store
-            .set_retry_after(key, now_secs().saturating_add(secs));
+        Self::persist(
+            "blocked",
+            self.task_store.schedule_rescan(
+                key,
+                TaskStatus::Blocked { reason, counts },
+                now_secs().saturating_add(secs),
+            ),
+        );
     }
 
     /// Persist the outcome of a failed attempt and return the status written,
@@ -525,7 +553,10 @@ impl<H: ProofSpec> Prover<H> {
                 let status = TaskStatus::PermanentFailure {
                     error: err.to_string(),
                 };
-                let _ = self.task_store.update_status(key, status.clone());
+                Self::persist(
+                    "permanent_failure",
+                    self.task_store.update_status(key, status.clone()),
+                );
                 status
             }
         }
@@ -568,7 +599,7 @@ impl<H: ProofSpec> Prover<H> {
             if within_budget {
                 if fresh {
                     // Drop the dead remote ProofId so the next attempt resubmits.
-                    let _ = self.task_store.clear_metadata(key);
+                    Self::persist("clear_metadata", self.task_store.clear_metadata(key));
                 }
                 warn!(
                     retry_count = new_counts.retry,
@@ -582,11 +613,18 @@ impl<H: ProofSpec> Prover<H> {
                     counts: new_counts,
                     error: msg.to_string(),
                 };
-                let _ = self.task_store.update_status(key, status.clone());
                 let delay_secs = cfg.jittered_delay_secs(attempt, jitter_seed(key, attempt));
-                let _ = self
-                    .task_store
-                    .set_retry_after(key, now_secs().saturating_add(delay_secs));
+                // One write: a TransientFailure without its retry_after would
+                // never be selected by the scanner and the task would be
+                // stranded.
+                Self::persist(
+                    "transient_failure",
+                    self.task_store.schedule_rescan(
+                        key,
+                        status.clone(),
+                        now_secs().saturating_add(delay_secs),
+                    ),
+                );
                 return status;
             }
         }
@@ -594,8 +632,23 @@ impl<H: ProofSpec> Prover<H> {
         let status = TaskStatus::PermanentFailure {
             error: format!("retries exhausted: {msg}"),
         };
-        let _ = self.task_store.update_status(key, status.clone());
+        Self::persist(
+            "permanent_failure",
+            self.task_store.update_status(key, status.clone()),
+        );
         status
+    }
+
+    /// Logs a failed lifecycle write instead of dropping it.
+    ///
+    /// The status the caller hands to waiters is still the one the attempt
+    /// decided, so the waiters already subscribed get it. The record keeps
+    /// its previous status; a `Proving` one is re-spawned by startup recovery,
+    /// which is also what unblocks anyone who subscribes to it later.
+    fn persist(write: &str, result: ProverResult<()>) {
+        if let Err(e) = result {
+            error!(%e, write, "failed to persist task state");
+        }
     }
 
     /// Fan out the terminal result to every pending waiter and remove the

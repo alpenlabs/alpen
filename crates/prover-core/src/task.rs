@@ -206,6 +206,19 @@ impl TaskRecordData {
         self.metadata.as_deref()
     }
 
+    /// Whether the scanner should re-spawn this record at `now_secs`: a
+    /// status that [`TaskStatus::wants_rescan`] whose `retry_after` is at or
+    /// before `now_secs`, or missing.
+    ///
+    /// A missing timestamp on a rescan status is a record whose scheduling
+    /// write did not land after the status did. Nothing else selects such a
+    /// record (startup recovery only takes `Pending` and `Proving`), so it is
+    /// due now; its next attempt writes a proper timestamp. Every backend's
+    /// `list_retriable` is this predicate over its rows.
+    pub fn is_due_for_rescan(&self, now_secs: u64) -> bool {
+        self.status.wants_rescan() && self.retry_after_secs.is_none_or(|t| t <= now_secs)
+    }
+
     pub fn set_status(&mut self, status: TaskStatus) {
         self.status = status;
         self.updated_at_secs = now_secs();
