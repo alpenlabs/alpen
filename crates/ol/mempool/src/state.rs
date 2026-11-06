@@ -2751,6 +2751,70 @@ mod tests {
         assert!(state.contains(&txid));
     }
 
+    /// Builds an update from account 1 that sends one zero-value message with
+    /// `len` payload bytes to account 2.
+    fn create_test_snark_tx_with_message_payload(len: usize) -> OLTransactionV1 {
+        let payload = MsgPayload::from_bytes_valueless(vec![0; len]).unwrap();
+        let outputs = UpdateOutputs::new_empty().with_messages(vec![OutputMessage::new(
+            create_test_account_id_with(2),
+            payload,
+        )]);
+        let operation = UpdateOperationData::new(
+            0,
+            ProofState::new(Buf32::zero(), 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            outputs,
+            vec![],
+        );
+        create_test_snark_tx_from_update(
+            create_test_account_id_with(1),
+            SnarkAccountUpdate::new(operation, vec![]),
+            create_test_constraints_with_slots(None, None),
+        )
+    }
+
+    /// The mempool admits a message payload above the V2 bound under V1,
+    /// rejects it under V2, and evicts it once the next block runs V2.
+    #[tokio::test]
+    async fn test_mempool_rejects_message_payload_over_the_spec_capacity() {
+        let max_payload = spec_limits(OLSpecId::V2).max_msg_payload_bytes();
+        let tx = create_test_snark_tx_with_message_payload(max_payload + 1);
+
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, false).await;
+        let txid = state
+            .add_transaction(tx.clone())
+            .await
+            .expect("admitted under V1");
+        state.tip_spec = SelectedSpec::Supported(OLSpecId::V2);
+        assert_eq!(state.revalidate_all_transactions(), vec![txid]);
+
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, true).await;
+        assert_eq!(state.select_spec().unwrap(), OLSpecId::V2);
+        let err = state
+            .add_transaction(tx)
+            .await
+            .expect_err("rejected under V2");
+        assert!(
+            matches!(
+                err,
+                OLMempoolError::EffectsOverflow(TxEffectsOverflow::MessagePayload {
+                    index: 0,
+                    len,
+                    max,
+                }) if len == max_payload + 1 && max == max_payload
+            ),
+            "{err}"
+        );
+        assert!(!state.contains(&txid));
+
+        let txid = state
+            .add_transaction(create_test_snark_tx_with_message_payload(max_payload))
+            .await
+            .expect("admitted at the V2 payload bound");
+        assert!(state.contains(&txid));
+    }
+
     /// After a terminal tip whose epoch processed no enactment, the next block
     /// runs V1 and the mempool admits transactions.
     #[tokio::test]
