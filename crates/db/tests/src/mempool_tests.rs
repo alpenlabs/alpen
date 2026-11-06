@@ -1,5 +1,5 @@
-use strata_db_types::mempool::{MempoolDatabase, MempoolTxData};
-use strata_identifiers::{Buf32, OLTxId};
+use strata_db_types::mempool::{MempoolDatabase, MempoolTxData, MempoolWriteBatch};
+use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId, OLTxId};
 
 pub fn test_put_and_get_tx(db: &impl MempoolDatabase) {
     let txid = OLTxId::from(Buf32::from([1u8; 32]));
@@ -141,6 +141,37 @@ pub fn test_large_tx_bytes(db: &impl MempoolDatabase) {
     assert_eq!(retrieved.timestamp_micros(), timestamp_micros);
 }
 
+pub fn test_apply_batch(db: &impl MempoolDatabase) {
+    let kept = OLTxId::from(Buf32::from([1u8; 32]));
+    let deleted = OLTxId::from(Buf32::from([2u8; 32]));
+    let replaced = OLTxId::from(Buf32::from([3u8; 32]));
+    let added = OLTxId::from(Buf32::from([4u8; 32]));
+    for txid in [kept, deleted, replaced] {
+        db.put_tx(MempoolTxData::new(txid, vec![1], 1)).unwrap();
+    }
+    assert_eq!(db.get_tip().unwrap(), None);
+
+    let tip = OLBlockCommitment::new(7, OLBlockId::from(Buf32::from([7u8; 32])));
+    let mut batch = MempoolWriteBatch::default();
+    batch.delete(deleted);
+    batch.delete(replaced);
+    batch.delete(OLTxId::from(Buf32::from([9u8; 32])));
+    batch.put(MempoolTxData::new(replaced, vec![2], 2));
+    batch.put(MempoolTxData::new(added, vec![3], 3));
+    batch.set_tip(tip);
+    db.apply_batch(batch).unwrap();
+
+    assert!(db.get_tx(kept).unwrap().is_some());
+    assert!(db.get_tx(deleted).unwrap().is_none());
+    assert_eq!(db.get_tx(replaced).unwrap().unwrap().tx_bytes(), [2]);
+    assert!(db.get_tx(added).unwrap().is_some());
+    assert_eq!(db.get_tip().unwrap(), Some(tip));
+
+    // A batch without a tip keeps the recorded one.
+    db.apply_batch(MempoolWriteBatch::default()).unwrap();
+    assert_eq!(db.get_tip().unwrap(), Some(tip));
+}
+
 #[macro_export]
 macro_rules! mempool_db_tests {
     ($setup_expr:expr) => {
@@ -184,6 +215,12 @@ macro_rules! mempool_db_tests {
         fn test_large_tx_bytes() {
             let db = $setup_expr;
             $crate::mempool_tests::test_large_tx_bytes(&db);
+        }
+
+        #[test]
+        fn test_apply_batch() {
+            let db = $setup_expr;
+            $crate::mempool_tests::test_apply_batch(&db);
         }
     };
 }
