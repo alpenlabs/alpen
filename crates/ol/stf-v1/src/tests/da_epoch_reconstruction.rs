@@ -3,17 +3,19 @@
 //! block-by-block execution.
 //!
 //! Covers a deposit manifest only, a snark account update only, both
-//! combined, and a bridge withdrawal. Each test builds a multi-block epoch
-//! with empty filler blocks around the meaningful ones.
+//! combined, a bridge withdrawal, and GAM payloads at and above the DA limit.
+//! Epochs execute through the STF before DA derivation and reconstruction.
 
 use strata_acct_types::BitcoinAmount;
 use strata_codec::decode_buf_exact;
 use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, OLBlockCommitment, SubjectId};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
-use strata_ol_da_types_v1::{OLDaPayloadV1, OLDaSchemeV1};
+use strata_ol_da_types_v1::{MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_state_types::{IAccountState, IStateAccessor, IStateAccessorMut};
+use strata_ol_state_support_types::{
+    DaAccumulatingState, DaAccumulationError, MemoryStateBaseLayer,
+};
+use strata_ol_state_types::{IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut};
 use strata_ol_state_types_v1::OLStateV1;
 use strata_ol_tx_types_v1::{OLTransactionDataV1, OLTransactionV1, TxProofsV1};
 use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -28,6 +30,104 @@ use crate::test_utils::{
     make_p2wpkh_bosd_descriptor, make_state_root, make_withdrawal_payload, snark_inbox_msg,
 };
 use crate::{BlockInfo, EpochInfo, apply_da_epoch, execute_block_batch_predrain};
+
+#[test]
+fn test_apply_da_epoch_gam_at_da_message_limit() {
+    let mut state = make_genesis_state();
+    seed_accounts(&mut state);
+    let genesis = run_genesis(&mut state);
+    let pre_epoch_state = state.clone();
+    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let initial_balance = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .balance();
+
+    let tx = OLTransactionV1::new(
+        OLTransactionDataV1::from_gam_bytes(snark_id, vec![0x5a; MAX_MSG_PAYLOAD_BYTES])
+            .expect("DA-boundary payload fits the message schema"),
+        TxProofsV1::new_empty(),
+    );
+    let mut blocks = Vec::new();
+    let parent = run_block(
+        &mut state,
+        &mut blocks,
+        genesis.header(),
+        txs_components(tx),
+    );
+    let terminal = run_terminal(
+        &mut state,
+        &mut blocks,
+        &parent,
+        make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
+    );
+
+    let (account, snark) = get_snark_state_expect(&state, snark_id);
+    assert_eq!(account.balance(), initial_balance);
+    assert_eq!(snark.inbox_mmr().num_entries(), 1);
+    assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);
+}
+
+// Characterizes the current execution/DA limit mismatch without changing consensus rules.
+#[test]
+fn test_gam_above_da_message_limit_executes_before_da_error() {
+    let mut state = make_genesis_state();
+    seed_accounts(&mut state);
+    let genesis = run_genesis(&mut state);
+    let pre_epoch_state = state.clone();
+    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let payload_len = MAX_MSG_PAYLOAD_BYTES + 1;
+    let initial_balance = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .balance();
+
+    let tx = OLTransactionV1::new(
+        OLTransactionDataV1::from_gam_bytes(snark_id, vec![0x5a; payload_len])
+            .expect("payload above the DA limit still fits the message schema"),
+        TxProofsV1::new_empty(),
+    );
+    let mut blocks = Vec::new();
+    let parent = run_block(
+        &mut state,
+        &mut blocks,
+        genesis.header(),
+        txs_components(tx),
+    );
+    run_terminal(
+        &mut state,
+        &mut blocks,
+        &parent,
+        make_empty_manifest(TERMINAL_L1_HEIGHT, 0),
+    );
+
+    let (account, snark) = get_snark_state_expect(&state, snark_id);
+    assert_eq!(account.balance(), initial_balance);
+    assert_eq!(snark.inbox_mmr().num_entries(), 1);
+
+    let mut da = DaAccumulatingState::new(pre_epoch_state);
+    let logs = execute_block_batch_predrain(
+        &mut da,
+        &blocks,
+        genesis.header(),
+        &OLRuntimeParams::test_default(),
+    )
+    .expect("STF execution through the DA wrapper also accepts the message");
+    assert_eq!(logs.len(), 0);
+    let (_, snark) = get_snark_state_expect(da.inner(), snark_id);
+    assert_eq!(snark.inbox_mmr().num_entries(), 1);
+
+    let root_before_finalization = da.compute_state_root().unwrap();
+    assert!(matches!(
+        da.take_completed_epoch_da_blob(),
+        Err(DaAccumulationError::MessagePayloadTooLarge { provided, max })
+            if provided == payload_len && max == MAX_MSG_PAYLOAD_BYTES
+    ));
+    // DA finalization reports the deferred error; it does not roll back STF writes.
+    assert_eq!(da.compute_state_root().unwrap(), root_before_finalization);
+}
 
 #[test]
 fn test_apply_da_epoch_deposit_manifest_only() {
