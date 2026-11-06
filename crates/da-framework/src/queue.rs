@@ -39,8 +39,8 @@ pub trait DaQueueTarget {
     /// Increments the index of the front of the queue.
     ///
     /// [`DaQueue::apply`] only calls this with an `incr` of at most the number
-    /// of entries the queue held before the write, so the front never passes
-    /// the next index.
+    /// of entries the queue holds once the write's tail is in, so the front
+    /// never passes the next index.
     fn increment_front(&mut self, incr: IncrTy);
 
     /// Gets the entry at the given index, if it exists and hasn't been removed.
@@ -101,22 +101,24 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
             return Err(DaError::QueueFrontPastNext { front, next });
         }
 
-        // A decoded write carries whatever increment was on the wire. The
-        // builder never counts an entry appended in the same write (those are
-        // dropped from the tail instead), so a canonical write's increment is
-        // at most the entries the queue already held; bound it the same way.
-        // The front may reach the next index (an empty queue) but not pass it.
-        let incr = self.incr_front as u64;
-        let len = next - front;
-        if incr > len {
-            return Err(DaError::QueueFrontOverrun { incr, len });
-        }
-
         // Indices are `IncrTy` for now (STR-2148); refuse a tail they cannot
-        // hold rather than let the target's counters wrap.
+        // hold rather than let the target's counters wrap. The builder refuses
+        // the same appends, so a write it produced never fails here.
         let added = self.tail.len() as u64;
         if next + added > IncrTy::MAX as u64 {
             return Err(DaError::QueueIndexOverflow { next, added });
+        }
+
+        // A decoded write carries whatever increment was on the wire, so bound
+        // it by the entries the queue holds once the tail is in, which is the
+        // bound the builder enforces: an entry appended and consumed in the
+        // same write stays in the tail so that every entry keeps the global
+        // index the builder's view gave it. The front may reach the next index
+        // (an empty queue) but not pass it.
+        let incr = self.incr_front as u64;
+        let len = next - front + added;
+        if incr > len {
+            return Err(DaError::QueueFrontOverrun { incr, len });
         }
 
         target.insert_entries(&self.tail);
@@ -245,8 +247,9 @@ impl<Q: DaQueueTarget> DaQueueBuilder<Q> {
 
     /// Appends an entry to the queue.
     ///
-    /// Returns `true` if successful, `false` if the queue is full (at
-    /// `TailLenTy::MAX` entries).
+    /// Returns `true` if successful, `false` if the diff is full (at
+    /// `TailLenTy::MAX` entries) or the queue's index type has no index left
+    /// for the entry.
     pub fn append_entry(&mut self, e: Q::Entry) -> bool {
         self.append_entry_with(move || e)
     }
@@ -260,8 +263,10 @@ impl<Q: DaQueueTarget> DaQueueBuilder<Q> {
     /// no more space in the diff to add a new entry.
     pub fn append_entry_with(&mut self, f: impl FnOnce() -> Q::Entry) -> bool {
         // Check if we would exceed the maximum number of entries we can encode
-        // in a diff.
-        if self.new_entries.len() >= TailLenTy::MAX as usize {
+        // in a diff, or the index the queue can give the entry (STR-2148).
+        if self.new_entries.len() >= TailLenTy::MAX as usize
+            || self.next_idx() >= IncrTy::MAX as IdxTy
+        {
             return false;
         }
         self.new_entries.push(f());
@@ -273,10 +278,6 @@ impl<Q: DaQueueTarget> DaBuilder<Q> for DaQueueBuilder<Q> {
     type Write = DaQueue<Q>;
 
     fn from_source(t: Q) -> Self {
-        debug_assert!(
-            t.cur_front() <= t.cur_next(),
-            "da/queue: source front is past its next index"
-        );
         Self {
             original_front_pos: t.cur_front() as IdxTy,
             new_front_pos: t.cur_front() as IdxTy,
@@ -285,16 +286,22 @@ impl<Q: DaQueueTarget> DaBuilder<Q> for DaQueueBuilder<Q> {
         }
     }
 
-    fn into_write(mut self) -> Result<Self::Write, BuilderError> {
-        // Entries appended and consumed in the same write never reach the
-        // queue: drop them from the tail and leave them out of the increment,
-        // which then counts only the entries the queue already held. Counting
-        // them would push the front past the next index on apply.
-        let consumed_new = self.new_front_pos.saturating_sub(self.original_next_pos);
-        self.new_entries.drain(..consumed_new);
+    fn into_write(self) -> Result<Self::Write, BuilderError> {
+        // An entry appended and consumed in the same write stays in the tail
+        // and the increment counts it: dropping it would renumber every later
+        // entry, so an index taken from the builder's view would no longer
+        // name the entry the applied queue holds there.
+        //
+        // `append_entry_with` refuses an entry the index type cannot number;
+        // check again here, and refuse a source whose front was already past
+        // its next index, so a write this builder emits always applies.
+        if self.next_idx() > IncrTy::MAX as IdxTy
+            || self.original_front_pos > self.original_next_pos
+        {
+            return Err(BuilderError::OutOfBoundsValue);
+        }
         let tail = self.new_entries;
-        let incr_front_idx =
-            (self.new_front_pos - self.original_front_pos).saturating_sub(consumed_new);
+        let incr_front_idx = self.new_front_pos - self.original_front_pos;
 
         // Convert from IdxTy (usize) to IncrTy (u16)
         // This should always succeed because add_front_incr enforces
@@ -449,6 +456,9 @@ mod tests {
         }
 
         fn increment_front(&mut self, incr: IncrTy) {
+            // Consumed entries leave the queue, so `get` keeps indexing from
+            // the front.
+            self.entries.drain(..incr as usize);
             self.front += incr;
         }
     }
@@ -798,16 +808,16 @@ mod tests {
             ),
             (
                 vec![],
-                5,
+                2,
                 MockQueue {
                     front: 10,
-                    next: 20,
+                    next: 13,
                     entries: vec![1, 2, 3],
                 },
                 MockQueue {
-                    front: 15,
-                    next: 20,
-                    entries: vec![1, 2, 3],
+                    front: 12,
+                    next: 13,
+                    entries: vec![3],
                 },
             ),
             (
@@ -815,12 +825,12 @@ mod tests {
                 0,
                 MockQueue {
                     front: 5,
-                    next: 10,
+                    next: 7,
                     entries: vec![1, 2],
                 },
                 MockQueue {
                     front: 5,
-                    next: 13,
+                    next: 10,
                     entries: vec![1, 2, 100, 200, 300],
                 },
             ),
@@ -835,7 +845,7 @@ mod tests {
                 MockQueue {
                     front: 2,
                     next: 8,
-                    entries: vec![1, 2, 3, 4, 5, 7, 8, 9],
+                    entries: vec![3, 4, 5, 7, 8, 9],
                 },
             ),
         ];
@@ -874,11 +884,10 @@ mod tests {
                     entries: vec![1, 2, 3],
                 },
             ),
-            // The tail does not count: the builder never consumes an entry
-            // it appends in the same write.
+            // The tail counts, but only once.
             (
                 vec![7, 8],
-                4,
+                6,
                 MockQueue {
                     front: 0,
                     next: 3,
@@ -915,10 +924,10 @@ mod tests {
             );
         }
 
-        // Consuming exactly what the queue held, with a tail, is fine.
+        // Consuming exactly everything, tail included, is fine.
         let write = DaQueue::<MockQueue> {
             tail: vec![7, 8],
-            incr_front: 3,
+            incr_front: 5,
         };
         let mut target = MockQueue {
             front: 0,
@@ -926,9 +935,9 @@ mod tests {
             entries: vec![1, 2, 3],
         };
         write.apply(&mut target, &()).expect("test: apply");
-        assert_eq!(target.front, 3);
+        assert_eq!(target.front, 5);
         assert_eq!(target.next, 5);
-        assert_eq!(target.entries, vec![1, 2, 3, 7, 8]);
+        assert!(target.entries.is_empty(), "everything was consumed");
     }
 
     #[test]
@@ -975,12 +984,14 @@ mod tests {
         write.apply(&mut applied, &()).expect("test: apply");
         assert_eq!(applied.front, IncrTy::MAX);
         assert_eq!(applied.next, IncrTy::MAX);
+        assert!(applied.entries.is_empty());
     }
 
     #[test]
-    fn test_queue_builder_consumed_new_entries_into_write_applies() {
-        // Entries appended and consumed in the same write are dropped from the
-        // tail, so the increment must not count them either.
+    fn test_queue_builder_keeps_consumed_new_entries_in_write() {
+        // An entry appended and consumed in the same write stays in the tail
+        // and in the increment, so the surviving entry keeps the global index
+        // the builder's view gave it.
         let source = MockQueue {
             front: 0,
             next: 3,
@@ -990,16 +1001,72 @@ mod tests {
         assert!(builder.append_entry(100));
         assert!(builder.append_entry(200));
         assert!(builder.add_front_incr(4));
+        let view_index_of_200 = {
+            let view = QueueView::new(&source, &mut builder);
+            assert_eq!(view.get(4), Some(&200));
+            view.next() - 1
+        };
 
         let write = builder.into_write().expect("test: into_write");
-        assert_eq!(write.incr_front, 3);
-        assert_eq!(write.tail, vec![200]);
+        assert_eq!(write.incr_front, 4);
+        assert_eq!(write.tail, vec![100, 200]);
 
         let mut target = source;
         write.apply(&mut target, &()).expect("test: apply");
-        assert_eq!(target.front, 3);
-        assert_eq!(target.next, 4);
-        assert_eq!(target.entries, vec![1, 2, 3, 200]);
+        assert_eq!(target.front, 4);
+        assert_eq!(target.next, 5);
+        assert_eq!(view_index_of_200, 4);
+        assert_eq!(target.get(view_index_of_200), Some(&200));
+        assert_eq!(target.get(3), None, "the consumed append is gone");
+    }
+
+    #[test]
+    fn test_queue_builder_rejects_a_corrupt_source() {
+        let corrupt = MockQueue {
+            front: 10,
+            next: 5,
+            entries: vec![],
+        };
+        let mut builder = DaQueueBuilder::from_source(corrupt);
+        assert!(builder.append_entry(1));
+        assert!(matches!(
+            builder.into_write(),
+            Err(BuilderError::OutOfBoundsValue)
+        ));
+    }
+
+    #[test]
+    fn test_queue_builder_refuses_appends_the_index_type_cannot_number() {
+        // The builder stops where apply would refuse the write, so a write it
+        // emits always applies.
+        let full = MockQueue {
+            front: IncrTy::MAX,
+            next: IncrTy::MAX,
+            entries: vec![],
+        };
+        let mut builder = DaQueueBuilder::from_source(full);
+        assert!(!builder.append_entry(1));
+        assert!(
+            builder
+                .into_write()
+                .expect("test: into_write")
+                .tail
+                .is_empty()
+        );
+
+        let one_left = MockQueue {
+            front: IncrTy::MAX - 1,
+            next: IncrTy::MAX - 1,
+            entries: vec![],
+        };
+        let mut builder = DaQueueBuilder::from_source(one_left.clone());
+        assert!(builder.append_entry(1));
+        assert!(!builder.append_entry(2));
+        let write = builder.into_write().expect("test: into_write");
+        let mut target = one_left;
+        write.apply(&mut target, &()).expect("test: apply");
+        assert_eq!(target.next, IncrTy::MAX);
+        assert_eq!(target.entries, vec![1]);
     }
 
     #[test]
@@ -1184,7 +1251,7 @@ mod tests {
 
             let mut applied = base.clone();
             let result = decoded.apply(&mut applied, &());
-            let fits = usize::from(incr_front) <= base.entries.len();
+            let fits = usize::from(incr_front) <= base.entries.len() + tail.len();
             prop_assert_eq!(result.is_ok(), fits);
             if fits {
                 prop_assert!(applied.front <= applied.next);
@@ -1196,25 +1263,43 @@ mod tests {
         }
 
         #[test]
-        fn proptest_queue_builder_into_write_drops_consumed_new_entries(
+        fn proptest_queue_builder_into_write_keeps_consumed_new_entries(
             base in base_queue_strategy(),
             appended in tail_strategy(),
             consume_hint in 0usize..=48,
         ) {
             let base_len = base.entries.len();
             let consumed_total = consume_hint.min(base_len + appended.len());
-            let consumed_new = consumed_total.saturating_sub(base_len);
 
             let mut builder = DaQueueBuilder::from_source(base.clone());
             for entry in &appended {
                 prop_assert!(builder.append_entry(*entry));
             }
             prop_assert!(builder.add_front_incr(consumed_total as IncrTy));
+            let (view_front, view_next, view_entries) = {
+                let view = QueueView::new(&base, &mut builder);
+                let entries: Vec<_> = (view.front()..view.next())
+                    .map(|i| view.get(i).copied())
+                    .collect();
+                (view.front(), view.next(), entries)
+            };
 
             let write = builder.into_write().expect("test: builder into_write");
 
-            prop_assert_eq!(write.incr_front, consumed_total.min(base_len) as IncrTy);
-            prop_assert_eq!(write.tail, appended[consumed_new..].to_vec());
+            prop_assert_eq!(write.incr_front, consumed_total as IncrTy);
+            prop_assert_eq!(&write.tail, &appended);
+
+            // Every index the view handed out names the same entry in the
+            // applied queue, and the queue holds nothing else.
+            let mut applied = base.clone();
+            write.apply(&mut applied, &()).expect("test: apply");
+            prop_assert_eq!(applied.front as usize, view_front);
+            prop_assert_eq!(applied.next as usize, view_next);
+            let applied_entries: Vec<_> = (view_front..view_next)
+                .map(|i| applied.get(i).copied())
+                .collect();
+            prop_assert_eq!(applied_entries, view_entries);
+            prop_assert_eq!(applied.entries.len(), view_next - view_front);
         }
     }
 }
