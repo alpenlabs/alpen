@@ -36,7 +36,7 @@ use strata_predicate::PredicateKey;
 
 use crate::{
     constants::{MAGIC_BYTES, NETWORK},
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+    taproot::{new_bitcoind_client, sign_and_finalize_psbt, sync_wallet, taproot_wallet},
 };
 
 /// Create and broadcast an EE predicate admin update.
@@ -246,9 +246,7 @@ fn build_admin_commit_reveal_pair(
         builder.finish().context("failed to build commit tx")?
     };
 
-    wallet
-        .sign(&mut psbt, Default::default())
-        .context("failed to sign commit tx")?;
+    sign_and_finalize_psbt(&wallet, &mut psbt).context("failed to sign commit tx")?;
 
     let commit_tx = psbt.extract_tx().context("failed to finalize commit tx")?;
 
