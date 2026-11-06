@@ -1,7 +1,8 @@
 //! Queue DA pattern.
 
 use crate::{
-    BuilderError, Codec, CodecResult, CompoundMember, DaBuilder, DaError, DaWrite, Decoder, Encoder,
+    BuilderError, Codec, CodecResult, CompoundMember, DaBuilder, DaQueueError, DaWrite, Decoder,
+    Encoder,
 };
 
 // TODO(STR-2148): make this generic over the queue type
@@ -21,6 +22,13 @@ pub type HeadTy = u16;
 /// The mask for the increment portion of the head word.
 const HEAD_WORD_INCR_MASK: u16 = 0x7fff;
 
+/// Whether `added` entries appended at index `next` still fit the index type
+/// (`IncrTy` for now, STR-2148). The builder and `apply` share this bound, so
+/// a write the builder emits never fails to apply for it.
+fn index_fits(next: u64, added: u64) -> bool {
+    next + added <= IncrTy::MAX as u64
+}
+
 /// Bits we shift the tail flag bit by.
 const TAIL_BIT_SHIFT: u32 = IncrTy::BITS - 1;
 
@@ -30,6 +38,9 @@ pub trait DaQueueTarget {
     type Entry: Codec;
 
     /// Gets the global index of the next entry to be removed from the queue.
+    ///
+    /// Never past [`Self::cur_next`]: a target that reports otherwise is
+    /// corrupt, and the builder asserts it while [`DaQueue::apply`] refuses it.
     fn cur_front(&self) -> IncrTy; // TODO(STR-2148): make a `IdxTy`
 
     /// Gets what would be the global index of the next entry to be added to the
@@ -84,7 +95,7 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
 
     type Context = ();
 
-    type Error = DaError;
+    type Error = DaQueueError;
 
     fn is_default(&self) -> bool {
         self.tail.is_empty() && self.incr_front == 0
@@ -98,15 +109,14 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
         let front = target.cur_front() as u64;
         let next = target.cur_next() as u64;
         if front > next {
-            return Err(DaError::QueueFrontPastNext { front, next });
+            return Err(DaQueueError::FrontPastNext { front, next });
         }
 
-        // Indices are `IncrTy` for now (STR-2148); refuse a tail they cannot
-        // hold rather than let the target's counters wrap. The builder refuses
-        // the same appends, so a write it produced never fails here.
+        // Refuse a tail the index type cannot hold rather than let the
+        // target's counters wrap.
         let added = self.tail.len() as u64;
-        if next + added > IncrTy::MAX as u64 {
-            return Err(DaError::QueueIndexOverflow { next, added });
+        if !index_fits(next, added) {
+            return Err(DaQueueError::IndexOverflow { next, added });
         }
 
         // A decoded write carries whatever increment was on the wire, so bound
@@ -116,9 +126,12 @@ impl<Q: DaQueueTarget> DaWrite for DaQueue<Q> {
         // index the builder's view gave it. The front may reach the next index
         // (an empty queue) but not pass it.
         let incr = self.incr_front as u64;
-        let len = next - front + added;
-        if incr > len {
-            return Err(DaError::QueueFrontOverrun { incr, len });
+        let len_with_tail = next - front + added;
+        if incr > len_with_tail {
+            return Err(DaQueueError::FrontOverrun {
+                incr,
+                len_with_tail,
+            });
         }
 
         target.insert_entries(&self.tail);
@@ -247,9 +260,8 @@ impl<Q: DaQueueTarget> DaQueueBuilder<Q> {
 
     /// Appends an entry to the queue.
     ///
-    /// Returns `true` if successful, `false` if the diff is full (at
-    /// `TailLenTy::MAX` entries) or the queue's index type has no index left
-    /// for the entry.
+    /// Returns `true` if successful, `false` when [`Self::append_entry_with`]
+    /// would refuse the entry.
     pub fn append_entry(&mut self, e: Q::Entry) -> bool {
         self.append_entry_with(move || e)
     }
@@ -259,13 +271,15 @@ impl<Q: DaQueueTarget> DaQueueBuilder<Q> {
     /// This is useful when constructing the entry is expensive and you want to
     /// avoid the work if the queue is already full.
     ///
-    /// Returns `true` if the entry was produced and added, `false` if there was
-    /// no more space in the diff to add a new entry.
+    /// Returns `true` if the entry was produced and added, `false` if the diff
+    /// is full (at `TailLenTy::MAX` entries) or the queue's index type has no
+    /// index left for the entry, the same bound `DaQueue::apply` enforces.
     pub fn append_entry_with(&mut self, f: impl FnOnce() -> Q::Entry) -> bool {
-        // Check if we would exceed the maximum number of entries we can encode
-        // in a diff, or the index the queue can give the entry (STR-2148).
         if self.new_entries.len() >= TailLenTy::MAX as usize
-            || self.next_idx() >= IncrTy::MAX as IdxTy
+            || !index_fits(
+                self.original_next_pos as u64,
+                self.new_entries.len() as u64 + 1,
+            )
         {
             return false;
         }
@@ -278,6 +292,12 @@ impl<Q: DaQueueTarget> DaBuilder<Q> for DaQueueBuilder<Q> {
     type Write = DaQueue<Q>;
 
     fn from_source(t: Q) -> Self {
+        assert!(
+            t.cur_front() <= t.cur_next(),
+            "da/queue: source front {} is past its next index {}",
+            t.cur_front(),
+            t.cur_next()
+        );
         Self {
             original_front_pos: t.cur_front() as IdxTy,
             new_front_pos: t.cur_front() as IdxTy,
@@ -292,14 +312,8 @@ impl<Q: DaQueueTarget> DaBuilder<Q> for DaQueueBuilder<Q> {
         // entry, so an index taken from the builder's view would no longer
         // name the entry the applied queue holds there.
         //
-        // `append_entry_with` refuses an entry the index type cannot number;
-        // check again here, and refuse a source whose front was already past
-        // its next index, so a write this builder emits always applies.
-        if self.next_idx() > IncrTy::MAX as IdxTy
-            || self.original_front_pos > self.original_next_pos
-        {
-            return Err(BuilderError::OutOfBoundsValue);
-        }
+        // `append_entry_with` kept every index within the type and
+        // `from_source` checked the source, so the write applies.
         let tail = self.new_entries;
         let incr_front_idx = self.new_front_pos - self.original_front_pos;
 
@@ -915,7 +929,7 @@ mod tests {
                 .apply(&mut applied, &())
                 .expect_err("test: apply must reject the overrun");
             assert!(
-                matches!(err, DaError::QueueFrontOverrun { .. }),
+                matches!(err, DaQueueError::FrontOverrun { .. }),
                 "unexpected error {err:?}"
             );
             assert_eq!(
@@ -955,7 +969,7 @@ mod tests {
         let mut applied = corrupt.clone();
         assert!(matches!(
             write.apply(&mut applied, &()),
-            Err(DaError::QueueFrontPastNext { front: 10, next: 5 })
+            Err(DaQueueError::FrontPastNext { front: 10, next: 5 })
         ));
         assert_eq!(applied, corrupt);
 
@@ -972,7 +986,7 @@ mod tests {
         let mut applied = near_max.clone();
         assert!(matches!(
             write.apply(&mut applied, &()),
-            Err(DaError::QueueIndexOverflow { added: 1, .. })
+            Err(DaQueueError::IndexOverflow { added: 1, .. })
         ));
         assert_eq!(applied, near_max);
 
@@ -1021,18 +1035,14 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "source front 10 is past its next index 5")]
     fn test_queue_builder_rejects_a_corrupt_source() {
         let corrupt = MockQueue {
             front: 10,
             next: 5,
             entries: vec![],
         };
-        let mut builder = DaQueueBuilder::from_source(corrupt);
-        assert!(builder.append_entry(1));
-        assert!(matches!(
-            builder.into_write(),
-            Err(BuilderError::OutOfBoundsValue)
-        ));
+        let _ = DaQueueBuilder::from_source(corrupt);
     }
 
     #[test]
@@ -1237,8 +1247,8 @@ mod tests {
         }
 
         /// Any decoded write is accepted iff its increment fits the entries
-        /// the queue already holds, and an accepted write never leaves the
-        /// front past the next index.
+        /// the queue holds once the tail is appended, and an accepted write
+        /// never leaves the front past the next index.
         #[test]
         fn proptest_queue_apply_bounds_the_front_increment(
             base in base_queue_strategy(),
