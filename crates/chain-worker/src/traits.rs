@@ -3,7 +3,8 @@
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
-use strata_identifiers::{Epoch, L1BlockCommitment, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{L1BlockCommitment, OLBlockCommitment, OLBlockId};
+use strata_ol_block_ancestry_provider::EpochBlockAncestry;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_container::OLStateContainer;
@@ -39,6 +40,14 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
 
     /// Fetches a block's header by its ID.
     fn fetch_header(&self, blkid: &OLBlockId) -> WorkerResult<Option<OLBlockHeaderV1>>;
+
+    /// Collects blocks through `start` in execution order and resolves the previous terminal.
+    ///
+    /// Follows `start`'s branch; missing or inconsistent ancestry returns an error.
+    fn collect_epoch_block_commitments(
+        &self,
+        start: &OLBlockHeaderV1,
+    ) -> WorkerResult<EpochBlockAncestry>;
 
     /// Fetches the current chain tip from the database.
     ///
@@ -94,16 +103,17 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Fetches the summary for exactly this epoch commitment.
     fn fetch_summary(&self, epoch: EpochCommitment) -> WorkerResult<Option<EpochSummary>>;
 
-    /// Fetches canonical epoch summary for an epoch index.
-    fn fetch_canonical_epoch_summary_at(&self, epoch: Epoch) -> WorkerResult<Option<EpochSummary>>;
-
-    /// Merges write batches of the epoch described by `summary` and stores
-    /// the merged state at the epoch's terminal commitment.
+    /// Merges an epoch's write batches and stores its terminal state.
     ///
-    /// Takes the summary by value-reference rather than reading it from
-    /// storage so it can run before [`store_summary`](Self::store_summary),
-    /// keeping the summary the last durable step.
-    fn merge_epoch_data(&self, summary: &EpochSummary) -> WorkerResult<()>;
+    /// `blocks` must contain the summary's complete epoch branch in execution
+    /// order, including its terminal and excluding its previous terminal.
+    ///
+    /// Runs before [`Self::store_summary`] so the summary is the last durable step.
+    fn merge_epoch_data(
+        &self,
+        summary: &EpochSummary,
+        blocks: &[OLBlockCommitment],
+    ) -> WorkerResult<()>;
 
     /// Seeds the DB-side L1 block refs MMR mirror with sentinel leaves matching
     /// the in-state MMR's genesis prefill. Called once at chain worker init.

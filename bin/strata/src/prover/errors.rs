@@ -2,6 +2,7 @@
 
 use strata_db_types::DbError;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
+use strata_ol_block_ancestry_provider::BlockAncestryError;
 use strata_ol_checkpoint::CanonicalEpochReconcileError;
 use strata_ol_state_types::OLSpecId;
 use strata_paas::ProverError as PaasError;
@@ -45,6 +46,30 @@ pub(crate) enum ProverError {
 
     #[error("database error: {0}")]
     Database(#[from] DbError),
+
+    #[error("block ancestry lookup failed: {0}")]
+    BlockAncestry(#[from] BlockAncestryError),
+
+    #[error("epoch commitment mismatch (expected {expected}, got {actual})")]
+    EpochCommitmentMismatch {
+        expected: EpochCommitment,
+        actual: EpochCommitment,
+    },
+
+    #[error("expected terminal block flag on block {block}")]
+    MissingTerminalFlag { block: OLBlockCommitment },
+
+    #[error("epoch predecessor mismatch (expected {expected}, got {actual})")]
+    EpochPredecessorMismatch {
+        expected: OLBlockCommitment,
+        actual: OLBlockCommitment,
+    },
+
+    #[error("loaded block does not match ancestry commitment (expected {expected}, got {actual})")]
+    BlockCommitmentMismatch {
+        expected: OLBlockCommitment,
+        actual: OLBlockCommitment,
+    },
 
     #[error("DA state diff computation failed: {0}")]
     DaComputation(String),
@@ -105,7 +130,9 @@ impl From<ProverError> for PaasError {
             | ProverError::EpochTerminalStateNotFound { .. } => PaasError::transient(e.to_string()),
             ProverError::StaleTaskCommitment { .. } => PaasError::permanent(e.to_string()),
             // Infra: surface as a retryable error, not a domain verdict.
-            ProverError::Database(_) => PaasError::Storage(e.to_string()),
+            ProverError::Database(_) | ProverError::BlockAncestry(BlockAncestryError::Db(_)) => {
+                PaasError::Storage(e.to_string())
+            }
             _ => PaasError::permanent(e.to_string()),
         }
     }
@@ -148,7 +175,47 @@ mod tests {
     }
 
     #[test]
-    fn database_errors_surface_as_storage() {
+    fn inconsistent_epoch_metadata_is_permanent() {
+        let expected = EpochCommitment::null();
+        let actual = EpochCommitment::new(1, 1, *expected.last_blkid());
+        for error in [
+            ProverError::EpochCommitmentMismatch { expected, actual },
+            ProverError::MissingTerminalFlag {
+                block: actual.to_block_commitment(),
+            },
+            ProverError::EpochPredecessorMismatch {
+                expected: expected.to_block_commitment(),
+                actual: actual.to_block_commitment(),
+            },
+        ] {
+            assert_eq!(action_of(error), FailureAction::Permanent);
+        }
+    }
+
+    #[test]
+    fn block_commitment_mismatch_is_permanent() {
+        let expected = OLBlockCommitment::null();
+        let actual = OLBlockCommitment::new(expected.slot() + 1, *expected.blkid());
+        assert_eq!(
+            action_of(ProverError::BlockCommitmentMismatch { expected, actual }),
+            FailureAction::Permanent,
+        );
+    }
+
+    #[test]
+    fn ancestry_database_errors_remain_storage_failures() {
+        let error = ProverError::from(BlockAncestryError::Db(DbError::NotBootstrapped));
+        assert!(matches!(PaasError::from(error), PaasError::Storage(_)));
+        assert_eq!(
+            action_of(ProverError::from(BlockAncestryError::NoPreviousEpoch(
+                OLBlockCommitment::null(),
+            ))),
+            FailureAction::Permanent
+        );
+    }
+
+    #[test]
+    fn da_computation_errors_are_permanent() {
         assert_eq!(
             action_of(ProverError::DaComputation("boom".into())),
             FailureAction::Permanent
@@ -156,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_epoch_states_are_transient_but_chain_traversal_failure_is_not() {
+    fn missing_epoch_states_are_transient_but_missing_block_data_is_permanent() {
         assert_eq!(
             action_of(ProverError::EpochStartStateNotFound {
                 commitment: OLBlockCommitment::default(),
