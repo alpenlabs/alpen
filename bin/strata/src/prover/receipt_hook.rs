@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use strata_ol_checkpoint::ProofNotify;
 use strata_paas::{ProverError, ProverResult, ReceiptHook};
 use strata_storage::CheckpointProofDbManager;
+use tokio::task::spawn_blocking;
 use tracing::info;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -44,8 +45,12 @@ impl ReceiptHook<CheckpointSpec> for CheckpointReceiptHook {
     ) -> ProverResult<()> {
         let epoch = task.0.epoch;
         info!(%epoch, "storing checkpoint proof");
-        self.proof_db
-            .put_proof(task.0, receipt.clone())
+        let proofs = Arc::clone(&self.proof_db);
+        let commitment = task.0;
+        let receipt = receipt.clone();
+        spawn_blocking(move || proofs.put_proof(commitment, receipt))
+            .await
+            .map_err(|e| ProverError::Storage(format!("checkpoint receipt join: {e}")))?
             .map_err(|e| ProverError::Storage(format!("put checkpoint proof: {e}")))?;
 
         // Wake the checkpoint worker so it picks up the proof immediately.

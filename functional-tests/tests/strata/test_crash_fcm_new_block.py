@@ -5,13 +5,14 @@ import logging
 import flexitest
 
 from common.crash_helpers import CrashTest, crash_and_recover
+from common.services.strata import StrataService
 from tests.dbtool.helpers import assert_ol_block_status, get_ol_blocks_at_slot
 
 logger = logging.getLogger(__name__)
 
 
-def get_single_block_at_slot(datadir: str, slot: int) -> str:
-    blocks_at_slot = get_ol_blocks_at_slot(datadir, slot)
+def get_single_block_at_slot(node: StrataService, slot: int) -> str:
+    blocks_at_slot = get_ol_blocks_at_slot(node, slot)
     count = int(blocks_at_slot["count"])
     block_ids = blocks_at_slot["block_ids"]
 
@@ -20,8 +21,8 @@ def get_single_block_at_slot(datadir: str, slot: int) -> str:
     return block_ids[0]
 
 
-def assert_single_block_at_slot(datadir: str, slot: int, expected_block_id: str) -> None:
-    block_id = get_single_block_at_slot(datadir, slot)
+def assert_single_block_at_slot(node: StrataService, slot: int, expected_block_id: str) -> None:
+    block_id = get_single_block_at_slot(node, slot)
 
     assert block_id == expected_block_id, (
         f"expected slot {slot} to contain only {expected_block_id}, got {block_id}"
@@ -35,15 +36,14 @@ class TestCrashFcmNewBlock(CrashTest):
     def main(self, ctx):
         strata = self.get_strata()
         rpc = strata.wait_for_rpc_ready(timeout=10)
-        datadir = strata.props["datadir"]
         crashed_block: dict[str, int | str] = {}
 
         strata.wait_for_additional_blocks(2, rpc)
 
         def inspect_crashed_block(pre_status: dict) -> None:
             slot = int(pre_status["tip"]["slot"]) + 1
-            block_id = get_single_block_at_slot(datadir, slot)
-            block = assert_ol_block_status(datadir, block_id, "unchecked")
+            block_id = get_single_block_at_slot(strata, slot)
+            block = assert_ol_block_status(strata, block_id, "unchecked")
             assert int(block["header_slot"]) == slot
 
             crashed_block["slot"] = slot
@@ -66,7 +66,7 @@ class TestCrashFcmNewBlock(CrashTest):
         logger.info(f"Post-recovery height: {result.post_status['tip']['slot']}")
         strata.stop()
 
-        assert_single_block_at_slot(datadir, slot, block_id)
-        assert_ol_block_status(datadir, block_id, "valid")
+        assert_single_block_at_slot(strata, slot, block_id)
+        assert_ol_block_status(strata, block_id, "valid")
         logger.info("Recovered crashed block is valid and unique at slot=%s", slot)
         return True

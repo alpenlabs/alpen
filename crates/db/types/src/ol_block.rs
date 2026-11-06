@@ -128,13 +128,23 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Gets the validity status of a block.
     fn get_block_status(&self, id: OLBlockId) -> DbResult<Option<BlockStatus>>;
 
-    /// Returns the highest slot recorded in the canonical OL block index.
-    fn get_tip_slot(&self) -> DbResult<Slot>;
-
-    /// Gets the canonical OL block id at a slot, as recorded by fork choice.
+    /// Returns the canonical block at the highest indexed slot.
     ///
-    /// Returns `None` for slots above the current canonical tip or never written.
+    /// Returns `None` for an empty index. The slot and block ID are read together,
+    /// even during a concurrent canonical suffix replacement.
+    fn get_canonical_tip(&self) -> DbResult<Option<OLBlockCommitment>>;
+
+    /// Looks up the canonical block ID at `slot`.
+    ///
+    /// Returns `None` when the slot has no canonical index entry.
     fn get_canonical_block(&self, slot: Slot) -> DbResult<Option<OLBlockId>>;
+
+    /// Looks up the canonical block ID for each requested slot.
+    ///
+    /// Results preserve input order and length, including duplicates and slots without
+    /// a canonical block. All IDs are read together, even during a concurrent canonical
+    /// suffix replacement.
+    fn get_canonical_blocks(&self, slots: Vec<Slot>) -> DbResult<Vec<Option<OLBlockId>>>;
 
     /// Replaces the canonical suffix from `start_slot`.
     ///

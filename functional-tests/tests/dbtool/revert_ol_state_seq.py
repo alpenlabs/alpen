@@ -52,14 +52,13 @@ class RevertOLStateSeqTest(StrataNodeTest):
         signer_service.stop()
         seq_service.stop()
 
-        datadir = seq_service.props["datadir"]
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(seq_service)
         latest_epoch_before_revert = int(latest_checkpoint["checkpoint_epoch"])
         post_restart_target_epoch = latest_epoch_before_revert + 1
         target_block_id, target_slot = target_end_of_checkpointed_epoch(latest_checkpoint)
 
-        old_tip_slot = run_dbtool_json(datadir, "get-syncinfo")["ol_tip_height"]
-        target_state_before = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        old_tip_slot = run_dbtool_json(seq_service, "get-syncinfo")["ol_tip_height"]
+        target_state_before = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         logger.info(
             "Revert target selected: epoch=%s block_id=%s target_slot=%s",
             latest_epoch_before_revert,
@@ -67,11 +66,11 @@ class RevertOLStateSeqTest(StrataNodeTest):
             target_state_before["current_slot"],
         )
 
-        code, stdout, stderr = revert_ol_state(datadir, target_block_id)
+        code, stdout, stderr = revert_ol_state(seq_service, target_block_id)
         assert code == 0, stderr or stdout
 
-        after_sync = run_dbtool_json(datadir, "get-syncinfo")
-        target_state_after = run_dbtool_json(datadir, "get-ol-state", target_block_id)
+        after_sync = run_dbtool_json(seq_service, "get-syncinfo")
+        target_state_after = run_dbtool_json(seq_service, "get-ol-state", target_block_id)
         assert after_sync["ol_tip_height"] < old_tip_slot
         logger.info(
             "Tip moved back (before=%s after=%s)",
@@ -80,7 +79,7 @@ class RevertOLStateSeqTest(StrataNodeTest):
         )
         assert target_state_after["current_slot"] == target_state_before["current_slot"]
         logger.info("Target OL state slot is stable after revert")
-        assert verify_checkpoint_preserved(datadir, latest_epoch_before_revert)
+        assert verify_checkpoint_preserved(seq_service, latest_epoch_before_revert)
         logger.info("Checkpoint and epoch summary are preserved")
 
         # Restart and verify chain resumes and reorgs past old tip.

@@ -19,6 +19,7 @@ members = [
   "crates/key-derivation",
   "crates/node-context",
   "crates/ol/block-assembly",
+  "crates/ol/canonical-chain-provider",
   "crates/ol/chain-types-v1",
   "crates/ol/checkpoint",
   "crates/ol/da-common",
@@ -115,6 +116,7 @@ strata-key-derivation = { path = "crates/key-derivation" }
 strata-node-context = { path = "crates/node-context" }
 strata-ol-block-assembly = { path = "crates/ol/block-assembly" }
 strata-ol-bridge-types = { path = "crates/bridge-types" }
+strata-ol-canonical-chain-provider = { path = "crates/ol/canonical-chain-provider" }
 strata-ol-chain-types-v1 = { path = "crates/ol/chain-types-v1" }
 strata-ol-checkpoint = { path = "crates/ol/checkpoint" }
 strata-ol-checkpoint-artifacts = { path = "crates/ol/checkpoint-artifacts" }

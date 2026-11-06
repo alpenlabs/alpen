@@ -1,5 +1,9 @@
+use std::future::Future;
+
 use strata_asm_checkpoint_types::CheckpointPayload;
 use strata_db_types::l1_writer::L1BundleStatus;
+use strata_db_types::DbResult;
+use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_primitives::OLBlockId;
 use strata_storage::NodeStorage;
@@ -7,11 +11,44 @@ use tracing::debug;
 
 use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error, RevealTxSigningDuty};
 
+/// Reads checkpoint candidates and their exact signing artifacts.
+pub trait CheckpointDutyContext: Send + Sync {
+    /// Returns the earliest epoch in the unsigned-checkpoint queue, or `None` if empty.
+    ///
+    /// Queue membership does not establish canonicality or payload availability.
+    fn get_next_unsigned_checkpoint_epoch(
+        &self,
+    ) -> impl Future<Output = DbResult<Option<Epoch>>> + Send;
+
+    /// Returns the canonical commitment for `epoch`.
+    ///
+    /// Returns `None` when there is no canonical commitment for `epoch`.
+    fn get_canonical_epoch_commitment_at(
+        &self,
+        epoch: Epoch,
+    ) -> impl Future<Output = DbResult<Option<EpochCommitment>>> + Send;
+
+    /// Returns the payload for the exact commitment, or `None` if absent.
+    fn get_checkpoint_payload(
+        &self,
+        commitment: EpochCommitment,
+    ) -> impl Future<Output = DbResult<Option<CheckpointPayload>>> + Send;
+
+    /// Returns whether submission has been recorded for the exact commitment.
+    ///
+    /// A signing entry does not imply L1 inclusion or finalization.
+    fn has_checkpoint_signing_entry(
+        &self,
+        commitment: EpochCommitment,
+    ) -> impl Future<Output = DbResult<bool>> + Send;
+}
+
 /// Extract sequencer duties.
 pub async fn extract_duties(
     blockasm: &BlockasmHandle,
     tip_blkid: OLBlockId,
     node_storage: &NodeStorage,
+    checkpoint_ctx: &impl CheckpointDutyContext,
 ) -> Result<Vec<Duty>, Error> {
     let mut duties = vec![];
     let block_high_watermark = node_storage
@@ -50,7 +87,7 @@ pub async fn extract_duties(
     }
 
     // Checkpoint duties
-    let unsigned_checkpoint = get_earliest_unsigned_checkpoint(node_storage).await?;
+    let unsigned_checkpoint = get_earliest_unsigned_checkpoint(checkpoint_ctx).await?;
     duties.extend(
         unsigned_checkpoint
             .into_iter()
@@ -66,33 +103,25 @@ pub async fn extract_duties(
 }
 
 /// Gets the earliest unsigned checkpoint
-async fn get_earliest_unsigned_checkpoint(
-    node_storage: &NodeStorage,
+pub(crate) async fn get_earliest_unsigned_checkpoint(
+    ctx: &impl CheckpointDutyContext,
 ) -> Result<Option<CheckpointPayload>, Error> {
-    let ckptdb = node_storage.ol_checkpoint();
-    let Some(unsigned_epoch) = ckptdb.get_next_unsigned_checkpoint_epoch_async().await? else {
+    let Some(epoch) = ctx.get_next_unsigned_checkpoint_epoch().await? else {
         return Ok(None);
     };
-
-    let Some(commitment) = ckptdb
-        .get_canonical_epoch_commitment_at_async(unsigned_epoch)
-        .await?
-    else {
+    let Some(commitment) = ctx.get_canonical_epoch_commitment_at(epoch).await? else {
         return Ok(None);
     };
-
-    if ckptdb
-        .get_checkpoint_signing_entry_async(commitment)
-        .await?
-        .is_some()
-    {
+    if ctx.has_checkpoint_signing_entry(commitment).await? {
         return Ok(None);
     }
-
-    ckptdb
-        .get_checkpoint_payload_entry_async(commitment)
-        .await
-        .map_err(Into::into)
+    let Some(payload) = ctx.get_checkpoint_payload(commitment).await? else {
+        return Ok(None);
+    };
+    if ctx.get_canonical_epoch_commitment_at(epoch).await? != Some(commitment) {
+        return Ok(None);
+    }
+    Ok(Some(payload))
 }
 
 /// Gets payload entries pending an external signature.
@@ -120,4 +149,149 @@ async fn get_pending_payload_duties(
     }
 
     Ok(duties)
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_db_types::DbError;
+
+    use super::*;
+    use crate::test_utils::CheckpointFixture;
+
+    #[test]
+    fn test_checkpoint_duties_follow_unsigned_epoch_progression() {
+        let fixture = CheckpointFixture::new();
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+
+        // Epochs complete and become canonical before their payloads are ready.
+        let first = fixture.extend(fixture.genesis(), 1);
+        fixture.publish(first);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+        let first_payload = fixture.store_payload(first);
+        let second = fixture.extend(first, 2);
+        fixture.publish(second);
+        let second_payload = fixture.store_payload(second);
+
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            Some(first_payload)
+        );
+        fixture.record_submission(first, 10);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            Some(second_payload)
+        );
+        fixture.record_submission(second, 11);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_duty_waits_for_canonical_payload_instead_of_using_fork() {
+        let fixture = CheckpointFixture::new();
+        let first = fixture.extend(fixture.genesis(), 1);
+        fixture.publish(first);
+        fixture.store_payload(first);
+        fixture.record_submission(first, 10);
+
+        // Both branches have summaries, but only the orphan has a payload initially.
+        let left = fixture.extend(first, 2);
+        let right = fixture.extend(first, 3);
+        let (orphan, canonical) = if left < right {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        fixture.store_payload(orphan);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+        fixture.publish(canonical);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+
+        let payload = fixture.store_payload(canonical);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            Some(payload)
+        );
+        fixture.record_submission(canonical, 11);
+        let next = fixture.extend(canonical, 4);
+        fixture.publish(next);
+        let next_payload = fixture.store_payload(next);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            Some(next_payload)
+        );
+
+        // An abandoned payload requeues the already-signed epoch at the head.
+        // Selection stops there, blocking the later canonical epoch's duty too.
+        fixture.store_payload(orphan);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_duty_rechecks_after_reorg() {
+        let fixture = CheckpointFixture::new();
+        let first = fixture.extend(fixture.genesis(), 1);
+        fixture.publish(first);
+        fixture.store_payload(first);
+        let replacement = fixture.extend(fixture.genesis(), 2);
+        let replacement_payload = fixture.store_payload(replacement);
+
+        // Fork choice changes after loading the old payload. Only the next poll offers the new one.
+        fixture.reorg_after_payload(replacement);
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            Some(replacement_payload)
+        );
+
+        // Rolling back to genesis removes the completed epoch entirely.
+        fixture.reorg_after_payload(fixture.genesis());
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+        assert_eq!(
+            fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_duty_propagates_canonical_read_failures() {
+        let fixture = CheckpointFixture::new();
+        let first = fixture.extend(fixture.genesis(), 1);
+        fixture.publish(first);
+        let payload = fixture.store_payload(first);
+        for successful_reads in [0, 1] {
+            fixture.fail_canonical_read_after(successful_reads);
+            assert!(matches!(
+                fixture.get_earliest_unsigned_checkpoint_blocking(),
+                Err(Error::Database(DbError::Busy))
+            ));
+            assert_eq!(
+                fixture.get_earliest_unsigned_checkpoint_blocking().unwrap(),
+                Some(payload.clone())
+            );
+        }
+    }
 }

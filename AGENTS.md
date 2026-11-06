@@ -207,6 +207,7 @@ Orchestration Layer implementation.
 | `ol/state-container` | `OLStateContainer`, `OLStateSeries`, the spec-to-layout mapping, and the container's serde form |
 | `ol/state-support-types` | State access layers (per-layout memory base layer, batch diff, indexer, write tracking) |
 | `ol/state-provider` | OL state provider traits and implementations |
+| `ol/canonical-chain-provider` | Read-only canonical OL block and epoch queries (`OLCanonicalChainProvider`), with a view backed by the canonical block index and a finalized view derived from canonical client state and L1 checkpoint observations |
 | `ol/mmr-index` | OL-owned MMR index comparison and reconciliation helpers |
 | `ol/genesis` | OL genesis state construction |
 | `ol/params` | `OLGenesisParams`, `OLRuntimeParams`, and combined `OLParams` |

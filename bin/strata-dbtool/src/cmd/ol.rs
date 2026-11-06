@@ -4,6 +4,7 @@ use strata_db_types::{
     backend::DatabaseBackend,
     ol_block::{BlockStatus, OLBlockDatabase},
     ol_state::OLStateDatabase,
+    DbError,
 };
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_v1::OLBlockV1;
@@ -363,12 +364,10 @@ fn get_chain_tip_ol_block_id(db: &impl DatabaseBackend) -> Result<OLBlockId, Dis
 pub(crate) fn get_canonical_ol_tip(
     db: &impl DatabaseBackend,
 ) -> Result<OLBlockCommitment, DisplayedError> {
-    let tip_slot = db
-        .ol_block_db()
-        .get_tip_slot()
-        .internal_error("Failed to get OL tip slot")?;
-    let tip_blkid = get_canonical_ol_block_at_slot(db, tip_slot)?;
-    Ok(OLBlockCommitment::new(tip_slot, tip_blkid))
+    db.ol_block_db()
+        .get_canonical_tip()
+        .and_then(|tip| tip.ok_or(DbError::NotBootstrapped))
+        .internal_error("Failed to get OL tip")
 }
 
 pub(crate) fn get_canonical_ol_block_at_slot(
@@ -476,6 +475,15 @@ mod tests {
             force: true,
             output_format: OutputFormat::Porcelain,
         }
+    }
+
+    #[test]
+    fn canonical_tip_requires_initialized_database() {
+        // A database without OL genesis has an empty canonical block index: genesis
+        // initialization writes its first entry. Storage then reports no tip, and commands
+        // that need a tip must fail rather than treat that as a valid result.
+        let db = get_test_sled_backend();
+        get_canonical_ol_tip(db.as_ref()).expect_err("empty canonical index has no tip");
     }
 
     #[test]

@@ -160,16 +160,17 @@ There is no automatic checkpoint deletion on restart, including when artifact
 validation fails. Offline repair remains an explicit operator action. Stop the
 node before using these `strata-dbtool` commands:
 
-- `delete-checkpoint-proof <epoch> --force` removes the canonical epoch's proof
-  receipt, but leaves its prover task unchanged.
+- `delete-checkpoint-proof --node-role sequencer <epoch> --force` removes the
+  canonical epoch's proof receipt, but leaves its prover task unchanged.
 - `reset-prover-task <key_hex> --force` makes the task pending and clears its
   retry-after timestamp. It retains metadata, including any saved remote request ID.
 - `delete-prover-task <key_hex> --force` removes the task record and its metadata,
   allowing a later submission to create a fresh task.
 
 Deleting a receipt alone leaves a completed task completed and does not trigger
-reproving. These commands also leave existing checkpoint payloads, signing
-records, and the checkpoint runner's epoch cursor unchanged. There is no dedicated
+reproving: the checkpoint runner stores no cursor, and at startup resumes after
+the highest canonical epoch that has a checkpoint payload. These commands also
+leave existing checkpoint payloads and signing records unchanged. There is no dedicated
 dbtool command to remove only payload/signing records. Reverting checkpointed
 history with `revert-ol-state` also removes epoch summaries and rewinds OL state;
 it is not a targeted payload/signing repair. See the

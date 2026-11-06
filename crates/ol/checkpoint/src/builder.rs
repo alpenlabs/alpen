@@ -7,8 +7,8 @@ use strata_bridge_params::BridgeParams;
 use strata_identifiers::L1BlockCommitment;
 use strata_node_context::NodeContext;
 use strata_ol_params::OLRuntimeParams;
-use strata_primitives::epoch::EpochCommitment;
 use strata_service::{ServiceBuilder, SyncAsyncInput, TokioWatchInput};
+use strata_status::OLSyncStatusUpdate;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 use tokio::sync::watch;
@@ -28,7 +28,7 @@ pub struct OLCheckpointBuilder {
     storage: Option<Arc<NodeStorage>>,
     runtime_params: Option<OLRuntimeParams>,
     genesis_l1_block: Option<L1BlockCommitment>,
-    epoch_summary_rx: Option<watch::Receiver<Option<EpochCommitment>>>,
+    ol_sync_rx: Option<watch::Receiver<Option<OLSyncStatusUpdate>>>,
     prover: Option<ProverConfig>,
 }
 
@@ -39,7 +39,7 @@ impl OLCheckpointBuilder {
             storage: None,
             runtime_params: None,
             genesis_l1_block: None,
-            epoch_summary_rx: None,
+            ol_sync_rx: None,
             prover: None,
         }
     }
@@ -59,19 +59,19 @@ impl OLCheckpointBuilder {
         self
     }
 
-    /// Set the epoch summary receiver for driving checkpoint creation.
-    pub fn with_epoch_summary_receiver(
+    /// Sets the receiver notified after canonical index updates.
+    pub fn with_ol_sync_receiver(
         mut self,
-        receiver: watch::Receiver<Option<EpochCommitment>>,
+        receiver: watch::Receiver<Option<OLSyncStatusUpdate>>,
     ) -> Self {
-        self.epoch_summary_rx = Some(receiver);
+        self.ol_sync_rx = Some(receiver);
         self
     }
 
     /// Set the prover configuration.
     ///
     /// When set, the checkpoint worker looks up proofs from the proof DB
-    /// and waits for the prover subject to the configured publish mode.
+    /// and waits while the selected commitment remains canonical.
     /// When absent, empty proofs are used.
     pub fn with_prover(mut self, prover: ProverConfig) -> Self {
         self.prover = Some(prover);
@@ -83,9 +83,9 @@ impl OLCheckpointBuilder {
         let storage = self
             .storage
             .context("missing required dependency: storage")?;
-        let epoch_summary_rx = self
-            .epoch_summary_rx
-            .context("missing required dependency: epoch_summary_rx")?;
+        let ol_sync_rx = self
+            .ol_sync_rx
+            .context("missing required dependency: ol_sync_rx")?;
         let runtime_params = self
             .runtime_params
             .context("missing required dependency: runtime_params")?;
@@ -94,7 +94,7 @@ impl OLCheckpointBuilder {
             .context("missing required dependency: genesis_l1_block")?;
 
         let runtime_handle = executor.handle().clone();
-        let input = TokioWatchInput::from_receiver(epoch_summary_rx);
+        let input = TokioWatchInput::from_receiver(ol_sync_rx);
         let input = SyncAsyncInput::new(input, runtime_handle);
 
         let ctx = match self.prover {

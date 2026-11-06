@@ -34,8 +34,8 @@ use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
 
 use crate::rpc::errors::{
-    block_history_unavailable_error, db_error, internal_error, invalid_params_error,
-    mempool_error_to_rpc, not_available_on_node_error, not_found_error,
+    block_history_unavailable_error, canonical_chain_db_error_to_rpc, db_error, internal_error,
+    invalid_params_error, mempool_error_to_rpc, not_available_on_node_error, not_found_error,
 };
 
 /// Whether this node serves OL block body/data over RPC.
@@ -57,6 +57,20 @@ impl OLBlockDataAccess {
     }
 }
 
+/// Whether locally applied OL state covers every epoch the canonical view reports.
+///
+/// The finalized view on a checkpoint-sync node follows L1 finality, which can be
+/// ahead of locally applied checkpoints. There, a canonical epoch without local
+/// state is sync lag; elsewhere it is a node fault.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(crate) enum OLLocalStateCoverage {
+    /// Every reported canonical epoch has terminal state stored locally.
+    Complete,
+
+    /// Local state may lag behind the reported canonical epochs.
+    MayLag,
+}
+
 /// One canonical-chain block in the range walked by `get_blocks_summaries`.
 struct ChainBlock {
     slot: u64,
@@ -74,6 +88,8 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     max_headers_range: usize,
     // Indicates whether or not the server has access to block data.
     block_data_access: OLBlockDataAccess,
+    // Indicates whether local state can trail the canonical view.
+    local_state_coverage: OLLocalStateCoverage,
 }
 
 /// Convenient wrapper for account records.
@@ -143,12 +159,14 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         genesis_l1_block: L1BlockCommitment,
         max_headers_range: usize,
         block_data_access: OLBlockDataAccess,
+        local_state_coverage: OLLocalStateCoverage,
     ) -> Self {
         Self {
             provider,
             genesis_l1_block,
             max_headers_range,
             block_data_access,
+            local_state_coverage,
         }
     }
 
@@ -184,7 +202,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .provider
             .get_canonical_block_at(height)
             .await
-            .map_err(db_error)?
+            .map_err(canonical_chain_db_error_to_rpc)?
             .map(|b| b.blkid);
         Ok(blkid)
     }
@@ -196,7 +214,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         self.provider
             .get_canonical_block_at(height)
             .await
-            .map_err(db_error)
+            .map_err(canonical_chain_db_error_to_rpc)
     }
 
     async fn get_block(&self, blkid: OLBlockId) -> RpcResult<OLBlockV1> {
@@ -259,7 +277,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .provider
             .get_canonical_epoch_commitment_at(epoch)
             .await
-            .map_err(db_error)?
+            .map_err(canonical_chain_db_error_to_rpc)?
         else {
             return Ok(None);
         };
@@ -312,18 +330,29 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         )))
     }
 
-    async fn get_prev_epoch_commitment(&self, epoch: Epoch) -> RpcResult<EpochCommitment> {
-        if epoch == 0 {
+    async fn get_prev_epoch_commitment(
+        &self,
+        commitment: EpochCommitment,
+    ) -> RpcResult<EpochCommitment> {
+        if commitment.epoch() == 0 {
             return Ok(EpochCommitment::null());
         }
 
-        self.provider
-            .get_canonical_epoch_commitment_at(epoch - 1)
+        // Keep the predecessor on the selected branch even if fork choice changes.
+        let summary = self
+            .provider
+            .get_epoch_summary(commitment)
             .await
             .map_err(db_error)?
             .ok_or_else(|| {
-                not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
-            })
+                not_found_error(format!(
+                    "No epoch summary found for commitment {commitment}"
+                ))
+            })?;
+        Ok(EpochCommitment::from_terminal(
+            commitment.epoch() - 1,
+            *summary.prev_terminal(),
+        ))
     }
 
     /// Resolves an [`OLBlockTag`] to a concrete [`OLBlockCommitment`].
@@ -659,10 +688,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .provider
             .get_canonical_epoch_commitment_at(epoch)
             .await
-            .map_err(|e| {
-                error!(?e, ?epoch, "Failed to get canonical epoch commitment");
-                db_error(e)
-            })?
+            .map_err(canonical_chain_db_error_to_rpc)?
         else {
             return Err(not_found_error(format!(
                 "No canonical commitment found for epoch {epoch}"
@@ -679,9 +705,11 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 db_error(e)
             })?
         else {
-            return Err(internal_error(format!(
-                "No OL state found for terminal block {terminal_commitment}"
-            )));
+            let msg = format!("No OL state found for terminal block {terminal_commitment}");
+            return Err(match self.local_state_coverage {
+                OLLocalStateCoverage::Complete => internal_error(msg),
+                OLLocalStateCoverage::MayLag => not_found_error(msg),
+            });
         };
 
         Ok((epoch_commitment, ol_state))
@@ -737,7 +765,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         })?;
         let final_state_root: HexBytes32 = snark_state.inner_state_root().0.into();
 
-        let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
+        let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch_commitment).await?;
 
         let updates = if let Some(records) = self
             .provider
@@ -1075,7 +1103,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         self.provider
             .get_canonical_epoch_commitment_at(epoch)
             .await
-            .map_err(db_error)?
+            .map_err(canonical_chain_db_error_to_rpc)?
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
     }
 
@@ -1516,7 +1544,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .provider
             .get_canonical_block_at(slot)
             .await
-            .map_err(db_error)?
+            .map_err(canonical_chain_db_error_to_rpc)?
             .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
         let write_batch = self
             .provider

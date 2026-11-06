@@ -352,10 +352,7 @@ impl OLCheckpointManager {
             .await
     }
 
-    /// Gets the observed checkpoint commitments for `epoch`.
-    ///
-    /// Candidates are observed, not canonical; callers resolve canonicity at
-    /// read time since an L1 reorg can leave more than one.
+    /// Blocking counterpart of [`Self::get_observed_checkpoint_commitments_for_epoch_async`].
     pub fn get_observed_checkpoint_commitments_for_epoch_blocking(
         &self,
         epoch: Epoch,

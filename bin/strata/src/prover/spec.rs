@@ -9,6 +9,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub(crate) use strata_checkpoint_types::CheckpointProofTask as CheckpointTask;
 use strata_identifiers::{Epoch, EpochCommitment};
+use strata_ol_canonical_chain_provider::{OLCanonicalChainProvider, OLCanonicalChainProviderImpl};
 use strata_ol_checkpoint::compute_epoch_da;
 use strata_ol_params::OLRuntimeParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
@@ -25,6 +26,7 @@ use super::errors::ProverError;
 #[derive(Clone)]
 pub(crate) struct CheckpointSpec {
     storage: Arc<NodeStorage>,
+    canonical_chain_provider: OLCanonicalChainProviderImpl,
     runtime_params: OLRuntimeParams,
     assigned_spec: OLSpecId,
 }
@@ -36,6 +38,7 @@ impl CheckpointSpec {
         assigned_spec: OLSpecId,
     ) -> Self {
         Self {
+            canonical_chain_provider: OLCanonicalChainProviderImpl::new(&storage),
             storage,
             runtime_params,
             assigned_spec,
@@ -57,18 +60,45 @@ impl ProofSpec for CheckpointSpec {
         let storage = Arc::clone(&self.storage);
         let runtime_params = self.runtime_params;
         let assigned_spec = self.assigned_spec;
-        // All storage access is blocking; hop to a blocking thread so we
-        // don't stall the async runtime while reading blocks and state. A join
-        // error is an infra fault (Err → retried); the inner classification
-        // (epoch-not-ready → Blocked, DB → Err, else → Rejected) is bridged by
-        // `InputResolution::from_result`.
-        let assembled = spawn_blocking(move || {
-            fetch_input_blocking(storage, commitment, runtime_params, assigned_spec)
-        })
-        .await
-        .map_err(|error| PaasError::Storage(format!("input fetch join: {error}")))?;
-        InputResolution::from_result(assembled.map_err(PaasError::from))
+        // Recovery takes this path before resuming a saved backend request too.
+        let assembled = async {
+            ensure_canonical_task(&self.canonical_chain_provider, commitment)
+                .await
+                .map_err(PaasError::from)?;
+            let input = spawn_blocking(move || {
+                fetch_input_blocking(storage, commitment, runtime_params, assigned_spec)
+            })
+            .await
+            .map_err(|error| PaasError::Storage(format!("input fetch join: {error}")))?
+            .map_err(PaasError::from)?;
+            ensure_canonical_task(&self.canonical_chain_provider, commitment)
+                .await
+                .map_err(PaasError::from)?;
+            Ok(input)
+        }
+        .await;
+        InputResolution::from_result(assembled)
     }
+}
+
+/// Checks eligibility before routing, assembling input, or resuming a saved task.
+pub(super) async fn ensure_canonical_task(
+    provider: &impl OLCanonicalChainProvider,
+    commitment: EpochCommitment,
+) -> Result<(), ProverError> {
+    let epoch = commitment.epoch();
+    let canonical = provider
+        .get_canonical_epoch_commitment_at_async(epoch)
+        .await?
+        .ok_or(ProverError::EpochCommitmentNotFound(u64::from(epoch)))?;
+    if canonical != commitment {
+        return Err(ProverError::StaleTaskCommitment {
+            epoch: u64::from(epoch),
+            task: commitment,
+            canonical,
+        });
+    }
+    Ok(())
 }
 
 /// Reads the spec used by the task's epoch from its terminal OL state.
@@ -83,36 +113,12 @@ pub(crate) fn checkpoint_task_spec(
     storage: &NodeStorage,
     task: CheckpointTask,
 ) -> Result<OLSpecId, ProverError> {
-    validate_checkpoint_task_commitment(storage, task.0)?;
     let commitment = task.0.to_block_commitment();
     let state = storage
         .ol_state()
         .get_toplevel_ol_state_blocking(commitment)?
         .ok_or(ProverError::EpochTerminalStateNotFound { commitment })?;
     Ok(state.cur_spec())
-}
-
-/// Checks that the task still matches the canonical commitment for its epoch.
-fn validate_checkpoint_task_commitment(
-    storage: &NodeStorage,
-    task_commitment: EpochCommitment,
-) -> Result<(), ProverError> {
-    let epoch = task_commitment.epoch;
-    let epoch_index = u64::from(epoch);
-    // Ensure this task still matches the canonical commitment for the epoch.
-    let canonical_commitment = storage
-        .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(epoch)?
-        .ok_or(ProverError::EpochCommitmentNotFound(epoch_index))?;
-    if canonical_commitment != task_commitment {
-        return Err(ProverError::StaleTaskCommitment {
-            epoch: epoch_index,
-            task: task_commitment,
-            canonical: canonical_commitment,
-        });
-    }
-
-    Ok(())
 }
 
 fn fetch_input_blocking(

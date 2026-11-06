@@ -1,0 +1,30 @@
+[package]
+name = "strata-ol-canonical-chain-provider"
+version = "0.1.0"
+edition = "2024"
+description = "Read-only access to the canonical OL chain"
+
+[features]
+test-utils = [
+  "dep:strata-asm-checkpoint-types",
+  "dep:strata-csm-types",
+  "strata-asm-checkpoint-types/test-utils",
+]
+
+[dependencies]
+strata-asm-checkpoint-types = { workspace = true, optional = true }
+strata-csm-types = { workspace = true, optional = true }
+strata-db-types.workspace = true
+strata-identifiers.workspace = true
+strata-storage.workspace = true
+
+tokio.workspace = true
+
+[dev-dependencies]
+strata-asm-checkpoint-types = { workspace = true, features = ["test-utils"] }
+strata-checkpoint-types.workspace = true
+strata-csm-types.workspace = true
+strata-db-store-sled.workspace = true
+
+[lints]
+workspace = true
