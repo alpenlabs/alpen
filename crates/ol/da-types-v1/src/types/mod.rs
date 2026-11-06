@@ -40,22 +40,72 @@ pub const MAX_MSG_PAYLOAD_BYTES: usize = 4 * 1024;
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_acct_types::{AccountId, BitcoinAmount, MAX_MSG_PAYLOAD_DATA_BYTES, MsgPayload};
+    use strata_codec::{Codec, CodecError, decode_buf_exact, encode_to_vec};
 
     use super::*;
 
-    #[test]
-    fn test_da_message_entry_decode_rejects_oversize_payload() {
+    fn message_entry_with_payload_len(len: usize) -> DaMessageEntryV1 {
         let payload = MsgPayload::from_bytes(
-            BitcoinAmount::try_from(0).expect("amount must not exceed the Bitcoin money supply"),
-            vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
+            BitcoinAmount::try_from(42).expect("amount must not exceed the Bitcoin money supply"),
+            vec![0x5a; len],
         )
         .expect("message payload bytes must fit within SSZ max length");
-        let entry = DaMessageEntryV1::new(AccountId::from([0u8; 32]), 0, payload);
+        DaMessageEntryV1::new(AccountId::from([0x11; 32]), 7, payload)
+    }
 
-        let encoded = encode_to_vec(&entry).expect("encode da message entry");
-        let decoded: Result<DaMessageEntryV1, _> = decode_buf_exact(&encoded);
-        assert!(decoded.is_err());
+    #[test]
+    fn test_da_message_entry_encode_rejects_oversize_payload_without_writing() {
+        for len in [
+            MAX_MSG_PAYLOAD_BYTES + 1,
+            MAX_MSG_PAYLOAD_DATA_BYTES as usize,
+        ] {
+            let entry = message_entry_with_payload_len(len);
+            let mut encoded = vec![0xa5];
+            assert!(matches!(
+                entry.encode(&mut encoded),
+                Err(CodecError::OverflowContainer)
+            ));
+            assert_eq!(encoded, [0xa5]);
+        }
+    }
+
+    #[test]
+    fn test_da_message_entry_decode_rejects_oversize_payload() {
+        let entry = message_entry_with_payload_len(MAX_MSG_PAYLOAD_BYTES + 1);
+        // Build the invalid wire input without using the entry's checked encoder.
+        let mut encoded = encode_to_vec(&entry.source).unwrap();
+        entry.incl_epoch.encode(&mut encoded).unwrap();
+        entry.payload.encode(&mut encoded).unwrap();
+        assert!(matches!(
+            decode_buf_exact::<DaMessageEntryV1>(&encoded),
+            Err(CodecError::OverflowContainer)
+        ));
+    }
+
+    #[test]
+    fn test_da_message_entry_round_trips_payload_boundaries() {
+        for len in [0, MAX_MSG_PAYLOAD_BYTES] {
+            let entry = message_entry_with_payload_len(len);
+            let encoded = encode_to_vec(&entry).unwrap();
+            assert_eq!(
+                decode_buf_exact::<DaMessageEntryV1>(&encoded).unwrap(),
+                entry
+            );
+        }
+    }
+
+    #[test]
+    fn test_da_message_entry_empty_payload_wire_vector() {
+        let entry = message_entry_with_payload_len(0);
+        let mut expected = vec![0x11; 32];
+        expected.extend_from_slice(&[0, 0, 0, 7]);
+        expected.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 42]);
+        expected.push(0);
+        assert_eq!(encode_to_vec(&entry).unwrap(), expected);
+        assert_eq!(
+            decode_buf_exact::<DaMessageEntryV1>(&expected).unwrap(),
+            entry
+        );
     }
 }

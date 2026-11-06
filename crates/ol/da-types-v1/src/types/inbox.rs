@@ -31,6 +31,10 @@ impl DaMessageEntryV1 {
 
 impl Codec for DaMessageEntryV1 {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        if self.payload.data().len() > MAX_MSG_PAYLOAD_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
+
         self.source.encode(enc)?;
         self.incl_epoch.encode(enc)?;
         self.payload.encode(enc)?;
