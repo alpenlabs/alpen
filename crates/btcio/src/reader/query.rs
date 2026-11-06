@@ -28,6 +28,9 @@ use crate::{
     BtcioParams,
 };
 
+/// Balances bounded catch-up memory with fewer tip and reorg checks.
+const MAX_BLOCKS_PER_POLL: usize = 64;
+
 /// Context that encapsulates common items needed for L1 reader.
 pub(crate) struct ReaderContext<R: Reader> {
     /// Bitcoin reader client
@@ -136,6 +139,7 @@ async fn do_reader_task<R: Reader>(
 
     loop {
         let mut status_updates: Vec<L1StatusUpdate> = Vec::new();
+        let mut poll_immediately = false;
 
         if let Some(reader_state) = state.as_mut() {
             match poll_for_new_blocks(&ctx, reader_state, &mut status_updates).await {
@@ -143,7 +147,8 @@ async fn do_reader_task<R: Reader>(
                     handle_poll_error(&err, &mut status_updates);
                 }
                 Ok(events) => {
-                    // handle events
+                    // Drain each batch before fetching more; full batches skip the idle delay.
+                    poll_immediately = events.len() == MAX_BLOCKS_PER_POLL;
                     for ev in events {
                         handle_bitcoin_event(ev, &ctx, event_submitter).await?;
                     }
@@ -167,7 +172,9 @@ async fn do_reader_task<R: Reader>(
             }
         };
 
-        sleep(poll_dur).await;
+        if !poll_immediately {
+            sleep(poll_dur).await;
+        }
 
         status_updates.push(L1StatusUpdate::LastUpdate(
             SystemTime::now()
@@ -441,9 +448,9 @@ async fn poll_for_new_blocks<R: Reader>(
 
     debug!(%client_height, "have new blocks");
 
-    // Now process each block we missed.
+    // Bound retained full blocks until the caller can persist and submit them.
     let scan_start_height = state.next_height();
-    for fetch_height in scan_start_height..=client_height {
+    for fetch_height in (scan_start_height..=client_height).take(MAX_BLOCKS_PER_POLL) {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, ev)) => {
                 // Note: Checkpoint detection is now handled by the ASM STF via logs,
@@ -572,8 +579,12 @@ async fn process_block<R: Reader>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::VecDeque, sync::Arc};
+    use std::{
+        collections::VecDeque,
+        sync::{Arc, Mutex},
+    };
 
+    use async_trait::async_trait;
     use bitcoin::{block::Header, hashes::Hash, Block, BlockHash, Network, Txid};
     use bitcoind_async_client::{
         corepc_types::model::{
@@ -720,6 +731,24 @@ mod tests {
 
         async fn network(&self) -> ClientResult<Network> {
             self.inner.network().await
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingBlockSubmitter(Mutex<Vec<L1BlockCommitment>>);
+
+    #[async_trait]
+    impl BlockSubmitter for RecordingBlockSubmitter {
+        fn submit_block_blocking(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+            self.0
+                .lock()
+                .expect("test: lock submitted blocks")
+                .push(block);
+            Ok(())
+        }
+
+        async fn submit_block(&self, block: L1BlockCommitment) -> anyhow::Result<()> {
+            self.submit_block_blocking(block)
         }
     }
 
@@ -1016,6 +1045,109 @@ mod tests {
             bitcoind_chain.block_hash(genesis_height - 1),
         )]);
         assert_eq!(recent_blocks, expected_blocks);
+    }
+
+    #[tokio::test]
+    async fn catchup_delivers_large_range_in_bounded_ordered_batches() {
+        let nonces: Vec<_> = (0..=2_243).collect();
+        let client = chain_client(&nonces).await;
+        let ctx = chain_reader_context(test_storage(), client);
+        store_l1_canonical_hash(&ctx.storage, 0, ctx.client.block_hash(0)).await;
+        let mut state = init_reader_state(&ctx, 1).await.unwrap();
+        let submitter = RecordingBlockSubmitter::default();
+        let expected: Vec<_> = (1..=2_243)
+            .map(|height| {
+                L1BlockCommitment::new(height, ctx.client.block_hash(height).to_l1_block_id())
+            })
+            .collect();
+
+        for batch in expected.chunks(MAX_BLOCKS_PER_POLL) {
+            let mut status_updates = Vec::new();
+            let events = poll_for_new_blocks(&ctx, &mut state, &mut status_updates)
+                .await
+                .unwrap();
+            let last_block = batch.last().unwrap();
+            assert_eq!(events.len(), batch.len());
+            assert!(status_updates.len() <= 1 + 2 * MAX_BLOCKS_PER_POLL);
+
+            for event in events {
+                handle_bitcoin_event(event, &ctx, &submitter).await.unwrap();
+            }
+            assert_eq!(
+                ctx.storage
+                    .l1()
+                    .get_canonical_chain_tip_async()
+                    .await
+                    .unwrap(),
+                Some((last_block.height(), *last_block.blkid()))
+            );
+        }
+        assert_eq!(*submitter.0.lock().unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn catchup_reconciles_reorg_before_fetching_next_batch() {
+        let nonces: Vec<_> = (0..=2 * MAX_BLOCKS_PER_POLL as u32).collect();
+        let client = chain_client(&nonces).await;
+        let mut ctx = chain_reader_context(test_storage(), client);
+        store_l1_canonical_hash(&ctx.storage, 0, ctx.client.block_hash(0)).await;
+        let mut state = init_reader_state(&ctx, 1).await.unwrap();
+        let submitter = RecordingBlockSubmitter::default();
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(events.len(), MAX_BLOCKS_PER_POLL);
+        for event in events {
+            handle_bitcoin_event(event, &ctx, &submitter).await.unwrap();
+        }
+
+        let pivot_height = MAX_BLOCKS_PER_POLL as u32 - 2;
+        let replacement_nonces: Vec<_> = nonces
+            .into_iter()
+            .map(|height| {
+                if height > pivot_height {
+                    height + 1_000
+                } else {
+                    height
+                }
+            })
+            .collect();
+        ctx.client = Arc::new(chain_client(&replacement_nonces).await);
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], L1Event::RevertTo(block) if block.height() == pivot_height));
+        for event in events {
+            handle_bitcoin_event(event, &ctx, &submitter).await.unwrap();
+        }
+        assert_eq!(
+            ctx.storage
+                .l1()
+                .get_canonical_chain_tip_async()
+                .await
+                .unwrap()
+                .unwrap()
+                .0,
+            pivot_height
+        );
+
+        let events = poll_for_new_blocks(&ctx, &mut state, &mut Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(events.len(), MAX_BLOCKS_PER_POLL);
+        for event in events {
+            handle_bitcoin_event(event, &ctx, &submitter).await.unwrap();
+        }
+        let (height, blockid) = ctx
+            .storage
+            .l1()
+            .get_canonical_chain_tip_async()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(height, pivot_height + MAX_BLOCKS_PER_POLL as u32);
+        assert_eq!(blockid, ctx.client.block_hash(height).to_l1_block_id());
     }
 
     #[tokio::test]
