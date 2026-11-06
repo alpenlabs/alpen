@@ -41,7 +41,7 @@ pub const MAX_MSG_PAYLOAD_BYTES: usize = 4 * 1024;
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, MAX_MSG_PAYLOAD_DATA_BYTES, MsgPayload};
-    use strata_codec::{Codec, CodecError, decode_buf_exact, encode_to_vec};
+    use strata_codec::{Codec, CodecError, Varint, decode_buf_exact, encode_to_vec};
 
     use super::*;
 
@@ -81,6 +81,27 @@ mod tests {
             decode_buf_exact::<DaMessageEntryV1>(&encoded),
             Err(CodecError::OverflowContainer)
         ));
+    }
+
+    #[test]
+    fn test_da_message_entry_decode_rejects_oversize_prefix_without_body() {
+        let entry = message_entry_with_payload_len(0);
+        for len in [
+            MAX_MSG_PAYLOAD_BYTES + 1,
+            MAX_MSG_PAYLOAD_DATA_BYTES as usize,
+        ] {
+            let mut encoded = encode_to_vec(&entry.source).unwrap();
+            entry.incl_epoch.encode(&mut encoded).unwrap();
+            entry.payload.value().encode(&mut encoded).unwrap();
+            Varint::new_usize(len)
+                .unwrap()
+                .encode(&mut encoded)
+                .unwrap();
+            assert!(matches!(
+                decode_buf_exact::<DaMessageEntryV1>(&encoded),
+                Err(CodecError::OverflowContainer)
+            ));
+        }
     }
 
     #[test]

@@ -157,6 +157,30 @@ impl MsgPayload {
         &self.data
     }
 
+    /// Decodes a Codec payload with a caller-specific data length limit.
+    ///
+    /// Checks the caller's limit and the SSZ maximum before allocating the data buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodecError::OverflowContainer`] if the declared data length exceeds
+    /// either limit. Propagates errors decoding the value, length, or data bytes.
+    pub fn decode_with_max_data_length(
+        dec: &mut impl Decoder,
+        max_data_len: usize,
+    ) -> Result<Self, CodecError> {
+        let value = BitcoinAmount::decode(dec)?;
+        let len = Varint::decode(dec)?.inner() as usize;
+        if len > max_data_len.min(MAX_MSG_PAYLOAD_DATA_BYTES as usize) {
+            return Err(CodecError::OverflowContainer);
+        }
+
+        let mut buf = vec![0; len];
+        dec.read_buf(&mut buf)?;
+        let data = VariableList::new(buf).map_err(|_| CodecError::OverflowContainer)?;
+        Ok(Self { data, value })
+    }
+
     /// Wraps the payload into a [`SentMessage`] to some dest account.
     pub fn into_sent(self, dest: AccountId) -> SentMessage {
         SentMessage::new(dest, self)
@@ -165,18 +189,7 @@ impl MsgPayload {
 
 impl Codec for MsgPayload {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let value = BitcoinAmount::decode(dec)?;
-
-        let len_vi = Varint::decode(dec)?;
-        let len = len_vi.inner() as usize;
-        if len > MAX_MSG_PAYLOAD_DATA_BYTES as usize {
-            return Err(CodecError::OverflowContainer);
-        }
-        let mut buf = vec![0; len];
-        dec.read_buf(&mut buf)?;
-        let data = VariableList::new(buf).map_err(|_| CodecError::OverflowContainer)?;
-
-        Ok(Self { data, value })
+        Self::decode_with_max_data_length(dec, MAX_MSG_PAYLOAD_DATA_BYTES as usize)
     }
 
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
@@ -244,7 +257,85 @@ mod tests {
     const MAX_BITCOIN_MONEY_SATS: u64 = 21_000_000 * 100_000_000;
 
     mod msg_payload {
+        use strata_codec::{BufDecoder, decode_buf_exact, encode_to_vec};
+
         use super::*;
+
+        fn codec_prefix(len: usize) -> Vec<u8> {
+            let mut bytes = encode_to_vec(&BitcoinAmount::try_from(42).unwrap()).unwrap();
+            Varint::new_usize(len).unwrap().encode(&mut bytes).unwrap();
+            bytes
+        }
+
+        #[test]
+        fn bounded_codec_round_trips_at_length_limits() {
+            for len in [0, 8, MAX_MSG_PAYLOAD_DATA_BYTES as usize] {
+                let payload =
+                    MsgPayload::from_bytes(BitcoinAmount::try_from(42).unwrap(), vec![0x5a; len])
+                        .unwrap();
+                let bytes = encode_to_vec(&payload).unwrap();
+                let mut decoder = BufDecoder::new(&bytes);
+                assert_eq!(
+                    MsgPayload::decode_with_max_data_length(&mut decoder, len).unwrap(),
+                    payload
+                );
+                assert_eq!(decoder.remaining(), 0);
+                assert_eq!(decode_buf_exact::<MsgPayload>(&bytes).unwrap(), payload);
+            }
+        }
+
+        #[test]
+        fn bounded_codec_rejects_excessive_length_without_body() {
+            for max_data_len in [0, 8] {
+                let bytes = codec_prefix(max_data_len + 1);
+                let mut decoder = BufDecoder::new(&bytes);
+                assert!(matches!(
+                    MsgPayload::decode_with_max_data_length(&mut decoder, max_data_len),
+                    Err(CodecError::OverflowContainer)
+                ));
+                assert_eq!(decoder.remaining(), 0);
+            }
+        }
+
+        #[test]
+        fn bounded_codec_cannot_exceed_ssz_maximum() {
+            let bytes = codec_prefix(MAX_MSG_PAYLOAD_DATA_BYTES as usize + 1);
+            let mut decoder = BufDecoder::new(&bytes);
+            assert!(matches!(
+                MsgPayload::decode_with_max_data_length(&mut decoder, usize::MAX),
+                Err(CodecError::OverflowContainer)
+            ));
+            assert!(matches!(
+                decode_buf_exact::<MsgPayload>(&bytes),
+                Err(CodecError::OverflowContainer)
+            ));
+        }
+
+        #[test]
+        fn bounded_codec_rejects_truncated_in_range_payload() {
+            let mut bytes = codec_prefix(3);
+            bytes.extend_from_slice(&[0x11, 0x22]);
+            let mut decoder = BufDecoder::new(&bytes);
+            assert!(matches!(
+                MsgPayload::decode_with_max_data_length(&mut decoder, 3),
+                Err(CodecError::OverrunInput)
+            ));
+            assert!(matches!(
+                decode_buf_exact::<MsgPayload>(&bytes),
+                Err(CodecError::OverrunInput)
+            ));
+        }
+
+        #[test]
+        fn bounded_codec_preserves_wire_vector() {
+            let bytes = [0, 0, 0, 0, 0, 0, 0, 42, 3, 0x11, 0x22, 0x33];
+            let mut decoder = BufDecoder::new(bytes);
+            let payload = MsgPayload::decode_with_max_data_length(&mut decoder, 3).unwrap();
+            assert_eq!(payload.value(), BitcoinAmount::try_from(42).unwrap());
+            assert_eq!(payload.data(), &[0x11, 0x22, 0x33]);
+            assert_eq!(decoder.remaining(), 0);
+            assert_eq!(encode_to_vec(&payload).unwrap(), bytes);
+        }
 
         ssz_proptest!(
             MsgPayload,
