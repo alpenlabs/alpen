@@ -221,7 +221,7 @@ mod tests {
     use strata_asm_proto_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
     use strata_codec::encode_to_vec;
     use strata_codec_utils::CodecSsz;
-    use strata_l1_envelope_fmt::EnvelopeScriptBuilder;
+    use strata_l1_envelope_fmt::{EnvelopeScriptBuilder, MIN_ENVELOPE_PAYLOAD_SIZE};
     use strata_l1_txfmt::ParseConfig;
     use strata_test_utils_checkpoint::CheckpointTestHarness;
 
@@ -272,9 +272,18 @@ mod tests {
         funding: &Transaction,
     ) -> Transaction {
         let payload_bytes = encode_to_vec(&CodecSsz::new(payload.clone())).expect("encode payload");
+        build_envelope_tx_with_payload_bytes(&payload_bytes, envelope_pubkey, funding)
+    }
+
+    /// Builds a signed envelope shape with caller-supplied bytes, including malformed payloads.
+    fn build_envelope_tx_with_payload_bytes(
+        payload_bytes: &[u8],
+        envelope_pubkey: &[u8],
+        funding: &Transaction,
+    ) -> Transaction {
         let reveal_script = EnvelopeScriptBuilder::with_pubkey(envelope_pubkey)
             .expect("envelope builder")
-            .add_envelope(&payload_bytes)
+            .add_envelope(payload_bytes)
             .expect("add envelope")
             .build()
             .expect("build envelope script");
@@ -324,8 +333,8 @@ mod tests {
     }
 
     /// Wraps `payload` in a reveal tx using the harness's sequencer pubkey and
-    /// spending `funding`'s P2TR output (the legitimate, ASM-accepting envelope).
-    fn legit_envelope_tx(
+    /// spending `funding`'s output. Authentication depends on that output's script.
+    fn sequencer_envelope_tx(
         harness: &CheckpointTestHarness,
         payload: &CheckpointPayload,
         funding: &Transaction,
@@ -388,7 +397,7 @@ mod tests {
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
         let funding = funding_tx(p2tr_script(), 0);
-        let tx = legit_envelope_tx(&harness, &payload, &funding);
+        let tx = sequencer_envelope_tx(&harness, &payload, &funding);
         let mut ctx = make_ctx(
             block_from_txs(vec![create_dummy_tx(1, 1), tx.clone()]),
             aux_with_funding(&harness, &expected, &[&funding]),
@@ -419,10 +428,10 @@ mod tests {
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
         let funding = funding_tx(p2tr_script(), 0);
-        let tx = legit_envelope_tx(&harness, &payload, &funding);
+        let tx = sequencer_envelope_tx(&harness, &payload, &funding);
         let mut ctx = make_ctx(
             block_from_txs(vec![tx.clone()]),
-            aux_with_funding(&harness, &expected, &[]),
+            harness.gen_verified_aux(&expected),
             harness_checkpoint_state(&harness),
         );
 
@@ -435,6 +444,114 @@ mod tests {
         .expect("checkpoint accepted by the pre-upgrade ASM should match");
 
         assert_eq!(result.txid, RBuf32::from(tx.compute_txid().to_byte_array()));
+    }
+
+    /// With old aux, match the first sequencer-keyed carrier as the old ASM did, even if
+    /// Bitcoin did not authenticate it. New aux rejects the same carrier in the test below.
+    #[test]
+    fn matches_forged_carrier_from_pre_upgrade_aux() {
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
+        let expected = *payload.new_tip();
+        let witness_v2 = WitnessProgram::new(WitnessVersion::V2, &[0x11; 32]).unwrap();
+        let forged_funding = funding_tx(ScriptBuf::new_witness_program(&witness_v2), 1);
+        let forged_tx = sequencer_envelope_tx(&harness, &payload, &forged_funding);
+        let funding = funding_tx(p2tr_script(), 0);
+        let real_tx = sequencer_envelope_tx(&harness, &payload, &funding);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![forged_tx.clone(), real_tx]),
+            harness.gen_verified_aux(&expected),
+            harness_checkpoint_state(&harness),
+        );
+
+        let result = extract_matching_checkpoint(
+            &mut ctx,
+            TEST_MAGIC_BYTES,
+            &expected,
+            current_l1_height_for(&expected),
+        )
+        .expect("the first carrier accepted by the pre-upgrade ASM should match");
+
+        assert_eq!(
+            result.txid,
+            RBuf32::from(forged_tx.compute_txid().to_byte_array())
+        );
+        assert_eq!(ctx.scan_cursor, 1);
+        assert_eq!(ctx.checkpoint_state.verified_tip(), &expected);
+    }
+
+    /// A well-formed sequencer envelope can contain invalid checkpoint bytes. Both the
+    /// authenticated and pre-upgrade paths must skip it without advancing checkpoint state.
+    #[test]
+    fn skips_malformed_payload_with_and_without_spent_output_aux() {
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
+        let expected = *payload.new_tip();
+        let bad_funding = funding_tx(p2tr_script(), 1);
+        let malformed_tx = build_envelope_tx_with_payload_bytes(
+            &[0xff; MIN_ENVELOPE_PAYLOAD_SIZE],
+            harness.sequencer_pubkey(),
+            &bad_funding,
+        );
+        let funding = funding_tx(p2tr_script(), 0);
+        let real_tx = sequencer_envelope_tx(&harness, &payload, &funding);
+
+        for aux in [
+            harness.gen_verified_aux(&expected),
+            aux_with_funding(&harness, &expected, &[&bad_funding, &funding]),
+        ] {
+            let mut ctx = make_ctx(
+                block_from_txs(vec![malformed_tx.clone(), real_tx.clone()]),
+                aux,
+                harness_checkpoint_state(&harness),
+            );
+            assert!(
+                extract_matching_checkpoint(
+                    &mut ctx,
+                    TEST_MAGIC_BYTES,
+                    &expected,
+                    current_l1_height_for(&expected),
+                )
+                .is_some_and(
+                    |result| result.txid == RBuf32::from(real_tx.compute_txid().to_byte_array())
+                )
+            );
+            assert_eq!(ctx.scan_cursor, 2);
+            assert_eq!(ctx.checkpoint_state.verified_tip(), &expected);
+        }
+    }
+
+    /// The fallback keeps the new parser's TapScript-only rule even when aux lacks funding.
+    #[test]
+    fn rejects_future_leaf_version_with_pre_upgrade_aux() {
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
+        let expected = *payload.new_tip();
+        let funding = funding_tx(p2tr_script(), 0);
+        let mut tx = sequencer_envelope_tx(&harness, &payload, &funding);
+        let mut witness = tx.input[0].witness.to_vec();
+        // Only the leaf-version bits change. The extractor relies on Bitcoin for the
+        // commitment/signature checks; this fixture exercises its leaf-version check.
+        witness[2][0] = 0xc2 | (witness[2][0] & 1);
+        tx.input[0].witness = Witness::from_slice(&witness);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![tx]),
+            harness.gen_verified_aux(&expected),
+            harness_checkpoint_state(&harness),
+        );
+        let initial_tip = *ctx.checkpoint_state.verified_tip();
+
+        assert!(
+            extract_matching_checkpoint(
+                &mut ctx,
+                TEST_MAGIC_BYTES,
+                &expected,
+                current_l1_height_for(&expected),
+            )
+            .is_none()
+        );
+        assert_eq!(ctx.scan_cursor, 0);
+        assert_eq!(ctx.checkpoint_state.verified_tip(), &initial_tip);
     }
 
     /// If no envelope matches the expected tip on (epoch, l2_commitment),
@@ -454,7 +571,7 @@ mod tests {
         );
         let funding = funding_tx(p2tr_script(), 0);
         let mut ctx = make_ctx(
-            block_from_txs(vec![legit_envelope_tx(&harness, &payload, &funding)]),
+            block_from_txs(vec![sequencer_envelope_tx(&harness, &payload, &funding)]),
             aux_with_funding(&harness, &real_tip, &[&funding]),
             harness_checkpoint_state(&harness),
         );
@@ -497,7 +614,7 @@ mod tests {
             &hostile_funding,
         );
         let funding = funding_tx(p2tr_script(), 0);
-        let legit_tx = legit_envelope_tx(&harness, &payload, &funding);
+        let legit_tx = sequencer_envelope_tx(&harness, &payload, &funding);
 
         // ASM requests no spent output for the hostile envelope: its key fails first.
         let mut ctx = make_ctx(
@@ -542,9 +659,9 @@ mod tests {
         )
         .expect("payload");
         let bad_funding = funding_tx(p2tr_script(), 1);
-        let bad_tx = legit_envelope_tx(&harness, &bad_payload, &bad_funding);
+        let bad_tx = sequencer_envelope_tx(&harness, &bad_payload, &bad_funding);
         let funding = funding_tx(p2tr_script(), 0);
-        let legit_tx = legit_envelope_tx(&harness, &payload, &funding);
+        let legit_tx = sequencer_envelope_tx(&harness, &payload, &funding);
         assert_ne!(
             bad_tx.compute_txid(),
             legit_tx.compute_txid(),
@@ -584,9 +701,9 @@ mod tests {
 
         let witness_v2 = WitnessProgram::new(WitnessVersion::V2, &[0x11; 32]).unwrap();
         let forged_funding = funding_tx(ScriptBuf::new_witness_program(&witness_v2), 1);
-        let forged_tx = legit_envelope_tx(&harness, &payload, &forged_funding);
+        let forged_tx = sequencer_envelope_tx(&harness, &payload, &forged_funding);
         let funding = funding_tx(p2tr_script(), 0);
-        let legit_tx = legit_envelope_tx(&harness, &payload, &funding);
+        let legit_tx = sequencer_envelope_tx(&harness, &payload, &funding);
 
         // ASM requests both spent outputs: both envelopes carry the sequencer key.
         let mut ctx = make_ctx(
@@ -621,13 +738,13 @@ mod tests {
         let payload_1 = harness.build_payload();
         let tip_1 = *payload_1.new_tip();
         let funding_1 = funding_tx(p2tr_script(), 1);
-        let tx_1 = legit_envelope_tx(&harness, &payload_1, &funding_1);
+        let tx_1 = sequencer_envelope_tx(&harness, &payload_1, &funding_1);
 
         harness.update_verified_tip(tip_1);
         let payload_2 = harness.build_payload();
         let tip_2 = *payload_2.new_tip();
         let funding_2 = funding_tx(p2tr_script(), 2);
-        let tx_2 = legit_envelope_tx(&harness, &payload_2, &funding_2);
+        let tx_2 = sequencer_envelope_tx(&harness, &payload_2, &funding_2);
 
         // Rewind so `gen_verified_aux` covers the union of both payloads' L1
         // sub-ranges in one aux blob.
