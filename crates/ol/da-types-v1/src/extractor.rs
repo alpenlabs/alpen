@@ -15,7 +15,8 @@ use crate::{OLDaPayloadV1, decode_ol_da_payload_bytes};
 /// Decodes the OL DA payload from a raw checkpoint transaction.
 ///
 /// It is the caller's responsibility to fetch the raw transaction (e.g., via `btcio` or the
-/// consensus layer). This function only handles decoding.
+/// consensus layer). This function only handles decoding and does not authenticate the envelope:
+/// pass a transaction already matched by CSM or authenticated with `authenticate_checkpoint_tx`.
 pub fn decode_ol_da_payload(
     raw_tx: RawBitcoinTx,
     magic_bytes: MagicBytes,
