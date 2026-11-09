@@ -6,16 +6,16 @@ use strata_asm_checkpoint_types::{
 };
 use strata_asm_common::{TxInputRef, VerifiedAuxData};
 use strata_asm_proto_checkpoint::{
-    CheckpointEnvelopeError, CheckpointState, authenticate_checkpoint_tx, verify_envelope_key,
+    CheckpointEnvelopeError, CheckpointState, authenticate_checkpoint_envelope,
 };
 use strata_asm_proto_checkpoint_txs::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, decode_checkpoint_payload,
     parse_checkpoint_envelope,
 };
 use strata_checkpoint_verification::{CheckpointL1Range, verify_progression};
-use strata_identifiers::{Buf32, RBuf32};
+use strata_identifiers::RBuf32;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::errors::CsmWorkerResult;
 
@@ -35,7 +35,8 @@ pub(crate) struct ExtractedCheckpoint {
 pub(crate) struct CheckpointVerificationContext {
     /// L1 block whose txs carry the checkpoint envelopes.
     pub(crate) block: Block,
-    /// MMR-verified manifest hashes used by `verify_checkpoint`.
+    /// MMR-verified manifest hashes and spent outputs requested by ASM.
+    /// Pre-upgrade aux may omit spent outputs; see [`extract_matching_checkpoint`].
     pub(crate) verified_aux_data: VerifiedAuxData,
     /// Advances past each accepted checkpoint, mirroring ASM.
     pub(crate) checkpoint_state: CheckpointState,
@@ -44,7 +45,13 @@ pub(crate) struct CheckpointVerificationContext {
 }
 
 /// Returns the SPS-50-tagged checkpoint envelope tx in `ctx.block` that ASM
-/// accepted for `expected`, or `None` if none does. Mirrors ASM's verification.
+/// accepted for `expected`, or `None` if none does.
+///
+/// Uses ASM's authentication, except that missing spent-output aux falls back to key-only
+/// matching for pre-upgrade replay. Parsing still requires a TapScript leaf, and available
+/// spent outputs still undergo the P2TR check, even for pre-upgrade blocks. This relies on
+/// the asm#322 rollout prerequisite: a per-network scan finding no historical carriers that
+/// violate the new authentication rules. It does not reproduce every pre-upgrade ASM rule.
 ///
 /// Resumes from `ctx.scan_cursor`; on a successful match the cursor is bumped
 /// past the matched tx and `ctx.checkpoint_state` is advanced.
@@ -66,40 +73,38 @@ pub(crate) fn extract_matching_checkpoint(
             continue;
         }
 
-        // Authenticate exactly as ASM does, so an envelope ASM ignored is never
-        // mistaken for the accepted one.
         let tx_input = TxInputRef::new(tx, tag);
-        let payload = match authenticate_checkpoint_tx(
+        let spend = match parse_checkpoint_envelope(&tx_input) {
+            Ok(spend) => spend,
+            Err(e) => {
+                debug!(
+                    txid = %tx.compute_txid(),
+                    error = %e,
+                    "checkpoint envelope could not be parsed; skipping"
+                );
+                continue;
+            }
+        };
+        let leaf = match authenticate_checkpoint_envelope(
             ctx.checkpoint_state.sequencer_key(),
-            &tx_input,
+            spend.clone(),
             &ctx.verified_aux_data,
         ) {
-            Ok(payload) => payload,
-            // The ASM requests the spent output of every sequencer-keyed envelope, so aux data
-            // it stored with that rule carries it. Aux data stored by an earlier ASM binary,
-            // which a lagging CSM replays after an upgrade, predates the request: that ASM
-            // accepted the checkpoint without the spent-output check, so match it the same way.
-            // Progression and the proof are still verified below.
+            Ok(leaf) => leaf,
+            // This relies on ASM pre-process requesting the spent output for every parsed
+            // envelope that passes verify_envelope_key under the parent state's key. New ASM
+            // aux must honor those requests; the CSM cannot distinguish missing new aux from
+            // aux stored before that request existed. MissingSpentOutput occurs only after
+            // the key check passes, so reuse the parsed leaf for pre-upgrade replay.
+            // The strict parser and any available spent-output check still apply; historical
+            // compatibility relies on the no-violation scan described above.
             Err(CheckpointEnvelopeError::MissingSpentOutput { outpoint, .. }) => {
-                match match_pre_upgrade_checkpoint(ctx.checkpoint_state.sequencer_key(), &tx_input)
-                {
-                    Ok(payload) => {
-                        debug!(
-                            txid = %tx.compute_txid(),
-                            %outpoint,
-                            "spent output not in ASM aux data stored before the spent-output request; matching without it"
-                        );
-                        payload
-                    }
-                    Err(e) => {
-                        debug!(
-                            txid = %tx.compute_txid(),
-                            error = %e,
-                            "checkpoint envelope not authenticated; skipping"
-                        );
-                        continue;
-                    }
-                }
+                info!(
+                    txid = %tx.compute_txid(),
+                    %outpoint,
+                    "spent output absent from ASM aux; matching without it for pre-upgrade replay"
+                );
+                spend.unverified_leaf().clone()
             }
             Err(e) => {
                 // Anyone can post an envelope, so a rejected one is not actionable.
@@ -107,6 +112,17 @@ pub(crate) fn extract_matching_checkpoint(
                     txid = %tx.compute_txid(),
                     error = %e,
                     "checkpoint envelope not authenticated; skipping"
+                );
+                continue;
+            }
+        };
+        let payload = match decode_checkpoint_payload(leaf.payload()) {
+            Ok(payload) => payload,
+            Err(e) => {
+                debug!(
+                    txid = %tx.compute_txid(),
+                    error = %e,
+                    "checkpoint payload could not be decoded; skipping"
                 );
                 continue;
             }
@@ -181,22 +197,6 @@ fn verify_checkpoint(
     };
     checkpoint_state.advance(payload, asm_manifests_hash)?;
     Ok(())
-}
-
-/// Parses a sequencer checkpoint the way the ASM did before it requested spent outputs: the
-/// envelope must parse and carry the sequencer key, and its spent output is not checked.
-///
-/// Only for blocks whose stored ASM aux data predates the spent-output request; see
-/// [`extract_matching_checkpoint`].
-fn match_pre_upgrade_checkpoint(
-    sequencer_key: &Buf32,
-    tx: &TxInputRef<'_>,
-) -> Result<CheckpointPayload, CheckpointEnvelopeError> {
-    let spend = parse_checkpoint_envelope(tx)?;
-    verify_envelope_key(sequencer_key, &spend)?;
-    Ok(decode_checkpoint_payload(
-        spend.unverified_leaf().payload(),
-    )?)
 }
 
 #[cfg(test)]
