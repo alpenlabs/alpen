@@ -103,7 +103,14 @@ jobs:
         env:
           SP1_VERSION: ${{ steps.sp1.outputs.sp1_version }}
         run: |
-          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
+          # sp1up comes straight from the SP1 repo at the pinned tag. The
+          # `sp1.succinct.xyz` installer that used to fetch it went 404 on
+          # 2026-11-09, and a tag cannot move under us the way `main` can.
+          mkdir -p "$HOME/.sp1/bin"
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            "https://raw.githubusercontent.com/succinctlabs/sp1/v${SP1_VERSION#v}/sp1up/sp1up" \
+            -o "$HOME/.sp1/bin/sp1up"
+          chmod +x "$HOME/.sp1/bin/sp1up"
           "$HOME/.sp1/bin/sp1up" -v "$SP1_VERSION" -c
           echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.sp1/bin:$PATH"
