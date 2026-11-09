@@ -80,7 +80,15 @@ jobs:
         run: |
           # `-c` installs the RISC-V C++ toolchain so secp256k1-sys (and
           # other C-bound crates) cross-compile for the guest target.
-          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash && ~/.sp1/bin/sp1up -v "$SP1_VERSION" -c
+          # sp1up comes straight from the SP1 repo at the pinned tag. The
+          # `sp1.succinct.xyz` installer that used to fetch it went 404 on
+          # 2026-11-09, and a tag cannot move under us the way `main` can.
+          mkdir -p ~/.sp1/bin
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            "https://raw.githubusercontent.com/succinctlabs/sp1/v${SP1_VERSION#v}/sp1up/sp1up" \
+            -o ~/.sp1/bin/sp1up
+          chmod +x ~/.sp1/bin/sp1up
+          ~/.sp1/bin/sp1up -v "$SP1_VERSION" -c
           export PATH=~/.sp1/bin:$PATH
           cargo prove --version
 
