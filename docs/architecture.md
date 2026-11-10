@@ -9,7 +9,7 @@ function (STF) that runs natively in a node and inside a zkVM for proofs:
 - The **Orchestration Layer (OL)** runs the L2 chain: accounts, messages, epochs, and
   checkpoints. It reads the ASM manifests and posts a proven checkpoint to Bitcoin for each
   epoch. It lives in this repository.
-- The **Execution Environment (EE)** runs the EVM. It lives in
+- The **Execution Environment (EE)** runs any OL's Snark Account such as the `alpen` EVM. It lives in
   [alpenlabs/alpen-ee](https://github.com/alpenlabs/alpen-ee).
 
 ```mermaid
