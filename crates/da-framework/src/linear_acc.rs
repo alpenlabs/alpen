@@ -116,6 +116,12 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
 
         let cnt: usize = cnt.try_into().map_err(|_| CodecError::OverflowContainer)?;
 
+        // The compound writes an empty diff as a clear bit, so a set bit with
+        // no entries would be that same write spelled a second way.
+        if cnt == 0 {
+            return Err(CodecError::InvalidVariant("linacc"));
+        }
+
         // Decode each entry.
         let mut new_entries = Vec::new();
         for _ in 0..cnt {
@@ -127,6 +133,11 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
     }
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
+        // An empty diff is written as a clear bit by the compound, never here.
+        if self.new_entries.is_empty() {
+            return Err(CodecError::InvalidVariant("linacc"));
+        }
+
         // Encode the counter.
         let cnt: A::InsertCnt = self
             .new_entries
@@ -248,20 +259,25 @@ mod tests {
         let mut mmr = TestMmr::new();
         let diff = DaLinacc::<TestMmr>::new();
 
-        // Empty diff should be default
+        // Empty diff should be default: the compound writes it as a clear bit,
+        // and the member refuses to spell it under a set bit either way.
         assert!(DaWrite::is_default(&diff));
-
-        // Encode and decode empty diff
         let mut encoder = Vec::new();
-        CompoundMember::encode_set(&diff, &mut encoder).expect("test: encode should succeed");
-        let mut decoder = BufDecoder::new(&encoder);
-        let decoded: DaLinacc<TestMmr> =
-            CompoundMember::decode_set(&mut decoder).expect("test: decode should succeed");
+        assert!(matches!(
+            CompoundMember::encode_set(&diff, &mut encoder),
+            Err(CodecError::InvalidVariant("linacc"))
+        ));
+        let zero_count = [0u8; 8]; // `TestMmr::InsertCnt` is a u64
+        let mut decoder = BufDecoder::new(&zero_count);
+        assert!(matches!(
+            <DaLinacc<TestMmr> as CompoundMember>::decode_set(&mut decoder),
+            Err(CodecError::InvalidVariant("linacc"))
+        ));
 
-        // Apply decoded diff - should be a no-op
+        // Apply the empty diff - should be a no-op
         let initial_entries = mmr.0.num_entries();
         let initial_peaks: Vec<_> = mmr.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
-        DaWrite::apply(&decoded, &mut mmr, &()).expect("test: apply should succeed");
+        DaWrite::apply(&diff, &mut mmr, &()).expect("test: apply should succeed");
         assert_eq!(mmr.0.num_entries(), initial_entries);
 
         // Verify peaks unchanged
@@ -360,7 +376,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn proptest_linear_acc_roundtrip(entries in vec(any::<u32>(), 0..=8)) {
+        fn proptest_linear_acc_roundtrip(entries in vec(any::<u32>(), 1..=8)) {
             let mut diff = DaLinacc::<RecordingAccumulator>::new();
             for entry in &entries {
                 prop_assert!(diff.append_entry(*entry));
@@ -376,7 +392,7 @@ mod tests {
         }
 
         #[test]
-        fn proptest_linear_acc_apply_matches_after_decode(entries in vec(any::<u32>(), 0..=8)) {
+        fn proptest_linear_acc_apply_matches_after_decode(entries in vec(any::<u32>(), 1..=8)) {
             let mut diff = DaLinacc::<RecordingAccumulator>::new();
             for entry in &entries {
                 prop_assert!(diff.append_entry(*entry));
