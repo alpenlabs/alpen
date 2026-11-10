@@ -104,20 +104,28 @@ they may help you effectively contribute.
 Please install the following tools in your development environment to make sure that
 you can run the basic CI checks in your local environment:
 
+- [`just`](https://just.systems):
+  runs the commands in `.justfile`. `just` lists them.
 - [`taplo`](https://taplo.tamasfe.dev/cli/installation/binary.html):
   used to lint and format `TOML` files.
 - [`codespell`](https://github.com/codespell-project/codespell):
   used to check for common misspellings in code.
-- [`just`](https://just.systems):
-  RIP `Makefile`s.
+- [`shellcheck`](https://www.shellcheck.net/):
+  used to lint shell scripts.
 - [`cargo-nextest`](https://nexte.st):
   modern test runner for Rust.
 - [`cargo-audit`](https://docs.rs/cargo-audit/latest/cargo_audit/):
   tool to check `Cargo.lock` files for security vulnerabilities.
-- [`bitcoind`](https://bitcoin.org/en/download): to run the unit and functional tests.
-- Functional test runner:
-  to run functional tests, see instructions in its
-  [`README.md`](./functional-tests/README.md).
+- [`uv`](https://docs.astral.sh/uv/):
+  runs the Python functional tests and their lints.
+- [`bitcoind`](https://bitcoincore.org/en/download/):
+  must be on `PATH` for the functional tests.
+- [`protoc`](https://protobuf.dev/installation/):
+  the SP1 crates compile protobuf files, so builds with `--all-features` need it.
+  `just lint-check-ws` uses that flag.
+- The [SP1 toolchain](https://docs.succinct.xyz/docs/sp1/getting-started/install):
+  only needed to build real checkpoint guest artifacts;
+  see [`provers/sp1/README.md`](provers/sp1/README.md).
 
 We also provide a [`flake.nix`](flake.nix) with a `devShell` with all the dependencies
 necessary for local development.
@@ -127,6 +135,19 @@ Install [Nix](https://nixos.org) and run:
 nix develop
 ```
 
+## Linting and Testing
+
+```sh
+just fmt-ws           # format Rust
+just lint             # format and lint checks
+just test             # unit tests and doctests
+just test-functional  # functional tests against a regtest bitcoind
+```
+
+`just lint-check-ws` runs clippy alone and fails on warnings, as CI does.
+To run one functional test, use `cd functional-tests && ./run_tests.sh -t <test>`;
+see [`functional-tests/README.md`](functional-tests/README.md) for more.
+
 ## Locally running CI
 
 Before you create a PR, make sure that all the required CI checks pass locally.
@@ -135,3 +156,7 @@ For your convenience, a `.justfile` recipe has been created which you can run vi
 ```bash
 just pr
 ```
+
+`just pr-lite` runs the same checks without the functional tests.
+
+For how the code is organized, see [`docs/`](docs/README.md).

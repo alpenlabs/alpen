@@ -10,6 +10,10 @@
   <img src="https://raw.githubusercontent.com/alpenlabs/.github/76e8490215c5c1e21d98ad28380bdd88b1bf6e4d/profile/images/logo.png" alt="Alpen Labs Logo" width="21%">
 </p>
 
+The Orchestration Layer node for Alpen, an EVM-compatible Bitcoin layer 2.
+
+## What is Alpen?
+
 [**Alpen**](https://alpenlabs.io) gives developers the freedom to program nearly
 any locking conditions for BTC imaginable,
 limited only by the Alpen block size and gas limits.
@@ -21,7 +25,7 @@ with features such as:
 - **Vaults**, "transfers must wait `N` days after being initiated to be effectuated,
   and can be cancelled in the mean time"
 
-- **Subscriptions**, "address `0x123...9a` can withdraw up to `v` BTC 
+- **Subscriptions**, "address `0x123...9a` can withdraw up to `v` BTC
   per month from this account"
 
 - **Strong privacy**, "transaction details are end-to-end encrypted
@@ -38,47 +42,33 @@ with features such as:
 
 ... and many more possibilities.
 
-Technically speaking,
-**Alpen is a work-in-progress EVM-compatible validity rollup on bitcoin**.
-Let's break down what this means:
+Alpen is built from three state machines.
+The Anchor State Machine ([asm](https://github.com/alpenlabs/asm)) reads Bitcoin
+and picks out the transactions meant for Alpen.
+The Orchestration Layer (OL), in this repository, runs the L2 chain:
+accounts, messages between them, deposits and withdrawals, and epochs.
+At the end of each epoch it posts a checkpoint to Bitcoin
+with a validity proof and the data needed to rebuild its state.
+The Execution Environment ([alpen-ee](https://github.com/alpenlabs/alpen-ee))
+runs the EVM and appears to the OL as one account that it advances with proofs.
+If you can deploy a smart contract to Ethereum,
+you can deploy it to Alpen with no changes.
 
-- **EVM-compatible**: The Alpen block producer runs a client that is based on
-  [Reth](https://github.com/paradigmxyz/reth),
-  an Ethereum execution client.
-  So far, no changes have been made that affect compatibility with the EVM spec.
-  If you can deploy a smart contract to Ethereum,
-  you can deploy it to Alpen with no changes.
-
-- **Validity rollup**: Every Alpen state transition is proven to
-  be valid using cryptographic validity proofs,
-  which clients can use for fast, low-cost verification.
-
-- **On bitcoin**: Alpen uses bitcoin for consensus and data availability.
-  When an Alpen block gets confirmed on bitcoin,
-  the only way to reorganize this block is to reorganize
-  the bitcoin block that the Alpen block was confirmed in.
+This repository contains the `strata` node, which runs as the sequencer or as a full node
+that follows checkpoints on Bitcoin, the detached `strata-signer`,
+the tools around them, and the SP1 checkpoint prover.
 
 To learn more, check our [documentation](https://docs.alpenlabs.io).
 
-> [!IMPORTANT]
-> Currently,
-> Alpen is running on a private bitcoin signet,
-> and uses signet blocks to store state commitments rather than
-> the complete Alpen state data,
-> making Alpen function more like a commit chain than a rollup.
-> Support for full onchain data availability and for running Alpen
-> on bitcoin mainnet are planned for future releases.
+## Goals
 
-## Repository structure
-
-This repository is composed of:
-
-- `bin/`: binary crates for various clients and CLIs
-- `crates/`: library crates, provides types and functionalities
-- `docker/`: supporting files for our dockerized applications
-- `functional-tests/`: end-to-end functional tests
-- `provers/`: libraries and binaries related to zero-knowledge proofs
-- `tests/`: integration tests
+- **Bitcoin is the source of truth.** An OL block confirmed in a Bitcoin checkpoint
+  can only be reorganized by reorganizing that Bitcoin block.
+- **Provable.** The same state transition runs natively and inside a zkVM,
+  so anyone can check a checkpoint from its proof instead of re-running it.
+- **Rebuildable.** A full node rebuilds the OL state from the data in the checkpoints on Bitcoin.
+- **Upgradable.** New rules ship as a new spec that the chain switches to at an epoch boundary,
+  after governance enacts it on Bitcoin.
 
 ## Contributing
 
@@ -86,7 +76,10 @@ Contributions are generally welcome.
 If you intend to make larger changes please discuss them in an issue
 before opening a PR to avoid duplicate work and architectural mismatches.
 
-For more information please see [`CONTRIBUTING.md`](/CONTRIBUTING.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md) lists the tools you need and the commands to lint and test.
+For how the code fits together, see [`docs/`](docs/README.md):
+start with [`docs/architecture.md`](docs/architecture.md),
+then [`docs/layout.md`](docs/layout.md) for what each crate does.
 
 ## License
 
