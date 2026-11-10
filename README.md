@@ -23,7 +23,7 @@ Each one is a state transition function that runs natively in a node and inside 
 - **Execution Environments** (EEs) run on the OL as snark accounts.
   An EE advances its account with proofs, and the OL checks each proof against the account's
   predicate instead of re-running the EE.
-  The EVM execution environment lives in [alpen-ee](https://github.com/alpenlabs/alpen-ee).
+  The EVM execution environment lives in [`alpen-ee`](https://github.com/alpenlabs/alpen-ee).
 
 ## What is in this repository
 
