@@ -1,6 +1,6 @@
 # Architecture
 
-Alpen is a Bitcoin layer 2 split into three state machines. Each one is a state transition
+Strata is a Bitcoin layer 2 split into three state machines. Each one is a state transition
 function (STF) that runs natively in a node and inside a zkVM for proofs:
 
 - The **Anchor State Machine (ASM)** reads Bitcoin blocks, picks out the transactions tagged

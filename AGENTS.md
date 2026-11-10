@@ -4,15 +4,15 @@ Guidance for AI coding agents working in this repository.
 
 ## Project Overview
 
-Alpen is an EVM-compatible Bitcoin layer 2 built from three state machines: the Anchor State
-Machine (ASM) reads Bitcoin, the Orchestration Layer (OL) runs the L2 chain, and the
-Execution Environment (EE) runs the EVM. This repository holds the OL: the `strata` node, the
+Strata is a Bitcoin layer 2 built from three state machines: the Anchor State Machine (ASM)
+reads Bitcoin, the Orchestration Layer (OL) runs the L2 chain, and Execution Environments
+(EEs) run on the OL as snark accounts. This repository holds the OL: the `strata` node, the
 detached signer, the OL state transition function (STF), its tools, and the SP1 checkpoint
 prover.
 
 The ASM lives in [alpenlabs/asm](https://github.com/alpenlabs/asm) and shared protocol
 primitives in [alpenlabs/strata-common](https://github.com/alpenlabs/strata-common); both are
-pinned by tag in the root `Cargo.toml`. The EE lives downstream in
+pinned by tag in the root `Cargo.toml`. The EVM EE lives downstream in
 [alpenlabs/alpen-ee](https://github.com/alpenlabs/alpen-ee), which consumes this repository's
 crates and builds `strata`, `strata-signer`, `strata-datatool`, and `strata-test-cli` from a
 pinned revision. Changes to shared types, RPC, or those binaries' CLIs are breaking for it.
