@@ -117,7 +117,14 @@ impl<S: CounterScheme> CompoundMember for DaCounter<S> {
     }
 
     fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self> {
-        Ok(Self::new_changed(<S::Incr as Codec>::decode(dec)?))
+        let incr = <S::Incr as Codec>::decode(dec)?;
+        // The bitmap already says "changed", so a zero increment here is
+        // `Unchanged` spelled a second way. `encode_set` refuses to write it;
+        // refuse to read it, so the two forms cannot name one value.
+        if S::is_zero(&incr) {
+            return Err(CodecError::InvalidVariant("counter"));
+        }
+        Ok(Self::Changed(incr))
     }
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
@@ -344,8 +351,8 @@ mod tests {
         counter_schemes::{CtrU64ByI16, CtrU64BySignedVarInt, CtrU64ByUnsignedVarInt},
     };
     use crate::{
-        CompoundMember, ContextlessDaWrite, CounterScheme, DaBuilder, SignedVarInt, UnsignedVarInt,
-        boundary_u64_strategy, decode_buf_exact, encode_to_vec,
+        CodecError, CompoundMember, ContextlessDaWrite, CounterScheme, DaBuilder, SignedVarInt,
+        UnsignedVarInt, boundary_u64_strategy, decode_buf_exact, encode_to_vec,
     };
 
     fn signed_varint_strategy() -> impl Strategy<Value = SignedVarInt> {
@@ -362,6 +369,27 @@ mod tests {
             .encode_set(&mut encoded)
             .expect("test: encode counter via CompoundMember");
         encoded
+    }
+
+    #[test]
+    fn decode_set_rejects_a_zero_increment() {
+        // `encode_set` never writes a zero increment under a set bit, so
+        // reading one would give `Unchanged` a second byte form.
+        let mut dec = BufDecoder::new(&[0x00]);
+        assert!(matches!(
+            DaCounter::<CtrU64ByUnsignedVarInt>::decode_set(&mut dec),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
+        let mut dec = BufDecoder::new(&[0x00]);
+        assert!(matches!(
+            DaCounter::<CtrU64BySignedVarInt>::decode_set(&mut dec),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
+        let mut dec = BufDecoder::new(&[0x00, 0x00]);
+        assert!(matches!(
+            DaCounter::<CtrU64ByI16>::decode_set(&mut dec),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
     }
 
     #[test]
