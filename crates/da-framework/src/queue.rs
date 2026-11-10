@@ -1,8 +1,8 @@
 //! Queue DA pattern.
 
 use crate::{
-    BuilderError, Codec, CodecResult, CompoundMember, DaBuilder, DaQueueError, DaWrite, Decoder,
-    Encoder,
+    BuilderError, Codec, CodecError, CodecResult, CompoundMember, DaBuilder, DaQueueError, DaWrite,
+    Decoder, Encoder,
 };
 
 // TODO(STR-2148): make this generic over the queue type
@@ -155,10 +155,21 @@ impl<Q: DaQueueTarget> CompoundMember for DaQueue<Q> {
         let head = IncrTy::decode(dec)?;
         let (is_tail_entries, incr_front) = decode_head(head);
 
+        // `encode_set` sets the tail flag iff there are entries and never
+        // writes the default queue (the compound clears the bit for it), so a
+        // flag with no entries or a bare zero head would each give a write a
+        // second spelling.
+        if !is_tail_entries && incr_front == 0 {
+            return Err(CodecError::InvalidVariant("queue"));
+        }
+
         let mut tail = Vec::new();
 
         if is_tail_entries {
             let tail_len = TailLenTy::decode(dec)?;
+            if tail_len == 0 {
+                return Err(CodecError::InvalidVariant("queue"));
+            }
             for _ in 0..tail_len {
                 let e = <Q::Entry as Codec>::decode(dec)?;
                 tail.push(e);
@@ -169,6 +180,10 @@ impl<Q: DaQueueTarget> CompoundMember for DaQueue<Q> {
     }
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
+        // The default queue is written as a clear bit by the compound, never here.
+        if <Self as DaWrite>::is_default(self) {
+            return Err(CodecError::InvalidVariant("queue"));
+        }
         let is_tail_entries = !self.tail.is_empty();
         let head = encode_head(is_tail_entries, self.incr_front);
         head.encode(enc)?;
@@ -542,9 +557,8 @@ mod tests {
         // Test encoding/decoding with various queue configurations
         let scenarios = vec![
             // (tail, incr_front, expected_size_bytes)
-            (vec![], 0, 2),                             // empty: just head word
-            (vec![], 42, 2),                            // increment only: just head word
-            (vec![10, 20, 30], 0, 2 + 2 + 12),          // tail only: head + len + 3*u32
+            (vec![], 42, 2),                   // increment only: just head word
+            (vec![10, 20, 30], 0, 2 + 2 + 12), // tail only: head + len + 3*u32
             (vec![100, 200, 300, 400], 15, 2 + 2 + 16), // both: head + len + 4*u32
             (vec![u32::MAX, 0], HEAD_WORD_INCR_MASK, 2 + 2 + 8), // boundary values
         ];
@@ -574,13 +588,38 @@ mod tests {
     }
 
     #[test]
+    fn test_queue_cm_refuses_default_and_its_other_spellings() {
+        // The default write is a clear bit in the compound: neither side
+        // spells it under a set bit, and a tail flag with no entries is the
+        // flagless head spelled a second way.
+        let default = <DaQueue<MockQueue> as Default>::default();
+        assert!(matches!(
+            encode_set_cm_to_vec(&default),
+            Err(CodecError::InvalidVariant("queue"))
+        ));
+        let bare_zero_head = encode_head(false, 0).to_be_bytes();
+        assert!(matches!(
+            decode_set_cm_from_vec::<DaQueue<MockQueue>>(&bare_zero_head),
+            Err(CodecError::InvalidVariant("queue"))
+        ));
+        let mut flagged_empty_tail = encode_head(true, 7).to_be_bytes().to_vec();
+        flagged_empty_tail.extend_from_slice(&(0 as TailLenTy).to_be_bytes());
+        assert!(matches!(
+            decode_set_cm_from_vec::<DaQueue<MockQueue>>(&flagged_empty_tail),
+            Err(CodecError::InvalidVariant("queue"))
+        ));
+        // The flagless head for the same increment is the one accepted form.
+        let flagless = encode_head(false, 7).to_be_bytes();
+        let decoded: DaQueue<MockQueue> =
+            decode_set_cm_from_vec(&flagless).expect("test: canonical head decodes");
+        assert_eq!(decoded.incr_front, 7);
+        assert!(decoded.tail.is_empty());
+    }
+
+    #[test]
     fn test_queue_cm_enc_roundtrip() {
         // Comprehensive roundtrip test with various configurations
         let test_cases = vec![
-            DaQueue::<MockQueue> {
-                tail: Vec::new(),
-                incr_front: 0,
-            },
             DaQueue::<MockQueue> {
                 tail: Vec::new(),
                 incr_front: 100,
@@ -1215,6 +1254,8 @@ mod tests {
             incr_front in 0u16..=HEAD_WORD_INCR_MASK,
         ) {
             let queue = DaQueue::<MockQueue> { tail, incr_front };
+            // The default write goes out as a clear compound bit, not through `encode_set`.
+            prop_assume!(!DaWrite::is_default(&queue));
 
             let encoded = encode_set_cm_to_vec(&queue).expect("test: encode queue");
             let decoded: DaQueue<MockQueue> = decode_set_cm_from_vec(&encoded).expect("test: decode queue");
@@ -1234,6 +1275,14 @@ mod tests {
             prop_assert_eq!(builder.add_front_incr(consume_total), (consume_total as usize) <= (base.entries.len() + appended.len()));
 
             let write = builder.into_write().expect("test: builder into_write");
+            if <DaQueue<MockQueue> as DaWrite>::is_default(&write) {
+                // The compound writes this one as a clear bit; the member refuses it.
+                prop_assert!(matches!(
+                    encode_set_cm_to_vec(&write),
+                    Err(CodecError::InvalidVariant("queue"))
+                ));
+                return Ok(());
+            }
             let encoded = encode_set_cm_to_vec(&write).expect("test: encode queue write");
             let decoded: DaQueue<MockQueue> = decode_set_cm_from_vec(&encoded).expect("test: decode queue write");
 
@@ -1256,6 +1305,7 @@ mod tests {
             incr_front in 0u16..=HEAD_WORD_INCR_MASK,
         ) {
             let write = DaQueue::<MockQueue> { tail: tail.clone(), incr_front };
+            prop_assume!(!DaWrite::is_default(&write));
             let encoded = encode_set_cm_to_vec(&write).expect("test: encode");
             let decoded: DaQueue<MockQueue> = decode_set_cm_from_vec(&encoded).expect("test: decode");
 
