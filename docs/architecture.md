@@ -62,19 +62,18 @@ payloads go in SPS-51 envelopes: a commit transaction and reveal transactions th
 data in taproot witnesses.
 
 The node embeds the ASM worker from the pinned `strata-asm-*` crates and runs it over every
-L1 block. It runs three subprotocols:
+L1 block. The current ASM spec, `StrataAsmSpecV1` (spec 1), runs three subprotocols in this
+order:
 
 | ID | Subprotocol | Role |
 | --- | --- | --- |
 | 0 | Admin | Multisig governance and upgrades, including new checkpoint predicates |
 | 1 | Checkpoint | Verifies OL checkpoints and tracks the verified tip |
-| 2 | Bridge V1 | Deposits, operators, and withdrawal assignments |
+| 2 | Bridge (`BridgeSubprotoV2`) | Deposits, operators, withdrawal assignments, and `OperatorClaimUnlockV1` export leaves |
 
-The pinned `StrataAsmSpec` (spec 0) runs these three. Its successor `StrataAsmSpecV1`
-(spec 1) keeps the same IDs and section schema but runs `BridgeSubprotoV2`, which commits
-`OperatorClaimUnlockV1` export leaves. The node runs spec 1 only when the ASM execution
-parameters list a target for it and an admin update activates that target's predicate. The
-old Debug subprotocol is gone, so functional tests create deposits through the bridge.
+The ASM execution parameters, a JSON file distributed with the network parameters and named
+by `asm_execution` in the node config, map each predicate to the ASM spec that runs under it.
+Functional tests create deposits through the bridge.
 
 The OL reads the ASM through its manifests and logs. The ASM's own design is in the asm
 repository's [`docs/`](https://github.com/alpenlabs/asm/tree/main/docs).
