@@ -92,8 +92,9 @@ impl TaskStatus {
         matches!(self, Self::Blocked { .. })
     }
 
-    /// Statuses the scanner re-spawns once their `retry_after` elapses:
-    /// transient failures (retry) and blocked tasks (dependency recheck).
+    /// Statuses the scanner re-spawns once their `retry_after` elapses, or
+    /// at once when it is missing: transient failures (retry) and blocked
+    /// tasks (dependency recheck).
     pub fn wants_rescan(&self) -> bool {
         self.is_retriable() || self.is_blocked()
     }
@@ -213,8 +214,8 @@ impl TaskRecordData {
     /// A missing timestamp on a rescan status is a record whose scheduling
     /// write did not land after the status did. Nothing else selects such a
     /// record (startup recovery only takes `Pending` and `Proving`), so it is
-    /// due now; its next attempt writes a proper timestamp. Every backend's
-    /// `list_retriable` is this predicate over its rows.
+    /// due now; its next attempt writes a proper timestamp. This is the
+    /// predicate `TaskStore::list_retriable` must implement.
     pub fn is_due_for_rescan(&self, now_secs: u64) -> bool {
         self.status.wants_rescan() && self.retry_after_secs.is_none_or(|t| t <= now_secs)
     }

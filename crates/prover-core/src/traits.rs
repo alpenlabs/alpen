@@ -187,19 +187,19 @@ pub trait TaskStore: Send + Sync + 'static {
     fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>>;
     fn insert(&self, record: TaskRecord) -> ProverResult<()>;
     fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()>;
+    /// Low-level write of the timestamp alone, used by the default
+    /// [`Self::schedule_rescan`]. Writing it next to `update_status` is the
+    /// two-write pattern `schedule_rescan` exists to avoid.
     fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()>;
     /// Parks the task for a later rescan: writes `status` (a
     /// [`TaskStatus::TransientFailure`] or [`TaskStatus::Blocked`]) together
     /// with the `retry_after` the scanner selects on.
     ///
-    /// A rescan status must never land without its timestamp, or the scanner
-    /// never selects the record and the task is stranded. The default writes
-    /// the timestamp first, so a failure between the two leaves the record in
-    /// its previous status: `Proving`, which startup recovery re-spawns, or
-    /// (on the path that retries a failed receipt hook before any `Proving`
-    /// write) the old rescan status with its old timestamp, which the scanner
-    /// re-spawns. Backends that can write the record in one operation should
-    /// override this so neither write can land without the other.
+    /// The status and the timestamp are written together. The default writes
+    /// the timestamp first, so a partial failure keeps the previous status
+    /// (with the new timestamp). Backends that can update the record in one
+    /// operation should override this with that single write; the lifecycle
+    /// code never calls `set_retry_after` on its own.
     fn schedule_rescan(
         &self,
         key: &[u8],
@@ -214,11 +214,12 @@ pub trait TaskStore: Send + Sync + 'static {
     /// task, so the next attempt starts fresh instead of resuming a dead
     /// request. Used by the resubmit (`RetryFresh`) retry path.
     fn clear_metadata(&self, key: &[u8]) -> ProverResult<()>;
-    /// Every record the scanner should re-spawn now, as
+    /// Every record the scanner should re-spawn now: exactly those for which
     /// [`TaskRecordData::is_due_for_rescan`](crate::TaskRecordData::is_due_for_rescan)
-    /// decides: a
-    /// [`TaskStatus::TransientFailure`] or [`TaskStatus::Blocked`] whose
-    /// `retry_after` is at or before `now_secs`, or missing.
+    /// holds, a [`TaskStatus::TransientFailure`] or [`TaskStatus::Blocked`]
+    /// whose `retry_after` is at or before `now_secs`, or missing. Backends
+    /// must not narrow this predicate: a missing timestamp is the record of
+    /// a scheduling write that did not land, and nothing else selects it.
     fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>>;
     /// Every record that was submitted but hasn't reached a terminal state —
     /// Pending or Proving. Used by startup recovery to re-spawn
