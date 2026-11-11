@@ -1,6 +1,6 @@
 # Architecture
 
-Strata is a Bitcoin layer 2 split into three state machines. Each one is a state transition
+Strata is split into three state machines. Each one includes a state transition
 function (STF) that runs natively in a node and inside a zkVM for proofs:
 
 - The **Anchor State Machine (ASM)** reads Bitcoin blocks, picks out the transactions tagged
@@ -9,8 +9,7 @@ function (STF) that runs natively in a node and inside a zkVM for proofs:
 - The **Orchestration Layer (OL)** runs the L2 chain: accounts, messages, epochs, and
   checkpoints. It reads the ASM manifests and posts a proven checkpoint to Bitcoin for each
   epoch. It lives in this repository.
-- The **Execution Environment (EE)** runs any OL's Snark Account such as the `alpen` EVM. It lives in
-  [alpenlabs/alpen-ee](https://github.com/alpenlabs/alpen-ee).
+- The **Execution Environment (EE)** runs any OL's Snark Account.
 
 ```mermaid
 flowchart LR
@@ -51,25 +50,24 @@ flowchart LR
 
 The EE names are conceptual. To the OL, the EE is one snark account: its state, inbox, and
 predicate live in `OLSnarkAccountStateV1`, and the EE moves it forward with proof-backed
-snark account update transactions that the OL STF checks against the predicate. This
-repository has no EVM or Reth code.
+snark account update transactions that the OL STF checks against the predicate.
 
 ## Bitcoin and the ASM
 
 Bitcoin is the source of truth and the data availability layer. Protocol transactions carry
 an SPS-50 header (magic, subprotocol ID, transaction type) in their first output, and large
 payloads go in SPS-51 envelopes: a commit transaction and reveal transactions that carry the
-data in taproot witnesses.
+data in taproot witnesses. For more details see [`alpenlabs/asm`](https://github.com/alpenlabs/asm).
 
 The node embeds the ASM worker from the pinned `strata-asm-*` crates and runs it over every
-L1 block. The current ASM spec, `StrataAsmSpecV1` (spec 1), runs three subprotocols in this
+L1 block. The current ASM spec runs three subprotocols in this
 order:
 
 | ID | Subprotocol | Role |
 | --- | --- | --- |
 | 0 | Admin | Multisig governance and upgrades, including new checkpoint predicates |
 | 1 | Checkpoint | Verifies OL checkpoints and tracks the verified tip |
-| 2 | Bridge (`BridgeSubprotoV2`) | Deposits, operators, withdrawal assignments, and `OperatorClaimUnlockV1` export leaves |
+| 2 | Bridge  | Deposits, operators, and withdrawal assignments |
 
 The ASM execution parameters, a JSON file distributed with the network parameters and named
 by `asm_execution` in the node config, map each predicate to the ASM spec that runs under it.
@@ -90,10 +88,10 @@ state root, and logs root. The body has two optional parts:
 - the ASM manifests for the L1 blocks the chain has not yet included.
 
 A block may carry manifests anywhere in an epoch. Their logs are buffered and processed at
-the epoch's terminal block, which the `IS_TERMINAL` header flag marks. The terminal block
-ends the epoch: the STF processes the buffered ASM logs (deposits, predicate updates, and so
-on), and the epoch becomes a checkpoint. A checkpoint commits to the epoch's terminal header,
-its DA diff, its logs, and the manifests it read.
+the epoch's terminal block. The terminal block ends the epoch: the STF processes the buffered
+ASM logs (deposits, predicate updates, and so on), and the epoch forms a checkpoint. A
+checkpoint commits to the epoch's terminal header, its DA diff, its logs, and the manifests
+it read.
 
 The OL STF has one entry point, [`crates/ol/stf`](../crates/ol/stf), which takes the
 `OLSpecId` of the epoch being executed and dispatches to that spec's rules. Every driver goes
@@ -115,13 +113,13 @@ and [`crates/ol/msg-types`](../crates/ol/msg-types); the update rules in
 
 ## Runtime
 
-`strata` ([`bin/strata`](../bin/strata)) is the node. It has two roles. A **sequencer** builds
-blocks and posts checkpoints. A **full node** follows the chain from checkpoints on L1.
+`strata` ([`bin/strata`](../bin/strata)) is the node. It has alternative two roles. A **sequencer**
+builds blocks and posts checkpoints. A **follower node** follows the chain from checkpoints on L1.
 [`services.rs`](../bin/strata/src/services.rs) wires the services together:
 
 ```text
 bitcoind ──▶ btcio reader ──▶ ASM worker ──▶ CSM worker ──┬──▶ fork choice (sequencer)
-                                                          └──▶ checkpoint sync (full node)
+                                                          └──▶ checkpoint sync (follower node)
                                                                          │
                                                                          ▼
                                                                     chain worker ──▶ OL state
@@ -132,17 +130,16 @@ checkpoint builder ──▶ prover ──▶ btcio writer ──▶ broadcaster
 ```
 
 - **btcio reader** ([`crates/btcio`](../crates/btcio)) polls `bitcoind` and hands each L1
-  block to the ASM worker. It starts before genesis, since genesis needs the ASM's genesis
-  manifest.
+  block to the ASM worker.
 - **ASM worker** runs the ASM STF per L1 block and stores anchor states and manifests. Its
   context comes from [`crates/consensus-logic`](../crates/consensus-logic).
 - **CSM worker** ([`crates/csm-worker`](../crates/csm-worker)) follows the ASM worker, reads
   the checkpoint subprotocol's logs, and keeps the client state: which epochs L1 has
-  confirmed and finalized.
+  confirmed and are sufficiently buried.
 - **Chain worker** ([`crates/chain-worker`](../crates/chain-worker)) executes OL blocks
   through the STF, applies and finalizes epochs, and persists the resulting state.
 - **Fork choice** (sequencer) tracks the unfinalized block tree, picks the tip, and finalizes
-  epochs as the CSM reports them. **Checkpoint sync** (full node) rebuilds each finalized
+  epochs as the CSM reports them. **Checkpoint sync** (follower node) rebuilds each finalized
   epoch's state from the DA diff in its L1 checkpoint. A node runs exactly one of the two;
   both are in [`crates/consensus-logic`](../crates/consensus-logic).
 - **Mempool** and **block assembly** ([`crates/ol/mempool`](../crates/ol/mempool),
@@ -225,8 +222,7 @@ parameters whose bridge denomination, genesis L1 block, or genesis OL block disa
 
 ## Specifications
 
-The design is specified in the Strata Protocol Specifications (SPS), indexed in the team
-Notion workspace:
+The design is specified in the Strata Protocol Specifications (SPS):
 
 | Spec | Name | Description |
 | --- | --- | --- |
