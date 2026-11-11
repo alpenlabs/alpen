@@ -1,7 +1,7 @@
 # Repository layout
 
 This page lists each crate and what it does. Package names are in parentheses; most carry a
-`strata-` prefix. Each crate's `lib.rs` module documentation has more. The workspace builds
+`strata-` prefix. For details, read the doc comment at the top of each crate's `src/lib.rs`. The workspace builds
 `bin/strata`, `bin/strata-dbtool`, `bin/strata-signer`, `bin/datatool`, and
 `bin/strata-test-cli` by default; check `default-members` in the root `Cargo.toml` before
 assuming another crate builds.
@@ -26,13 +26,13 @@ change the checkpoint verifying key (see [ol-specs.md](ol-specs.md#proofs-per-sp
   batches, write tracking, and the indexer.
 - `crates/ol/chain-types-v*` (`strata-ol-chain-types-v*`): OL block types. Re-exports the OL log
   types from strata-common.
-- [`crates/ol/tx-types-v*`](../crates/ol/tx-types-v1) (`strata-ol-tx-types-v*`): OL
+- `crates/ol/tx-types-v*` (`strata-ol-tx-types-v*`): OL
   transactions, their payloads, and transaction proofs.
 - [`crates/ol/msg-types`](../crates/ol/msg-types) (`strata-ol-msg-types`): deposit and
   withdrawal message types.
 - [`crates/ol/da-common`](../crates/ol/da-common) (`strata-ol-da-common`): DA traits and
   encoding helpers shared by DA payload versions.
-- `crates/ol/da-types-v*`] (`strata-ol-da-types-v*`): the versoned DA
+- `crates/ol/da-types-v*` (`strata-ol-da-types-v*`): the versioned DA
   payload, its scheme, and the checkpoint transaction extractor.
 - [`crates/ol/params`](../crates/ol/params) (`strata-ol-params`): `OLGenesisParams`,
   `OLRuntimeParams`, and `OLParams`.
@@ -152,7 +152,7 @@ and asm crates.
 
 ## Binaries
 
-- [`bin/strata`](../bin/strata) (`strata`): the node. Sequencer, full node, RPC, and the
+- [`bin/strata`](../bin/strata) (`strata`): the node. Sequencer, follower node, RPC, and the
   in-process prover behind the `prover` and `sp1` features.
 - [`bin/strata-signer`](../bin/strata-signer) (`strata-signer-bin`, binary `strata-signer`):
   the detached sequencer signer.

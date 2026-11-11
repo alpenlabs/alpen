@@ -4,9 +4,10 @@ Guidance for AI coding agents working in this repository.
 
 ## Project Overview
 
-Strata is a Bitcoin layer 2 built from three state machines: the Anchor State Machine (ASM)
-reads Bitcoin, the Orchestration Layer (OL) runs the L2 chain, and Execution Environments
-(EEs) run on the OL as snark accounts. This repository holds the OL: the `strata` node, the
+Strata is a blockchain that settles on Bitcoin, built from two state machines: the Anchor
+State Machine (ASM) reads Bitcoin, and the Orchestration Layer (OL) runs the chain.
+Applications such as Execution Environments (EEs) run on the OL as snark accounts. This
+repository holds the OL: the `strata` node, the
 detached signer, the OL state transition function (STF), its tools, and the SP1 checkpoint
 prover.
 
