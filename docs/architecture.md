@@ -20,9 +20,9 @@ flowchart LR
     end
 
     subgraph OL[OL STF]
-        OLState[OLStateV1]
-        OLBlock[OLBlockV1]
-        OLOut[OLStateV1 + OL logs]
+        OLState[OLState]
+        OLBlock[OLBlock]
+        OLOut[OLState + OL logs]
     end
 
     subgraph EE[EE STF]
@@ -45,7 +45,7 @@ flowchart LR
 ```
 
 - **ASM STF**: `AnchorState + L1Block → (AnchorState', AsmManifest)`
-- **OL STF**: `OLStateV1 + OLBlockV1 + OLRuntimeParams → (OLStateV1', OL logs)`
+- **OL STF**: `OLState + OLBlock + OLRuntimeParams → (OLStateV1', OL logs)`
 - **EE STF**: `EEState + ExecBlock → (EEState', proof-backed account update)`
 
 The EE names are conceptual. To the OL, the EE is one snark account: its state, inbox, and
