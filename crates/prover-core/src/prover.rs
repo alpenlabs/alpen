@@ -357,19 +357,26 @@ impl<H: ProofSpec> Prover<H> {
             // the budgets bounded across the Blocked ↔ Proving ↔ TransientFailure
             // transitions; `schedule_retry`/`park_blocked` can't re-read them
             // after the overwrite, and `recover` needs them to survive a crash.
-            let counts = self.read_attempt_counts(&key);
+            let prior = self.task_store.get(&key).ok().flatten();
+            let counts = prior
+                .as_ref()
+                .map_or(AttemptCounts::default(), |r| r.status().counts());
 
-            // Without the Proving status on disk a record the scanner picked
-            // keeps its due rescan status, and the next tick would spawn a
-            // second attempt of the same task against this one. Give up this
-            // attempt instead: the scanner re-spawns a rescan record, and
-            // startup recovery a Pending one.
             if let Err(e) = self
                 .task_store
                 .update_status(&key, TaskStatus::Proving { counts })
             {
-                error!(%e, "failed to persist Proving status; abandoning this attempt");
-                return;
+                // Without the Proving status on disk the record keeps the
+                // status this attempt was spawned from, and that status
+                // decides whether a second attempt would follow this one.
+                if respawned_without_proving_status(prior.as_ref().map(TaskRecord::status)) {
+                    error!(%e, "failed to persist Proving status; abandoning this attempt");
+                    return;
+                }
+                warn!(
+                    %e,
+                    "failed to persist Proving status; carrying on, nothing else re-spawns this task"
+                );
             }
 
             // 1. Resolve input: ready, blocked on a dependency, or rejected.
@@ -826,5 +833,58 @@ impl<H: ProofSpec> ProverBuilder<H> {
 impl<H: ProofSpec> fmt::Debug for ProverBuilder<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverBuilder").finish()
+    }
+}
+
+/// Whether a task whose `Proving` write failed is spawned again by something
+/// other than the attempt that is running now.
+///
+/// A rescan status (`Blocked`, `TransientFailure`) stays due, so the scanner
+/// picks it on the next tick: the attempt has to stop, or two of them run
+/// the same task. A `Pending` or `Proving` record is selected by nothing but
+/// startup recovery, which has either run already or will re-spawn it at the
+/// first tick either way; the attempt that holds it carries on and lets its
+/// own later writes set the real state, as every attempt did before the
+/// write was checked. A record that cannot be read is treated the same way.
+fn respawned_without_proving_status(prior: Option<&TaskStatus>) -> bool {
+    matches!(
+        prior,
+        Some(TaskStatus::Blocked { .. } | TaskStatus::TransientFailure { .. })
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_rescan_status_abandons_the_attempt_after_a_failed_proving_write() {
+        let counts = AttemptCounts::default();
+        let rescan = [
+            TaskStatus::Blocked {
+                reason: "dep".into(),
+                counts,
+            },
+            TaskStatus::TransientFailure {
+                counts,
+                error: "io".into(),
+            },
+        ];
+        for status in &rescan {
+            assert!(respawned_without_proving_status(Some(status)), "{status:?}");
+        }
+        let held = [
+            TaskStatus::Pending,
+            TaskStatus::Proving { counts },
+            TaskStatus::Completed,
+            TaskStatus::PermanentFailure { error: "x".into() },
+        ];
+        for status in &held {
+            assert!(
+                !respawned_without_proving_status(Some(status)),
+                "{status:?}"
+            );
+        }
+        assert!(!respawned_without_proving_status(None));
     }
 }

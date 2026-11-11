@@ -416,7 +416,7 @@ mod tests {
             }
         }
 
-        fn service(store: VersionedTaskStore, marker: u32) -> Arc<Prover<TestSpec>> {
+        fn service(store: impl TaskStore, marker: u32) -> Arc<Prover<TestSpec>> {
             let host = NativeHost::new_with_random_key(move |machine| {
                 let epoch: u32 = machine.read_serde();
                 machine.commit_serde(&(marker + epoch));
@@ -562,6 +562,144 @@ mod tests {
             }
             assert!(record.retry_after_secs().is_some());
             assert_eq!(v1.list_retriable(u64::MAX).unwrap().len(), 1);
+        }
+
+        /// A store whose `update_status` fails once, on the first `Proving`
+        /// write, as a transient database error would.
+        struct FaultyProvingWrite {
+            inner: VersionedTaskStore,
+            fail_once: AtomicBool,
+            failed: Mutex<Option<oneshot::Sender<()>>>,
+        }
+
+        impl TaskStore for FaultyProvingWrite {
+            fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
+                self.inner.get(key)
+            }
+            fn insert(&self, record: TaskRecord) -> ProverResult<()> {
+                self.inner.insert(record)
+            }
+            fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
+                if matches!(status, TaskStatus::Proving { .. })
+                    && self.fail_once.swap(false, Ordering::SeqCst)
+                {
+                    if let Some(tx) = self.failed.lock().unwrap().take() {
+                        let _ = tx.send(());
+                    }
+                    return Err(ProverError::Storage("injected Proving failure".into()));
+                }
+                self.inner.update_status(key, status)
+            }
+            fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
+                self.inner.set_retry_after(key, when_secs)
+            }
+            fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+                self.inner.set_metadata(key, data)
+            }
+            fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+                self.inner.clear_metadata(key)
+            }
+            fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
+                self.inner.list_retriable(now_secs)
+            }
+            fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
+                self.inner.list_unfinished()
+            }
+            fn count(&self) -> ProverResult<usize> {
+                self.inner.count()
+            }
+        }
+
+        fn faulty_proving_write(
+            inner: VersionedTaskStore,
+        ) -> (Arc<FaultyProvingWrite>, oneshot::Receiver<()>) {
+            let (failed_tx, failed_rx) = oneshot::channel();
+            let store = Arc::new(FaultyProvingWrite {
+                inner,
+                fail_once: AtomicBool::new(true),
+                failed: Mutex::new(Some(failed_tx)),
+            });
+            (store, failed_rx)
+        }
+
+        /// A freshly submitted task is selected by nothing but startup
+        /// recovery, so an attempt whose `Proving` write fails has to carry
+        /// on: abandoning it would leave the `Pending` record, and its
+        /// waiter, stuck until the process restarts.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_proving_write_does_not_strand_a_fresh_task() {
+            let (_, v1, _) = stores();
+            let (store, failed_rx) = faulty_proving_write(v1.clone());
+            let task = task(6);
+            let key = task.to_key_bytes();
+
+            let prover = service(Arc::clone(&store), 100);
+            let result = timeout(Duration::from_secs(10), prover.execute(task))
+                .await
+                .expect("the attempt completes without a restart")
+                .unwrap();
+            assert!(result.is_completed());
+            failed_rx.await.expect("the injected failure fired");
+            assert_eq!(
+                v1.get(&key).unwrap().unwrap().status(),
+                &TaskStatus::Completed
+            );
+        }
+
+        /// A due rescan record is picked by the scanner on every tick, so an
+        /// attempt whose `Proving` write fails must stop, or the next tick
+        /// runs a second attempt of the same task next to it. The record
+        /// keeps its due status and the next tick runs it to completion.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_proving_write_abandons_a_rescan_attempt_for_the_next_tick() {
+            let (_, v1, _) = stores();
+            let (store, failed_rx) = faulty_proving_write(v1.clone());
+            let task = task(7);
+            let key = task.to_key_bytes();
+            v1.insert(TaskRecord::new(key.clone(), TaskStatus::Pending))
+                .unwrap();
+            v1.schedule_rescan(
+                &key,
+                TaskStatus::TransientFailure {
+                    counts: AttemptCounts::default(),
+                    error: "interrupted".into(),
+                },
+                0,
+            )
+            .unwrap();
+
+            let prover = service(Arc::clone(&store), 100);
+            prover.tick().await;
+            timeout(Duration::from_secs(5), failed_rx)
+                .await
+                .expect("the scanner spawns the attempt")
+                .unwrap();
+            // The abandoned attempt leaves the record exactly as the scanner
+            // found it: still due, still the only unfinished row.
+            let record = v1.get(&key).unwrap().unwrap();
+            assert!(
+                matches!(record.status(), TaskStatus::TransientFailure { .. }),
+                "{:?}",
+                record.status()
+            );
+            assert_eq!(v1.list_retriable(u64::MAX).unwrap().len(), 1);
+            assert!(
+                timeout(Duration::from_millis(300), prover.wait_for_tasks(&[task]))
+                    .await
+                    .is_err(),
+                "an abandoned attempt must not complete the task"
+            );
+
+            prover.tick().await;
+            let results = timeout(Duration::from_secs(10), prover.wait_for_tasks(&[task]))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(results[0].is_completed());
+            assert_eq!(
+                v1.get(&key).unwrap().unwrap().status(),
+                &TaskStatus::Completed
+            );
         }
 
         #[tokio::test(flavor = "multi_thread")]
