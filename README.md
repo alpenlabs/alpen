@@ -1,13 +1,13 @@
-# Strata
+# Strata Chain
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-blue.svg)](https://opensource.org/licenses/apache-2-0)
 [![codecov](https://codecov.io/gh/alpenlabs/alpen/branch/main/graph/badge.svg?token=Q3ZYY44GN7)](https://codecov.io/gh/alpenlabs/strata)
 [![ci](https://github.com/alpenlabs/alpen/actions/workflows/lint.yml/badge.svg?event=push)](https://github.com/alpenlabs/alpen/actions)
 
-Strata is a Bitcoin layer 2 that posts proven checkpoints of its chain to Bitcoin.
-This repository holds its Orchestration Layer: the `strata` node, the detached signer,
-and the checkpoint prover.
+Strata is a blockchain that settles on bitcoin and posts zero-knowledge proven state root checkpoints of its chain to Bitcoin.
+This repository holds its Orchestration Layer (OL): the `strata` node, the detached signer,
+and the checkpoint prover. The Strata chain is complementary to the [`strata-bridge`](https://github.com/alpenlabs/strata-bridge).
 
 ## What is Strata?
 
