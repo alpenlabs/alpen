@@ -1,7 +1,7 @@
 # Repository layout
 
 This page lists each crate and what it does. Package names are in parentheses; most carry a
-`strata-` prefix. Each crate's `lib.rs` doc comment has more. The workspace builds
+`strata-` prefix. Each crate's `lib.rs` module documentation has more. The workspace builds
 `bin/strata`, `bin/strata-dbtool`, `bin/strata-signer`, `bin/datatool`, and
 `bin/strata-test-cli` by default; check `default-members` in the root `Cargo.toml` before
 assuming another crate builds.
@@ -9,30 +9,30 @@ assuming another crate builds.
 ## OL state transition
 
 These crates make up the OL STF. The checkpoint guest compiles them, so a change here can
-move the checkpoint verifying key (see [ol-specs.md](ol-specs.md#proofs-per-spec)).
+change the checkpoint verifying key (see [ol-specs.md](ol-specs.md#proofs-per-spec)).
 
 - [`crates/ol/stf`](../crates/ol/stf) (`strata-ol-stf`): the versioned STF entry point. It
   dispatches each operation on `OLSpecId`.
-- [`crates/ol/stf-v1`](../crates/ol/stf-v1) (`strata-ol-stf-v1`): the V1 rules: block, epoch,
+- `crates/ol/stf-v*` (`strata-ol-stf-v*`): the versioned rules: block, epoch,
   manifest, and transaction processing.
 - [`crates/ol/state-types`](../crates/ol/state-types) (`strata-ol-state-types`): state accessor
   traits, ledger entry types, `OLSpecId`, and the fixed `OLRootState`.
-- [`crates/ol/state-types-v1`](../crates/ol/state-types-v1) (`strata-ol-state-types-v1`):
-  `OLStateV1` and its parts: global, epochal, ledger, and snark account state.
+- `crates/ol/state-types-v*` (`strata-ol-state-types-v*`):
+  `OLStateV*` and its parts: global, epochal, ledger, and snark account state.
 - [`crates/ol/state-container`](../crates/ol/state-container) (`strata-ol-state-container`):
   `OLStateContainer`, `OLStateSeries`, the spec-to-layout map, and the container's serde form.
 - [`crates/ol/state-support-types`](../crates/ol/state-support-types)
   (`strata-ol-state-support-types`): state access layers: the in-memory base layer, write
   batches, write tracking, and the indexer.
-- [`crates/ol/chain-types-v1`](../crates/ol/chain-types-v1) (`strata-ol-chain-types-v1`): OL
-  block types. Re-exports the OL log types from strata-common.
-- [`crates/ol/tx-types-v1`](../crates/ol/tx-types-v1) (`strata-ol-tx-types-v1`): OL
+- `crates/ol/chain-types-v*` (`strata-ol-chain-types-v*`): OL block types. Re-exports the OL log
+  types from strata-common.
+- [`crates/ol/tx-types-v*`](../crates/ol/tx-types-v1) (`strata-ol-tx-types-v*`): OL
   transactions, their payloads, and transaction proofs.
 - [`crates/ol/msg-types`](../crates/ol/msg-types) (`strata-ol-msg-types`): deposit and
   withdrawal message types.
 - [`crates/ol/da-common`](../crates/ol/da-common) (`strata-ol-da-common`): DA traits and
   encoding helpers shared by DA payload versions.
-- [`crates/ol/da-types-v1`](../crates/ol/da-types-v1) (`strata-ol-da-types-v1`): the V1 DA
+- `crates/ol/da-types-v*`] (`strata-ol-da-types-v*`): the versoned DA
   payload, its scheme, and the checkpoint transaction extractor.
 - [`crates/ol/params`](../crates/ol/params) (`strata-ol-params`): `OLGenesisParams`,
   `OLRuntimeParams`, and `OLParams`.
