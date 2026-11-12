@@ -152,7 +152,7 @@ and asm crates.
 
 ## Binaries
 
-- [`bin/strata`](../bin/strata) (`strata`): the node. Sequencer, follower node, RPC and the
+- [`bin/strata`](../bin/strata) (`strata`): the node. Sequencer, full node, RPC and the
   in-process prover behind the `prover` and `sp1` features.
 - [`bin/strata-signer`](../bin/strata-signer) (`strata-signer-bin`, binary `strata-signer`):
   the detached sequencer signer.

@@ -128,6 +128,13 @@ See [`docs/layout.md`](docs/layout.md) for every crate.
 - **Parameters**: ASM parameters, OL parameters and node config are separate files with
   separate owners. Don't duplicate protocol parameters in node config. Changing
   `OLRuntimeParams` changes the checkpoint verifying key.
+- **Prover**: `strata` proves checkpoints in-process only when it is built with the `prover`
+  feature and its config has a `[prover]` section. Without one, checkpoints carry empty
+  proofs, which only an `AlwaysAccept` predicate accepts.
+- **Storage**: the node keeps one sled database (`crates/db/store-sled`), opened in
+  `bin/strata/src/init_db.rs`. Its traits are in `crates/db/types`, and `crates/storage` wraps
+  them in cached managers behind `NodeStorage`. `strata-dbtool` reads and repairs the database
+  offline.
 - **TODOs**: every new `TODO` or `FIXME` needs a ticket, for example `TODO(STR-1234): ...`.
   `just lint-check-todos` runs the same check as CI.
 - **Dependencies**: declare versions in the root `Cargo.toml` and use `workspace = true`.

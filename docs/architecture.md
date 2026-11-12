@@ -1,10 +1,15 @@
 # Architecture
 
+Strata is a blockchain that settles on Bitcoin. It works as a rollup: a sequencer builds
+blocks off Bitcoin, and for each epoch it posts a zero-knowledge proven checkpoint of the
+chain to Bitcoin, where anyone can verify it.
+
 Strata is split into two state machines. Each one includes a state transition function (STF)
 that runs natively in a node and inside a zkVM for proofs:
 
 - The **Anchor State Machine (ASM)** reads Bitcoin blocks, picks out the transactions tagged
-  for Strata and emits a manifest of logs per block. It lives in
+  for Strata (bridge, governance and checkpoint transactions) and emits a manifest of logs per
+  block. It verifies the checkpoints posted to Bitcoin. It lives in
   [alpenlabs/asm](https://github.com/alpenlabs/asm).
 - The **Orchestration Layer (OL)** runs the chain: accounts, messages, blocks and
   checkpoints. It reads the ASM manifests and posts a checkpoint to Bitcoin for each epoch.
@@ -65,9 +70,12 @@ a predicate, the verifying key for its update proofs. The OL STF applies an upda
 predicate accepts the update's proof. Other accounts send it messages, which land in its inbox
 MMR, and each update proves which of those messages it processed, in order.
 
-Deposits arrive as ASM bridge logs and credit an account. The bridge gateway is a reserved
-account ID, not a ledger account: the STF handles messages sent to it and turns valid ones into
-withdrawal logs. The types live in [`crates/acct-types`](../crates/acct-types),
+Some account IDs are reserved for the protocol, and no ledger account can occupy them. The
+**bridge gateway** is one: the STF handles messages sent to it and turns valid ones into
+withdrawal logs. The admin message ID is another: it is the sender of the system messages that
+admin actions produce, such as predicate key rotations.
+
+Deposits arrive as ASM bridge logs and credit an account. The types live in [`crates/acct-types`](../crates/acct-types),
 [`crates/snark-acct-types`](../crates/snark-acct-types) and
 [`crates/ol/msg-types`](../crates/ol/msg-types); the update rules in
 [`crates/snark-acct-sys`](../crates/snark-acct-sys).
@@ -81,8 +89,16 @@ has not yet included.
 
 An epoch ends with a _terminal_ block. On a terminal block, the STF processes the logs of
 the manifests the epoch included (deposits, predicate updates and so on), and the sequencer
-then builds a checkpoint for the epoch. A checkpoint commits to the epoch's terminal header,
-its DA diff, its logs and the manifests the epoch included.
+then builds a checkpoint for the epoch.
+
+The word checkpoint covers two things. The **checkpoint payload** is what the sequencer posts
+to Bitcoin: the new tip (epoch, L1 height and terminal block), the proof and a sidecar with the
+epoch's DA diff, its logs and the terminal header fields L1 does not already have. The
+**checkpoint claim** is what the proof commits to. It names the epoch, its block range and the
+manifests the epoch included, and it holds hashes of the DA diff, the logs and those header
+fields. The ASM rebuilds the claim from the payload and the state it already holds, then
+verifies the proof against it. The payloads on Bitcoin and the ASM manifests are enough for
+anyone to rebuild the OL state and continue the chain.
 
 The OL STF has one entry point, [`crates/ol/stf`](../crates/ol/stf), which takes the
 `OLSpecId` of the epoch being executed and dispatches to that spec's rules. Everything that
@@ -91,13 +107,14 @@ state root and how to add a spec.
 
 ## Runtime
 
-`strata` ([`bin/strata`](../bin/strata)) is the node. It has two alternative roles. A **sequencer**
-builds blocks and posts checkpoints. A **follower node** follows the chain from checkpoints on L1.
+`strata` ([`bin/strata`](../bin/strata)) is the node. A node runs in one of two roles. A
+**sequencer** builds blocks and posts checkpoints. A **full node** follows the chain from
+checkpoints on L1.
 [`services.rs`](../bin/strata/src/services.rs) wires the services together:
 
 ```text
 bitcoind ──▶ btcio reader ──▶ ASM worker ──▶ CSM worker ──┬──▶ fork choice (sequencer)
-                                                          └──▶ checkpoint sync (follower node)
+                                                          └──▶ checkpoint sync (full node)
                                                                          │
                                                                          ▼
                                                                     chain worker ──▶ OL state
@@ -117,9 +134,10 @@ checkpoint builder ──▶ prover ──▶ btcio writer ──▶ broadcaster
 - **Chain worker** ([`crates/chain-worker`](../crates/chain-worker)) executes OL blocks
   through the STF, applies and finalizes epochs, then persists the resulting state.
 - **Fork choice** (sequencer only) tracks the unfinalized block tree, picks the tip and
-  finalizes epochs as the CSM reports them. A follower node receives no unfinalized blocks, so
-  it has no tips to choose between. It runs **checkpoint sync** instead, which rebuilds each
-  finalized epoch's state from the DA diff in its L1 checkpoint. Both are in
+  finalizes epochs as the CSM reports them. A full node runs **checkpoint sync** instead.
+  Nodes do not sync blocks between each other yet, so a full node receives no unfinalized
+  blocks and has no tips to choose between. Checkpoint sync rebuilds each finalized epoch's
+  state from the DA diff in its L1 checkpoint. Both are in
   [`crates/consensus-logic`](../crates/consensus-logic).
 - **Mempool** and **block assembly** ([`crates/ol/mempool`](../crates/ol/mempool),
   [`crates/ol/block-assembly`](../crates/ol/block-assembly)) admit transactions and build
@@ -132,13 +150,9 @@ checkpoint builder ──▶ prover ──▶ btcio writer ──▶ broadcaster
   checkpoint for each finished epoch and waits for its proof. Its submission tracker reports
   checkpoints that were mined on L1 but rejected by the ASM.
 - **Prover** ([`bin/strata/src/prover`](../bin/strata/src/prover)) proves checkpoints
-  in-process when the binary has the `prover` feature and the config has a `[prover]`
-  section. Without one, checkpoints carry empty proofs, which only an `AlwaysAccept`
-  predicate accepts.
+  in-process.
 - **btcio writer and broadcaster** wrap payloads in envelopes, publish them, bump fees and
-  track them to confirmation. EE DA payloads use chunked envelopes: one commit
-  transaction with a compact `OP_RETURN` funds several reveals. The EE builds the payload;
-  this repository publishes and tracks it.
+  track them to confirmation.
 - **RPC** ([`bin/strata/src/rpc`](../bin/strata/src/rpc)) serves the OL JSON-RPC API defined
   in [`crates/ol/rpc/api`](../crates/ol/rpc/api).
 
@@ -158,16 +172,10 @@ supplies the sled and `bitcoind` implementations.
 
 ## Storage
 
-The node keeps one sled database ([`crates/db/store-sled`](../crates/db/store-sled)), opened
-in [`bin/strata/src/init_db.rs`](../bin/strata/src/init_db.rs). It holds L1 blocks, ASM
-states and manifests, the client state, OL blocks and states, writer and broadcaster entries,
-mempool entries, prover tasks, checkpoints and the MMR index. The traits are in
-[`crates/db/types`](../crates/db/types), and [`crates/storage`](../crates/storage) wraps them
-in cached managers behind `NodeStorage`.
-
-OL states are stored as `OLStateContainer`s, which pair the state root fields with the
-chainstate's SSZ bytes; see [ol-specs.md](ol-specs.md#state-root).
-[`bin/strata-dbtool`](../bin/strata-dbtool/README.md) reads and repairs the database offline.
+The node keeps its state in one sled database
+([`crates/db/store-sled`](../crates/db/store-sled)). OL states are stored as
+`OLStateContainer`s, which pair the state root fields with the chainstate's SSZ bytes; see
+[ol-specs.md](ol-specs.md#state-root).
 
 ## Proofs
 

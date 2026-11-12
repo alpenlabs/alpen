@@ -29,7 +29,7 @@ predicate instead of re-running the EE.
 ## What is in this repository
 
 - `strata`: the node. It runs as the sequencer, which builds blocks and posts checkpoints,
-  or as a follower node that follows the checkpoints on Bitcoin.
+  or as a full node that follows the checkpoints on Bitcoin.
 - `strata-signer`: the detached signer that holds the sequencer's keys.
 - `strata-datatool`, `strata-dbtool` and `strata-test-cli`: tools for generating parameters,
   inspecting the database and driving the functional tests.
@@ -42,7 +42,7 @@ predicate instead of re-running the EE.
   can only be reorganized by reorganizing that Bitcoin block.
 - **Provable.** The same state transition runs natively and inside a zkVM,
   so anyone can check a checkpoint from its proof instead of re-running it.
-- **Rebuildable.** A follower node rebuilds the OL state from the data in the checkpoints on Bitcoin.
+- **Rebuildable.** A full node rebuilds the OL state from the data in the checkpoints on Bitcoin.
 - **Upgradable.** New rules ship as a new spec that the chain switches to at an epoch boundary,
   after governance enacts it on Bitcoin.
 
