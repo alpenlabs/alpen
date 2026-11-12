@@ -935,6 +935,14 @@ fn effects_overflow_maps_to_invalid_params_with_data() {
             },
             "message_count",
         ),
+        (
+            TxEffectsOverflow::MessagePayload {
+                index: 0,
+                len: 256,
+                max: 255,
+            },
+            "message_payload_bytes",
+        ),
     ] {
         let error = mempool_error_to_rpc(OLMempoolError::EffectsOverflow(overflow));
         assert_eq!(error.code(), INVALID_PARAMS_CODE);

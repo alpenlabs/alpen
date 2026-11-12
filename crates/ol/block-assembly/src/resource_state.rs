@@ -160,7 +160,7 @@ where
     )
     .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
-    let (accumulator, _) = da_state.into_parts();
+    let (accumulator, _) = da_state.into_parts()?;
     let manifest_count = epoch_blocks
         .blocks
         .iter()
