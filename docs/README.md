@@ -3,9 +3,9 @@
 These pages explain how the OL node is put together, and link to the code for the details.
 
 - [Architecture](architecture.md): the state machines and accounts, the node's services, the
-  checkpoint lifecycle, storage, and configuration.
+  checkpoint lifecycle, storage and configuration.
 - [Repository layout](layout.md): what each crate is for.
-- [OL specs](ol-specs.md): spec dispatch and selection, the state root, and adding a spec.
+- [OL specs](ol-specs.md): spec dispatch and selection, the state root and adding a spec.
 
 Tool-specific guides live next to the code:
 

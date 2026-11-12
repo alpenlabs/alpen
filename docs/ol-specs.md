@@ -43,7 +43,7 @@ A node must halt when an enactment needs a successor its binary does not know.
 
 ## State root
 
-The OL state root is not the root of `OLStateV1`. Block headers, checkpoint terminal headers,
+The OL state root is not the root of `OLStateV1`. Block headers, checkpoint terminal headers
 and genesis commit to the hash tree root of `OLRootState`
 ([`crates/ol/state-types/ssz/root.ssz`](../crates/ol/state-types/ssz/root.ssz)):
 
@@ -67,7 +67,7 @@ change them, through `IStateAccessorMut::set_spec_versions` and the `WriteBatch`
 numbers are never compared: several specs can share a layout.
 
 `OLStateContainer` ([`crates/ol/state-container`](../crates/ol/state-container)) pairs the root
-with an `OLStateSeries` chainstate. Storage, the chain worker, and the checkpoint proof input
+with an `OLStateSeries` chainstate. Storage, the chain worker and the checkpoint proof input
 carry it. It has no wire format of its own: serde writes the root's fields and the
 chainstate's SSZ bytes (CBOR in sled, the zkVM's serde input in the proof), and decoding checks the
 chainstate against the root. Execution uses `MemoryStateBaseLayer<OLStateV1>`, built with
@@ -109,7 +109,7 @@ A consensus change to a chain that already runs the current rules ships as a new
 3. Map it to a layout in `OLStateLayout::for_spec`. A new chainstate layout also needs a new
    `OLStateSeries` variant.
 4. Decide how its first epoch takes over the previous spec's state, as V1 and V2 do.
-5. Move `PROVED_SPEC` to the new spec, publish its bundle, and keep the previous spec's bundle
+5. Move `PROVED_SPEC` to the new spec, publish its bundle and keep the previous spec's bundle
    frozen. Add the new spec to the native registry in `crates/ol/checkpoint-artifacts`.
 6. Cover the handover with STF tests, and keep the golden V1 test in
    [`crates/ol/checkpoint/src/tests/golden_v1.rs`](../crates/ol/checkpoint/src/tests/golden_v1.rs)

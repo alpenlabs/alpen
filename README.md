@@ -6,7 +6,7 @@
 [![ci](https://github.com/alpenlabs/alpen/actions/workflows/lint.yml/badge.svg?event=push)](https://github.com/alpenlabs/alpen/actions)
 
 Strata is a blockchain that settles on Bitcoin and posts zero-knowledge proven state root checkpoints of its chain to Bitcoin.
-This repository holds its Orchestration Layer (OL): the `strata` node, the detached signer,
+This repository holds its Orchestration Layer (OL): the `strata` node, the detached signer
 and the checkpoint prover. The Strata chain is complementary to the [`strata-bridge`](https://github.com/alpenlabs/strata-bridge).
 
 ## What is Strata?
@@ -15,9 +15,9 @@ Strata is built from two state machines.
 Each one includes a state transition function that runs natively in a node and inside a zkVM for proofs.
 
 - The **Anchor State Machine** (ASM, [asm](https://github.com/alpenlabs/asm)) reads Bitcoin
-  and picks out the transactions meant for Strata: governance, checkpoints, and the bridge.
+  and picks out the transactions meant for Strata: governance, checkpoints and the bridge.
 - The **Orchestration Layer** (OL), in this repository, runs the chain:
-  accounts, messages between them, deposits and withdrawals, and epochs.
+  accounts, messages between them, epochs, deposits and withdrawals.
   At the end of each epoch it posts a checkpoint to Bitcoin
   with a validity proof and the data needed to rebuild its state.
 
@@ -31,8 +31,8 @@ predicate instead of re-running the EE.
 - `strata`: the node. It runs as the sequencer, which builds blocks and posts checkpoints,
   or as a follower node that follows the checkpoints on Bitcoin.
 - `strata-signer`: the detached signer that holds the sequencer's keys.
-- `strata-datatool`, `strata-dbtool`, and `strata-test-cli`: tools for generating parameters,
-  inspecting the database, and driving the functional tests.
+- `strata-datatool`, `strata-dbtool` and `strata-test-cli`: tools for generating parameters,
+  inspecting the database and driving the functional tests.
 - The OL state transition function and its types, and the SP1 checkpoint prover.
 - Python functional tests that run the binaries against `bitcoind`.
 

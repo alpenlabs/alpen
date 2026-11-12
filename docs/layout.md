@@ -2,7 +2,7 @@
 
 This page lists each crate and what it does. Package names are in parentheses; most carry a
 `strata-` prefix. For details, read the doc comment at the top of each crate's `src/lib.rs`. The workspace builds
-`bin/strata`, `bin/strata-dbtool`, `bin/strata-signer`, `bin/datatool`, and
+`bin/strata`, `bin/strata-dbtool`, `bin/strata-signer`, `bin/datatool` and
 `bin/strata-test-cli` by default; check `default-members` in the root `Cargo.toml` before
 assuming another crate builds.
 
@@ -14,37 +14,37 @@ change the checkpoint verifying key (see [ol-specs.md](ol-specs.md#proofs-per-sp
 - [`crates/ol/stf`](../crates/ol/stf) (`strata-ol-stf`): the versioned STF entry point. It
   dispatches each operation on `OLSpecId`.
 - `crates/ol/stf-v*` (`strata-ol-stf-v*`): the versioned rules: block, epoch,
-  manifest, and transaction processing.
+  manifest and transaction processing.
 - [`crates/ol/state-types`](../crates/ol/state-types) (`strata-ol-state-types`): state accessor
-  traits, ledger entry types, `OLSpecId`, and the fixed `OLRootState`.
+  traits, ledger entry types, `OLSpecId` and the fixed `OLRootState`.
 - `crates/ol/state-types-v*` (`strata-ol-state-types-v*`):
-  `OLStateV*` and its parts: global, epochal, ledger, and snark account state.
+  `OLStateV*` and its parts: global, epochal, ledger and snark account state.
 - [`crates/ol/state-container`](../crates/ol/state-container) (`strata-ol-state-container`):
-  `OLStateContainer`, `OLStateSeries`, the spec-to-layout map, and the container's serde form.
+  `OLStateContainer`, `OLStateSeries`, the spec-to-layout map and the container's serde form.
 - [`crates/ol/state-support-types`](../crates/ol/state-support-types)
   (`strata-ol-state-support-types`): state access layers: the in-memory base layer, write
-  batches, write tracking, and the indexer.
+  batches, write tracking and the indexer.
 - `crates/ol/chain-types-v*` (`strata-ol-chain-types-v*`): OL block types. Re-exports the OL log
   types from strata-common.
 - `crates/ol/tx-types-v*` (`strata-ol-tx-types-v*`): OL
-  transactions, their payloads, and transaction proofs.
+  transactions, their payloads and transaction proofs.
 - [`crates/ol/msg-types`](../crates/ol/msg-types) (`strata-ol-msg-types`): deposit and
   withdrawal message types.
 - [`crates/ol/da-common`](../crates/ol/da-common) (`strata-ol-da-common`): DA traits and
   encoding helpers shared by DA payload versions.
 - `crates/ol/da-types-v*` (`strata-ol-da-types-v*`): the versioned DA
-  payload, its scheme, and the checkpoint transaction extractor.
+  payload, its scheme and the checkpoint transaction extractor.
 - [`crates/ol/params`](../crates/ol/params) (`strata-ol-params`): `OLGenesisParams`,
-  `OLRuntimeParams`, and `OLParams`.
+  `OLRuntimeParams` and `OLParams`.
 - [`crates/da-framework`](../crates/da-framework) (`strata-da-framework`): DA diff primitives:
-  `DaRegister`, `DaCounter`, `DaLinacc`, `DaQueue`, and compound types.
+  `DaRegister`, `DaCounter`, `DaLinacc`, `DaQueue` and compound types.
 
 ## Accounts and bridge
 
-- [`crates/acct-types`](../crates/acct-types) (`strata-acct-types`): account IDs, messages,
+- [`crates/acct-types`](../crates/acct-types) (`strata-acct-types`): account IDs, messages
   and effects.
 - [`crates/snark-acct-types`](../crates/snark-acct-types) (`strata-snark-acct-types`): snark
-  account state, updates, and the proof interface.
+  account state, updates and the proof interface.
 - [`crates/snark-acct-sys`](../crates/snark-acct-sys) (`strata-snark-acct-sys`): snark account
   update handling and verification.
 - [`crates/snark-acct-runtime`](../crates/snark-acct-runtime) (`strata-snark-acct-runtime`): a
@@ -59,7 +59,7 @@ change the checkpoint verifying key (see [ol-specs.md](ol-specs.md#proofs-per-sp
 - [`crates/chain-worker`](../crates/chain-worker) (`strata-chain-worker`): executes and
   persists OL blocks and epochs.
 - [`crates/consensus-logic`](../crates/consensus-logic) (`strata-consensus-logic`): fork
-  choice, checkpoint sync, the unfinalized block tracker, MMR reconciliation, and the ASM and
+  choice, checkpoint sync, the unfinalized block tracker, MMR reconciliation and the ASM and
   CSM worker contexts.
 - [`crates/csm-worker`](../crates/csm-worker) (`strata-csm-worker`): follows the ASM worker and
   turns checkpoint logs into client state.
@@ -87,7 +87,7 @@ change the checkpoint verifying key (see [ol-specs.md](ol-specs.md#proofs-per-sp
 - [`crates/ol/log-budget`](../crates/ol/log-budget) (`strata-ol-log-budget`): log accounting
   and per-transaction log budget checks for admission and assembly.
 - [`crates/ol/sequencer`](../crates/ol/sequencer) (`strata-ol-sequencer`): signing duties for
-  blocks, checkpoints, and envelope reveals.
+  blocks, checkpoints and envelope reveals.
 - [`crates/strata-signer`](../crates/strata-signer) (`strata-signer`): the detached signer
   service that `bin/strata-signer` runs.
 - [`crates/key-derivation`](../crates/key-derivation) (`strata-key-derivation`): sequencer key
@@ -96,9 +96,9 @@ change the checkpoint verifying key (see [ol-specs.md](ol-specs.md#proofs-per-sp
 ## Bitcoin I/O
 
 - [`crates/btcio`](../crates/btcio) (`strata-btcio`): the L1 reader, the envelope writer and
-  bundler, fee bumping, and the broadcaster.
+  bundler, fee bumping and the broadcaster.
 
-Bitcoin primitives, header verification, and SPS-50 parsing come from the pinned strata-common
+Bitcoin primitives, header verification and SPS-50 parsing come from the pinned strata-common
 and asm crates.
 
 ## Storage
@@ -135,24 +135,24 @@ and asm crates.
 
 - [`crates/primitives`](../crates/primitives) (`strata-primitives`): widely used data types.
 - [`crates/checkpoint-types`](../crates/checkpoint-types) (`strata-checkpoint-types`):
-  checkpoint, batch, terminal header, and prover task types.
+  checkpoint, batch, terminal header and prover task types.
 - [`crates/csm-types`](../crates/csm-types) (`strata-csm-types`): client state types.
 - [`crates/config`](../crates/config) (`strata-config`): the node's TOML configuration.
 - [`crates/common`](../crates/common) (`strata-common`): service helpers: health checks,
-  the bail and worker-pause hooks the crash tests use, and a WebSocket client. Not the
+  a WebSocket client and the bail and worker-pause hooks the crash tests use. Not the
   strata-common repository.
 - [`crates/status`](../crates/status) (`strata-status`): the status channel services publish
   sync state on.
 - [`crates/node-context`](../crates/node-context) (`strata-node-context`): the context passed to
   node services at startup.
 - [`crates/cli-common`](../crates/cli-common) (`strata-cli-common`): shared CLI error types.
-- [`crates/rpc/open-rpc`](../crates/rpc/open-rpc), [`open-rpc-macros`](../crates/rpc/open-rpc-macros),
-  and [`open-rpc-spec`](../crates/rpc/open-rpc-spec): OpenRPC types, derive macros, and the OL
+- [`crates/rpc/open-rpc`](../crates/rpc/open-rpc), [`open-rpc-macros`](../crates/rpc/open-rpc-macros)
+  and [`open-rpc-spec`](../crates/rpc/open-rpc-spec): OpenRPC types, derive macros and the OL
   OpenRPC document. `cargo run -p strata-rpc-openrpc-spec` prints the document.
 
 ## Binaries
 
-- [`bin/strata`](../bin/strata) (`strata`): the node. Sequencer, follower node, RPC, and the
+- [`bin/strata`](../bin/strata) (`strata`): the node. Sequencer, follower node, RPC and the
   in-process prover behind the `prover` and `sp1` features.
 - [`bin/strata-signer`](../bin/strata-signer) (`strata-signer-bin`, binary `strata-signer`):
   the detached sequencer signer.
@@ -166,14 +166,14 @@ and asm crates.
   reports.
 
 The downstream [alpen-ee](https://github.com/alpenlabs/alpen-ee) repository builds `strata`,
-`strata-signer`, `strata-datatool`, and `strata-test-cli` from a pinned revision for its own
+`strata-signer`, `strata-datatool` and `strata-test-cli` from a pinned revision for its own
 functional tests, so their CLIs are public interfaces.
 
 ## Tests
 
 - [`crates/test-utils/test-utils`](../crates/test-utils/test-utils) (`strata-test-utils`):
   `Arbitrary`-based generators.
-- [`crates/test-utils/l2`](../crates/test-utils/l2) (`strata-test-utils-l2`): OL, ASM, and
+- [`crates/test-utils/l2`](../crates/test-utils/l2) (`strata-test-utils-l2`): OL, ASM and
   checkpoint fixtures.
 - [`functional-tests`](../functional-tests/README.md): Python tests that run the binaries
   against `bitcoind`, grouped under `tests/` by component.
@@ -184,7 +184,7 @@ functional tests, so their CLIs are public interfaces.
 - [`contrib`](../contrib): style and TODO check scripts used by `just lint`, and dev helpers.
 - [`docker`](../docker/README.md): images and compose files for a local signet and sequencer
   stack.
-- [`.github/workflows`](../.github/workflows): CI, the checkpoint VK guard, and the SP1
+- [`.github/workflows`](../.github/workflows): CI, the checkpoint VK guard and the SP1
   artifact publisher.
 
 Shared protocol types come from [strata-common](https://github.com/alpenlabs/strata-common)

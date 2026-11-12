@@ -4,7 +4,7 @@ Strata is split into two state machines. Each one includes a state transition fu
 that runs natively in a node and inside a zkVM for proofs:
 
 - The **Anchor State Machine (ASM)** reads Bitcoin blocks, picks out the transactions tagged
-  for Strata, and emits a manifest of logs per block. It lives in
+  for Strata and emits a manifest of logs per block. It lives in
   [alpenlabs/asm](https://github.com/alpenlabs/asm).
 - The **Orchestration Layer (OL)** runs the chain: accounts, messages, blocks and
   checkpoints. It reads the ASM manifests and posts a checkpoint to Bitcoin for each epoch.
@@ -68,7 +68,7 @@ MMR, and each update proves which of those messages it processed, in order.
 Deposits arrive as ASM bridge logs and credit an account. The bridge gateway is a reserved
 account ID, not a ledger account: the STF handles messages sent to it and turns valid ones into
 withdrawal logs. The types live in [`crates/acct-types`](../crates/acct-types),
-[`crates/snark-acct-types`](../crates/snark-acct-types), and
+[`crates/snark-acct-types`](../crates/snark-acct-types) and
 [`crates/ol/msg-types`](../crates/ol/msg-types); the update rules in
 [`crates/snark-acct-sys`](../crates/snark-acct-sys).
 
@@ -87,7 +87,7 @@ its DA diff, its logs and the manifests the epoch included.
 The OL STF has one entry point, [`crates/ol/stf`](../crates/ol/stf), which takes the
 `OLSpecId` of the epoch being executed and dispatches to that spec's rules. Everything that
 executes OL blocks goes through it. [ol-specs.md](ol-specs.md) covers spec selection, the
-state root, and how to add a spec.
+state root and how to add a spec.
 
 ## Runtime
 
@@ -112,11 +112,11 @@ checkpoint builder ──▶ prover ──▶ btcio writer ──▶ broadcaster
 - **ASM worker** runs the ASM STF per L1 block and stores anchor states and manifests. Its
   context comes from [`crates/consensus-logic`](../crates/consensus-logic).
 - **CSM worker** ([`crates/csm-worker`](../crates/csm-worker)) runs the Client State Machine
-  (CSM). It follows the ASM worker, reads the checkpoint subprotocol's logs, and keeps the
+  (CSM). It follows the ASM worker, reads the checkpoint subprotocol's logs and keeps the
   client state: which epochs L1 has confirmed and which are sufficiently buried.
 - **Chain worker** ([`crates/chain-worker`](../crates/chain-worker)) executes OL blocks
-  through the STF, applies and finalizes epochs, and persists the resulting state.
-- **Fork choice** (sequencer only) tracks the unfinalized block tree, picks the tip, and
+  through the STF, applies and finalizes epochs, then persists the resulting state.
+- **Fork choice** (sequencer only) tracks the unfinalized block tree, picks the tip and
   finalizes epochs as the CSM reports them. A follower node receives no unfinalized blocks, so
   it has no tips to choose between. It runs **checkpoint sync** instead, which rebuilds each
   finalized epoch's state from the DA diff in its L1 checkpoint. Both are in
@@ -125,9 +125,9 @@ checkpoint builder ──▶ prover ──▶ btcio writer ──▶ broadcaster
   [`crates/ol/block-assembly`](../crates/ol/block-assembly)) admit transactions and build
   block templates. A sealing policy decides when a block ends the epoch.
 - **Signer duties** ([`crates/ol/sequencer`](../crates/ol/sequencer)) expose what needs a
-  signature: block templates, checkpoints, and envelope reveal transactions. The detached
+  signature: block templates, checkpoints and envelope reveal transactions. The detached
   `strata-signer` ([`bin/strata-signer`](../bin/strata-signer)) polls the sequencer RPC for
-  duties, signs them, and posts the results back, so the private keys stay in the signer.
+  duties, signs them and posts the results back, so the private keys stay in the signer.
 - **Checkpoint builder** ([`crates/ol/checkpoint`](../crates/ol/checkpoint)) builds a
   checkpoint for each finished epoch and waits for its proof. Its submission tracker reports
   checkpoints that were mined on L1 but rejected by the ASM.
@@ -135,7 +135,7 @@ checkpoint builder ──▶ prover ──▶ btcio writer ──▶ broadcaster
   in-process when the binary has the `prover` feature and the config has a `[prover]`
   section. Without one, checkpoints carry empty proofs, which only an `AlwaysAccept`
   predicate accepts.
-- **btcio writer and broadcaster** wrap payloads in envelopes, publish them, bump fees, and
+- **btcio writer and broadcaster** wrap payloads in envelopes, publish them, bump fees and
   track them to confirmation. EE DA payloads use chunked envelopes: one commit
   transaction with a compact `OP_RETURN` funds several reveals. The EE builds the payload;
   this repository publishes and tracks it.
@@ -160,8 +160,8 @@ supplies the sled and `bitcoind` implementations.
 
 The node keeps one sled database ([`crates/db/store-sled`](../crates/db/store-sled)), opened
 in [`bin/strata/src/init_db.rs`](../bin/strata/src/init_db.rs). It holds L1 blocks, ASM
-states and manifests, the client state, OL blocks and states, checkpoints, the MMR index,
-mempool entries, writer and broadcaster entries, and prover tasks. The traits are in
+states and manifests, the client state, OL blocks and states, writer and broadcaster entries,
+mempool entries, prover tasks, checkpoints and the MMR index. The traits are in
 [`crates/db/types`](../crates/db/types), and [`crates/storage`](../crates/storage) wraps them
 in cached managers behind `NodeStorage`.
 
@@ -183,15 +183,15 @@ loads one bundle per spec. [`crates/prover-core`](../crates/prover-core/README.m
 
 Configuration is split by owner:
 
-- **ASM parameters** (`AsmParams`, `--asm-params`): the L1 anchor, network, magic bytes, and
+- **ASM parameters** (`AsmParams`, `--asm-params`): the L1 anchor, network, magic bytes and
   subprotocol genesis config.
 - **OL parameters** (`OLParams`, `--ol-params`): `OLGenesisParams`, including the network's
   genesis spec, and `OLRuntimeParams`. Real guest builds embed the runtime parameters, so
   changing them changes the checkpoint verifying key.
 - **Node configuration** (TOML, [`crates/config`](../crates/config); see
   [`example_config.toml`](../example_config.toml)): operational settings such as `bitcoind`,
-  btcio fees and reorg depth, the sequencer, and the prover.
+  btcio fees and reorg depth, the sequencer and the prover.
 
 `strata-datatool gen-asm-params` and `gen-ol-params` generate the parameter files; see
 [`bin/datatool`](../bin/datatool/README.md). At startup, `strata` rejects ASM and OL
-parameters whose bridge denomination, genesis L1 block, or genesis OL block disagree.
+parameters whose bridge denomination, genesis L1 block or genesis OL block disagree.
