@@ -6,13 +6,14 @@ that runs natively in a node and inside a zkVM for proofs:
 - The **Anchor State Machine (ASM)** reads Bitcoin blocks, picks out the transactions tagged
   for Strata, and emits a manifest of logs per block. It lives in
   [alpenlabs/asm](https://github.com/alpenlabs/asm).
-- The **Orchestration Layer (OL)** runs the chain: accounts, messages, epochs, and
-  checkpoints. It reads the ASM manifests and posts a proven checkpoint to Bitcoin for each
-  epoch. It lives in this repository.
+- The **Orchestration Layer (OL)** runs the chain: accounts, messages, blocks and
+  checkpoints. It reads the ASM manifests and posts a checkpoint to Bitcoin for each epoch.
+  It lives in this repository.
 
 Applications run on the OL as [snark accounts](#accounts). An **Execution Environment (EE)**,
-such as an EVM, is one: it runs its own state machine outside Strata and moves its account
-forward with proof-backed updates that the OL STF checks against the account's predicate.
+such as the EVM, is one such application: it runs its own state machine outside Strata and
+moves its account forward with proof-backed updates that the OL STF checks against the
+account's predicate.
 
 ```mermaid
 flowchart LR
@@ -60,9 +61,9 @@ The OL state holds ledger accounts. Each has a balance and is either empty or a 
 account.
 
 A **snark account** changes state only through updates that carry a proof. The account stores
-a predicate, its verifying key, and the OL STF applies an update only if the predicate accepts
-its proof. Other accounts send it messages, which land in its inbox MMR, and each update proves
-which of those messages it processed, in order.
+a predicate, the verifying key for its update proofs. The OL STF applies an update only if the
+predicate accepts the update's proof. Other accounts send it messages, which land in its inbox
+MMR, and each update proves which of those messages it processed, in order.
 
 Deposits arrive as ASM bridge logs and credit an account. The bridge gateway is a reserved
 account ID, not a ledger account: the STF handles messages sent to it and turns valid ones into
@@ -74,14 +75,14 @@ withdrawal logs. The types live in [`crates/acct-types`](../crates/acct-types),
 ## OL blocks and epochs
 
 An OL block is a signed header and a body. The header commits to the slot, epoch, parent,
-body root, state root, and logs root. The body has two optional parts: a transaction segment
+body root, state root and logs root. The body has two optional parts: a transaction segment
 (account messages and snark account updates) and the ASM manifests for the L1 blocks the chain
 has not yet included.
 
-The epoch's terminal block ends it. There the STF processes the logs of the manifests the
-epoch included (deposits, predicate updates, and so on), and the sequencer then builds a
-checkpoint for the epoch. A checkpoint commits to the epoch's terminal header, its DA diff,
-its logs, and the manifests it read.
+An epoch ends with a _terminal_ block. On a terminal block, the STF processes the logs of
+the manifests the epoch included (deposits, predicate updates and so on), and the sequencer
+then builds a checkpoint for the epoch. A checkpoint commits to the epoch's terminal header,
+its DA diff, its logs and the manifests the epoch included.
 
 The OL STF has one entry point, [`crates/ol/stf`](../crates/ol/stf), which takes the
 `OLSpecId` of the epoch being executed and dispatches to that spec's rules. Everything that
