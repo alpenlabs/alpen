@@ -102,6 +102,19 @@ impl ProverTaskDbManager {
         self.modify(key, |d| d.set_retry_after_secs(Some(when_secs)))
     }
 
+    /// Writes the rescan status and its `retry_after` as one record update.
+    pub(crate) fn schedule_rescan(
+        &self,
+        key: &[u8],
+        status: TaskStatus,
+        retry_after_secs: u64,
+    ) -> ProverResult<()> {
+        self.modify(key, |d| {
+            d.set_status(status);
+            d.set_retry_after_secs(Some(retry_after_secs));
+        })
+    }
+
     pub(crate) fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
         self.modify(key, |d| d.set_metadata(Some(data)))
     }
