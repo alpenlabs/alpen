@@ -371,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_set_refuses_a_hand_built_zero_change() {
+    fn test_counter_encode_set_refuses_a_hand_built_zero_change() {
         let mut buf = Vec::new();
         assert!(matches!(
             DaCounter::<CtrU64ByUnsignedVarInt>::Changed(UnsignedVarInt::ZERO).encode_set(&mut buf),
@@ -389,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_set_rejects_a_zero_increment() {
+    fn test_counter_decode_set_rejects_a_zero_increment() {
         // `encode_set` never writes a zero increment under a set bit, so
         // reading one would give `Unchanged` a second byte form.
         let mut dec = BufDecoder::new(&[0x00]);

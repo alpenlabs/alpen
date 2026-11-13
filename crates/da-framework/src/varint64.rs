@@ -3,11 +3,13 @@
 //! Provides compact LEB128-style encoding for both signed and unsigned values
 //! where small values (the common case) use fewer bytes.
 //!
-//! The encoding is canonical: a value is written in the fewest bytes that hold
-//! it, and decoding rejects anything longer (a final byte with no data bits
-//! set, or a sign bit on a zero magnitude). Every value therefore has exactly
-//! one byte representation, so bytes covered by a hash or a signature cannot be
-//! rewritten without changing what they decode to.
+//! The encoding is canonical: `decode` accepts only the bytes `encode` writes.
+//! A value is written in the fewest bytes that hold it, and decoding rejects
+//! the other spellings a reader could take: a final byte with no data bits
+//! (padding), data bits above the 64th in the tenth byte or an eleventh byte
+//! (overflow), and a sign bit on a zero magnitude. Every value therefore has
+//! exactly one byte representation, so bytes covered by a hash or a signature
+//! cannot be rewritten without changing what they decode to.
 //!
 //! TODO(STR-2148): Eventually move to strata-codec and reconcile with its VarInt type.
 
@@ -34,8 +36,12 @@ fn encode_magnitude_tail(
     Ok(())
 }
 
-/// Decodes remaining magnitude bits, accumulating into `first_data` starting at
-/// bit position `start_bits`.
+/// Decodes the magnitude bits after the first byte, accumulating into `value`
+/// from bit position `start_bits`.
+///
+/// `start_bits` is the number of bits the first byte held: 7 for an unsigned
+/// value, 6 for a signed one. The overflow check shifts by `64 - shift`, so it
+/// must be at least 1; a `debug_assert!` holds it to `1..64`.
 ///
 /// # Errors
 ///
@@ -45,9 +51,6 @@ fn encode_magnitude_tail(
 /// [`encode_magnitude_tail`] stops as soon as the magnitude is exhausted, so
 /// a zero last byte is padding that gives the same value a second
 /// representation. Together these leave every value exactly one encoding.
-///
-/// `start_bits` is the number of bits the first byte held, between 1 and 63;
-/// the overflow check shifts by `64 - shift` and needs it below 64.
 fn decode_magnitude_tail(
     mut value: u64,
     start_bits: u32,
@@ -435,6 +438,50 @@ mod tests {
         let neg_max: SignedVarInt = decode_buf_exact(&signed_canonical).unwrap();
         assert_eq!(neg_max, SignedVarInt::negative(u64::MAX));
         assert_eq!(encode_to_vec(&neg_max).unwrap(), signed_canonical);
+    }
+
+    /// The tenth byte holds the bits a u64 has left (one unsigned, two
+    /// signed), so a continuation bit on it announces an eleventh group that
+    /// no value needs. The random-byte proptests rarely reach a well-formed
+    /// ten-byte input, so this case is fixed.
+    #[test]
+    fn test_varint64_rejects_a_continued_tenth_byte() {
+        let mut unsigned = [0xFFu8; MAX_VARINT_BYTES - 1].to_vec();
+        unsigned.push(0x81); // bit 63 set, continuation set
+        let res = decode_buf_exact::<UnsignedVarInt>(&unsigned);
+        assert!(
+            matches!(
+                res,
+                Err(CodecError::MalformedField("varint64 too many bytes"))
+            ),
+            "unsigned {unsigned:02x?} must be rejected, got {res:?}"
+        );
+
+        let mut signed = [0xFFu8; MAX_VARINT_BYTES - 1].to_vec();
+        signed.push(0x83); // bits 62 and 63 set, continuation set
+        let res = decode_buf_exact::<SignedVarInt>(&signed);
+        assert!(
+            matches!(
+                res,
+                Err(CodecError::MalformedField("varint64 too many bytes"))
+            ),
+            "signed {signed:02x?} must be rejected, got {res:?}"
+        );
+    }
+
+    /// `i64::MIN` is the one i64 whose magnitude, 2^63, needs the tenth byte,
+    /// so its bytes are pinned rather than only round-tripped.
+    #[test]
+    fn test_signed_varint_i64_min_bytes() {
+        let mut expected = vec![0xC0]; // continuation and sign, no data bits
+        expected.extend([0x80; 8]); // bits 6..=61 are zero
+        expected.push(0x02); // bit 63 is the second bit of the tenth group
+        assert_eq!(expected.len(), MAX_VARINT_BYTES);
+
+        let min = SignedVarInt::from_i64(i64::MIN);
+        assert_eq!(encode_to_vec(&min).unwrap(), expected);
+        assert_eq!(decode_buf_exact::<SignedVarInt>(&expected).unwrap(), min);
+        assert_eq!(min.to_i64(), Some(i64::MIN));
     }
 
     proptest! {
