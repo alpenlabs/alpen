@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "proxies")]
 use strata_db_macros::gen_proxy;
-use strata_identifiers::OLTxId;
+use strata_identifiers::{OLBlockCommitment, OLTxId};
 
 #[cfg(feature = "proxies")]
 use crate::DbError;
@@ -50,6 +50,50 @@ impl MempoolTxData {
     }
 }
 
+/// Mempool writes that [`MempoolDatabase::apply_batch`] applies atomically.
+///
+/// A chain update collects every row it removes, every transaction it
+/// restores, and the tip it moves to, so a crash or a failed write never
+/// leaves part of an update behind.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MempoolWriteBatch {
+    deletes: Vec<OLTxId>,
+    puts: Vec<MempoolTxData>,
+    tip: Option<OLBlockCommitment>,
+}
+
+impl MempoolWriteBatch {
+    /// Adds a transaction to delete.
+    pub fn delete(&mut self, txid: OLTxId) {
+        self.deletes.push(txid);
+    }
+
+    /// Adds a transaction to store.
+    pub fn put(&mut self, data: MempoolTxData) {
+        self.puts.push(data);
+    }
+
+    /// Records `tip` as the chain tip the stored transactions reflect.
+    pub fn set_tip(&mut self, tip: OLBlockCommitment) {
+        self.tip = Some(tip);
+    }
+
+    /// Returns the transactions to delete.
+    pub fn deletes(&self) -> &[OLTxId] {
+        &self.deletes
+    }
+
+    /// Returns the transactions to store.
+    pub fn puts(&self) -> &[MempoolTxData] {
+        &self.puts
+    }
+
+    /// Returns the tip to record, if any.
+    pub fn tip(&self) -> Option<OLBlockCommitment> {
+        self.tip
+    }
+}
+
 /// Database interface for OL mempool transactions.
 ///
 /// Stores transactions as opaque bytes with ordering metadata.
@@ -77,4 +121,14 @@ pub trait MempoolDatabase: Send + Sync + 'static {
     ///
     /// Returns true if the transaction existed and was deleted, false otherwise.
     fn del_tx(&self, txid: OLTxId) -> DbResult<bool>;
+
+    /// Applies `batch` atomically: either every write lands or none does.
+    ///
+    /// Deletes apply before puts, so a transaction both deleted and stored
+    /// ends up stored. Deleting a transaction the database lacks is not an
+    /// error. The batch's tip, if set, replaces the recorded tip.
+    fn apply_batch(&self, batch: MempoolWriteBatch) -> DbResult<()>;
+
+    /// Returns the tip the last batch recorded, if any.
+    fn get_tip(&self) -> DbResult<Option<OLBlockCommitment>>;
 }

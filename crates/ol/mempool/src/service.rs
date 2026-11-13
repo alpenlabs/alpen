@@ -70,7 +70,11 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
 
             MempoolInputMessage::ChainUpdate(update) => {
                 let new_tip = MempoolTip::from_sync_status(&update.new_status());
-                state.handle_chain_update(new_tip).await?;
+                // A failed update leaves the mempool out of sync at the old
+                // tip, which the state logs, and the next update retries it.
+                // Stopping the service would leave the node without a mempool
+                // instead.
+                let _ = state.handle_chain_update(new_tip).await;
             }
         }
 
@@ -82,17 +86,18 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
 mod tests {
     use std::sync::Arc;
 
-    use strata_identifiers::OLTxId;
+    use strata_identifiers::{EpochCommitment, OLTxId};
     use strata_service::CommandCompletionSender;
+    use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
     use tokio::sync::oneshot;
 
     use super::*;
     use crate::test_utils::{
-        create_test_block_commitment, create_test_context, create_test_snark_tx_with_seq_no,
-        create_test_state_provider,
+        InMemoryStateProvider, create_test_block_commitment, create_test_context,
+        create_test_snark_tx_with_seq_no, create_test_state_provider,
     };
     use crate::types::OLMempoolConfig;
-    use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolResult};
+    use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
 
     #[tokio::test]
     async fn test_service_submit_transaction() {
@@ -239,5 +244,78 @@ mod tests {
         let status = MempoolService::get_status(&state);
         assert_eq!(status.stats.mempool_size(), 1);
         assert_eq!(status.stats.enqueues_accepted(), 1);
+    }
+
+    /// A chain update the mempool cannot apply, here one whose block storage
+    /// lacks, leaves the service running but out of sync: it serves no
+    /// candidates and rejects submissions. An update that succeeds, here a
+    /// repeat of the mempool's own tip, brings it back.
+    #[tokio::test]
+    async fn test_service_survives_a_failed_chain_update() {
+        let tip = create_test_block_commitment(100);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider));
+        let genesis_l1_block = context.genesis_l1_block;
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
+            .await
+            .unwrap();
+        let held = create_test_snark_tx_with_seq_no(1, 0);
+        state
+            .handle_submit_transaction(Box::new(held.clone()))
+            .await
+            .unwrap();
+        let chain_update = |tip| {
+            let status = OLSyncStatus::new(
+                tip,
+                0,
+                false,
+                EpochCommitment::null(),
+                EpochCommitment::null(),
+                EpochCommitment::null(),
+                genesis_l1_block,
+            );
+            MempoolInputMessage::ChainUpdate(OLSyncStatusUpdate::new(status))
+        };
+
+        let response = MempoolService::process_input(
+            &mut state,
+            chain_update(create_test_block_commitment(101)),
+        )
+        .await
+        .expect("a failed chain update does not stop the service");
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(get_candidate_txids(&mut state).await, Vec::<OLTxId>::new());
+        let err = state
+            .handle_submit_transaction(Box::new(create_test_snark_tx_with_seq_no(2, 0)))
+            .await
+            .expect_err("rejected while out of sync");
+        assert!(matches!(err, OLMempoolError::OutOfSync), "{err}");
+
+        MempoolService::process_input(&mut state, chain_update(tip))
+            .await
+            .unwrap();
+        assert_eq!(
+            get_candidate_txids(&mut state).await,
+            vec![held.compute_txid()]
+        );
+        state
+            .handle_submit_transaction(Box::new(create_test_snark_tx_with_seq_no(2, 0)))
+            .await
+            .expect("admission resumes");
+    }
+
+    /// Fetches the candidates through the service.
+    async fn get_candidate_txids(
+        state: &mut MempoolServiceState<InMemoryStateProvider>,
+    ) -> Vec<OLTxId> {
+        let (tx_sender, rx) = oneshot::channel();
+        let command = MempoolCommand::GetCandidates {
+            completion: CommandCompletionSender::new(tx_sender),
+        };
+        MempoolService::process_input(state, MempoolInputMessage::Command(command))
+            .await
+            .unwrap();
+        let candidates: MempoolCandidates = rx.await.unwrap();
+        candidates.map(|candidate| candidate.txid()).collect()
     }
 }

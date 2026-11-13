@@ -99,6 +99,12 @@ pub enum OLMempoolError {
     #[error("mempool not available on this node")]
     NotAvailable,
 
+    /// The last chain update failed, so the mempool cannot tell which held
+    /// transactions the chain includes and admits nothing until an update
+    /// succeeds.
+    #[error("mempool is out of sync with the chain")]
+    OutOfSync,
+
     /// The block after the tip runs a spec this binary does not implement, so
     /// the mempool admits no transaction.
     #[error(transparent)]

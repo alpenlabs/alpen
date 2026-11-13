@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
 use proptest::arbitrary;
@@ -10,7 +11,10 @@ use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::TestRunner;
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, Slot};
+use strata_db_types::backend::DatabaseBackend;
+use strata_db_types::mempool::{MempoolDatabase, MempoolTxData, MempoolWriteBatch};
+use strata_db_types::{DbError, DbResult};
+use strata_identifiers::{Buf32, Hash, OLBlockCommitment, OLBlockId, OLTxId, Slot};
 use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_container::OLStateContainer;
 use strata_ol_state_provider::StateProvider;
@@ -26,7 +30,7 @@ use strata_ol_tx_types_v1::{
 };
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
-use strata_storage::create_node_storage;
+use strata_storage::{MempoolDbManager, create_node_storage};
 
 use crate::state::MempoolContext;
 use crate::types::OLMempoolConfig;
@@ -518,4 +522,119 @@ impl StateProvider for InMemoryStateProvider {
             .get_state_for_tip_blocking_inner(tip)?
             .map(MemoryStateBaseLayer::from_container))
     }
+}
+
+/// Switches that make a [`FaultyMempoolDb`] fail writes.
+#[derive(Debug)]
+pub(crate) struct MempoolDbFaults {
+    /// Makes every delete fail while on.
+    fail_deletes: AtomicBool,
+
+    /// How many more transactions the database stores before writes fail.
+    put_budget: AtomicUsize,
+}
+
+impl Default for MempoolDbFaults {
+    fn default() -> Self {
+        Self {
+            fail_deletes: AtomicBool::new(false),
+            put_budget: AtomicUsize::new(usize::MAX),
+        }
+    }
+}
+
+impl MempoolDbFaults {
+    pub(crate) fn set_fail_deletes(&self, fail: bool) {
+        self.fail_deletes.store(fail, Ordering::SeqCst);
+    }
+
+    /// Makes every put fail while on.
+    pub(crate) fn set_fail_puts(&self, fail: bool) {
+        self.set_put_budget(if fail { 0 } else { usize::MAX });
+    }
+
+    /// Lets the database store `budget` more transactions, then fails puts.
+    pub(crate) fn set_put_budget(&self, budget: usize) {
+        self.put_budget.store(budget, Ordering::SeqCst);
+    }
+
+    fn fails_deletes(&self) -> bool {
+        self.fail_deletes.load(Ordering::SeqCst)
+    }
+
+    /// Takes `count` puts from the budget, or returns `false` if it lacks
+    /// them.
+    fn take_puts(&self, count: usize) -> bool {
+        self.put_budget
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |budget| {
+                if budget == usize::MAX {
+                    Some(budget)
+                } else {
+                    budget.checked_sub(count)
+                }
+            })
+            .is_ok()
+    }
+}
+
+/// Mempool database that fails writes while a [`MempoolDbFaults`] switch is
+/// on, to test how the mempool handles storage failures. A failing batch
+/// writes nothing, as the real database's does.
+struct FaultyMempoolDb<D> {
+    inner: Arc<D>,
+    faults: Arc<MempoolDbFaults>,
+}
+
+fn injected(what: &str) -> DbError {
+    DbError::Other(format!("injected {what} failure"))
+}
+
+impl<D: MempoolDatabase> MempoolDatabase for FaultyMempoolDb<D> {
+    fn put_tx(&self, data: MempoolTxData) -> DbResult<()> {
+        if !self.faults.take_puts(1) {
+            return Err(injected("put"));
+        }
+        self.inner.put_tx(data)
+    }
+
+    fn get_tx(&self, txid: OLTxId) -> DbResult<Option<MempoolTxData>> {
+        self.inner.get_tx(txid)
+    }
+
+    fn get_all_txs(&self) -> DbResult<Vec<MempoolTxData>> {
+        self.inner.get_all_txs()
+    }
+
+    fn del_tx(&self, txid: OLTxId) -> DbResult<bool> {
+        if self.faults.fails_deletes() {
+            return Err(injected("delete"));
+        }
+        self.inner.del_tx(txid)
+    }
+
+    fn apply_batch(&self, batch: MempoolWriteBatch) -> DbResult<()> {
+        if self.faults.fails_deletes() && !batch.deletes().is_empty() {
+            return Err(injected("batch delete"));
+        }
+        if !self.faults.take_puts(batch.puts().len()) {
+            return Err(injected("batch put"));
+        }
+        self.inner.apply_batch(batch)
+    }
+
+    fn get_tip(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.inner.get_tip()
+    }
+}
+
+/// Creates a mempool database whose writes fail while the returned
+/// switches are on.
+pub(crate) fn create_faulty_mempool_db() -> (Arc<MempoolDbManager>, Arc<MempoolDbFaults>) {
+    let faults = Arc::new(MempoolDbFaults::default());
+    let db = FaultyMempoolDb {
+        inner: get_test_sled_backend().mempool_db(),
+        faults: faults.clone(),
+    };
+    let manager = MempoolDbManager::new(strata_storage::test_runtime_handle(), Arc::new(db));
+    (Arc::new(manager), faults)
 }
