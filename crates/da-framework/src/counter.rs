@@ -117,18 +117,24 @@ impl<S: CounterScheme> CompoundMember for DaCounter<S> {
     }
 
     fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self> {
-        Ok(Self::new_changed(<S::Incr as Codec>::decode(dec)?))
+        let incr = <S::Incr as Codec>::decode(dec)?;
+        // The bitmap already says "changed", so a zero increment here is
+        // `Unchanged` spelled a second way. `encode_set` refuses to write it;
+        // refuse to read it, so the two forms cannot name one value.
+        if S::is_zero(&incr) {
+            return Err(CodecError::InvalidVariant("counter"));
+        }
+        Ok(Self::Changed(incr))
     }
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
-        if <Self as CompoundMember>::is_default(self) {
-            return Err(CodecError::InvalidVariant("counter"));
-        }
-
-        if let DaCounter::Changed(d) = &self {
-            d.encode(enc)
-        } else {
-            Ok(())
+        match self {
+            // The compound writes `Unchanged` as a clear bit, never through here.
+            DaCounter::Unchanged => Err(CodecError::InvalidVariant("counter")),
+            // A hand-built `Changed(zero)` is the malformed value the variant's
+            // doc names; refuse it here as `decode_set` refuses its bytes.
+            DaCounter::Changed(d) if S::is_zero(d) => Err(CodecError::InvalidVariant("counter")),
+            DaCounter::Changed(d) => d.encode(enc),
         }
     }
 }
@@ -344,8 +350,8 @@ mod tests {
         counter_schemes::{CtrU64ByI16, CtrU64BySignedVarInt, CtrU64ByUnsignedVarInt},
     };
     use crate::{
-        CompoundMember, ContextlessDaWrite, CounterScheme, DaBuilder, SignedVarInt, UnsignedVarInt,
-        boundary_u64_strategy, decode_buf_exact, encode_to_vec,
+        CodecError, CompoundMember, ContextlessDaWrite, CounterScheme, DaBuilder, SignedVarInt,
+        UnsignedVarInt, boundary_u64_strategy, decode_buf_exact, encode_to_vec,
     };
 
     fn signed_varint_strategy() -> impl Strategy<Value = SignedVarInt> {
@@ -362,6 +368,45 @@ mod tests {
             .encode_set(&mut encoded)
             .expect("test: encode counter via CompoundMember");
         encoded
+    }
+
+    #[test]
+    fn encode_set_refuses_a_hand_built_zero_change() {
+        let mut buf = Vec::new();
+        assert!(matches!(
+            DaCounter::<CtrU64ByUnsignedVarInt>::Changed(UnsignedVarInt::ZERO).encode_set(&mut buf),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
+        assert!(matches!(
+            DaCounter::<CtrU64BySignedVarInt>::Changed(SignedVarInt::ZERO).encode_set(&mut buf),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
+        assert!(matches!(
+            DaCounter::<CtrU64ByI16>::Changed(0).encode_set(&mut buf),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn decode_set_rejects_a_zero_increment() {
+        // `encode_set` never writes a zero increment under a set bit, so
+        // reading one would give `Unchanged` a second byte form.
+        let mut dec = BufDecoder::new(&[0x00]);
+        assert!(matches!(
+            DaCounter::<CtrU64ByUnsignedVarInt>::decode_set(&mut dec),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
+        let mut dec = BufDecoder::new(&[0x00]);
+        assert!(matches!(
+            DaCounter::<CtrU64BySignedVarInt>::decode_set(&mut dec),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
+        let mut dec = BufDecoder::new(&[0x00, 0x00]);
+        assert!(matches!(
+            DaCounter::<CtrU64ByI16>::decode_set(&mut dec),
+            Err(CodecError::InvalidVariant("counter"))
+        ));
     }
 
     #[test]
