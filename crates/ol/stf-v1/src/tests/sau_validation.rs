@@ -212,6 +212,96 @@ fn test_snark_update_nonexistent_recipient() {
     snapshot.assert_unchanged(&fixture);
 }
 
+/// A value-bearing message to a nonexistent account is rejected the same way
+/// as a transfer to one (see [`test_snark_update_nonexistent_recipient`]).
+#[test]
+fn test_snark_update_message_to_nonexistent_recipient() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let nonexistent_id = make_account_id(TEST_NONEXISTENT_ID); // Not created
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+        })
+        .execute_genesis();
+
+    let snapshot = fixture.snapshot([snark_acct_id, nonexistent_id]);
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.output_message(
+                nonexistent_id,
+                BitcoinAmount::try_from(10_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                vec![1, 2, 3],
+            )
+            .with_state_root(make_state_root(2))
+        })
+        .execute_err();
+
+    match err.into_base() {
+        ExecError::UnknownAccount(id) => {
+            assert_eq!(id, nonexistent_id);
+        }
+        err => panic!("Expected UnknownAccount, got: {err:?}"),
+    }
+
+    snapshot.assert_unchanged(&fixture);
+}
+
+/// Regression test for SECFND-758: an update whose transfer targets a
+/// nonexistent account is rejected as a whole, so its valid message to an
+/// existing account is not applied either.
+#[test]
+fn test_snark_update_mixed_outputs_with_nonexistent_transfer_dest_fails_atomically() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let message_recipient_id = make_account_id(TEST_RECIPIENT_ID);
+    let nonexistent_id = make_account_id(TEST_NONEXISTENT_ID); // Not created
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+        })
+        .with_genesis_snark_account(message_recipient_id, |acct| acct)
+        .execute_genesis();
+
+    let snapshot = fixture.snapshot([snark_acct_id, message_recipient_id, nonexistent_id]);
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.output_message(
+                message_recipient_id,
+                BitcoinAmount::try_from(10_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                vec![1, 2, 3],
+            )
+            .transfer(
+                nonexistent_id,
+                BitcoinAmount::try_from(20_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+            .with_state_root(make_state_root(2))
+        })
+        .execute_err();
+
+    match err.into_base() {
+        ExecError::UnknownAccount(id) => {
+            assert_eq!(id, nonexistent_id);
+        }
+        err => panic!("Expected UnknownAccount, got: {err:?}"),
+    }
+
+    snapshot.assert_unchanged(&fixture);
+}
+
 #[test]
 fn test_snark_update_rejects_non_snark_target() {
     let target_acct_id = make_account_id(NON_SNARK_TARGET_ACCOUNT_ID);
