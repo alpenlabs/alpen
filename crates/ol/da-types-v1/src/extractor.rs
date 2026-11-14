@@ -15,15 +15,16 @@ use crate::{OLDaPayloadV1, decode_ol_da_payload_bytes};
 /// Decodes the OL DA payload from a raw checkpoint transaction.
 ///
 /// It is the caller's responsibility to fetch the raw transaction (e.g., via `btcio` or the
-/// consensus layer). This function only handles decoding.
+/// consensus layer). This function only handles decoding and does not authenticate the envelope:
+/// pass a transaction already matched by CSM or authenticated with `authenticate_checkpoint_tx`.
 pub fn decode_ol_da_payload(
     raw_tx: RawBitcoinTx,
     magic_bytes: MagicBytes,
 ) -> DaExtractorResult<OLDaPayloadV1> {
     let tx: Transaction = raw_tx.try_into()?;
     let tag = ParseConfig::new(magic_bytes).try_parse_tx(&tx)?;
-    let envelope = extract_checkpoint_from_envelope(&TxInputRef::new(&tx, tag))?;
-    let da_payload = decode_ol_da_payload_bytes(envelope.payload.sidecar().ol_state_diff())?;
+    let payload = extract_checkpoint_from_envelope(&TxInputRef::new(&tx, tag))?;
+    let da_payload = decode_ol_da_payload_bytes(payload.sidecar().ol_state_diff())?;
     Ok(da_payload)
 }
 
@@ -32,7 +33,7 @@ mod tests {
     use bitcoin::{ScriptBuf, Transaction};
     use strata_asm_proto_checkpoint_txs::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
     use strata_asm_proto_txs_test_utils::create_reveal_transaction_stub;
-    use strata_l1_envelope_fmt::parse_envelope_payload;
+    use strata_l1_envelope_fmt::{SignedEnvelopeSpendError, parse_envelope_payload};
 
     use crate::DaExtractorError;
 
@@ -55,7 +56,7 @@ mod tests {
             .taproot_leaf_script()
             .map(|leaf| leaf.script.into())
             .ok_or(DaExtractorError::CheckpointTxError(
-                CheckpointTxError::MissingLeafScript,
+                CheckpointTxError::EnvelopeSpend(SignedEnvelopeSpendError::MissingLeafScript),
             ))
     }
 

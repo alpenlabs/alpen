@@ -5,7 +5,9 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use bitcoin::block::Header;
 use bitcoind_async_client::{client::Client, traits::Reader};
-use strata_asm_common::{AnchorState, AsmManifest, AsmManifestHash, AuxData};
+use strata_asm_common::{
+    AnchorState, AsmHistoryAccumulatorState, AsmManifest, AsmManifestHash, AuxData,
+};
 use strata_asm_worker::{
     AnchorStateStore, AuxDataStore, L1DataProvider, ManifestMmrStore, WorkerError, WorkerResult,
 };
@@ -271,20 +273,23 @@ impl ManifestMmrStore for AsmWorkerCtx {
         Ok(())
     }
 
-    /// Writes the sentinel leaves for heights `0..=genesis_height` in batches.
+    /// Seeds the empty MMR with the leaves of the genesis accumulator.
     ///
-    /// The default writes one leaf per height through
-    /// [`put_manifest_hash`](ManifestMmrStore::put_manifest_hash), with one
-    /// transaction each. On mainnet that keeps a fresh node in startup for about
-    /// half an hour. The batched write stores the same leaves in chunks of
-    /// thousands per transaction and, like the default, resumes from the current
-    /// leaf count.
-    fn prefill_manifest_mmr(&self, genesis_height: u64) -> WorkerResult<()> {
+    /// The genesis accumulator holds one [`L1_HEIGHT_MMR_PREFILL_LEAF`] per height
+    /// `0..=genesis_height`. [`MmrIndexHandle`] cannot store an accumulator as
+    /// its peaks alone, so this writes those sentinel leaves in batches of
+    /// thousands per transaction. It first checks that the accumulator is that
+    /// sentinel prefix, so the stored MMR matches the proven one.
+    fn seed_manifest_mmr(&self, genesis: &AsmHistoryAccumulatorState) -> WorkerResult<()> {
+        let leaf_count = genesis.num_entries();
+        if *genesis != AsmHistoryAccumulatorState::new(genesis.last_inserted_height()) {
+            return Err(WorkerError::DbError(anyhow!(
+                "genesis manifest MMR is not {leaf_count} prefill leaves"
+            )));
+        }
+
         self.mmr_handle
-            .prefill_repeated_leaves_blocking(
-                Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF),
-                genesis_height + 1,
-            )
+            .prefill_repeated_leaves_blocking(Hash::new(L1_HEIGHT_MMR_PREFILL_LEAF), leaf_count)
             .map_err(conv_db_err)
     }
 
