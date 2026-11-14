@@ -1,4 +1,6 @@
-use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{
+    AccountId, Epoch, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId, Slot,
+};
 use strata_primitives::epoch::EpochCommitment;
 use strata_primitives::L1Height;
 use strata_storage_common::exec::OpsError;
@@ -27,6 +29,21 @@ pub enum DbError {
 
     #[error("not yet bootstrapped")]
     NotBootstrapped,
+
+    #[error("finalized OL history unavailable for epoch {epoch}")]
+    OLFinalizedHistoryUnavailable { epoch: Epoch },
+
+    #[error("ambiguous OL checkpoint history for epoch {epoch}")]
+    OLCheckpointHistoryAmbiguous { epoch: Epoch },
+
+    #[error("finalized OL terminal slots do not increase between {earlier} and {later}")]
+    OLFinalizedHistoryOrder {
+        earlier: EpochCommitment,
+        later: EpochCommitment,
+    },
+
+    #[error("client state at L1 block {block} is not on the current canonical L1 chain")]
+    OLFinalizedClientStateUnavailable { block: L1BlockCommitment },
 
     #[error("tried to overwrite epoch {0:?}")]
     OverwriteEpoch(EpochCommitment),

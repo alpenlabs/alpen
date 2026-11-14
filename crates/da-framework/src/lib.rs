@@ -15,7 +15,7 @@ pub use codec::{
 };
 pub use compound::{BitSeqReader, BitSeqWriter, Bitmap, CompoundMember};
 pub use counter::{CounterScheme, DaCounter, DaCounterBuilder, counter_schemes};
-pub use errors::{BuilderError, DaError};
+pub use errors::{BuilderError, DaError, DaQueueError};
 pub use linear_acc::{DaLinacc, LinearAccumulator};
 pub use queue::{DaQueue, DaQueueBuilder, DaQueueTarget, QueueView};
 pub use register::DaRegister;

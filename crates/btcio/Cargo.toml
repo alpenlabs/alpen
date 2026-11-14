@@ -37,6 +37,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
 proptest.workspace = true

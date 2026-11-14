@@ -2,6 +2,7 @@
 
 use strata_db_types::DbError;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
+use strata_ol_checkpoint::CanonicalEpochReconcileError;
 use strata_ol_state_types::OLSpecId;
 use strata_paas::ProverError as PaasError;
 
@@ -49,18 +50,52 @@ pub(crate) enum ProverError {
     DaComputation(String),
 }
 
+/// Required checkpoint history is missing or inconsistent.
+#[derive(Debug, thiserror::Error)]
+pub(super) enum CheckpointHistoryError {
+    #[error("missing epoch summary for {0}")]
+    MissingSummary(EpochCommitment),
+    #[error("epoch summary does not match commitment {expected} (got {actual})")]
+    SummaryMismatch {
+        expected: EpochCommitment,
+        actual: EpochCommitment,
+    },
+    #[error(
+        "epoch {commitment} predecessor does not match processed epoch {expected} (got {actual})"
+    )]
+    PredecessorMismatch {
+        commitment: EpochCommitment,
+        expected: EpochCommitment,
+        actual: OLBlockCommitment,
+    },
+}
+
+pub(super) fn is_history_integrity_failure(error: &anyhow::Error) -> bool {
+    if error.is::<CheckpointHistoryError>() {
+        return true;
+    }
+    match error.downcast_ref::<CanonicalEpochReconcileError>() {
+        Some(
+            CanonicalEpochReconcileError::MissingSummary(_)
+            | CanonicalEpochReconcileError::SummaryMismatch { .. }
+            | CanonicalEpochReconcileError::InvalidPredecessor { .. }
+            | CanonicalEpochReconcileError::HistoryBaseConflict(_),
+        ) => true,
+        Some(CanonicalEpochReconcileError::Storage(_)) | None => false,
+    }
+}
+
 /// Classifies input-fetch failures as retriable or permanent for the paas
 /// service.
 ///
 /// Missing epoch metadata or its exact start or terminal state is a not-ready-yet wait;
 /// the paas layer parks those tasks as `Blocked` and rechecks.
 ///
-/// A *stale* commitment is different: the task was submitted for an epoch
-/// commitment that is no longer canonical (a same-epoch reorg replaced it). It
-/// can never become canonical again, so retrying/reblocking it forever would
-/// hang the checkpoint runner, which awaits `execute` inline. Mark it permanent
-/// (→ `Rejected`) so `execute` returns `Failed` and the runner's recovery path
-/// re-reads the now-canonical commitment and resubmits the replacement task.
+/// A stale commitment is permanent. The task's branch has lost fork choice, and
+/// input resolution rejects it before backend work starts so an abandoned branch
+/// is not proven. Retrying would only reconsume budget while the branch stays
+/// noncanonical. If the branch later becomes canonical again, that exact task
+/// stays rejected; reviving it is tracked by STR-4610.
 impl From<ProverError> for PaasError {
     fn from(e: ProverError) -> Self {
         match e {
@@ -101,10 +136,7 @@ mod tests {
 
     #[test]
     fn stale_commitment_is_permanent() {
-        // A same-epoch reorg replaced the commitment; it can never become
-        // canonical again. Must be permanent (-> Rejected) so the checkpoint
-        // runner's inline `execute` returns instead of blocking forever, letting
-        // it re-read the canonical commitment and resubmit.
+        // Abandoned branches are rejected before proving; see the mapping's doc.
         assert_eq!(
             action_of(ProverError::StaleTaskCommitment {
                 epoch: 3,

@@ -3,6 +3,8 @@ use std::fmt::Display;
 use jsonrpsee::types::ErrorObjectOwned;
 pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
 use serde_json::json;
+use strata_db_types::DbError;
+use strata_identifiers::L1BlockCommitment;
 use strata_ol_log_budget::TxLogBudgetError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_state_types::TxEffectsOverflow;
@@ -17,6 +19,9 @@ pub(crate) const NOT_AVAILABLE_ON_NODE_CODE: i32 = -32002;
 
 /// Requested OL block history is below this node's locally available body range.
 pub(crate) const BLOCK_HISTORY_UNAVAILABLE_CODE: i32 = -32003;
+
+/// Client state is not yet on canonical L1 after a reorg, so the finalized view cannot be read.
+pub(crate) const FINALIZED_CLIENT_STATE_UNAVAILABLE_CODE: i32 = -32004;
 
 /// Creates an RPC error for database failures.
 pub(crate) fn db_error(e: impl Display) -> ErrorObjectOwned {
@@ -69,6 +74,28 @@ pub(crate) fn block_history_unavailable_error(history_base_slot: u64) -> ErrorOb
         format!("OL block history unavailable at or below history base slot {history_base_slot}"),
         None::<()>,
     )
+}
+
+/// Creates a retryable RPC error for a finalized-view query made before client state at
+/// `block` is back on canonical L1.
+pub(crate) fn finalized_client_state_unavailable_error(
+    block: L1BlockCommitment,
+) -> ErrorObjectOwned {
+    ErrorObjectOwned::owned(
+        FINALIZED_CLIENT_STATE_UNAVAILABLE_CODE,
+        format!("client state at L1 block {block} is not on the canonical L1 chain; retry later"),
+        None::<()>,
+    )
+}
+
+/// Maps a database error from a canonical-chain provider query to an RPC error.
+pub(crate) fn canonical_chain_db_error_to_rpc(err: DbError) -> ErrorObjectOwned {
+    match err {
+        DbError::OLFinalizedClientStateUnavailable { block } => {
+            finalized_client_state_unavailable_error(block)
+        }
+        err => db_error(err),
+    }
 }
 
 /// Maps mempool errors to RPC errors with appropriate error codes.

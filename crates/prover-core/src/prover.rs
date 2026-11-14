@@ -92,7 +92,9 @@ impl<H: ProofSpec> Prover<H> {
 
         let prover = Arc::clone(self);
         tokio::spawn(async move {
-            prover.run_task(task, key).await;
+            prover
+                .run_task(task, key, Origin::Submit, AttemptCounts::default())
+                .await;
         });
 
         Ok(())
@@ -215,9 +217,10 @@ impl<H: ProofSpec> Prover<H> {
         for record in retriable {
             let key = record.key().to_vec();
             if let Some(task) = decode_task_key::<H>(&key) {
+                let counts = record.status().counts();
                 let prover = Arc::clone(self);
                 tokio::spawn(async move {
-                    prover.run_task(task, key).await;
+                    prover.run_task(task, key, Origin::Scanner, counts).await;
                 });
             }
         }
@@ -282,29 +285,22 @@ impl<H: ProofSpec> Prover<H> {
 
             // Pending tasks: never scanned by `list_retriable` (not
             // `wants_rescan`), so spawn them directly to resume proving.
+            let counts = record.status().counts();
             let prover = Arc::clone(self);
             tokio::spawn(async move {
-                prover.run_task(task, key).await;
+                prover.run_task(task, key, Origin::Recovery, counts).await;
             });
         }
     }
 
-    /// Read the persisted [`AttemptCounts`] for a task, or all-zero for a
-    /// `Pending` or absent record.
+    /// Runs one attempt of `task`, spawned from `origin`.
     ///
-    /// Snapshotted at the top of [`Self::run_task`] before the `Proving`
-    /// overwrite discards the prior status, so the retry/resubmit/recheck
-    /// counters all survive the `Blocked ↔ Proving ↔ TransientFailure`
-    /// transitions instead of any of them resetting to zero.
-    fn read_attempt_counts(&self, key: &[u8]) -> AttemptCounts {
-        self.task_store
-            .get(key)
-            .ok()
-            .flatten()
-            .map_or(AttemptCounts::default(), |r| r.status().counts())
-    }
-
-    async fn run_task(&self, task: H::Task, key: Vec<u8>) {
+    /// `counts` are the attempt counters of the record at spawn time. The
+    /// `Proving` write overwrites the prior status that carried them, and
+    /// `schedule_retry`/`park_blocked` need all three (retry, resubmit,
+    /// recheck) to keep the budgets bounded across the
+    /// `Blocked <-> Proving <-> TransientFailure` transitions.
+    async fn run_task(&self, task: H::Task, key: Vec<u8>, origin: Origin, counts: AttemptCounts) {
         let span = info_span!("prove", task = %task);
 
         async {
@@ -320,13 +316,15 @@ impl<H: ProofSpec> Prover<H> {
                         if let Some(hook) = &self.receipt_hook {
                             if let Err(e) = hook.on_receipt(&task, &receipt).await {
                                 error!(%e, "receipt hook failed (checkpoint path)");
-                                let counts = self.read_attempt_counts(&key);
                                 let status = self.handle_error(&key, &e, counts);
                                 self.notify(&key, &task, &status);
                                 return;
                             }
                         }
-                        let _ = self.task_store.update_status(&key, TaskStatus::Completed);
+                        Self::log_write_failure(
+                            "completed",
+                            self.task_store.update_status(&key, TaskStatus::Completed),
+                        );
                         info!("task completed (from checkpointed receipt)");
                         self.notify(&key, &task, &TaskStatus::Completed);
                         return;
@@ -340,7 +338,6 @@ impl<H: ProofSpec> Prover<H> {
                         // success. Classify it (Storage -> RetryResume) and
                         // retry the checkpoint instead.
                         error!(%e, "receipt store read failed on checkpoint path");
-                        let counts = self.read_attempt_counts(&key);
                         let status = self.handle_error(&key, &e, counts);
                         self.notify(&key, &task, &status);
                         return;
@@ -348,17 +345,16 @@ impl<H: ProofSpec> Prover<H> {
                 }
             }
 
-            // Snapshot the attempt counters from the persisted record BEFORE
-            // flipping status to `Proving`, which overwrites the prior status.
-            // Carrying all three (retry/resubmit/recheck) forward is what keeps
-            // the budgets bounded across the Blocked ↔ Proving ↔ TransientFailure
-            // transitions; `schedule_retry`/`park_blocked` can't re-read them
-            // after the overwrite, and `recover` needs them to survive a crash.
-            let counts = self.read_attempt_counts(&key);
-
-            let _ = self
+            if let Err(e) = self
                 .task_store
-                .update_status(&key, TaskStatus::Proving { counts });
+                .update_status(&key, TaskStatus::Proving { counts })
+            {
+                if !self.continues_after_failed_proving_write(&key, origin) {
+                    warn!(%e, "failed to persist Proving status; abandoning the attempt to the scanner");
+                    return;
+                }
+                warn!(%e, "failed to persist Proving status; carrying on, nothing else selects this record");
+            }
 
             // 1. Resolve input: ready, blocked on a dependency, or rejected.
             let input = match self.spec.resolve_input(&task).await {
@@ -375,7 +371,10 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(InputResolution::Rejected { reason }) => {
                     error!(%reason, "input rejected");
                     let status = TaskStatus::PermanentFailure { error: reason };
-                    let _ = self.task_store.update_status(&key, status.clone());
+                    Self::log_write_failure(
+                        "permanent_failure",
+                        self.task_store.update_status(&key, status.clone()),
+                    );
                     self.notify(&key, &task, &status);
                     return;
                 }
@@ -397,7 +396,9 @@ impl<H: ProofSpec> Prover<H> {
             let store = self.task_store.clone();
             let persist_key = key.clone();
             let ctx = ProveContext::new(saved_metadata, move |data| {
-                let _ = store.set_metadata(&persist_key, data);
+                if let Err(e) = store.set_metadata(&persist_key, data) {
+                    error!(%e, key = ?persist_key, "failed to persist prove metadata");
+                }
             });
 
             let strategy = self.strategy.clone();
@@ -416,7 +417,10 @@ impl<H: ProofSpec> Prover<H> {
                     let status = TaskStatus::PermanentFailure {
                         error: e.to_string(),
                     };
-                    let _ = self.task_store.update_status(&key, status.clone());
+                    Self::log_write_failure(
+                        "permanent_failure",
+                        self.task_store.update_status(&key, status.clone()),
+                    );
                     self.notify(&key, &task, &status);
                     return;
                 }
@@ -443,7 +447,10 @@ impl<H: ProofSpec> Prover<H> {
             }
 
             // 5. Done
-            let _ = self.task_store.update_status(&key, TaskStatus::Completed);
+            Self::log_write_failure(
+                "completed",
+                self.task_store.update_status(&key, TaskStatus::Completed),
+            );
             info!("task completed");
             self.notify(&key, &task, &TaskStatus::Completed);
         }
@@ -489,7 +496,10 @@ impl<H: ProofSpec> Prover<H> {
                 let status = TaskStatus::PermanentFailure {
                     error: format!("blocked dependency unresolved after {max} rechecks: {reason}"),
                 };
-                let _ = self.task_store.update_status(key, status.clone());
+                Self::log_write_failure(
+                    "permanent_failure",
+                    self.task_store.update_status(key, status.clone()),
+                );
                 self.notify(key, task, &status);
                 return;
             }
@@ -507,12 +517,14 @@ impl<H: ProofSpec> Prover<H> {
             recheck_count = counts.recheck,
             "task blocked on dependency"
         );
-        let _ = self
-            .task_store
-            .update_status(key, TaskStatus::Blocked { reason, counts });
-        let _ = self
-            .task_store
-            .set_retry_after(key, now_secs().saturating_add(secs));
+        Self::log_write_failure(
+            "blocked",
+            self.task_store.schedule_rescan(
+                key,
+                TaskStatus::Blocked { reason, counts },
+                now_secs().saturating_add(secs),
+            ),
+        );
     }
 
     /// Persist the outcome of a failed attempt and return the status written,
@@ -525,7 +537,10 @@ impl<H: ProofSpec> Prover<H> {
                 let status = TaskStatus::PermanentFailure {
                     error: err.to_string(),
                 };
-                let _ = self.task_store.update_status(key, status.clone());
+                Self::log_write_failure(
+                    "permanent_failure",
+                    self.task_store.update_status(key, status.clone()),
+                );
                 status
             }
         }
@@ -568,7 +583,7 @@ impl<H: ProofSpec> Prover<H> {
             if within_budget {
                 if fresh {
                     // Drop the dead remote ProofId so the next attempt resubmits.
-                    let _ = self.task_store.clear_metadata(key);
+                    Self::log_write_failure("clear_metadata", self.task_store.clear_metadata(key));
                 }
                 warn!(
                     retry_count = new_counts.retry,
@@ -582,11 +597,16 @@ impl<H: ProofSpec> Prover<H> {
                     counts: new_counts,
                     error: msg.to_string(),
                 };
-                let _ = self.task_store.update_status(key, status.clone());
                 let delay_secs = cfg.jittered_delay_secs(attempt, jitter_seed(key, attempt));
-                let _ = self
-                    .task_store
-                    .set_retry_after(key, now_secs().saturating_add(delay_secs));
+                // One write, so the status and its timestamp land together.
+                Self::log_write_failure(
+                    "transient_failure",
+                    self.task_store.schedule_rescan(
+                        key,
+                        status.clone(),
+                        now_secs().saturating_add(delay_secs),
+                    ),
+                );
                 return status;
             }
         }
@@ -594,26 +614,68 @@ impl<H: ProofSpec> Prover<H> {
         let status = TaskStatus::PermanentFailure {
             error: format!("retries exhausted: {msg}"),
         };
-        let _ = self.task_store.update_status(key, status.clone());
+        Self::log_write_failure(
+            "permanent_failure",
+            self.task_store.update_status(key, status.clone()),
+        );
         status
+    }
+
+    /// Whether an attempt whose `Proving` write came back with an error goes
+    /// on.
+    ///
+    /// A record from `submit` or startup recovery is selected by nothing in
+    /// the running process, so the attempt that holds it carries on and its
+    /// later writes set the real state. A record the scanner picked is picked
+    /// again on every tick while it reads a due rescan status, and two
+    /// attempts of one task must not run: the attempt stops unless the write
+    /// did land. sled commits a compare-and-swap before it flushes, so an
+    /// error can come back with the value already visible; the record is
+    /// re-read to tell the two apart. A record that cannot be read counts as
+    /// not written, because a duplicate prove costs more than the restart a
+    /// wrongly abandoned record needs.
+    fn continues_after_failed_proving_write(&self, key: &[u8], origin: Origin) -> bool {
+        match origin {
+            Origin::Submit | Origin::Recovery => true,
+            Origin::Scanner => matches!(
+                self.task_store.get(key),
+                Ok(Some(record)) if matches!(record.status(), TaskStatus::Proving { .. })
+            ),
+        }
+    }
+
+    /// Logs a failed lifecycle write; the attempt goes on as if it landed.
+    ///
+    /// Waiters already subscribed get the status the attempt decided, through
+    /// [`Self::notify`]. The record keeps whatever status it had: a rescan
+    /// status stays due for the scanner, while `Pending` or `Proving` is only
+    /// picked up by startup recovery, which treats `Proving` as a crashed
+    /// attempt (a retry is consumed and the task is proved again, even after
+    /// a `Completed` write that failed). Until that restart, anyone who
+    /// subscribes later waits.
+    fn log_write_failure(write: &str, result: ProverResult<()>) {
+        if let Err(e) = result {
+            error!(%e, write, "failed to persist task state");
+        }
     }
 
     /// Fan out the terminal result to every pending waiter and remove the
     /// watcher entry so the map does not grow unbounded.
     ///
-    /// Takes the freshly-persisted `status` from the caller rather than
+    /// Takes the `status` the attempt decided from the caller rather than
     /// re-reading the store: a transient store read here previously turned into
     /// `None` and bailed *without draining the watchers*, permanently losing an
-    /// otherwise terminal notification and hanging every waiter forever. Since
-    /// every caller has just written the terminal status, the read was both
-    /// fallible and redundant.
+    /// otherwise terminal notification and hanging every waiter forever. The
+    /// caller has just tried to write that status; a failed write is logged by
+    /// [`Self::log_write_failure`] and the waiters still get the result.
     ///
     /// The watchers lock is held across the drain to linearize with
     /// [`Self::wait_for_tasks`], which performs its
     /// check-terminal-then-subscribe decision under the same lock. The caller
-    /// persists the terminal status *before* invoking this, so a concurrent
+    /// writes the terminal status *before* invoking this, so a concurrent
     /// subscriber either observes terminal in the store (and returns without
-    /// subscribing) or is drained here.
+    /// subscribing) or is drained here; if that write failed, a subscriber
+    /// arriving after the drain waits until a restart recovers the record.
     fn notify(&self, key: &[u8], task: &H::Task, status: &TaskStatus) {
         let Some(result) = terminal_result(task, status) else {
             // Non-terminal (e.g. a scheduled TransientFailure): waiters keep
@@ -774,4 +836,17 @@ impl<H: ProofSpec> fmt::Debug for ProverBuilder<H> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProverBuilder").finish()
     }
+}
+
+/// What spawned an attempt, which is what selects the record again if the
+/// attempt's `Proving` write does not land.
+#[derive(Clone, Copy, Debug)]
+enum Origin {
+    /// [`Prover::submit`]: a fresh `Pending` record.
+    Submit,
+    /// Startup recovery: a `Pending` record left by an earlier process.
+    Recovery,
+    /// The scanner: a due rescan record, picked again on every tick while
+    /// it stays due.
+    Scanner,
 }

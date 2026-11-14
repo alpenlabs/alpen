@@ -92,6 +92,16 @@ impl TaskStore for VersionedTaskStore {
         self.inner.set_retry_after(&self.prefixed(key)?, when_secs)
     }
 
+    fn schedule_rescan(
+        &self,
+        key: &[u8],
+        status: TaskStatus,
+        retry_after_secs: u64,
+    ) -> ProverResult<()> {
+        self.inner
+            .schedule_rescan(&self.prefixed(key)?, status, retry_after_secs)
+    }
+
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
         self.inner.set_metadata(&self.prefixed(key)?, data)
     }
@@ -351,12 +361,14 @@ mod tests {
         assert_eq!(raw.count().unwrap(), 0);
     }
     mod recovery {
+        use std::sync::Mutex;
         use std::time::Duration;
 
         use async_trait::async_trait;
         use strata_paas::{
-            InMemoryReceiptStore, InputResolution, ProofSpec, Prover, ProverBuilder,
+            InMemoryReceiptStore, InputResolution, ProofSpec, Prover, ProverBuilder, RetryConfig,
         };
+        use tokio::sync::oneshot;
         use tokio::time::timeout;
         use zkaleido::{
             ProofType, PublicValues, ZkVmEnvSerde, ZkVmHost, ZkVmInputBuilder, ZkVmInputResult,
@@ -403,7 +415,7 @@ mod tests {
             }
         }
 
-        fn service(store: VersionedTaskStore, marker: u32) -> Arc<Prover<TestSpec>> {
+        fn service(store: impl TaskStore, marker: u32) -> Arc<Prover<TestSpec>> {
             let host = NativeHost::new_with_random_key(move |machine| {
                 let epoch: u32 = machine.read_serde();
                 machine.commit_serde(&(marker + epoch));
@@ -414,6 +426,360 @@ mod tests {
                     .receipt_store(InMemoryReceiptStore::new())
                     .native(host),
             )
+        }
+
+        /// Which store write fails once, as a transient database error would.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum Fault {
+            /// The sled store's single-write `schedule_rescan`.
+            Rescan,
+            /// The `Proving` write at the start of an attempt. With `landed`
+            /// the value is written before the error comes back, as sled
+            /// reports a failed flush after a successful compare-and-swap.
+            ProvingWrite { landed: bool },
+            /// The `Completed` write at the end of an attempt.
+            CompletedWrite,
+        }
+
+        /// Forwards every call to the versioned store and fails the chosen
+        /// write once, signalling the test when it does.
+        struct Faulty {
+            inner: VersionedTaskStore,
+            fault: Mutex<Option<Fault>>,
+            failed: Mutex<Option<oneshot::Sender<()>>>,
+        }
+
+        impl Faulty {
+            fn new(inner: VersionedTaskStore, fault: Fault) -> (Arc<Self>, oneshot::Receiver<()>) {
+                let (tx, rx) = oneshot::channel();
+                let store = Arc::new(Self {
+                    inner,
+                    fault: Mutex::new(Some(fault)),
+                    failed: Mutex::new(Some(tx)),
+                });
+                (store, rx)
+            }
+
+            /// Takes the fault if `wanted` matches it, and signals the test.
+            fn trip(&self, wanted: impl Fn(Fault) -> bool) -> Option<Fault> {
+                let mut slot = self.fault.lock().unwrap();
+                let fault = (*slot).filter(|f| wanted(*f))?;
+                *slot = None;
+                if let Some(tx) = self.failed.lock().unwrap().take() {
+                    let _ = tx.send(());
+                }
+                Some(fault)
+            }
+        }
+
+        impl TaskStore for Faulty {
+            fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
+                self.inner.get(key)
+            }
+            fn insert(&self, record: TaskRecord) -> ProverResult<()> {
+                self.inner.insert(record)
+            }
+            fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
+                let tripped = match status {
+                    TaskStatus::Proving { .. } => {
+                        self.trip(|f| matches!(f, Fault::ProvingWrite { .. }))
+                    }
+                    TaskStatus::Completed => self.trip(|f| f == Fault::CompletedWrite),
+                    _ => None,
+                };
+                match tripped {
+                    Some(Fault::ProvingWrite { landed: true }) => {
+                        self.inner.update_status(key, status)?;
+                        Err(ProverError::Storage("injected flush failure".into()))
+                    }
+                    Some(_) => Err(ProverError::Storage("injected write failure".into())),
+                    None => self.inner.update_status(key, status),
+                }
+            }
+            fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
+                self.inner.set_retry_after(key, when_secs)
+            }
+            fn schedule_rescan(
+                &self,
+                key: &[u8],
+                status: TaskStatus,
+                retry_after_secs: u64,
+            ) -> ProverResult<()> {
+                if self.trip(|f| f == Fault::Rescan).is_some() {
+                    return Err(ProverError::Storage("injected rescan failure".into()));
+                }
+                self.inner.schedule_rescan(key, status, retry_after_secs)
+            }
+            fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+                self.inner.set_metadata(key, data)
+            }
+            fn clear_metadata(&self, key: &[u8]) -> ProverResult<()> {
+                self.inner.clear_metadata(key)
+            }
+            fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
+                self.inner.list_retriable(now_secs)
+            }
+            fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
+                self.inner.list_unfinished()
+            }
+            fn count(&self) -> ProverResult<usize> {
+                self.inner.count()
+            }
+        }
+
+        /// Every input resolution fails with a storage error, which schedules
+        /// a resume-class retry.
+        struct FailingSpec;
+
+        #[async_trait]
+        impl ProofSpec for FailingSpec {
+            type Task = CheckpointProofTask;
+            type Program = TestProgram;
+
+            async fn resolve_input(
+                &self,
+                _task: &CheckpointProofTask,
+            ) -> ProverResult<InputResolution<u32>> {
+                Err(ProverError::Storage("injected read failure".into()))
+            }
+        }
+
+        fn failing_service(store: impl TaskStore) -> Arc<Prover<FailingSpec>> {
+            let host = NativeHost::new_with_random_key(|machine| {
+                let epoch: u32 = machine.read_serde();
+                machine.commit_serde(&epoch);
+            });
+            Arc::new(
+                ProverBuilder::new(FailingSpec)
+                    .task_store(store)
+                    // A backoff well past the test's lifetime, so the restart's
+                    // tick schedules the retry without also running it.
+                    .retry(RetryConfig {
+                        max_retries: 3,
+                        base_delay_secs: 60,
+                        max_delay_secs: 60,
+                        jitter_frac: 0.0,
+                        ..RetryConfig::default()
+                    })
+                    .native(host),
+            )
+        }
+
+        /// The sled store writes a rescan status and its `retry_after` as
+        /// one record update, so a failed retry write leaves the record
+        /// `Proving`, which startup recovery schedules again with both
+        /// fields. Until that restart the task's waiter keeps waiting: the
+        /// running process selects `Proving` records nowhere.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_rescan_write_leaves_the_record_proving_for_recovery() {
+            let (_, v1, _) = stores();
+            let (store, failed_rx) = Faulty::new(v1.clone(), Fault::Rescan);
+            let task = task(5);
+            let key = task.to_key_bytes();
+
+            let first = failing_service(Arc::clone(&store));
+            let waiter = tokio::spawn({
+                let first = Arc::clone(&first);
+                async move { first.execute(task).await }
+            });
+            // The injected failure is the attempt's last store write: the
+            // Proving write came before resolve_input.
+            timeout(Duration::from_secs(5), failed_rx)
+                .await
+                .expect("the retry reaches the store")
+                .unwrap();
+
+            let record = v1.get(&key).unwrap().unwrap();
+            assert!(
+                matches!(record.status(), TaskStatus::Proving { .. }),
+                "the rescan status must not land without its timestamp: {:?}",
+                record.status()
+            );
+            assert_eq!(record.retry_after_secs(), None);
+            assert!(v1.list_retriable(u64::MAX).unwrap().is_empty());
+            assert_eq!(v1.list_unfinished().unwrap().len(), 1);
+            assert!(!waiter.is_finished(), "the waiter waits for the restart");
+            waiter.abort();
+
+            // A restart recovers the Proving record and schedules the retry,
+            // this time with both fields.
+            let second = failing_service(v1.clone());
+            second.tick().await;
+            let record = v1.get(&key).unwrap().unwrap();
+            match record.status() {
+                TaskStatus::TransientFailure { counts, .. } => assert_eq!(counts.retry, 1),
+                other => panic!("expected a scheduled retry, got {other:?}"),
+            }
+            assert!(record.retry_after_secs().is_some());
+            assert_eq!(v1.list_retriable(u64::MAX).unwrap().len(), 1);
+        }
+
+        /// The production `schedule_rescan` lands the status and the
+        /// timestamp in one update.
+        #[test]
+        fn the_sled_store_schedules_a_rescan_in_one_write() {
+            let (_, v1, _) = stores();
+            let key = task(4).to_key_bytes();
+            v1.insert(TaskRecord::new(key.clone(), TaskStatus::Pending))
+                .unwrap();
+            let status = TaskStatus::TransientFailure {
+                counts: AttemptCounts {
+                    retry: 2,
+                    ..AttemptCounts::default()
+                },
+                error: "io".into(),
+            };
+            v1.schedule_rescan(&key, status.clone(), 42).unwrap();
+            let record = v1.get(&key).unwrap().unwrap();
+            assert_eq!(record.status(), &status);
+            assert_eq!(record.retry_after_secs(), Some(42));
+            assert!(v1.list_retriable(41).unwrap().is_empty());
+            assert_eq!(v1.list_retriable(42).unwrap().len(), 1);
+        }
+
+        /// A freshly submitted task is selected by nothing but startup
+        /// recovery, so an attempt whose `Proving` write fails has to carry
+        /// on: abandoning it would leave the `Pending` record, and its
+        /// waiter, stuck until the process restarts.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_proving_write_does_not_strand_a_fresh_task() {
+            let (_, v1, _) = stores();
+            let (store, failed_rx) = Faulty::new(v1.clone(), Fault::ProvingWrite { landed: false });
+            let task = task(6);
+            let key = task.to_key_bytes();
+
+            let prover = service(Arc::clone(&store), 100);
+            let result = timeout(Duration::from_secs(10), prover.execute(task))
+                .await
+                .expect("the attempt completes without a restart")
+                .unwrap();
+            assert!(result.is_completed());
+            failed_rx.await.expect("the injected failure fired");
+            assert_eq!(
+                v1.get(&key).unwrap().unwrap().status(),
+                &TaskStatus::Completed
+            );
+        }
+
+        /// A due rescan record is picked by the scanner on every tick, so an
+        /// attempt whose `Proving` write fails must stop, or the next tick
+        /// runs a second attempt of the same task next to it. The record
+        /// keeps its due status and the next tick runs it to completion.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_proving_write_abandons_a_rescan_attempt_for_the_next_tick() {
+            let (_, v1, _) = stores();
+            let (store, failed_rx) = Faulty::new(v1.clone(), Fault::ProvingWrite { landed: false });
+            let task = task(7);
+            let key = task.to_key_bytes();
+            v1.insert(TaskRecord::new(key.clone(), TaskStatus::Pending))
+                .unwrap();
+            v1.schedule_rescan(
+                &key,
+                TaskStatus::TransientFailure {
+                    counts: AttemptCounts::default(),
+                    error: "interrupted".into(),
+                },
+                0,
+            )
+            .unwrap();
+
+            let prover = service(Arc::clone(&store), 100);
+            prover.tick().await;
+            timeout(Duration::from_secs(5), failed_rx)
+                .await
+                .expect("the scanner spawns the attempt")
+                .unwrap();
+            // The abandoned attempt leaves the record exactly as the scanner
+            // found it: still due, still the only unfinished row.
+            let record = v1.get(&key).unwrap().unwrap();
+            assert!(
+                matches!(record.status(), TaskStatus::TransientFailure { .. }),
+                "{:?}",
+                record.status()
+            );
+            assert_eq!(v1.list_retriable(u64::MAX).unwrap().len(), 1);
+            assert!(
+                timeout(Duration::from_millis(300), prover.wait_for_tasks(&[task]))
+                    .await
+                    .is_err(),
+                "an abandoned attempt must not complete the task"
+            );
+
+            prover.tick().await;
+            let results = timeout(Duration::from_secs(10), prover.wait_for_tasks(&[task]))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(results[0].is_completed());
+            assert_eq!(
+                v1.get(&key).unwrap().unwrap().status(),
+                &TaskStatus::Completed
+            );
+        }
+
+        /// sled reports a failed flush after the compare-and-swap committed,
+        /// so the `Proving` write can land and still return an error. The
+        /// record then reads `Proving`, which the scanner never selects, so
+        /// the attempt has to carry on rather than leave it for a restart.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_proving_write_that_landed_before_failing_keeps_the_rescan_attempt() {
+            let (_, v1, _) = stores();
+            let (store, failed_rx) = Faulty::new(v1.clone(), Fault::ProvingWrite { landed: true });
+            let task = task(8);
+            let key = task.to_key_bytes();
+            v1.insert(TaskRecord::new(key.clone(), TaskStatus::Pending))
+                .unwrap();
+            v1.schedule_rescan(
+                &key,
+                TaskStatus::TransientFailure {
+                    counts: AttemptCounts::default(),
+                    error: "interrupted".into(),
+                },
+                0,
+            )
+            .unwrap();
+
+            let prover = service(Arc::clone(&store), 100);
+            prover.tick().await;
+            timeout(Duration::from_secs(5), failed_rx)
+                .await
+                .expect("the scanner spawns the attempt")
+                .unwrap();
+            let results = timeout(Duration::from_secs(10), prover.wait_for_tasks(&[task]))
+                .await
+                .expect("the attempt carries on without another tick")
+                .unwrap();
+            assert!(results[0].is_completed());
+            assert_eq!(
+                v1.get(&key).unwrap().unwrap().status(),
+                &TaskStatus::Completed
+            );
+        }
+
+        /// A failed `Completed` write is logged; the waiter still gets the
+        /// result the attempt decided. The record stays `Proving`, so a
+        /// restart treats it as a crashed attempt and proves it again.
+        #[tokio::test(flavor = "multi_thread")]
+        async fn a_failed_completed_write_still_releases_the_waiter() {
+            let (_, v1, _) = stores();
+            let (store, failed_rx) = Faulty::new(v1.clone(), Fault::CompletedWrite);
+            let task = task(9);
+            let key = task.to_key_bytes();
+
+            let prover = service(Arc::clone(&store), 100);
+            let result = timeout(Duration::from_secs(10), prover.execute(task))
+                .await
+                .expect("the waiter is released")
+                .unwrap();
+            assert!(result.is_completed());
+            failed_rx.await.expect("the injected failure fired");
+            let record = v1.get(&key).unwrap().unwrap();
+            assert!(
+                matches!(record.status(), TaskStatus::Proving { .. }),
+                "{:?}",
+                record.status()
+            );
+            assert_eq!(v1.list_unfinished().unwrap().len(), 1);
         }
 
         #[tokio::test(flavor = "multi_thread")]

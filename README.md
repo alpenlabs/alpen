@@ -1,84 +1,50 @@
-# Alpen
+# Strata Chain
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache-blue.svg)](https://opensource.org/licenses/apache-2-0)
 [![codecov](https://codecov.io/gh/alpenlabs/alpen/branch/main/graph/badge.svg?token=Q3ZYY44GN7)](https://codecov.io/gh/alpenlabs/strata)
 [![ci](https://github.com/alpenlabs/alpen/actions/workflows/lint.yml/badge.svg?event=push)](https://github.com/alpenlabs/alpen/actions)
-[![docs](https://img.shields.io/badge/docs-strata-orange)](https://docs.stratabtc.org)
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/alpenlabs/.github/76e8490215c5c1e21d98ad28380bdd88b1bf6e4d/profile/images/logo.png" alt="Alpen Labs Logo" width="21%">
-</p>
+Strata is a blockchain that settles on Bitcoin and posts zero-knowledge proven state root checkpoints of its chain to Bitcoin.
+This repository holds its Orchestration Layer (OL): the `strata` node, the detached signer
+and the checkpoint prover. The Strata chain is complementary to the [`strata-bridge`](https://github.com/alpenlabs/strata-bridge).
 
-[**Alpen**](https://alpenlabs.io) gives developers the freedom to program nearly
-any locking conditions for BTC imaginable,
-limited only by the Alpen block size and gas limits.
-This enables developers to create new kinds of applications for BTC
-with features such as:
+## What is Strata?
 
-- **New signature types**, "provide a valid `P-256` signature to authorize a transfer"
+Strata is built from two state machines.
+Each one includes a state transition function that runs natively in a node and inside a zkVM for proofs.
 
-- **Vaults**, "transfers must wait `N` days after being initiated to be effectuated,
-  and can be cancelled in the mean time"
+- The **Anchor State Machine** (ASM, [asm](https://github.com/alpenlabs/asm)) reads Bitcoin
+  and picks out the transactions meant for Strata: governance, checkpoints and the bridge.
+- The **Orchestration Layer** (OL), in this repository, runs the chain:
+  accounts, messages between them, epochs, deposits and withdrawals.
+  At the end of each epoch it posts a checkpoint to Bitcoin
+  with a validity proof and the data needed to rebuild its state.
 
-- **Subscriptions**, "address `0x123...9a` can withdraw up to `v` BTC 
-  per month from this account"
+Applications run on the OL as snark accounts.
+An execution environment (EE) such as the EVM in [`alpen-ee`](https://github.com/alpenlabs/alpen-ee) is one:
+it advances its account with proofs, and the OL checks each proof against the account's
+predicate instead of re-running the EE.
 
-- **Strong privacy**, "transaction details are end-to-end encrypted
-  and verified using a zero-knowledge proof"
+## What is in this repository
 
-- **Economically-secured zero-confirmation payments**,
-  "if a double-spend from this sender is reported,
-  the reporter gets to claim the sender's full wallet balance"
+- `strata`: the node. It runs as the sequencer, which builds blocks and posts checkpoints,
+  or as a full node that follows the checkpoints on Bitcoin.
+- `strata-signer`: the detached signer that holds the sequencer's keys.
+- `strata-datatool`, `strata-dbtool` and `strata-test-cli`: tools for generating parameters,
+  inspecting the database and driving the functional tests.
+- The OL state transition function and its types, and the SP1 checkpoint prover.
+- Python functional tests that run the binaries against `bitcoind`.
 
-- **Financial transactions**,
-  "if enough BTC is locked as collateral to maintain up
-  to `X%` loan-to-value ratio,
-  then up to `Y` of this other asset can be borrowed"
+## Goals
 
-... and many more possibilities.
-
-Technically speaking,
-**Alpen is a work-in-progress EVM-compatible validity rollup on bitcoin**.
-Let's break down what this means:
-
-- **EVM-compatible**: The Alpen block producer runs a client that is based on
-  [Reth](https://github.com/paradigmxyz/reth),
-  an Ethereum execution client.
-  So far, no changes have been made that affect compatibility with the EVM spec.
-  If you can deploy a smart contract to Ethereum,
-  you can deploy it to Alpen with no changes.
-
-- **Validity rollup**: Every Alpen state transition is proven to
-  be valid using cryptographic validity proofs,
-  which clients can use for fast, low-cost verification.
-
-- **On bitcoin**: Alpen uses bitcoin for consensus and data availability.
-  When an Alpen block gets confirmed on bitcoin,
-  the only way to reorganize this block is to reorganize
-  the bitcoin block that the Alpen block was confirmed in.
-
-To learn more, check our [documentation](https://docs.alpenlabs.io).
-
-> [!IMPORTANT]
-> Currently,
-> Alpen is running on a private bitcoin signet,
-> and uses signet blocks to store state commitments rather than
-> the complete Alpen state data,
-> making Alpen function more like a commit chain than a rollup.
-> Support for full onchain data availability and for running Alpen
-> on bitcoin mainnet are planned for future releases.
-
-## Repository structure
-
-This repository is composed of:
-
-- `bin/`: binary crates for various clients and CLIs
-- `crates/`: library crates, provides types and functionalities
-- `docker/`: supporting files for our dockerized applications
-- `functional-tests/`: end-to-end functional tests
-- `provers/`: libraries and binaries related to zero-knowledge proofs
-- `tests/`: integration tests
+- **Bitcoin is the source of truth.** An OL block confirmed in a Bitcoin checkpoint
+  can only be reorganized by reorganizing that Bitcoin block.
+- **Provable.** The same state transition runs natively and inside a zkVM,
+  so anyone can check a checkpoint from its proof instead of re-running it.
+- **Rebuildable.** A full node rebuilds the OL state from the data in the checkpoints on Bitcoin.
+- **Upgradable.** New rules ship as a new spec that the chain switches to at an epoch boundary,
+  after governance enacts it on Bitcoin.
 
 ## Contributing
 
@@ -86,7 +52,10 @@ Contributions are generally welcome.
 If you intend to make larger changes please discuss them in an issue
 before opening a PR to avoid duplicate work and architectural mismatches.
 
-For more information please see [`CONTRIBUTING.md`](/CONTRIBUTING.md).
+[`CONTRIBUTING.md`](CONTRIBUTING.md) lists the tools you need and the commands to lint and test.
+For how the code fits together, see [`docs/`](docs/README.md):
+start with [`docs/architecture.md`](docs/architecture.md),
+then [`docs/layout.md`](docs/layout.md) for what each crate does.
 
 ## License
 

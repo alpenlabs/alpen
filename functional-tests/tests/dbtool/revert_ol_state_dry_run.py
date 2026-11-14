@@ -35,35 +35,34 @@ class RevertOLStateDryRunTest(StrataNodeTest):
         setup_revert_ol_state_test(seq_service, btc_service)
 
         seq_service.stop()
-        datadir = seq_service.props["datadir"]
         slots_per_epoch = seq_service.props.get("slots_per_epoch")
         if not isinstance(slots_per_epoch, int) or slots_per_epoch <= 0:
             raise AssertionError(f"Invalid slots_per_epoch in sequencer props: {slots_per_epoch!r}")
 
-        latest_checkpoint = get_latest_checkpoint(datadir)
+        latest_checkpoint = get_latest_checkpoint(seq_service)
         latest_epoch = int(latest_checkpoint["checkpoint_epoch"])
         target_block_id, target_slot = target_start_of_checkpointed_epoch(
-            datadir,
+            seq_service,
             latest_checkpoint,
             slots_per_epoch,
         )
         logger.info("Target slot: %s, target block ID: %s", target_slot, target_block_id)
 
-        sync_before = run_dbtool_json(datadir, "get-syncinfo")
+        sync_before = run_dbtool_json(seq_service, "get-syncinfo")
         tip_id = sync_before["ol_tip_block_id"]
         tip_slot = sync_before["ol_tip_height"]
-        state_before = run_dbtool_json(datadir, "get-ol-state", tip_id)
-        ol_summary_before = run_dbtool_json(datadir, "get-ol-summary", str(ol_genesis_slot()))
+        state_before = run_dbtool_json(seq_service, "get-ol-state", tip_id)
+        ol_summary_before = run_dbtool_json(seq_service, "get-ol-summary", str(ol_genesis_slot()))
         checkpoints_before = run_dbtool_json(
-            datadir,
+            seq_service,
             "get-checkpoints-summary",
             str(sync_before["l1_tip_height"]),
         )
-        checkpoint_before = run_dbtool_json(datadir, "get-checkpoint", str(latest_epoch))
+        checkpoint_before = run_dbtool_json(seq_service, "get-checkpoint", str(latest_epoch))
         assert checkpoint_before.get("checkpoint_epoch") is not None
 
         code, stdout, stderr = revert_ol_state(
-            datadir,
+            seq_service,
             target_block_id,
             force=False,
             delete_blocks=True,
@@ -73,11 +72,11 @@ class RevertOLStateDryRunTest(StrataNodeTest):
         assert "DRY RUN" in stdout
         logger.info("command executed in DRY RUN mode")
 
-        sync_after = run_dbtool_json(datadir, "get-syncinfo")
-        state_after = run_dbtool_json(datadir, "get-ol-state", tip_id)
-        ol_summary_after = run_dbtool_json(datadir, "get-ol-summary", str(ol_genesis_slot()))
+        sync_after = run_dbtool_json(seq_service, "get-syncinfo")
+        state_after = run_dbtool_json(seq_service, "get-ol-state", tip_id)
+        ol_summary_after = run_dbtool_json(seq_service, "get-ol-summary", str(ol_genesis_slot()))
         checkpoints_after = run_dbtool_json(
-            datadir,
+            seq_service,
             "get-checkpoints-summary",
             str(sync_after["l1_tip_height"]),
         )
@@ -90,10 +89,10 @@ class RevertOLStateDryRunTest(StrataNodeTest):
             checkpoints_after["checkpoints_found_in_db"]
             == checkpoints_before["checkpoints_found_in_db"]
         )
-        checkpoint_after = run_dbtool_json(datadir, "get-checkpoint", str(latest_epoch))
+        checkpoint_after = run_dbtool_json(seq_service, "get-checkpoint", str(latest_epoch))
         assert checkpoint_after.get("checkpoint_epoch") is not None
         # blocks should remain readable after dry run
-        run_dbtool_json(datadir, "get-ol-state", target_block_id)
-        run_dbtool_json(datadir, "get-ol-block", tip_id)
+        run_dbtool_json(seq_service, "get-ol-state", target_block_id)
+        run_dbtool_json(seq_service, "get-ol-block", tip_id)
         logger.info("no state/block/checkpoint mutations in dry run")
         return True

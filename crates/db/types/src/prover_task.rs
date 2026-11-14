@@ -37,13 +37,16 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Used by offline admin tooling.
     fn delete_task(&self, key: Vec<u8>) -> DbResult<bool>;
 
-    /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
+    /// All records due for a rescan at `now_secs`: a `TransientFailure` or
+    /// `Blocked` status whose `retry_after_secs` is at or before `now_secs`
+    /// or missing. See `TaskRecordData::is_due_for_rescan` in `strata_paas`.
     fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// All records whose status is not yet terminal (Pending / Proving).
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Lists due retry or blocked records with `spec_prefix` followed by `task_key_len` task-key bytes.
+    /// Lists due retry or blocked records (see [`Self::list_retriable`]) with `spec_prefix`
+    /// followed by `task_key_len` task-key bytes.
     fn list_retriable_with_prefix(
         &self,
         spec_prefix: [u8; 4],

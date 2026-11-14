@@ -28,9 +28,12 @@ pub(crate) enum NodeRole {
     /// Checkpoint-sync node without complete OL block history.
     CheckpointSync,
     /// Full OL node with complete OL block data, but no sequencer-only endpoints.
-    #[expect(
-        dead_code,
-        reason = "reserved for the future OL full-node service profile"
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "reserved for the future OL full-node service profile"
+        )
     )]
     FullNode,
     /// Sequencer node with block execution and sequencer-only endpoints.

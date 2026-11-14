@@ -53,13 +53,6 @@ impl CheckpointProofDatabase for ProofDBSled {
     }
 }
 
-fn is_due_for_retry(record: &TaskRecordData, now_secs: u64) -> bool {
-    record.status().wants_rescan()
-        && record
-            .retry_after_secs()
-            .is_some_and(|time| time <= now_secs)
-}
-
 impl ProofDBSled {
     /// Bounds the key range before values are decoded, so another spec's records are not read.
     fn scan_tasks_with_prefix(
@@ -118,7 +111,7 @@ impl ProverTaskDatabase for ProofDBSled {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
             let (key, record) = item.map_err(conv_sled_err)?;
-            if is_due_for_retry(&record, now_secs) {
+            if record.is_due_for_rescan(now_secs) {
                 out.push((key, record));
             }
         }
@@ -153,8 +146,7 @@ impl ProverTaskDatabase for ProofDBSled {
         let mut out = Vec::new();
         for item in self.scan_tasks_with_prefix(spec_prefix, task_key_len)? {
             let (key, record) = item.map_err(conv_sled_err)?;
-            if key.len() == spec_prefix.len() + task_key_len && is_due_for_retry(&record, now_secs)
-            {
+            if key.len() == spec_prefix.len() + task_key_len && record.is_due_for_rescan(now_secs) {
                 out.push((key, record));
             }
         }
@@ -285,11 +277,12 @@ mod tests {
             keys(db.list_unfinished_with_prefix(spec_prefix, 1).unwrap()),
             vec![key(0), key(1), key(0xff)]
         );
+        // key(2) has no retry_after, so it is due at every time.
         for (now_secs, expected) in [
-            (98, vec![]),
-            (99, vec![key(3)]),
-            (100, vec![key(3), key(4)]),
-            (101, vec![key(3), key(4), key(5)]),
+            (98, vec![key(2)]),
+            (99, vec![key(2), key(3)]),
+            (100, vec![key(2), key(3), key(4)]),
+            (101, vec![key(2), key(3), key(4), key(5)]),
         ] {
             assert_eq!(
                 keys(

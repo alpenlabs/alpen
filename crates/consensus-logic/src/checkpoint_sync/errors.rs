@@ -37,13 +37,26 @@ pub enum CheckpointSyncError {
     #[error("multiple canonical checkpoint observations for epoch {0}")]
     AmbiguousObservation(Epoch),
 
-    /// A finalized epoch has no epoch summary when one was expected.
+    /// A required epoch summary is absent.
     #[error("epoch summary missing for {0}")]
     MissingEpochSummary(EpochCommitment),
 
-    /// A summarized epoch has no canonical epoch commitment.
-    #[error("canonical epoch commitment missing for summarized epoch {0}")]
-    MissingCanonicalEpochCommitment(Epoch),
+    /// A summarized epoch has no indexing row.
+    #[error("epoch indexing row missing for summarized epoch {0}")]
+    MissingEpochIndexingData(Epoch),
+
+    /// A summarized epoch's indexing row records no applied epoch commitment.
+    #[error("epoch commitment missing from indexing row for summarized epoch {0}")]
+    MissingEpochIndexingCommitment(Epoch),
+
+    /// A summarized epoch's indexing row records a commitment for a different epoch.
+    #[error(
+        "indexing row for epoch {indexed_epoch} records a commitment for a different epoch: {commitment}"
+    )]
+    IndexingCommitmentEpochMismatch {
+        indexed_epoch: Epoch,
+        commitment: EpochCommitment,
+    },
 
     /// A target block has no persisted OL state.
     #[error("missing OL state for block {0}")]

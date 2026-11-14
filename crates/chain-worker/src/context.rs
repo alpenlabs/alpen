@@ -34,7 +34,7 @@ use strata_storage::{
     L1BlockManager, MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager,
     OLStateIndexingManager, OLStateManager,
 };
-use tokio::{runtime::Handle, sync::watch};
+use tokio::runtime::Handle;
 use tracing::{debug, error};
 
 use crate::{
@@ -76,9 +76,6 @@ pub struct ChainWorkerContextImpl {
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
 
-    /// Channel for emitting epoch summary events.
-    epoch_summary_tx: watch::Sender<Option<EpochCommitment>>,
-
     /// OL genesis params. Source of truth for the genesis L1 height used to
     /// prefill the L1 block refs MMR mirror (matches the in-state MMR which is
     /// seeded from `OLParams.last_l1_block.height()` at OL genesis).
@@ -94,7 +91,6 @@ pub struct ChainWorkerContextImpl {
 impl ChainWorkerContextImpl {
     /// Creates a new context with the given storage managers.
     pub fn from_node_context(nodectx: &NodeContext) -> Self {
-        let (epoch_summary_tx, _) = watch::channel(None);
         Self {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
@@ -103,15 +99,10 @@ impl ChainWorkerContextImpl {
             l1_block_mgr: nodectx.storage().l1().clone(),
             mmr_index_mgr: nodectx.storage().mmr_index().clone(),
             status_channel: nodectx.status_channel().clone(),
-            epoch_summary_tx,
             ol_params: nodectx.ol_params().clone(),
             runtime_params: nodectx.ol_params().runtime_params(),
             handle: nodectx.executor().handle().clone(),
         }
-    }
-
-    pub fn epoch_summary_sender(&self) -> watch::Sender<Option<EpochCommitment>> {
-        self.epoch_summary_tx.clone()
     }
 
     pub fn status_channel(&self) -> &StatusChannel {
@@ -145,11 +136,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     }
 
     fn fetch_chain_tip(&self) -> WorkerResult<Option<OLBlockCommitment>> {
-        match self.ol_block_mgr.get_canonical_tip_blocking() {
-            Ok(tip) => Ok(tip),
-            Err(DbError::NotBootstrapped) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
+        Ok(self.ol_block_mgr.get_canonical_tip_blocking()?)
     }
 
     fn fetch_ol_state(
@@ -250,7 +237,6 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             Err(e) => return Err(e.into()),
         }
 
-        let _ = self.epoch_summary_tx.send(Some(commitment));
         Ok(())
     }
 

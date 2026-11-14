@@ -15,7 +15,8 @@ from tests.dbtool.helpers import run_dbtool_json
 
 ADMIN_CONFIRMATION_DEPTH = 24
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
-EPOCH_FIELD_RE = re.compile(r"\bepoch=(\d+)")
+# EpochCommitment displays as last_slot[epoch]@last_blkid.
+EPOCH_COMMITMENT_RE = re.compile(r"\bcommitment=(?P<slot>\d+)\[(?P<epoch>\d+)\]@(?P<blkid>\S+)")
 
 
 @flexitest.register
@@ -74,9 +75,8 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
 
         signer.stop()
         strata.stop()
-        datadir = strata.props["datadir"]
-        proof = run_dbtool_json(datadir, "get-checkpoint-proof", str(unaccepted_epoch))
-        tasks = run_dbtool_json(datadir, "get-prover-tasks-summary", "--limit", "100")
+        proof = run_dbtool_json(strata, "get-checkpoint-proof", str(unaccepted_epoch))
+        tasks = run_dbtool_json(strata, "get-prover-tasks-summary", "--limit", "100")
         log_offset = log_path.stat().st_size
         strata.start()
         strata.wait_for_down(timeout=30)
@@ -93,8 +93,8 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
         assert "checkpoint prover services started" not in startup_log, startup_log
         # A configuration error must not destroy work while the operator fixes
         # the missing artifact, even when its epoch is ahead of ASM acceptance.
-        assert run_dbtool_json(datadir, "get-checkpoint-proof", str(unaccepted_epoch)) == proof
-        assert run_dbtool_json(datadir, "get-prover-tasks-summary", "--limit", "100") == tasks
+        assert run_dbtool_json(strata, "get-checkpoint-proof", str(unaccepted_epoch)) == proof
+        assert run_dbtool_json(strata, "get-prover-tasks-summary", "--limit", "100") == tasks
         assert btc_rpc.proxy.getblockcount() == boundary
         return True
 
@@ -131,9 +131,9 @@ class TestCheckpointArtifactAvailability(StrataNodeTest):
             for line in lines:
                 if "checkpoint proof completed" not in line:
                     continue
-                match = EPOCH_FIELD_RE.search(line)
-                if match and int(match.group(1)) >= target_epoch:
-                    return int(match.group(1))
+                match = EPOCH_COMMITMENT_RE.search(line)
+                if match and int(match.group("epoch")) >= target_epoch:
+                    return int(match.group("epoch"))
             return None
 
         epoch = wait_until_with_value(

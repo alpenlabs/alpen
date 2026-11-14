@@ -1,783 +1,249 @@
 # AGENTS.md
 
-This file provides guidance to AI coding assistants when working with code in this repository.
+Guidance for AI coding agents working in this repository.
 
-## Overview
+## Project Overview
 
-**Alpen** is an EVM-compatible Bitcoin layer 2. It provides programmable Bitcoin functionality through a layer 2 solution with a decoupled architecture separating the Anchor State Machine (ASM), Orchestration Layer (OL), and Execution Environment (EE).
+Strata is a blockchain that settles on Bitcoin, built from two state machines: the Anchor
+State Machine (ASM) reads Bitcoin, and the Orchestration Layer (OL) runs the chain.
+Applications such as Execution Environments (EEs) run on the OL as snark accounts. This
+repository holds the OL: the `strata` node, the
+detached signer, the OL state transition function (STF), its tools and the SP1 checkpoint
+prover.
 
-This repository contains the OL node, its supporting crates, and the OL checkpoint
-prover. The ASM implementation lives in
-[alpenlabs/asm](https://github.com/alpenlabs/asm), and shared protocol primitives live
-in [alpenlabs/strata-common](https://github.com/alpenlabs/strata-common); both are
-consumed as tagged git dependencies. The EE lives in the downstream
-[alpenlabs/alpen-ee](https://github.com/alpenlabs/alpen-ee) repository, which consumes
-selected crates and binaries from this repository at a pinned revision.
+The ASM lives in [alpenlabs/asm](https://github.com/alpenlabs/asm) and shared protocol
+primitives in [alpenlabs/strata-common](https://github.com/alpenlabs/strata-common); both are
+pinned by tag in the root `Cargo.toml`. The EVM EE lives downstream in
+[alpenlabs/alpen-ee](https://github.com/alpenlabs/alpen-ee), which consumes this repository's
+crates and builds `strata`, `strata-signer`, `strata-datatool` and `strata-test-cli` from a
+pinned revision. Changes to shared types, RPC or those binaries' CLIs are breaking for it.
+This repository has no EVM, Reth or Revm code.
+
+Contributor docs are in [`docs/`](docs/README.md). Read
+[`docs/architecture.md`](docs/architecture.md) before changing the STF or the node services,
+and [`docs/ol-specs.md`](docs/ol-specs.md) before changing consensus rules.
+
+## Commands
+
+```bash
+just fmt-ws               # format Rust
+just lint                 # all format and lint checks
+just lint-check-ws        # clippy alone, warnings denied
+just test-unit            # cargo nextest over the workspace
+just test-doc             # doctests
+just pr-lite              # lints, rustdocs, doctests and unit tests
+cargo nextest run --locked -p <crate>              # one crate
+cd functional-tests && ./run_tests.sh -t <test>    # one functional test
+cd functional-tests && ./run_tests.sh -g <group>   # one functional test group
+```
+
+`just lint` needs `taplo`, `codespell`, `shellcheck` and `uv`. Builds with `--all-features`,
+which `just lint-check-ws` and CI use, need `protoc` for the SP1 crates. Functional tests need
+`bitcoind` and `uv`; CI uses Bitcoin Core 30.2. `nix develop` provides all of these; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+The functional test runner builds `strata`, `strata-signer`, `strata-datatool`,
+`strata-test-cli` and `strata-dbtool` with `-F sequencer -F debug-utils -F prover`. Failed
+runs leave logs under `functional-tests/_dd/`, in a directory named after the run.
 
 ## Architecture
 
-Alpen uses a layered architecture with three main State Transition Functions (STFs):
-
-```mermaid
-flowchart LR
-    subgraph ASM[ASM STF]
-        AnchorState[AnchorState]
-        L1Block[L1Block]
-        AsmOut[AnchorState + AsmManifest]
-    end
-
-    subgraph OL[OL STF]
-        OLState[OLStateV1]
-        OLBlock[OLBlockV1]
-        OLOut[OLStateV1 + OL logs]
-    end
-
-    subgraph EE[EE STF]
-        EEState[EEState]
-        ExecBlock[ExecBlock]
-        EEOut[EEState + proof-backed update]
-    end
-
-    L1Block --> AnchorState
-    AnchorState --> AsmOut
-
-    OLBlock --> OLState
-    OLState --> OLOut
-
-    ExecBlock --> EEState
-    EEState --> EEOut
-
-    AsmOut -.->|AsmManifest in block body| OLBlock
-    EEOut -.->|snark account update tx| OLBlock
-```
-
-**State Transition Functions:**
-
-- **ASM STF**: `AnchorState + L1Block → (AnchorState', AsmManifest)`
-- **OL STF**: `OLStateV1 + OLBlockV1 + OLRuntimeParams → (OLStateV1', OL logs)`
-- **EE STF**: `EEState + ExecBlock → (EEState', proof-backed account update)`
-
-`OLBlockBodyV1` contains an optional transaction segment and an optional sequence of
-`AsmManifest`s produced by the ASM STF. EE state updates are not a dedicated block
-field: the EE submits proof-backed snark account update transactions, which the OL STF
-verifies against the account's predicate. The EE names in the diagram are conceptual;
-their concrete implementation and types live in `alpen-ee`.
-
-### Layer Descriptions
-
-#### L1 Layer (Bitcoin)
-
-Bitcoin serves as the data availability and settlement layer. Protocol transactions are tagged with SPS-50 headers for recognition by the ASM.
-
-- **Bitcoin Blocks**: Source of truth for L1 state and, hence, for everything actually.
-- **SPS-50 Tagged Transactions**: Protocol transactions generally use standardized headers (magic, subprotocol ID, tx_type, aux data).
-- **SPS-51 Chunked Envelopes**: EE DA payloads use a compact commit `OP_RETURN` plus taproot reveal scripts. The EE produces the payload; the `btcio` writer and storage interfaces in this repository publish and track the envelope transactions.
-
-#### ASM Layer (Anchor State Machine)
-
-ASM is the core of the Strata protocol, functioning as a "virtual smart contract" anchored to L1. It processes L1 blocks and maintains state through subprotocols.
-
-- **ASM STF**: State transition function processing L1 blocks
-- **Header Verification**: PoW verification state for L1 headers
-- **Subprotocols**: Modular components (Admin, Checkpoint, Bridge V1) with defined IDs
-- **Moho Framework**: Upgradeable proof mechanism wrapping ASM transitions
-- **Export State**: Accumulator for bridge proofs and operator claims
-
-The ASM implementation is consumed through the `strata-asm-*` workspace dependencies pinned in the root `Cargo.toml`.
-
-**Subprotocol IDs:**
-
-| ID | Subprotocol | Purpose |
-|----|-------------|---------|
-| 0 | Admin | System upgrades |
-| 1 | Checkpoint | OL checkpoint verification |
-| 2 | Bridge V1 | Deposit/withdrawal management |
-
-The pinned `StrataAsmSpec` (spec 0) invokes exactly these three subprotocols.
-Its successor `StrataAsmSpecV1` (spec 1) keeps the same IDs and section schema but runs `BridgeSubprotoV2`, which commits `OperatorClaimUnlockV1` export leaves. The node executes spec 1 only when the ASM execution parameters list a target for it and an admin update activates that target's predicate. 
-The former Debug subprotocol was removed; functional tests create deposits through the bridge path.
-
-#### OL Layer (Orchestration Layer)
-
-The OL manages L2 state, accounts, and epoch processing. It produces checkpoints that are proven and posted to L1.
-
-- **OL STF**: Processes OL blocks and transactions
-- **Account System**: Ledger accounts (with state) and system accounts (precompile-like)
-- **Snark Accounts**: Actor-like accounts with inbox MMRs, proven state updates
-- **Epochs & Checkpoints**: Time ranges of blocks with DA diffs posted to L1
-- **DA Reconstruction**: State can be reconstructed from L1 DA payloads
-
-Concrete consensus types live in `-v1` crates and carry `V1` type suffixes, such as
-`OLBlockV1`, `OLTransactionV1`, and `OLStateV1`. Unsuffixed crates such as
-`ol/state-types` and `ol/da-common` hold version-independent traits and helpers.
-
-STF drivers call the STF through `ol/stf`, passing the `OLSpecId` for the epoch
-being executed. The drivers are block verification, sequencer block assembly and
-its mempool, the checkpoint proof, checkpoint DA replay, epoch DA computation and
-resource rebuild, and genesis. `ol/stf` maps each spec to an STF implementation in
-one place. Outside `ol/stf`, only tests and the prover benchmark's input fixtures
-use `ol/stf-v1` directly.
-
-From V1 on, the OL state root is not the root of `OLStateV1`. Block headers, checkpoint
-terminal headers, and genesis commit to `hash_tree_root(OLRootState)`, a fixed container
-of `cur_spec_version: uint32`, `staged_spec_version: uint32`, and `chainstate_root`, which
-is the root of the chainstate in its layout (`OLStateV1` today). Under V0, the 0.3.0 rules
-that MN0 and testnet-prod ran from genesis, the root is the bare `chainstate_root`, so V0
-states commit no spec versions and always stage V0 (`OLSpecVersions`).
-`OLRootState::compute_state_root` is the one place the form is chosen. The first block of
-the first V1 epoch after a V0 state wraps it as `cur = staged = V1` in epoch-initial
-processing, so every driver, DA replay included, reaches the same root; a V1 block that
-does not start an epoch rejects a V0 state. V2 runs the V1 rules and takes over a V1 state
-the same way, as `cur = staged = V2`, but restores the 0.3.0 capacities: 255 transfers and
-255 messages per transaction and 4,096 logs per block. The V1 types keep their 65,536-entry
-bounds, which fix V1 txids and encodings, so V2 checks these capacities as validity rules
-(`OLSpecLimits` in `ol/stf`). `cur_spec_version` selects the layout through
-`OLStateLayout::for_spec` (V0, V1, and V2 share `OLStateV1`). No rules stage a spec, so the
-staged version equals the current one; nodes select the next epoch's spec from the L1
-manifests the previous epoch processed (`ol/spec-selection`). `OLStateContainer`
-(`ol/state-container`) pairs the root with an `OLStateSeries` chainstate and is what
-storage, the chain worker, and the checkpoint proof input carry. It serializes through serde
-as the root's fields plus the chainstate's SSZ bytes, and decoding checks the chainstate
-against the root. Execution uses `MemoryStateBaseLayer<OLStateV1>`, built with
-`from_container` and converted back with `into_container`. Genesis construction assigns the
-initial versions (`new_genesis`), and afterwards only the rules change them, through
-`IStateAccessorMut::set_spec_versions` and the `WriteBatch` version slot.
-
-#### EE Layer (Execution Environment)
-
-The EE provides EVM execution, decoupled from OL. `alpen-ee` owns Alpen Reth, the EE
-chain and DA producer, EE proof programs, precompiles, and the OL tracker. This
-repository has no local EE or Reth implementation and no direct Reth or Revm
-dependency. Alloy remains in the dependency graph through external protocol crates.
-
-From the OL's perspective, the EE is a snark account whose state, inbox, and predicate
-are maintained in `OLSnarkAccountStateV1`. This repository owns the shared account and
-message types, OL RPC interfaces, L1 DA publishing plumbing, genesis inputs, and mock
-EE helpers that cross the repository boundary.
-
-The EE consumes this repo's crates as git dependencies, and builds the `strata`,
-`strata-signer`, `strata-datatool` and `strata-test-cli` binaries from a pinned
-rev of it for its functional tests. Changes to those binaries' CLI surfaces are
-breaking changes for that repo.
-
-## Workspace Crates
-
-Crate tables list repository paths. Package names usually carry a `strata-*` or `alpen-*` prefix in `Cargo.toml`.
-
-### Binary Crates (`bin/`)
-
-| Path | Binary target | Description |
-|------|---------------|-------------|
-| `bin/strata` | `strata` | OL (Strata) client, sequencer, RPC, and prover entrypoint |
-| `bin/strata-signer` | `strata-signer` | Detached signer for OL sequencer duties (package `strata-signer-bin`) |
-| `bin/strata-dbtool` | `strata-dbtool` | Database inspection and debugging utility |
-| `bin/strata-test-cli` | `strata-test-cli` | Bridge, ASM, and transaction testing utility |
-| `bin/datatool` | `strata-datatool` | Development utility for test data and key generation |
-| `bin/prover-perf` | `strata-provers-perf` | Performance benchmarking for proof systems |
-
-The workspace default-member paths are `bin/strata`, `bin/strata-dbtool`,
-`bin/strata-signer`, `bin/datatool`, and `bin/strata-test-cli`. Check the root
-`Cargo.toml` before assuming that another crate or target is built by default.
-
-## Library Crates
-
-### ASM Domain
-
-Core ASM code is imported from the `alpenlabs/asm` git dependency family (`strata-asm-*`) pinned in root `Cargo.toml`. Local crates consume ASM manifests, logs, parameters, subprotocol transaction types, and the ASM worker.
-
-### OL Domain (`crates/ol/`)
-
-Orchestration Layer implementation.
-
-| Crate | Description |
-|-------|-------------|
-| `ol/stf` | Versioned OL STF entry point that dispatches each operation on `OLSpecId` |
-| `ol/stf-v1` | OL state transition function (block, epoch, manifest processing) |
-| `ol/spec-selection` | Selects the next epoch's spec from stored epoch summaries and L1 manifests; not compiled into the checkpoint guest |
-| `ol/state-types` | Version-independent state traits, ledger entry types, `OLSpecId`, and the fixed `OLRootState` |
-| `ol/state-types-v1` | Concrete state structures (toplevel, global, epochal, ledger, snark account) |
-| `ol/chain-types-v1` | Versioned OL block types (SSZ); re-exports OL log types from `strata-common` |
-| `ol/tx-types-v1` | Versioned OL transaction, GAM/SAU payload, and transaction-proof types (SSZ) |
-| `ol/msg-types` | Deposit and withdrawal message types |
-| `ol/da-common` | Version-independent OL data availability traits and encoding helpers |
-| `ol/da-types-v1` | Concrete V1 OL DA payload types, scheme, and checkpoint-tx extractor |
-| `ol/block-assembly` | OL block construction |
-| `ol/mempool` | Transaction mempool |
-| `ol/log-budget` | Shared log accounting and standalone transaction log-budget checks |
-| `ol/state-container` | `OLStateContainer`, `OLStateSeries`, the spec-to-layout mapping, and the container's serde form |
-| `ol/state-support-types` | State access layers (per-layout memory base layer, batch diff, indexer, write tracking) |
-| `ol/state-provider` | OL state provider traits and implementations |
-| `ol/mmr-index` | OL-owned MMR index comparison and reconciliation helpers |
-| `ol/genesis` | OL genesis state construction |
-| `ol/params` | `OLGenesisParams`, `OLRuntimeParams`, and combined `OLParams` |
-| `ol/checkpoint` | OL checkpoint builder service and the submission tracker that reports checkpoints mined on L1 but rejected by the ASM |
-| `ol/sequencer` | OL sequencing helpers and state |
-| `ol/rpc/api` | OL JSON-RPC API traits and client/server glue |
-| `ol/rpc/types` | OL RPC request and response types |
-
-### DA Framework (`crates/da-framework/`)
-
-Data Availability primitives for state diff encoding.
-
-| Primitive | Description |
-|-----------|-------------|
-| `Register` | Simple value replacement |
-| `Counter` | Increment-only values |
-| `LinearAccumulator` | MMR-style accumulators |
-| `Queue` | FIFO structures |
-| `Compound` | Nested DA structures |
-
-### Core Types & Utilities
-
-Fundamental types and shared utilities.
-
-| Crate | Description |
-|-------|-------------|
-| `primitives` | Core primitive types |
-| `config` | Configuration types |
-| `common` | Shared helpers, traits, and utilities |
-| `key-derivation` | Key derivation primitives and helpers |
-| `status` | Shared status types for services and APIs |
-| `cli-common` | Shared CLI argument and output helpers |
-| `node-context` | Runtime context shared by node services |
-| `strata-signer` | Detached signer library used by `bin/strata-signer` |
-
-### Bitcoin Types & IO
-
-| Crate | Description |
-|-------|-------------|
-| `btcio` | Bitcoin I/O (reader, writer, broadcaster) |
-
-Bitcoin primitive types, header verification, and related helpers are provided through pinned workspace dependencies from `alpenlabs/strata-common` and `alpenlabs/asm` git dependency family.
-
-### Storage & State
-
-| Crate | Description |
-|-------|-------------|
-| `storage` | Storage managers and interfaces |
-| `storage-common` | Shared storage abstractions |
-| `db/store-sled` | SledDB storage implementation |
-| `db/types` | Database type definitions |
-
-### Account & Protocol Types
-
-| Crate | Description |
-|-------|-------------|
-| `acct-types` | Account types and messages (SSZ) |
-| `snark-acct-types` | Snark account types (SSZ) |
-| `snark-acct-runtime` | Snark account runtime |
-| `snark-acct-sys` | Snark account system logic |
-| `csm-types` | Client state machine type definitions |
-| `bridge-types` | Bridge operation and message types shared with OL/EE |
-| `bridge-params` | Bridge denomination and withdrawal-cap parameters |
-| `checkpoint-types` | Checkpoint, batch, terminal-header, and prover-task types |
-
-### Proof Domain (`crates/proof-impl/`, `crates/zkvm/`)
-
-Zero-knowledge proof generation.
-
-| Crate | Description |
-|-------|-------------|
-| `proof-impl/checkpoint` | Checkpoint proof implementation |
-| `proof-impl/predicate-keys` | Predicate-key providers for proof programs |
-| `prover-core` | Single-proof-type proving engine with zkaleido native or remote strategies |
-| `paas` | Prover-as-a-Service wrapper around `prover-core` |
-| `zkvm/hosts` | SP1 host integration, enabled by the `sp1` feature |
-| `provers/sp1` | Root-workspace SP1 checkpoint guest builder |
-| `provers/sp1/guest-checkpoint` | SP1 checkpoint proof guest |
-
-`provers/sp1/guest-checkpoint` declares an independent workspace and is not a root
-workspace member. For a real non-debug guest build, the builder embeds
-`OLRuntimeParams` supplied through `CHECKPOINT_RUNTIME_PARAMS_PATH`; the resulting
-checkpoint verification key therefore commits to the runtime parameters. Without a
-real guest build, the builder uses test runtime parameters and mock artifacts.
-The `strata` binary runs the checkpoint prover in-process behind its `prover` and `sp1`
-features; the former standalone prover client has been removed.
-
-### RPC (`crates/rpc/`)
-
-OpenRPC support. OL JSON-RPC traits and wire types live under `crates/ol/rpc/` and are
-listed with the OL crates above.
-
-| Crate | Description |
-|-------|-------------|
-| `rpc/open-rpc` | OpenRPC specification model types |
-| `rpc/open-rpc-macros` | OpenRPC derive/proc-macro support |
-| `rpc/open-rpc-spec` | OL OpenRPC document assembly |
-
-### Service Crates
-
-Worker patterns and service infrastructure.
-
-| Crate | Description |
-|-------|-------------|
-| `chain-worker` | Executes and persists OL blocks using the OL STF |
-| `csm-worker` | Follows ASM worker state and processes checkpoint-subprotocol logs |
-| `consensus-logic` | OL fork choice, sync, checkpoint sync, unfinalized tracking, and MMR reconciliation |
-
-### Test Utilities (`crates/test-utils/`)
-
-| Crate | Description |
-|-------|-------------|
-| `test-utils/test-utils` | Shared test helpers |
-| `test-utils/l2` | OL component test utilities |
-| `db/tests` | Database-focused test fixtures and helpers |
-| `benches` | Criterion benchmarks for database paths |
-
-## Development Commands
-
-### Building
-
-```bash
-# Build all workspace libraries, binaries, examples, and benches with all features
-just build
-
-# Build the node and tools with the features used by functional tests
-cargo build --locked -F sequencer -F debug-utils -F prover \
-  --bin strata --bin strata-signer --bin strata-datatool \
-  --bin strata-test-cli --bin strata-dbtool
-```
-
-### Testing
-
-```bash
-# Run all unit tests
-just test-unit
-
-# Run unit tests and doctests
-just test
-
-# Run functional tests
-just test-functional
-
-# Or directly
-cd functional-tests && ./run_tests.sh
-```
-
-### Code Quality
-
-```bash
-# Format code
-just fmt-ws
-
-# Run linting (use this after changes)
-just lint-check-ws
-
-# Or directly with clippy (If Nix is available)
-nix develop -c cargo clippy --workspace --lib --bins --examples --tests --benches --all-features --all-targets --locked
-
-# Fix linting issues
-just lint-fix-ws
-
-# Run all quality checks (format, lint, spell check)
-just lint
-
-# Pre-PR checks (includes functional tests)
-just pr
-
-# Pre-PR checks without functional tests
-just pr-lite
-```
-
-`just lint` includes the ticketed-comment check: new `TODO` and `FIXME` comments must
-include a ticket such as `TODO(STR-1234): ...`.
-
-## Engineering Best Practices
-
-### Rust Guidelines
-
-**"Parse, don't validate"**: Encode data invariants into types using Rust's type system. This reduces runtime errors and makes illegal states unrepresentable.
-
-```rust
-// Good: Type encodes invariant
-struct SortedVec<T: Ord>(Vec<T>);
-
-impl<T: Ord> SortedVec<T> {
-    pub fn new(mut v: Vec<T>) -> Self {
-        v.sort();
-        Self(v)
-    }
-}
-
-// Bad: Runtime checks everywhere
-fn process(v: &[u32]) {
-    assert!(v.is_sorted()); // Must remember to check
-}
-```
-
-**Avoid heap allocation** in pure library crates. Prefer stack allocation and avoid unnecessary `Arc`ing.
-
-Borrow values for inspection, consume them when ownership is required, and use `&mut`
-for in-place updates. Avoid unconditional clones, temporary collections, repeated encoding
-buffers, and `Arc` without an actual sharing requirement.
-
-**Avoid absolute paths**. There's even a clippy lint for that that will error in CI `clippy::absolute_paths`.
-
-**Naming conventions**:
-- Directories: `kebab-case`
-- Files: `snake_case`
-- Serde fields: `snake_case`
-- Variables: verbose, descriptive names
-- Functions: precise verbs for work; bare noun accessors for cheap field access
-- Conversions: `as_` for cheap borrowed views, `to_` for allocating conversions, and
-  `with_` for builder-style methods
-
-**Documentation**:
-- Use active voice, third-person indicative mood
-- Brief first paragraph (single sentence summary)
-- Additional paragraphs for details
-- Use doclinks: `[`SomeType`]` instead of `` `SomeType` ``
-- Document non-obvious invariants, ordering requirements, preconditions, and design
-  rationale. Explain why the code exists instead of restating what it does.
-
-**Import symbols** with `use` statements at the top of the file instead of inline qualified paths.
-
-Implement `Default` only when the type has a meaningful domain default; use fixtures or
-generators for arbitrary test values. Add `const` only when compile-time use is meaningful
-and intended as an API guarantee.
+See [`docs/layout.md`](docs/layout.md) for every crate.
+
+- `crates/ol/stf`, `crates/ol/stf-v1`: the STF. All drivers call `ol/stf` with the epoch's
+  `OLSpecId`; only tests and benchmark fixtures call `ol/stf-v1` directly.
+- `crates/ol/*-types*`, `crates/acct-types`, `crates/snark-acct-*`, `crates/da-framework`:
+  consensus types and DA. Concrete types live in `-v1` crates and carry a `V1` suffix
+  (`OLBlockV1`, `OLStateV1`); unsuffixed crates hold version-independent traits.
+- `crates/chain-worker`, `crates/consensus-logic`, `crates/csm-worker`, `crates/ol/checkpoint`:
+  node services that execute blocks, choose the tip, follow L1 checkpoints and build
+  checkpoints.
+- `crates/ol/mempool`, `crates/ol/block-assembly`, `crates/ol/sequencer`,
+  `crates/strata-signer`: sequencing and signing duties.
+- `crates/btcio`: the L1 reader, envelope writer and broadcaster.
+- `crates/db/*`, `crates/storage`: the sled database and its cached managers.
+- `crates/proof-impl/checkpoint`, `crates/ol/checkpoint-artifacts`, `provers/sp1`: the
+  checkpoint proof, its per-spec artifacts and the SP1 guest.
+- `bin/strata`: wires `bitcoind`, the ASM worker, the services, storage, the prover and RPC.
+- `functional-tests/`: Python tests against the binaries, grouped by component.
+
+## Testing
+
+- Add tests for behavior changes and regressions. Test public behavior and protocol
+  invariants, not private details.
+- Keep unit tests free of external processes. Anything that needs a running node, `bitcoind`
+  or the signer goes in `functional-tests/`.
+- Reuse shared fixtures and wait helpers: `crates/test-utils/*`, the `crates/db/tests` macros,
+  the `strata-ol-stf-v1` test helpers and `functional-tests/common` (`wait_until` and the
+  service `wait_for_*` methods). Add missing ones there instead of copying them into a test.
+- Don't re-test what an upstream library already guarantees.
+- Pin consensus behavior with fixed values. The golden V1 test
+  (`crates/ol/checkpoint/src/tests/golden_v1.rs`) and the DA payload fixtures in
+  `crates/ol/da-types-v1` fail on purpose when execution or an encoding moves. Find out what
+  changed before you record new values; never re-record just to make a test pass.
+- Exercise the real assembly or encoding path together with its verification or decoding
+  path.
+- Make tests deterministic. Wait on conditions, not sleeps. Prefer `assert_eq!` over
+  `assert!` when comparing values. Name tests for the behavior, for example
+  `test_deposit_with_invalid_amount_fails`.
+- Run the affected crate first, then widen.
+
+## Commit and PR Style
+
+- Use Conventional Commits with a scope, for example `fix(btcio): ...`. Add `!` for a breaking
+  change, for example `feat(ol)!: ...`.
+- Keep each commit to one logical change that builds and passes tests on its own. Keep history
+  linear: rebase instead of merging, and push with `--force-with-lease`.
+- Follow [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md), including the
+  AI-use disclosure. Use the Conventional Commit format for the PR title.
+- Keep PRs focused. Put unrelated refactors, migrations and cleanup in their own PR.
+- Run `just fmt-ws`, `just lint` and the tests for what you changed. Don't add new warnings.
+  `just lint-check-ws` fails on clippy warnings, as CI does. CI also fails on `cargo doc`
+  warnings, so run `just rustdocs` if you changed doc comments. Say in the PR what you could
+  not run.
+
+## Notes
+
+- **Determinism**: code the checkpoint guest compiles must not depend on wall-clock time,
+  environment variables, I/O, unseeded randomness or `HashMap` iteration order. That is the
+  STF, the proof statement and the state, transaction, block, account and DA types.
+- **Consensus changes**: changing an encoded field, its order, a hash input, a validity rule
+  or a capacity is a consensus change. Mark it breaking with `!`. Once a chain runs the old
+  rules, the change ships as a new OL spec; see [`docs/ol-specs.md`](docs/ol-specs.md). The
+  state root is the root of `OLRootState`, not of `OLStateV1`.
+- **Checkpoint verifying key**: a change to any crate the guest compiles, to the toolchain
+  or to `Cargo.lock` can move the SP1 verifying key, which is consensus. The checkpoint VK
+  guard workflow builds the guest at the PR base and the merge commit and flags a moved key.
+  When you add a local dependency to the guest, add its path to that workflow's filter. The
+  embedded `OLRuntimeParams` are part of the key too.
+- **Guest**: `provers/sp1/guest-checkpoint` is its own workspace with its own `Cargo.lock`.
+  Update that lockfile when you change a dependency the guest uses. Building the guest needs
+  `BUILD_ELF=1` and `CHECKPOINT_RUNTIME_PARAMS_PATH`; add `--features docker-build` for a
+  reproducible key. Output in `provers/sp1/generated/` is not tracked and survives
+  `cargo clean`. See [`provers/sp1/README.md`](provers/sp1/README.md).
+- **SSZ schemas**: `crates/acct-types`, `crates/snark-acct-types`, `crates/ol/state-types`,
+  `crates/ol/state-types-v1`, `crates/ol/chain-types-v1` and `crates/ol/tx-types-v1` generate
+  their SSZ types in `build.rs` from the `.ssz` files in their `ssz/` directory. Edit the
+  schema, not the generated code.
+- **Parameters**: ASM parameters, OL parameters and node config are separate files with
+  separate owners. Don't duplicate protocol parameters in node config. Changing
+  `OLRuntimeParams` changes the checkpoint verifying key.
+- **Prover**: `strata` proves checkpoints in-process only when it is built with the `prover`
+  feature and its config has a `[prover]` section. Without one, checkpoints carry empty
+  proofs, which only an `AlwaysAccept` predicate accepts.
+- **Storage**: the node keeps one sled database (`crates/db/store-sled`), opened in
+  `bin/strata/src/init_db.rs`. Its traits are in `crates/db/types`, and `crates/storage` wraps
+  them in cached managers behind `NodeStorage`. `strata-dbtool` reads and repairs the database
+  offline.
+- **TODOs**: every new `TODO` or `FIXME` needs a ticket, for example `TODO(STR-1234): ...`.
+  `just lint-check-todos` runs the same check as CI.
+- **Dependencies**: declare versions in the root `Cargo.toml` and use `workspace = true`.
+  `.cargo/config.toml` refuses crates.io versions less than 14 days old. Borsh has been
+  removed from the workspace; don't reintroduce it.
+- **Fixtures**: the root `.gitignore` ignores every `data/` directory, so files under one are
+  silently left out of commits. Put fixtures under `testdata/`.
+
+## Code Style
+
+### Rust
+
+- Parse, don't validate: encode invariants in types so invalid states can't be built. Use
+  typed IDs and domain values inside, and convert to strings only at boundaries.
+- Avoid heap allocation in pure library crates. Prefer the stack and skip `Arc` with no
+  sharing need.
+- Borrow to inspect, take ownership when you need it and use `&mut` for in-place updates.
+  Avoid needless clones, temporary collections and repeated encoding buffers.
+- Implement `Default` only when the type has a real domain default; use fixtures or
+  generators for arbitrary test values. Add `const` only when compile-time use is part of the
+  API.
 
 ### Design and API Boundaries
 
-- Give each component a focused responsibility. Keep protocol and pure processing logic
-  independent of RPC, persistence, orchestration, and runtime policy.
-- Express dependencies through narrow capability or context traits. Prefer existing state
-  accessor traits over concrete state implementations, and keep concrete databases and
-  services in the integration layer.
-- Keep binaries focused on loading configuration, opening resources, setting up
-  observability, and launching reusable library services. Put substantive RPC,
-  synchronization, processing, and service implementations in library crates.
-- Do not expose `pub` fields on nontrivial domain structs. Keep fields and implementation
-  details private, then expose constructors, accessors, borrowed views, and domain
-  operations that preserve invariants and hide storage or serialization wrappers. Public
-  fields are appropriate only for deliberately transparent data carriers with no invariants.
-- Reuse authoritative protocol algorithms, validation, assembly, codecs, and test helpers.
-  Factor repeated behavior at the layer that owns it instead of reimplementing it at call
-  sites.
-- Keep constructors to field assembly and basic sanity checks. Use explicitly named
-  initialization functions for substantial work or I/O.
-- Use typed identifiers and domain values internally, converting them to strings only at
-  presentation boundaries. Avoid accepting independent arguments that can form an
-  incoherent state.
-- Separate user configuration from network and protocol parameters. Derive settings from
-  their authoritative source instead of duplicating constants or asking users to configure
-  inferable values. Low-level crates own their configuration types and must not depend on
-  the top-level node configuration.
-- Declare dependency versions in the workspace root and inherit them with
-  `workspace = true`.
+- Give each crate one focused job. Keep protocol and STF logic independent of RPC,
+  persistence, orchestration and runtime policy.
+- Take dependencies through narrow context traits. Prefer the existing state accessor traits
+  over concrete state types. Keep concrete databases and services in the integration layer.
+- Keep binaries to loading config, opening resources, setting up observability and
+  launching library services. Put RPC, sync and processing logic in library crates.
+- Don't expose `pub` fields on nontrivial domain structs. Provide constructors, accessors,
+  borrowed views and operations that keep invariants. Plain data carriers with no
+  invariants may have public fields.
+- Keep constructors to field assembly and basic checks. Give substantial setup or I/O its own
+  named function.
+- Reuse the owning implementation of protocol algorithms, validation, assembly, codecs and
+  test helpers. Don't duplicate them at call sites. Don't take independent arguments that can
+  form an incoherent state.
+- Derive settings from their authoritative source instead of asking users to configure
+  inferable values. Low-level crates own their config types and must not depend on the
+  top-level node config.
+
+### Serialization
+
+| Context | Format |
+| --- | --- |
+| Protocol data structures | SSZ (`ssz`, `ssz_derive`, `tree_hash` from `alpenlabs/ssz-gen`), custom `.ssz` schemas |
+| On-chain envelope payloads | `strata-codec` |
+| OL state snapshots and the proof's start state | serde over the root fields and SSZ chainstate bytes (`strata-ol-state-container`) |
+| Private proof interfaces and sled values | `rkyv` |
+| Other persistent data | CBOR (`ciborium`) |
+| Human-readable config | JSON or TOML through `serde` |
+
+- Use the codec the boundary already uses. Don't add a wire or storage format without a
+  compatibility and migration plan.
+- Keep domain types separate from wire or storage types when their fields or invariants
+  differ. Validate at the conversion.
+
+### Naming and Documentation
+
+- Directories `kebab-case`; files, modules, functions, variables and serde fields
+  `snake_case`; types and traits `UpperCamelCase`; constants `SCREAMING_SNAKE_CASE`.
+- Use precise verbs for functions that do work. Use bare nouns for cheap accessors, `as_` for
+  cheap borrowed views, `to_` for allocating conversions and `with_` for builders.
+- Import with `use` at the top of the file. CI denies absolute paths through
+  `clippy::absolute_paths`.
+- Write docs in active voice, third-person indicative. Give public items a one-sentence
+  summary. Use intra-doc links such as ``[`SomeType`]``. Document invariants, ordering,
+  preconditions, panics and design reasons.
+- Comments explain why, not what.
 
 ### Error Handling
 
 | Context | Approach |
-|---------|----------|
-| Invalid input or recoverable failure | Return `Result` with structured variants |
-| Expected absence | Return `Option`; do not invent a sentinel or default value |
-| Violated internal invariant or programming bug | `assert!`, `unwrap()`, or `expect("specific invariant")` |
-| Library errors | `enum Error` / `struct Error` with `thiserror` |
-| Application boundary errors | `anyhow` for context propagation |
+| --- | --- |
+| Invalid input or recoverable failure | `Result` with structured variants |
+| Expected absence | `Option`, not a sentinel or default |
+| Broken internal invariant | `assert!`, `unwrap()` or `expect("the invariant")` |
+| Library errors | an error `enum` or `struct` with `thiserror` |
+| Application boundary errors | `anyhow` with context |
 
-Panics identify bugs or violated internal assumptions, never normal user or runtime errors.
-Document panicking conditions in a `# Panics` section on public APIs. Preserve useful error
-distinctions at abstraction boundaries; do not collapse unrelated failures into opaque
-strings or catch-all variants. Error messages should describe the failure without adding a
-redundant `error` prefix.
-
-```rust
-// Library error
-#[derive(Debug, thiserror::Error)]
-pub enum ParseError {
-    #[error("invalid header: {0}")]
-    InvalidHeader(String),
-    #[error("missing field: {field}")]
-    MissingField { field: &'static str },
-}
-
-// Application error
-fn main() -> anyhow::Result<()> {
-    let config = load_config()
-        .context("failed to load configuration")?;
-    Ok(())
-}
-```
+- Panics mean bugs or broken invariants, never normal runtime errors. Document them in a
+  `# Panics` section on public APIs.
+- Keep error variants and source chains distinct across layers. Don't collapse failures into
+  strings or catch-all variants.
+- Error messages describe the failure without an `error` prefix.
 
 ### Async and Concurrency
 
-- Never perform blocking I/O or other blocking work on an async executor thread. Use the
-  async API or isolate the work with the runtime's blocking-task facility.
-- Do not hold a lock guard across an `.await` point.
-- Keep worker state owned by the worker. Expose commands and status through a handle rather
-  than sharing the worker's mutable internals behind locks.
+- Never block an async executor thread. Use an async API or the runtime's blocking-task
+  facility.
+- Don't hold a lock guard across `.await`.
+- Workers own their state. Expose commands and status through a handle.
 
-### Logging (Observability)
+### Observability
 
-Use structured logging with `tracing`. Always include relevant context as fields.
+- Use structured `tracing` fields, not interpolated strings, and use the shorthand when the
+  field name matches the variable:
 
-**Log Levels**:
-| Level | Usage |
-|-------|-------|
-| `error!` | Unrecoverable errors, requires immediate attention |
-| `warn!` | Unexpected, actionable conditions where processing can continue |
-| `info!` | Significant events (startup, connections, milestones) |
-| `debug!` | Detailed information for debugging |
-| `trace!` | Very verbose, step-by-step execution |
+  ```rust
+  info!(%block_id, height, "processing block");
+  ```
 
-**Structured Fields**:
-```rust
-// Good: Structured fields for querying
-info!(%block_id, height, "processing block");
-
-// Bad: String interpolation
-info!("processing block {block_id} at height {height}");
-```
-
-Prefer shorthand field syntax when the field name already matches the variable:
-
-```rust
-// Good: shorthand keeps tracing calls compact
-info!(?batch_id, %foo, "processing batch");
-
-// Avoid: repeated field names add noise
-info!(batch_id = ?batch_id, foo = %foo, "processing batch");
-```
-
-Avoid adding ad hoc `component` fields to logs when the module path or surrounding spans already provide enough context.
-
-Expected lag, graceful shutdown, irrelevant traffic, and rejected untrusted input should
-not produce repetitive warnings. Keep pure processing free of operational logging when the
-caller can report the outcome with better context.
-
-**Spans**: Any function with significant work should create a span when it improves correlation. Prefer the span name and module path for context, and only add a `component` field when it adds signal beyond the existing metadata:
-```rust
-#[tracing::instrument(fields(component = "asm_stf"))]
-fn process_block(block: &Block) -> Result<()> {
-    // ...
-}
-```
-
-**Metrics Instruments**:
-- `Counter`: Monotonically increasing (requests, errors)
-- `UpDownCounter`: Can increase or decrease (active connections)
-- `Gauge`: Point-in-time value (temperature, queue size)
-- `Histogram`: Distribution of values (latency, sizes)
-
-### Serialization Guidelines
-
-| Context | Format | Crate |
-|---------|--------|-------|
-| Protocol data structures | SSZ | `ssz`, `ssz_derive`, and `tree_hash` from `alpenlabs/ssz-gen`; custom `.ssz` schemas |
-| On-chain envelope payloads | `strata-codec` | `strata-codec` |
-| OL state snapshots and the checkpoint proof's start state | serde over the root fields and the SSZ chainstate bytes (CBOR in sled, bincode in the proof input) | `serde`, `strata-ol-state-container` |
-| Private proof interfaces and sled values | `rkyv` | `rkyv` (zero-copy) |
-| Non-protocol persistent data | CBOR | `ciborium` |
-| Human-readable/config | JSON/TOML | `serde` |
-
-**SSZ** is used for consensus data structures due to:
-- Deterministic encoding
-- Tree hashing support
-- Forward compatibility with `StableContainer`
-
-**`strata-codec`** is a lightweight, compact format for on-chain data where space is critical.
-
-**`rkyv`** provides zero-copy deserialization for proof guest programs where performance matters.
-
-Use distinct domain or runtime types and wire or storage types when those roles have
-different fields or invariants. Use the boundary's designated compact codec for nested
-message or log bodies when the boundary already provides framing. Borsh has been removed
-from the workspace; do not reintroduce it.
-
-## Git Best Practices
-
-### Pull Requests
-
-Before opening a pull request, read and follow
-[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Use the
-Conventional Commit format below for the PR title, and use the template's complete
-structure for the PR body, including its self-review, testing, documentation, and AI-use
-disclosure checklist. Keep PRs focused and independently reviewable; split unrelated
-restructuring or migrations into separate PRs.
-
-### Commit Message Standards
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
-
-**Type Prefixes**:
-| Type | Description |
-|------|-------------|
-| `feat` | New feature (MINOR version) |
-| `fix` | Bug fix (PATCH version) |
-| `docs` | Documentation only |
-| `style` | Formatting, no code change |
-| `refactor` | Code restructuring |
-| `perf` | Performance improvement |
-| `test` | Adding/fixing tests |
-| `chore` | Maintenance tasks |
-
-**Breaking Changes**: Use `!` after type/scope.
-
-```
-feat(api)!: change response format
-```
-
-### Atomic Commits
-
-Each commit should be:
-- **Single purpose**: One logical change
-- **Self-contained**: Compiles and passes tests
-- **Complete**: Doesn't leave work half-done
-- **Minimal**: No unrelated changes
-
-### Linear History
-
-Maintain a clean, linear git history:
-- Use `git rebase` instead of `git merge`
-- Use interactive rebase (`git rebase -i`) to clean up before sharing
-- Safe force push: `git push --force-with-lease`
-
-### Workflow
-
-```bash
-# Feature development
-git checkout -b feat/my-feature
-# ... make changes ...
-git add -p                          # Stage selectively
-git commit -m "feat(scope): description"
-git rebase -i main                  # Clean up commits
-git push --force-with-lease
-
-# Amending recent commit
-git add .
-git commit --amend --no-edit
-
-# Recovery
-git reflog                          # Find lost commits
-git reset --hard HEAD@{n}           # Restore state
-```
-
-## Testing Strategy
-
-### Unit Tests
-
-```bash
-just test-unit
-# Or directly
-cargo nextest run
-```
-
-Best practices:
-- Test public API behavior, not implementation details
-- Use descriptive test names: `test_deposit_with_invalid_amount_fails`
-- Prefer `assert_eq!` over `assert!` for better error messages
-- Keep unit tests independent of external processes; use functional tests for running-node
-  behavior
-- Exercise production assembly or encoding paths together with verification or decoding
-- Reuse common fixtures, environment-readiness checks, and high-level wait helpers
-- Test repository behavior rather than re-testing guarantees of upstream libraries
-
-### Functional Tests
-
-Located in `functional-tests/`. Uses `uv` for dependency management.
-
-```bash
-cd functional-tests
-./run_tests.sh
-
-# Or with uv
-uv run python entry.py
-```
-
-**Structure**:
-- `common/` - Base test classes, services, utilities
-- `envconfigs/` - Environment configurations
-- `factories/` - Service factories (Bitcoin, Strata, signer)
-- `tests/` - Test files
-- `fixtures/` - Static test fixtures
-
-Tests are grouped under `tests/` by component (`btcio`, `checkpoint`, `dbtool`,
-`ol_isolated`, and `strata`). Use `./run_tests.sh -g <group>` to select groups or
-`./run_tests.sh -t <test>` to select tests. The script builds `strata`,
-`strata-signer`, `strata-datatool`, `strata-test-cli`, and `strata-dbtool` with the
-`sequencer`, `debug-utils`, and `prover` features.
-
-If the functional tests fail, you can find the logs in the `_dd` directory inside the functional tests directory.
-The datadir will be the outputted by the test framework and will be named after the test run.
-
-## Configuration
-
-### Key Dependencies
-
-| Dependency | Purpose |
-|------------|---------|
-| SP1 | Zero-knowledge proof system |
-| zkaleido | zkVM host and guest abstractions |
-| `alpenlabs/asm` | ASM STF, subprotocols, parameters, and worker |
-| `alpenlabs/strata-common` | Shared identifiers, codecs, crypto, Merkle primitives, logs, and service utilities |
-| Bitcoin | Bitcoin protocol implementation |
-| `alpenlabs/ssz-gen` | SSZ serialization and schema code generation |
-
-### Parameters and Node Configuration
-
-Configuration is split by ownership:
-
-- **ASM parameters** (`AsmParams`, `asm-params.json`, `--asm-params`) define the L1
-  anchor, network, magic bytes, and subprotocol genesis configuration.
-- **OL parameters** (`OLParams`, `ol-params.json`, `--ol-params`) contain
-  `OLGenesisParams` and `OLRuntimeParams`. Runtime parameters are threaded through OL
-  execution and embedded in real checkpoint guest builds, so changing them changes the
-  checkpoint verification key. `OLGenesisParams` carries the network's genesis
-  `OLSpecId` as a required `genesis.spec`: `0` (V0) for networks launched on 0.3.0, whose
-  flat params files must be converted, and `1` (V1) for networks launched from this release.
-  `2` (V2) also parses and starts a network under V2. The current SP1 guest proves V2;
-  V1 epochs keep using the bundle published from `v0.4.0-rc.1`. V2 proving accepts
-  terminal V1 states with `cur = staged = V1` and V2 start states; ASM key handover
-  and verified-tip checks restrict the V1 exception to the first accepted V2 epoch.
-- **Node configuration** (TOML types under `crates/config`) contains operational settings,
-  including `BtcioConfig` and its L1 reader, writer, fee, and reorg policy.
-
-Generate ASM and OL parameter files with `strata-datatool gen-asm-params` and
-`strata-datatool gen-ol-params`. At startup, `strata` rejects ASM and OL parameter files
-whose bridge denomination, genesis L1 commitment/height, or genesis OL block ID disagree.
-Do not duplicate protocol parameters in node config.
-
-### Prerequisites
-
-- **bitcoind**: Required for L1 integration and testing
-- **uv**: For Python functional tests
-- **just** and **cargo-nextest**: Required by the common development recipes
-- **SP1 toolchain**: Required only when building real checkpoint guest artifacts
-
-## Specifications Reference
-
-Key SPS (Strata Protocol Specification) documents:
-
-| Spec | Name | Description |
-|------|------|-------------|
-| SPS-50 | L1 Transaction Header | OP_RETURN format for protocol transactions |
-| SPS-51 | Generic Envelope format | Bitcoin envelope format for protocol transactions |
-| SPS-60 | Moho Proof Mechanism | Upgradeable proof wrapper for ASM |
-| SPS-61 | ASM Core Types | ASM state structure and lifecycle |
-| SPS-62 | OL Checkpoint Structure | Checkpoint format and verification |
-| SPS-63 | OL Checkpointing Subprotocol | Checkpoint processing in ASM |
-| SPS-64 | Bridge Subprotocol | Deposit, withdrawal, operator management |
-| SPS-ol-stf | Orchestration Layer STF | OL state transition function |
-| SPS-acct-sys | Account System | Ledger and system accounts |
-| SPS-snark-acct | Snark Accounts | Actor-like accounts with proven updates |
-| SPS-ol-chain-structures | Chain Structures | OL block and transaction types |
-| SPS-ol-da-primitives | Data Availability Primitives | OL data availability primitives |
-| SPS-ol-da-structure | Data Availability Structure | OL data availability structure |
-
-Full specification index available in the team Notion workspace.
-If you have the Notion MCP/connector enabled, access it by searching the team workspace for the SPS number or the "Strata Protocol Specification" index.
-
-## Important Notes
-
-- **Security**: Never commit secrets or keys to the repository
-- **Performance**: Proof generation is computationally intensive
-- **Just**: Prefer `just` recipes over direct `cargo` commands
-- **Linting and Formatting**: Use `just lint-check-ws` and `just fmt-ws` to lint and format code after making changes
+- Don't add ad hoc `component` fields or repeat context the module or span already gives.
+- `error!` for unrecoverable failures, `warn!` for unexpected conditions someone should act
+  on, `info!` for significant events, `debug!` and `trace!` for detail.
+- Expected lag, graceful shutdown, irrelevant traffic and rejected untrusted input should
+  not warn.
+- Keep pure STF code free of operational logs when the caller can report with better
+  context.
+- Pick metrics by shape: `Counter` for monotonic counts, `UpDownCounter` for values that rise
+  and fall, `Gauge` for point-in-time values, `Histogram` for distributions.

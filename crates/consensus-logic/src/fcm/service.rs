@@ -99,14 +99,20 @@ impl<C: FcmContext> AsyncService for FcmService<C> {
         // A crash after marking a terminal block valid can leave its epoch summary
         // missing. Repeat BlockAccepted in chain order so the worker creates missing
         // summaries before unchecked-block replay; it skips summaries already stored.
-        for block in state.collect_unfinalized_blocks()? {
+        let accepted_blocks = state.collect_unfinalized_blocks()?;
+        for block in &accepted_blocks {
             state
                 .ctx()
-                .handle_accepted_block(block)
+                .handle_accepted_block(*block)
                 .await
                 .with_context(|| {
                     format!("failed to complete startup acceptance for OL block {block}")
                 })?;
+        }
+        if !accepted_blocks.is_empty() {
+            // The builder may have started before missing summaries were restored.
+            // Wake it even when there are no unchecked blocks to replay.
+            publish_sync_status(state).await?;
         }
 
         let startup_replay_candidates = state.take_startup_replay_candidates();
@@ -2585,6 +2591,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn startup_acceptance_wakes_builder_without_unchecked_replay() -> anyhow::Result<()> {
+        let (ctx, _, terminal) = terminal_summary_test_context(false, true).await?;
+        ctx.storage()
+            .set_block_status(*terminal.blkid(), BlockStatus::Valid)
+            .await?;
+        let mut state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone()).await?;
+
+        // Startup recovers the already-valid terminal without executing a new block.
+        <FcmService<StubFcmContext> as AsyncService>::on_launch(&mut state).await?;
+
+        assert_eq!(*ctx.accepted_blocks.lock().unwrap(), vec![terminal]);
+        assert!(ctx.executed_blocks().is_empty());
+        assert!(state.take_startup_replay_candidates().is_empty());
+        let statuses = ctx.published_statuses();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].tip(), terminal);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn startup_acceptance_failure_stops_before_unchecked_replay() -> anyhow::Result<()> {
         let (ctx, _, terminal) = terminal_summary_test_context(true, true).await?;
         ctx.storage()
@@ -2603,6 +2629,7 @@ mod tests {
         assert!(format!("{err:#}").contains("injected summary creation failure"));
         assert!(ctx.executed_blocks().is_empty());
         assert_eq!(*ctx.accepted_blocks.lock().unwrap(), vec![terminal]);
+        assert!(ctx.published_statuses().is_empty());
         assert_eq!(
             ctx.storage().get_block_status(*terminal.blkid()).await?,
             Some(BlockStatus::Valid)
