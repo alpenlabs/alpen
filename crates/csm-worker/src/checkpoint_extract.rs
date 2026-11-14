@@ -98,6 +98,8 @@ pub(crate) fn extract_matching_checkpoint(
             // the key check passes, so reuse the parsed leaf for pre-upgrade replay.
             // The strict parser and any available spent-output check still apply; historical
             // compatibility relies on the no-violation scan described above.
+            // TODO(STR-4810): remove this fallback once every deployed CSM has processed past
+            // the release that added the spent-output request; then a missing spent output skips.
             Err(CheckpointEnvelopeError::MissingSpentOutput { outpoint, .. }) => {
                 info!(
                     txid = %tx.compute_txid(),
