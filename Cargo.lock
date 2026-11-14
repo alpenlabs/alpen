@@ -8427,6 +8427,7 @@ dependencies = [
  "strata-logging",
  "strata-metrics",
  "strata-node-context",
+ "strata-ol-block-ancestry-provider",
  "strata-ol-block-assembly",
  "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
@@ -8988,6 +8989,7 @@ dependencies = [
  "strata-identifiers",
  "strata-msg-fmt",
  "strata-node-context",
+ "strata-ol-block-ancestry-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-da-types-v1",
  "strata-ol-genesis",
@@ -9144,6 +9146,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-node-context",
+ "strata-ol-block-ancestry-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-mmr-index",
  "strata-ol-params",
@@ -9567,6 +9570,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-block-ancestry-provider"
+version = "0.1.0"
+dependencies = [
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ol-chain-types-v1",
+ "strata-storage",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "strata-ol-block-assembly"
 version = "0.1.0"
 dependencies = [
@@ -9695,6 +9711,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-node-context",
+ "strata-ol-block-ancestry-provider",
  "strata-ol-canonical-chain-provider",
  "strata-ol-chain-types-v1",
  "strata-ol-params",
@@ -9953,6 +9970,7 @@ dependencies = [
  "strata-csm-types",
  "strata-db-types",
  "strata-identifiers",
+ "strata-ol-block-ancestry-provider",
  "strata-ol-block-assembly",
  "strata-ol-chain-types-v1",
  "strata-ol-mempool",

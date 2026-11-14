@@ -18,6 +18,7 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{DbResult, ol_block::BlockStatus};
 use strata_identifiers::{Epoch, Slot};
 use strata_node_context::NodeContext;
+use strata_ol_block_ancestry_provider::{BlockAncestryError, BlockAncestryProvider};
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_params::OLParams;
 use strata_ol_state_container::OLStateContainer;
@@ -31,6 +32,7 @@ use crate::ol_mmr_reconcile_ctx::StrataMmrReconcileCtx;
 
 struct StrataFcmContext {
     storage: Arc<NodeStorage>,
+    block_ancestry_provider: BlockAncestryProvider,
     ol_params: Arc<OLParams>,
     chain_worker: Arc<ChainWorkerHandle>,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
@@ -46,6 +48,7 @@ impl StrataFcmContext {
         status_channel: Arc<StatusChannel>,
     ) -> Self {
         Self {
+            block_ancestry_provider: BlockAncestryProvider::new(storage.ol_block().clone()),
             storage,
             ol_params,
             chain_worker,
@@ -180,16 +183,6 @@ impl FcmStorage for StrataFcmContext {
             .replace_canonical_suffix_from_async(start_slot, block_ids)
             .await
     }
-
-    async fn get_canonical_epoch_commitment_at(
-        &self,
-        epoch: Epoch,
-    ) -> DbResult<Option<EpochCommitment>> {
-        self.storage
-            .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_async(epoch)
-            .await
-    }
 }
 
 #[async_trait]
@@ -206,7 +199,17 @@ impl FcmStartupReconciler for StrataFcmContext {
     }
 }
 
+#[async_trait]
 impl FcmContext for StrataFcmContext {
+    async fn find_previous_epoch_terminal_block(
+        &self,
+        start: &OLBlockHeaderV1,
+    ) -> Result<OLBlockCommitment, BlockAncestryError> {
+        self.block_ancestry_provider
+            .find_previous_epoch_terminal_block_async(start)
+            .await
+    }
+
     fn publish_sync_status(&self, status: OLSyncStatus) {
         self.status_channel
             .update_ol_sync_status(OLSyncStatusUpdate::new(status));

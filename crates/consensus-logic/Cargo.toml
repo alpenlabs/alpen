@@ -26,6 +26,7 @@ strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-merkle.workspace = true
 strata-node-context.workspace = true
+strata-ol-block-ancestry-provider.workspace = true
 strata-ol-chain-types-v1.workspace = true
 strata-ol-mmr-index.workspace = true
 strata-ol-state-container.workspace = true
