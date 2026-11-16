@@ -111,6 +111,8 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
     ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
 
     /// Generates inbox MMR proofs for the given accumulator claims.
+    ///
+    /// Returns one proof per claim, in claim order.
     fn generate_inbox_proofs_for_claims(
         &self,
         target: AccountId,
@@ -119,6 +121,8 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
     ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
 
     /// Validates claims and generates L1 block ref proofs.
+    ///
+    /// Returns one proof per claim, in claim order.
     fn generate_l1_block_ref_proofs<T: IStateAccessor>(
         &self,
         l1_block_refs: &[AccumulatorClaim],
