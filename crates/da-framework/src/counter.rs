@@ -92,7 +92,10 @@ impl<S: CounterScheme> DaWrite for DaCounter<S> {
     type Error = crate::DaError;
 
     fn is_default(&self) -> bool {
-        !self.is_changed()
+        // A zero change writes nothing, so it is the default too. This keeps
+        // `is_default` in step with `encode_set` and `decode_set`, which both
+        // treat a zero increment as `Unchanged`.
+        !matches!(self, Self::Changed(d) if !S::is_zero(d))
     }
 
     fn apply(
@@ -386,6 +389,25 @@ mod tests {
             Err(CodecError::InvalidVariant("counter"))
         ));
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_counter_hand_built_zero_change_is_default() {
+        use crate::DaWrite;
+        assert!(DaWrite::is_default(
+            &DaCounter::<CtrU64ByUnsignedVarInt>::Changed(UnsignedVarInt::ZERO)
+        ));
+        assert!(DaWrite::is_default(
+            &DaCounter::<CtrU64BySignedVarInt>::Changed(SignedVarInt::ZERO)
+        ));
+        assert!(DaWrite::is_default(&DaCounter::<CtrU64ByI16>::Changed(0)));
+        assert!(CompoundMember::is_default(
+            &DaCounter::<CtrU64ByI16>::Changed(0)
+        ));
+        assert!(!DaWrite::is_default(&DaCounter::<CtrU64ByI16>::Changed(1)));
+        assert!(DaWrite::is_default(
+            &DaCounter::<CtrU64ByI16>::new_unchanged()
+        ));
     }
 
     #[test]
