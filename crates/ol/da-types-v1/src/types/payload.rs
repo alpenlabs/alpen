@@ -587,6 +587,48 @@ mod tests {
         assert_eq!(encoded, reencoded);
     }
 
+    /// Encodes a payload whose only non-default member is one account diff,
+    /// so the diff's bytes are the encoding's tail.
+    fn payload_ending_in_account_diff(diff: AccountDiffV1) -> Vec<u8> {
+        let entry = AccountDiffEntryV1::new(AccountSerial::from(0u32), diff);
+        let state_diff = OLStateDiffV1::new(
+            build::global_diff(0, None),
+            build::ledger_diff(Vec::new(), vec![entry]),
+        );
+        encode_to_vec(&OLDaPayloadV1::new(state_diff)).expect("encode payload")
+    }
+
+    /// The one-encoding rules of the DA members hold through the payload
+    /// decoder. Each tail below spells the same diff as the canonical one
+    /// (a balance delta of +5, or no change at all) and must not decode.
+    #[test]
+    fn test_decode_ol_da_payload_bytes_rejects_other_spellings_of_a_member() {
+        let canonical =
+            payload_ending_in_account_diff(build::balance_diff(SignedVarInt::positive(5)));
+        // Account diff bitmap with the balance bit set, then the delta.
+        assert!(canonical.ends_with(&[0x01, 0x05]), "{canonical:02x?}");
+        decode_ol_da_payload_bytes(&canonical).expect("canonical payload decodes");
+        let prefix = &canonical[..canonical.len() - 2];
+
+        for (tail, spelling) in [
+            (&[0x01, 0x85, 0x00][..], "a padded varint for +5"),
+            (&[0x01, 0x00][..], "a zero balance delta under a set bit"),
+            (&[0x01, 0x40][..], "a negative-zero balance delta"),
+            // Snark bit set, then the snark bitmap with only the inbox bit
+            // set, then a zero u16 entry count.
+            (
+                &[0x02, 0x04, 0x00, 0x00][..],
+                "an empty inbox under a set bit",
+            ),
+        ] {
+            let bytes = [prefix, tail].concat();
+            assert!(
+                decode_ol_da_payload_bytes(&bytes).is_err(),
+                "{spelling} must not decode: {tail:02x?}"
+            );
+        }
+    }
+
     #[test]
     fn test_account_init_round_trip_empty_and_snark() {
         for init in [
