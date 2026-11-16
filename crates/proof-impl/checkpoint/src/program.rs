@@ -17,7 +17,7 @@ fn test_signing_key(spec: OLSpecId) -> SigningKey {
         OLSpecId::V0 | OLSpecId::V1 => 0x01,
         OLSpecId::V2 => 0x03,
     };
-    SigningKey::from_bytes(&[byte; 32]).expect("valid test signing key")
+    SigningKey::from_slice(&[byte; 32]).expect("valid test signing key")
 }
 
 #[derive(Debug)]

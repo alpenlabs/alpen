@@ -10,7 +10,7 @@ use std::{
 use bitcoin::{secp256k1::PublicKey, Address, CompressedPublicKey, Network, XOnlyPublicKey};
 use serde::Serialize;
 use strata_asm_admin_types::{ConfirmationDepths, UncheckedThresholdConfig};
-use strata_asm_bridge_types::SafeHarborAddress;
+use strata_asm_bridge_types::{SafeHarborAddress, UncheckedSafeHarborAddress};
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeInitConfig, CheckpointInitConfig,
     SubprotocolInstance,
@@ -154,7 +154,8 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let deposit_sats =
         resolve_deposit_sats(cmd.deposit_sats.as_deref(), ol_params.bridge_params())?;
 
-    let safe_harbour_address = resolve_safe_harbour_address(&cmd.safe_harbour_address)?;
+    let safe_harbour_address =
+        resolve_safe_harbour_address(&cmd.safe_harbour_address, anchor.network)?;
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
 
     let bridge = BridgeInitConfig {
@@ -378,7 +379,14 @@ fn resolve_sequencer_key(seq_pk: Option<&str>) -> anyhow::Result<Buf32> {
     Ok(xonly.serialize().into())
 }
 
-fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarborAddress> {
+/// Resolves the safe harbour descriptor into the address the ASM params file stores.
+///
+/// The CLI takes a P2TR descriptor; the params file stores it as an address on the anchor's
+/// network.
+fn resolve_safe_harbour_address(
+    descriptor: &str,
+    network: Network,
+) -> anyhow::Result<UncheckedSafeHarborAddress> {
     let descriptor = descriptor.trim();
     anyhow::ensure!(
         !descriptor.is_empty(),
@@ -394,8 +402,10 @@ fn resolve_safe_harbour_address(descriptor: &str) -> anyhow::Result<SafeHarborAd
         descriptor.type_tag()
     );
 
-    SafeHarborAddress::try_from(descriptor)
-        .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))
+    let safe_harbour = SafeHarborAddress::try_from(descriptor)
+        .map_err(|e| anyhow::anyhow!("invalid safe harbour descriptor: {e}"))?;
+    UncheckedSafeHarborAddress::try_new(safe_harbour.to_address(network).into_unchecked())
+        .map_err(|e| anyhow::anyhow!("invalid safe harbour address: {e}"))
 }
 
 #[cfg(test)]
@@ -586,17 +596,21 @@ mod tests {
         let descriptor =
             Descriptor::new_p2tr(&xonly.serialize()).expect("x-only pubkey should be valid p2tr");
 
-        let resolved = resolve_safe_harbour_address(&descriptor.to_string())
+        let resolved = resolve_safe_harbour_address(&descriptor.to_string(), Network::Regtest)
             .expect("p2tr descriptor should resolve");
 
-        assert_eq!(resolved.as_descriptor(), &descriptor);
+        assert_eq!(
+            SafeHarborAddress::from(&resolved).as_descriptor(),
+            &descriptor
+        );
     }
 
     #[test]
     fn safe_harbour_address_rejects_non_p2tr_descriptor() {
         let descriptor = Descriptor::new_p2wpkh(&[1; 20]);
 
-        let err = resolve_safe_harbour_address(&descriptor.to_string()).unwrap_err();
+        let err =
+            resolve_safe_harbour_address(&descriptor.to_string(), Network::Regtest).unwrap_err();
 
         assert!(err.to_string().contains("must be P2TR"));
     }

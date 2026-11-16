@@ -125,7 +125,7 @@ fn sign_claim_ssz(
 /// The 64-byte signature satisfies the `Bip340Schnorr` predicate whose
 /// 32-byte x-only public key is derived from `ALPEN_ACCT_TEST_SK_BYTES`.
 fn bip340_test_sign(msg: &[u8]) -> [u8; 64] {
-    let sk = SigningKey::from_bytes(&ALPEN_ACCT_TEST_SK_BYTES)
+    let sk = SigningKey::from_slice(&ALPEN_ACCT_TEST_SK_BYTES)
         .expect("hard-coded alpen-acct test signing key bytes must be valid");
     let sig: Signature = sk.sign(msg);
     sig.to_bytes()
@@ -281,7 +281,7 @@ mod tests {
     /// pinned in `entry.py` / the ASM params defaults drifted.
     #[test]
     fn test_alpen_acct_test_signing_key_pubkey_matches_pinned_hex() {
-        let sk = SigningKey::from_bytes(&ALPEN_ACCT_TEST_SK_BYTES).unwrap();
+        let sk = SigningKey::from_slice(&ALPEN_ACCT_TEST_SK_BYTES).unwrap();
         let pubkey_hex = hex::encode(sk.verifying_key().to_bytes());
         assert_eq!(
             pubkey_hex, "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
@@ -333,7 +333,7 @@ mod tests {
         let proof_hex = json["payload"]["update_proof"].as_str().unwrap();
         let proof_bytes = hex::decode(proof_hex).unwrap();
         let signature = Signature::try_from(proof_bytes.as_slice()).unwrap();
-        let vk = VerifyingKey::from_bytes(
+        let vk = VerifyingKey::from_slice(
             &hex::decode("4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766")
                 .unwrap(),
         )
