@@ -1,5 +1,5 @@
 //! Transaction validation for mempool using STF helpers.
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
@@ -102,6 +102,50 @@ fn validate_snark_account_update_tx_seq_no(
         let res = snark_sys::verify_seq_no(target_account, snark_state, Seqno::from(tx_seq_no));
         if let Err(ExecError::Acct(AcctError::InvalidUpdateSequence { expected, got, .. })) = res {
             return Err(seq_no_error_to_mempool_error(txid, expected, got));
+        }
+    }
+
+    Ok(())
+}
+
+/// Checks a snark account update's L1 block ref claims against admission policy.
+///
+/// Consensus accepts up to [`MAX_ACC_PROOF_COUNT`] claims per update, repeats
+/// included. Block assembly proves every claim before the STF checks the
+/// update's proof, so an update that will never verify still costs the
+/// sequencer that proof work. Admission therefore caps the claim count at
+/// `max_claims` and rejects a repeated claim index. A repeated index is either
+/// a duplicate claim or one whose hash cannot match the MMR leaf.
+///
+/// [`MAX_ACC_PROOF_COUNT`]: strata_ol_tx_types_v1::MAX_ACC_PROOF_COUNT
+pub(crate) fn check_l1_block_ref_claims(
+    txid: OLTxId,
+    tx: &OLTransactionV1,
+    max_claims: usize,
+) -> OLMempoolResult<()> {
+    let TransactionPayloadV1::SnarkAccountUpdate(payload) = tx.payload() else {
+        return Ok(());
+    };
+    let Some(claim_list) = payload.operation().ledger_refs().l1_block_ref_claims() else {
+        return Ok(());
+    };
+
+    let claims = claim_list.claims();
+    if claims.len() > max_claims {
+        return Err(OLMempoolError::TooManyL1BlockRefClaims {
+            txid,
+            count: claims.len(),
+            limit: max_claims,
+        });
+    }
+
+    let mut seen = BTreeSet::new();
+    for claim in claims {
+        if !seen.insert(claim.idx()) {
+            return Err(OLMempoolError::DuplicateL1BlockRefClaim {
+                txid,
+                idx: claim.idx(),
+            });
         }
     }
 

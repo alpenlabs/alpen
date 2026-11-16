@@ -24,7 +24,7 @@ use tracing::{debug, info, instrument, warn};
 
 use crate::tip::{MempoolTip, select_tip_spec};
 use crate::types::{MempoolEntry, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats};
-use crate::validation::validate_transaction;
+use crate::validation::{check_l1_block_ref_claims, validate_transaction};
 use crate::{MempoolCandidates, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult};
 
 /// Per-account mempool state tracking.
@@ -428,6 +428,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Checks whether a submitted or restored transaction can enter the mempool.
     fn validate_admission(&self, txid: OLTxId, tx: &OLTransactionV1) -> OLMempoolResult<()> {
         let spec = self.select_spec()?;
+        check_l1_block_ref_claims(txid, tx, self.ctx.config.max_l1_block_ref_claims)?;
         spec_limits(spec).check_tx_effects(tx.data().effects())?;
         check_tx_log_budget(spec, tx, &self.ctx.bridge_params)?;
         validate_transaction(spec, txid, tx, &self.state_accessor, &self.account_state)
@@ -963,7 +964,7 @@ fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{BitcoinAmount, L1BlockRecord, MsgPayload};
+    use strata_acct_types::{AccumulatorClaim, BitcoinAmount, L1BlockRecord, MsgPayload};
     use strata_checkpoint_types::EpochSummary;
     use strata_identifiers::{BRIDGE_GATEWAY_ACCT_ID, Buf32, EpochCommitment, OLBlockId};
     use strata_ol_log_budget::TxLogBudgetError;
@@ -991,7 +992,10 @@ mod tests {
         create_test_state_provider, create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
     };
     use crate::types::OLMempoolConfig;
-    use crate::{DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH};
+    use crate::{
+        DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_L1_BLOCK_REF_CLAIMS, DEFAULT_MAX_MEMPOOL_BYTES,
+        DEFAULT_MAX_REORG_DEPTH,
+    };
 
     /// Builds an update from account 1 that sends `count` zero-value messages,
     /// which emit no logs, to account 2.
@@ -1017,6 +1021,33 @@ mod tests {
             SnarkAccountUpdate::new(operation, vec![]),
             create_test_constraints_with_slots(None, None),
         )
+    }
+
+    /// Builds an update from `account` that claims the given L1 block refs.
+    fn create_test_snark_tx_with_l1_block_ref_claims(
+        account: u8,
+        claims: Vec<AccumulatorClaim>,
+    ) -> OLTransactionV1 {
+        let operation = UpdateOperationData::new(
+            0,
+            ProofState::new(Buf32::zero(), 0),
+            vec![],
+            LedgerRefs::new(claims),
+            UpdateOutputs::new_empty(),
+            vec![],
+        );
+        create_test_snark_tx_from_update(
+            create_test_account_id_with(account),
+            SnarkAccountUpdate::new(operation, vec![]),
+            create_test_constraints_with_slots(None, None),
+        )
+    }
+
+    /// Returns `count` claims on distinct L1 block ref indices.
+    fn distinct_l1_block_ref_claims(count: u64) -> Vec<AccumulatorClaim> {
+        (0..count)
+            .map(|idx| AccumulatorClaim::new(idx, [idx as u8; 32]))
+            .collect()
     }
 
     fn create_test_snark_tx_with_withdrawals(count: usize) -> OLTransactionV1 {
@@ -1221,6 +1252,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1250,6 +1282,7 @@ mod tests {
             max_tx_count: 2,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1278,6 +1311,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1317,6 +1351,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1356,6 +1391,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1396,6 +1432,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1443,6 +1480,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1482,6 +1520,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1517,6 +1556,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1539,6 +1579,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1601,6 +1642,7 @@ mod tests {
             max_tx_count: 100,
             max_tx_size: 10_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1637,6 +1679,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1686,6 +1729,7 @@ mod tests {
             max_tx_count: 2,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1737,6 +1781,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 50,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1769,6 +1814,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1845,6 +1891,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1911,6 +1958,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -1966,6 +2014,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2037,6 +2086,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2184,6 +2234,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2219,6 +2270,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2250,6 +2302,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2283,6 +2336,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2333,6 +2387,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2381,6 +2436,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2423,6 +2479,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2458,6 +2515,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2493,6 +2551,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2528,6 +2587,7 @@ mod tests {
             max_tx_count: 10,
             max_tx_size: 1_000_000,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         };
@@ -2813,6 +2873,105 @@ mod tests {
             .await
             .expect("admitted at the V2 payload bound");
         assert!(state.contains(&txid));
+    }
+
+    /// The mempool admits an update with as many L1 block ref claims as its
+    /// limit allows and rejects one with more.
+    #[tokio::test]
+    async fn test_mempool_rejects_l1_block_ref_claims_over_the_limit() {
+        const LIMIT: usize = 4;
+        let tip = create_test_block_commitment(100);
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig {
+                max_l1_block_ref_claims: LIMIT,
+                ..Default::default()
+            },
+            Arc::new(create_test_state_provider(tip)),
+        ));
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
+            .await
+            .unwrap();
+
+        let over_limit = create_test_snark_tx_with_l1_block_ref_claims(
+            1,
+            distinct_l1_block_ref_claims(LIMIT as u64 + 1),
+        );
+        let over_limit_id = over_limit.compute_txid();
+        let err = state
+            .add_transaction(over_limit)
+            .await
+            .expect_err("an update over the claim limit must be rejected");
+        assert!(
+            matches!(
+                err,
+                OLMempoolError::TooManyL1BlockRefClaims { txid, count, limit }
+                    if txid == over_limit_id && count == LIMIT + 1 && limit == LIMIT
+            ),
+            "{err}"
+        );
+        assert!(!state.contains(&over_limit_id));
+        assert_eq!(
+            state
+                .stats()
+                .rejects_by_reason()
+                .get(OLMempoolRejectReason::TooManyL1BlockRefClaims),
+            1
+        );
+
+        let at_limit = create_test_snark_tx_with_l1_block_ref_claims(
+            1,
+            distinct_l1_block_ref_claims(LIMIT as u64),
+        );
+        let txid = state
+            .add_transaction(at_limit)
+            .await
+            .expect("an update at the claim limit is admitted");
+        assert!(state.contains(&txid));
+    }
+
+    /// The mempool rejects an update that claims an L1 block ref index twice,
+    /// whether the claims repeat the hash or not.
+    #[tokio::test]
+    async fn test_mempool_rejects_repeated_l1_block_ref_index() {
+        let tip = create_test_block_commitment(100);
+        let provider = Arc::new(create_test_state_provider(tip));
+        let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider));
+        let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
+            .await
+            .unwrap();
+
+        let repeated_claim = vec![
+            AccumulatorClaim::new(5, [1; 32]),
+            AccumulatorClaim::new(7, [2; 32]),
+            AccumulatorClaim::new(5, [1; 32]),
+        ];
+        let conflicting_claim = vec![
+            AccumulatorClaim::new(5, [1; 32]),
+            AccumulatorClaim::new(5, [3; 32]),
+        ];
+        for (account, claims) in [(1, repeated_claim), (2, conflicting_claim)] {
+            let tx = create_test_snark_tx_with_l1_block_ref_claims(account, claims);
+            let tx_id = tx.compute_txid();
+            let err = state
+                .add_transaction(tx)
+                .await
+                .expect_err("a repeated claim index must be rejected");
+            assert!(
+                matches!(
+                    err,
+                    OLMempoolError::DuplicateL1BlockRefClaim { txid, idx: 5 } if txid == tx_id
+                ),
+                "{err}"
+            );
+            assert!(!state.contains(&tx_id));
+        }
+        assert_eq!(
+            state
+                .stats()
+                .rejects_by_reason()
+                .get(OLMempoolRejectReason::DuplicateL1BlockRefClaim),
+            2
+        );
     }
 
     /// After a terminal tip whose epoch processed no enactment, the next block
