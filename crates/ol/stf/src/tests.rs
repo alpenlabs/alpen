@@ -8,7 +8,9 @@
 use std::convert::Infallible;
 use std::{iter, slice};
 
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MAX_MESSAGES, MAX_TRANSFERS};
+use strata_acct_types::{
+    AccountId, BitcoinAmount, Hash, MAX_MESSAGES, MAX_MSG_PAYLOAD_DATA_BYTES, MAX_TRANSFERS,
+};
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_codec::encode_to_vec;
@@ -20,7 +22,8 @@ use strata_ol_chain_types_v1::{AsmManifest, MAX_LOGS_PER_BLOCK, OLBlockV1};
 use strata_ol_da_common::{U16LenBytes, U16LenList};
 use strata_ol_da_types_v1::{
     AccountDiffEntryV1, AccountDiffV1, DaProofStateDiffV1, GlobalStateDiffV1, LedgerDiffV1,
-    OLDaPayloadV1, OLStateDiffV1, SnarkAccountDiffV1, decode_ol_da_payload_bytes,
+    MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1, OLStateDiffV1, SnarkAccountDiffV1,
+    decode_ol_da_payload_bytes,
 };
 use strata_ol_params::{OLParams, OLRuntimeParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
@@ -1386,11 +1389,26 @@ fn test_spec_limits() {
         MAX_LOGS_PER_BLOCK as usize
     );
 
+    assert_eq!(
+        OLSpecLimits::V1.max_msg_payload_bytes(),
+        MAX_MSG_PAYLOAD_DATA_BYTES as usize
+    );
+
+    let v0 = spec_limits(OLSpecId::V0);
+    assert_eq!(
+        v0.max_msg_payload_bytes(),
+        MAX_MSG_PAYLOAD_DATA_BYTES as usize
+    );
+
     let v2 = spec_limits(OLSpecId::V2);
-    assert_eq!(v2, spec_limits(OLSpecId::V0));
+    assert_eq!(v2.max_tx_transfers(), v0.max_tx_transfers());
+    assert_eq!(v2.max_tx_messages(), v0.max_tx_messages());
+    assert_eq!(v2.max_block_logs(), v0.max_block_logs());
     assert_eq!(v2.max_tx_transfers(), 255);
     assert_eq!(v2.max_tx_messages(), 255);
     assert_eq!(v2.max_block_logs(), 4_096);
+    assert_eq!(v2.max_msg_payload_bytes(), MAX_MSG_PAYLOAD_BYTES);
+    assert_eq!(v2.max_msg_payload_bytes(), 4_096);
 }
 
 /// V2 accepts a block whose logs reach its capacity and rejects one more log
@@ -1525,6 +1543,84 @@ fn test_v2_caps_transaction_effects() {
         .expect_err("transaction processing rejects the extra effect");
         assert!(is_overflow(&err), "{err}");
     }
+}
+
+/// V2 accepts a message payload at the DA bound and rejects one more byte,
+/// in block execution and in the sequencer phases that take a single
+/// transaction, whatever the message's destination. V1 accepts both.
+#[test]
+fn test_v2_caps_message_payload() {
+    let max_payload = OLSpecLimits::V2.max_msg_payload_bytes();
+    let capacity = CapacityFixture::new(1);
+    let account = capacity.fixture.expect_snark_account(capacity.sender);
+    let update_with_payload = |len: usize| {
+        SnarkUpdateBuilder::from_snark_state(account.clone())
+            .with_seq_no(0)
+            .with_output_message(capacity.recipient, 0, vec![0; len])
+            .build(capacity.sender, make_state_root(2), make_proof(1))
+    };
+
+    capacity
+        .construct(OLSpecId::V2, vec![update_with_payload(max_payload)])
+        .expect("V2 accepts a payload at the DA bound");
+
+    let tx = update_with_payload(max_payload + 1);
+    let txs = vec![tx.clone()];
+    capacity
+        .construct(OLSpecId::V1, txs.clone())
+        .expect("V1 accepts the larger payload");
+
+    let expected = TxEffectsOverflow::MessagePayload {
+        index: 0,
+        len: max_payload + 1,
+        max: max_payload,
+    };
+    let is_overflow = |err: &ExecError| matches!(err.base(), ExecError::TxEffectsOverflow(err) if *err == expected);
+    let err = capacity
+        .construct(OLSpecId::V2, txs.clone())
+        .expect_err("V2 rejects the larger payload");
+    assert!(is_overflow(&err), "{err}");
+    assert!(
+        matches!(err, ExecError::TxExec(_, 0, _)),
+        "block execution names the transaction: {err}"
+    );
+
+    let (block, pre_state) = capacity.v2_block_built_by_v1(txs);
+    for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+        assert!(is_overflow(&err), "{operation}: {err}");
+    }
+
+    let TransactionPayloadV1::SnarkAccountUpdate(sau) = tx.data().payload() else {
+        panic!("snark update payload");
+    };
+    let sender_state = capacity
+        .fixture
+        .state()
+        .get_account_state(capacity.sender)
+        .expect("read snark account")
+        .expect("snark account exists")
+        .clone();
+    let err = sequencer::index_snark_update_proof_requirements(
+        OLSpecId::V2,
+        capacity.sender,
+        &sender_state,
+        sau.operation(),
+        tx.data().effects(),
+    )
+    .expect_err("proof indexing rejects the larger payload");
+    assert!(is_overflow(&err), "{err}");
+
+    let runtime_params = OLRuntimeParams::test_default();
+    let output = ExecOutputBuffer::new_empty();
+    let basic_ctx = BasicExecContext::new(capacity.block_info(), &output, &runtime_params);
+    let err = sequencer::process_single_tx(
+        OLSpecId::V2,
+        &mut capacity.fixture.state().clone(),
+        &tx,
+        &TxExecContext::new(&basic_ctx, Some(capacity.fixture.parent_header())),
+    )
+    .expect_err("transaction processing rejects the larger payload");
+    assert!(is_overflow(&err), "{err}");
 }
 
 /// Batch pre-drain execution caps each block's logs, not the batch's: two

@@ -136,7 +136,9 @@ async fn test_da_incremental_matches_replay() {
     )
     .expect("replay should succeed");
 
-    let (replay_acc, replay_inner) = replay_da_state.into_parts();
+    let (replay_acc, replay_inner) = replay_da_state
+        .into_parts()
+        .expect("replay records no DA error");
     let replay_blob = finalize_da_to_bytes(replay_acc, replay_inner);
 
     // The encoded DA blobs must be byte-identical.

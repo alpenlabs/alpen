@@ -98,10 +98,11 @@ pub enum StateError {
     PendingAsmLogsOverflow { current: u64, adding: u64, max: u64 },
 }
 
-/// A transaction carries more transfers or messages than its spec allows.
+/// A transaction carries more transfers or messages, or a larger message
+/// payload, than its spec allows.
 ///
 /// The SSZ types bound transaction effects at the V1 capacities. A spec that
-/// allows fewer effects rejects a transaction above its capacities with this.
+/// allows less rejects a transaction above its capacities with this.
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum TxEffectsOverflow {
     #[error("transaction transfers exceeded limit (count {count}, max {max})")]
@@ -109,6 +110,15 @@ pub enum TxEffectsOverflow {
 
     #[error("transaction messages exceeded limit (count {count}, max {max})")]
     Messages { count: usize, max: usize },
+
+    /// The message at `index` among the transaction's messages carries more
+    /// payload bytes than the spec allows.
+    #[error("transaction message {index} payload exceeded limit (len {len}, max {max})")]
+    MessagePayload {
+        index: usize,
+        len: usize,
+        max: usize,
+    },
 }
 
 /// Execution result error.

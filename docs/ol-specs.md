@@ -75,9 +75,11 @@ chainstate against the root. Execution uses `MemoryStateBaseLayer<OLStateV1>`, b
 
 ## Capacities
 
-The V1 types bound transaction effects and block logs at 65,536 entries. Those bounds fix V1
-txids and encodings, so they cannot shrink. V2 adds tighter capacities as validity
-rules instead: 255 transfers and 255 messages per transaction, and 4,096 logs per block.
+The V1 types bound transaction effects and block logs at 65,536 entries and message payloads
+at 1 MiB. Those bounds fix V1 txids and encodings, so they cannot shrink. V2 adds tighter
+capacities as validity rules instead: 255 transfers and 255 messages per transaction, 4 KiB
+per message payload, and 4,096 logs per block. 4 KiB is the most the epoch DA encodes for an
+inbox message.
 `spec_limits` ([`crates/ol/stf/src/limits.rs`](../crates/ol/stf/src/limits.rs)) returns a
 spec's capacities for the drivers that build blocks or admit transactions.
 

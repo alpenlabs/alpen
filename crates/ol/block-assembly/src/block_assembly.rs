@@ -13,7 +13,7 @@ use strata_ol_chain_types_v1::*;
 use strata_ol_log_budget::LogUsage;
 use strata_ol_mempool::{MempoolCandidates, MempoolTxInvalidReason};
 use strata_ol_params::OLRuntimeParams;
-use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
+use strata_ol_state_support_types::{DaAccumulatingState, DaAccumulationError, WriteTrackingState};
 use strata_ol_state_types::{AccProofCheck, ISnarkAccountState, IStateAccessor, *};
 use strata_ol_state_types_v1::{MAX_PENDING_ASM_LOGS, WriteBatch};
 use strata_ol_stf::sequencer::{
@@ -161,6 +161,21 @@ fn stf_exec_error_to_mempool_reason(err: &ExecError) -> MempoolTxInvalidReason {
     }
 }
 
+/// Maps the [`DaAccumulationError`] a transaction's writes recorded to a
+/// [`MempoolTxInvalidReason`].
+///
+/// A message payload or update VK above the DA bounds never fits, so the
+/// transaction is invalid. A full inbox buffer frees up in the next epoch, and
+/// the remaining errors point at an accumulator inconsistency rather than at
+/// the transaction, so those transactions stay for a later block.
+fn da_error_to_mempool_reason(err: &DaAccumulationError) -> MempoolTxInvalidReason {
+    match err {
+        DaAccumulationError::MessagePayloadTooLarge { .. }
+        | DaAccumulationError::VkTooLarge { .. } => MempoolTxInvalidReason::Invalid,
+        _ => MempoolTxInvalidReason::Failed,
+    }
+}
+
 /// Maps a [`BlockAssemblyError`] to a [`MempoolTxInvalidReason`].
 fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTxInvalidReason {
     match err {
@@ -196,6 +211,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         // Block assembly internal errors (not consensus-related).
         BlockAssemblyError::BlockConstruction(_)
         | BlockAssemblyError::ChainTypes(_)
+        | BlockAssemblyError::DaAccumulation(_)
         | BlockAssemblyError::InvalidRange { .. }
         | BlockAssemblyError::InvalidSignature(_)
         | BlockAssemblyError::Mempool(_)
@@ -679,7 +695,7 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
 
     stf_execute_block_initialization(spec, &mut da_state, block_context)?;
 
-    let (accumulator, write_state) = da_state.into_parts();
+    let (accumulator, write_state) = da_state.into_parts()?;
     Ok((
         write_state.into_batch(),
         AccumulatedDaData::new(accumulator, logs),
@@ -687,6 +703,11 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
 }
 
 /// Processes transactions with per-tx staging, filtering out failed ones.
+///
+/// A transaction whose writes the epoch's DA cannot encode fails like one the
+/// STF rejects. V1 accepts a message payload above the DA bound, which V2
+/// rejects, and no spec checks the epoch's inbox buffer, but a block that
+/// included such a transaction would leave an epoch no checkpoint can cover.
 ///
 /// Consumes `accumulated_da` and returns it with the updated accumulator.
 /// Logs from this block are NOT appended here — they go into `output_buffer`
@@ -809,6 +830,25 @@ where
         debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
         match process_single_tx(spec, &mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
+                if let Some(err) = staging_state.pending_error() {
+                    let reason = da_error_to_mempool_reason(err);
+                    warn!(
+                        ?txid,
+                        %tx_type,
+                        ?tx_target,
+                        ?reason,
+                        error = %err,
+                        "transaction writes do not fit the epoch DA, rolling back tx"
+                    );
+                    staging_state = DaAccumulatingState::new_with_accumulator(
+                        WriteTrackingState::new(parent_state, backup_batch),
+                        backup_accumulator,
+                    );
+                    failed_txs.push((txid, reason));
+                    block_successors(account_seqno, &mut blocked_sequences);
+                    continue;
+                }
+
                 // Tx executed successfully. Before committing side effects, check
                 // the estimated checkpoint size against component and envelope limits.
                 let tx_logs = tx_buffer.into_logs();
@@ -913,7 +953,9 @@ where
 
     // Reassemble AccumulatedDaData with updated accumulator; epoch_logs unchanged
     // (this block's logs stay in output_buffer for the caller to collect later).
-    let (accumulator, inner_state) = staging_state.into_parts();
+    let (accumulator, inner_state) = staging_state
+        .into_parts()
+        .expect("every tx that records a DA error is rolled back");
     let accumulated_da = AccumulatedDaData::new(accumulator, epoch_logs);
     let accumulated_batch = inner_state.into_batch();
 
@@ -1186,6 +1228,7 @@ mod tests {
     use strata_ol_chain_types_v1::{
         BlockFlagsV1, MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog,
     };
+    use strata_ol_da_types_v1::MAX_MSG_PAYLOAD_BYTES;
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
     use strata_ol_state_types_v1::OLStateV1;
@@ -3759,6 +3802,69 @@ mod tests {
                     "{spec:?}: tx reported invalid"
                 );
             }
+        }
+    }
+
+    /// Tests that a GAM whose payload exceeds the DA bound is reported invalid
+    /// under every spec, while a GAM at the bound is included and the epoch's
+    /// DA still encodes. V1 executes the oversized GAM, so assembly rolls it
+    /// back on the DA error; V2 rejects it in the STF.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_message_payload_over_da_bound_is_invalid() {
+        for spec in [OLSpecId::V1, OLSpecId::V2] {
+            let account_id = test_account_id(10);
+            let env = build_process_tx_env(account_id).await;
+
+            let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
+                build_process_transactions_preamble(&env, 1_000_001, 1).await;
+            let block_context = BlockContext::new(&block_info, Some(&parent_header));
+
+            let over = MempoolGamTxBuilder::new(account_id)
+                .with_data(vec![0; MAX_MSG_PAYLOAD_BYTES + 1])
+                .build();
+            let over_id = over.compute_txid();
+            let at_bound = MempoolGamTxBuilder::new(account_id)
+                .with_data(vec![0; MAX_MSG_PAYLOAD_BYTES])
+                .build();
+            let at_bound_id = at_bound.compute_txid();
+
+            let out = process_transactions(
+                spec,
+                env.ctx(),
+                env.epoch_sealing_policy(),
+                &block_context,
+                &output_buffer,
+                parent_state.as_ref(),
+                accumulated_batch,
+                vec![(over_id, over), (at_bound_id, at_bound)].into_iter(),
+                AccumulatedDaData::new_empty(),
+                0,
+                &OLRuntimeParams::test_default(),
+            );
+
+            assert_eq!(
+                out.successful_txs
+                    .iter()
+                    .map(OLTransactionV1::compute_txid)
+                    .collect::<Vec<_>>(),
+                vec![at_bound_id],
+                "{spec:?}: only the GAM at the bound is included"
+            );
+            assert_eq!(
+                out.failed_txs,
+                vec![(over_id, MempoolTxInvalidReason::Invalid)],
+                "{spec:?}: the oversized GAM is reported invalid"
+            );
+
+            let (accumulator, _) = out.accumulated_da.into_parts();
+            let mut da_state = DaAccumulatingState::new_with_accumulator(
+                WriteTrackingState::new(parent_state.as_ref(), out.accumulated_batch),
+                accumulator,
+            );
+            da_state
+                .take_completed_epoch_da_blob()
+                .unwrap_or_else(|err| panic!("{spec:?}: epoch DA encodes: {err}"))
+                .expect("epoch DA blob");
         }
     }
 

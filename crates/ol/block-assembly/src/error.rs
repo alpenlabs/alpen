@@ -10,6 +10,7 @@ use strata_identifiers::{
 use strata_ol_chain_types_v1::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_spec_selection::SelectSpecAfterEpochError;
+use strata_ol_state_support_types::DaAccumulationError;
 use strata_ol_state_types::StateError;
 use strata_ol_stf::{EpochSpecSelectionError, ExecError, InvalidEpochL1Range, UpgradeRequired};
 
@@ -172,6 +173,10 @@ pub enum BlockAssemblyError {
     /// Block construction/execution failed.
     #[error("block construction: {0}")]
     BlockConstruction(#[from] ExecError),
+
+    /// The epoch's DA accumulator cannot encode a state write.
+    #[error("da accumulation: {0}")]
+    DaAccumulation(#[from] DaAccumulationError),
 
     /// Snark account update failed pre-validation during proof indexing.
     ///
