@@ -38,7 +38,7 @@ use strata_ol_state_types::{IAccountState, IStateAccessorMut, OLSpecId, TxProofI
 use strata_ol_stf_v1::{
     self as v1, BasicExecContext, BlockComponents, BlockContext, CompletedBlock,
     ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecResult, ManifestProcessingOutcome,
-    TxExecContext,
+    RuleAmendments, TxExecContext,
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
@@ -52,9 +52,14 @@ use crate::spec::OLStfSpec;
 pub(crate) struct StfV2;
 
 impl StfV2 {
-    /// V2 runs the V1 code within the V2 capacities and takes over a V1
-    /// state.
-    const RULES: CappedV1Rules = CappedV1Rules::new(OLSpecId::V2, OLSpecId::V1, OLSpecLimits::V2);
+    /// V2 runs the V1 code without amendments, within the V2 capacities, and
+    /// takes over a V1 state.
+    const RULES: CappedV1Rules = CappedV1Rules::new(
+        OLSpecId::V2,
+        OLSpecId::V1,
+        OLSpecLimits::V2,
+        RuleAmendments::NONE,
+    );
 }
 
 impl OLStfSpec for StfV2 {
@@ -150,7 +155,7 @@ impl OLStfSpec for StfV2 {
         bridge_params: &BridgeParams,
         on_payload: impl FnMut(&[u8]),
     ) -> ExecResult<()> {
-        v1::predict_tx_log_payloads(tx, bridge_params, on_payload).map_err(Into::into)
+        Self::RULES.predict_tx_log_payloads(tx, bridge_params, on_payload)
     }
 
     fn check_tx_constraints<S: IStateAccessorMut>(
@@ -180,7 +185,7 @@ impl OLStfSpec for StfV2 {
         state: &mut S,
         context: &BasicExecContext<'_>,
     ) -> ExecResult<()> {
-        v1::process_epoch_terminal(state, context)
+        Self::RULES.process_epoch_terminal(state, context)
     }
 
     fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) -> ExecResult<()> {

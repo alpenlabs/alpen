@@ -164,7 +164,12 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
 ) -> ExecResult<()> {
     let amt_raw: u64 = payload.coin_amt().into();
 
-    let log_data = match parse_bridge_withdrawal(amt_raw, payload.data(), context.bridge_params()) {
+    let log_data = match parse_bridge_withdrawal(
+        amt_raw,
+        payload.data(),
+        context.bridge_params(),
+        context.amendments(),
+    ) {
         Ok(log) => log,
         Err(reason) => {
             debug!(%sender, %amt_raw, ?reason, "limboing rejected bridge gateway message");

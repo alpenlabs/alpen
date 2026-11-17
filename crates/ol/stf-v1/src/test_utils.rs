@@ -260,6 +260,29 @@ pub fn make_withdrawal_payload(dest_desc: Vec<u8>) -> Vec<u8> {
         .to_vec()
 }
 
+/// Builds a bridge withdrawal payload like [`make_withdrawal_payload`], but
+/// with the descriptor length in the two-byte layout instead of the shortest
+/// one, which encoding never writes.
+///
+/// # Panics
+///
+/// Panics if `dest_desc` is longer than 127 bytes, whose length the two-byte
+/// layout is the shortest for.
+pub fn make_withdrawal_payload_with_padded_len_prefix(dest_desc: &[u8]) -> Vec<u8> {
+    let dest_desc_len = u8::try_from(dest_desc.len())
+        .ok()
+        .filter(|len| *len < 0x80)
+        .expect("descriptor length fits the one-byte layout");
+    let mut body = Vec::new();
+    body.extend_from_slice(&DEFAULT_OPERATOR_FEE.to_be_bytes());
+    body.extend_from_slice(&u32::MAX.to_be_bytes());
+    body.extend_from_slice(&[0x80, dest_desc_len]);
+    body.extend_from_slice(dest_desc);
+    OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, body)
+        .expect("withdrawal message should be valid")
+        .to_vec()
+}
+
 /// Builds a valid P2WPKH BOSD descriptor for withdrawal tests.
 pub fn make_p2wpkh_bosd_descriptor(byte: u8) -> Vec<u8> {
     let mut dest_desc = vec![byte; 21];

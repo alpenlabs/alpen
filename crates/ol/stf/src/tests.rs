@@ -1354,11 +1354,22 @@ impl CapacityFixture {
         let block_info = self.block_info();
         construct_block(
             spec,
-            &mut self.fixture.state().clone(),
+            &mut self.state_to_open_under(spec),
             BlockContext::new(&block_info, Some(self.fixture.parent_header())),
             BlockComponents::new_txs_from_ol_transactions(txs),
             &OLRuntimeParams::test_default(),
         )
+    }
+
+    /// Returns the post-genesis state as the first block of an epoch under
+    /// `spec` finds it: V3 takes over only a V2 state, and V1 and V2 open the
+    /// V1 genesis state.
+    fn state_to_open_under(&self, spec: OLSpecId) -> MemoryStateBaseLayer<OLStateV1> {
+        let mut state = self.fixture.state().clone();
+        if spec == OLSpecId::V3 {
+            state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+        }
+        state
     }
 
     /// Builds a block from `txs` with the V1 code on a V2 state, so the block
@@ -1748,5 +1759,61 @@ fn test_v2_batch_predrain_caps_each_block() {
         matches!(err.base(), ExecError::LogsOverflow { count, max }
             if *count == max_logs + 1 && *max == max_logs),
         "{err}"
+    );
+}
+
+/// V3 takes a withdrawal message only with its descriptor length in the
+/// shortest layout. V1 and V2 take every layout, as the checkpoint programs
+/// that prove them do, so the same message withdraws under them and goes to
+/// limbo under V3.
+#[test]
+fn test_v3_requires_the_shortest_withdrawal_len_prefix() {
+    let capacity = CapacityFixture::new(1);
+    let account = capacity.fixture.expect_snark_account(capacity.sender);
+    let dest_desc = make_p2wpkh_bosd_descriptor(0x15);
+    let withdrawal_with = |payload: Vec<u8>| {
+        SnarkUpdateBuilder::from_snark_state(account.clone())
+            .with_seq_no(0)
+            .with_output_message(BRIDGE_GATEWAY_ACCT_ID, WITHDRAWAL_SATS, payload)
+            .build(capacity.sender, make_state_root(2), make_proof(1))
+    };
+    let shortest = withdrawal_with(make_withdrawal_payload(dest_desc.clone()));
+    let padded = withdrawal_with(make_withdrawal_payload_with_padded_len_prefix(&dest_desc));
+
+    let runtime_params = OLRuntimeParams::test_default();
+    let logs = |spec: OLSpecId, tx: &OLTransactionV1| {
+        let executed = capacity
+            .construct(spec, vec![tx.clone()])
+            .unwrap_or_else(|err| panic!("{spec:?} executes the update: {err}"))
+            .outputs()
+            .logs()
+            .to_vec();
+        let mut predicted = 0;
+        sequencer::predict_tx_log_payloads(spec, tx, runtime_params.bridge_params(), |_| {
+            predicted += 1;
+        })
+        .expect("log prediction succeeds");
+        assert_eq!(predicted, executed.len(), "{spec:?} predicts what it emits");
+        executed
+    };
+
+    // The update log, then the withdrawal log.
+    let withdrawal_logs = logs(OLSpecId::V1, &shortest);
+    assert_eq!(withdrawal_logs.len(), 2);
+    for spec in [OLSpecId::V2, OLSpecId::V3] {
+        assert_eq!(logs(spec, &shortest), withdrawal_logs, "{spec:?}");
+    }
+
+    // Both layouts decode to the same withdrawal, so V1 and V2 emit the same
+    // withdrawal log for the padded one.
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        let padded_logs = logs(spec, &padded);
+        assert_eq!(padded_logs.len(), 2, "{spec:?}");
+        assert_eq!(padded_logs[1], withdrawal_logs[1], "{spec:?}");
+    }
+    assert_eq!(
+        logs(OLSpecId::V3, &padded).len(),
+        1,
+        "V3 emits the update log alone"
     );
 }

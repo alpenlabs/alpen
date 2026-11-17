@@ -56,13 +56,13 @@ use strata_ol_chain_types_v1::{
     AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1,
 };
 use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
-use strata_ol_params::OLRuntimeParams;
+use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_types::{
     IAccountState, IStateAccessorMut, OLSpecId, OLSpecVersions, TxProofIndexer,
 };
 use strata_ol_stf_v1::{
-    self as v1, BlockComponents, BlockContext, ConstructBlockOutput, EpochExecExpectations,
-    EpochInfo, ExecError, ExecResult, TxExecContext,
+    self as v1, BasicExecContext, BlockComponents, BlockContext, ConstructBlockOutput,
+    EpochExecExpectations, EpochInfo, ExecError, ExecResult, RuleAmendments, TxExecContext,
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1};
 
@@ -73,22 +73,30 @@ use crate::limits::OLSpecLimits;
 /// capacities and takes over the state of the spec before it.
 ///
 /// `predecessor` is the spec whose state `spec` takes over, and comes before
-/// it in activation order.
+/// it in activation order. `amendments` are the rules the spec amends in the
+/// V1 code.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CappedV1Rules {
     spec: OLSpecId,
     predecessor: OLSpecId,
     limits: OLSpecLimits,
+    amendments: RuleAmendments,
 }
 
 impl CappedV1Rules {
-    /// Creates the rules of `spec`, which takes over `predecessor`'s state and
-    /// allows `limits`.
-    pub(crate) const fn new(spec: OLSpecId, predecessor: OLSpecId, limits: OLSpecLimits) -> Self {
+    /// Creates the rules of `spec`, which takes over `predecessor`'s state,
+    /// allows `limits`, and runs the V1 code with `amendments`.
+    pub(crate) const fn new(
+        spec: OLSpecId,
+        predecessor: OLSpecId,
+        limits: OLSpecLimits,
+        amendments: RuleAmendments,
+    ) -> Self {
         Self {
             spec,
             predecessor,
             limits,
+            amendments,
         }
     }
 
@@ -112,7 +120,14 @@ impl CappedV1Rules {
         if let Some(tx_segment) = body.tx_segment() {
             self.check_tx_segment_effects(tx_segment)?;
         }
-        let logs = v1::verify_block(state, header, parent_header, body, runtime_params)?;
+        let logs = v1::verify_block_with_amendments(
+            state,
+            header,
+            parent_header,
+            body,
+            runtime_params,
+            self.amendments,
+        )?;
         self.limits.check_block_log_count(logs.len())?;
         Ok(logs)
     }
@@ -128,7 +143,13 @@ impl CappedV1Rules {
     ) -> ExecResult<ConstructBlockOutput> {
         self.take_over_state(state, block_context.is_epoch_initial())?;
         self.check_tx_segment_effects(block_components.tx_segment())?;
-        let output = v1::construct_block(state, block_context, block_components, runtime_params)?;
+        let output = v1::construct_block_with_amendments(
+            state,
+            block_context,
+            block_components,
+            runtime_params,
+            self.amendments,
+        )?;
         self.limits
             .check_block_log_count(output.outputs().logs().len())?;
         Ok(output)
@@ -156,11 +177,12 @@ impl CappedV1Rules {
             if let Some(tx_segment) = block.body().tx_segment() {
                 self.check_tx_segment_effects(tx_segment)?;
             }
-            let logs = v1::execute_block_batch_predrain(
+            let logs = v1::execute_block_batch_predrain_with_amendments(
                 state,
                 slice::from_ref(block),
                 parent,
                 runtime_params,
+                self.amendments,
             )?;
             self.limits.check_block_log_count(logs.len())?;
             batch_logs.extend(logs);
@@ -230,7 +252,35 @@ impl CappedV1Rules {
         context: &TxExecContext<'_>,
     ) -> ExecResult<()> {
         self.limits.check_tx_effects(tx.data().effects())?;
-        v1::process_single_tx(state, tx, context)
+        // The caller builds the context without knowing the amendments, so
+        // this selects them for the same block and output buffer.
+        let basic_context = context.basic_context().with_amendments(self.amendments);
+        let context = TxExecContext::new(&basic_context, context.parent_header());
+        v1::process_single_tx(state, tx, &context)
+    }
+
+    /// Processes the epoch terminal with the V1 code under these rules'
+    /// amendments.
+    pub(crate) fn process_epoch_terminal<S: IStateAccessorMut>(
+        &self,
+        state: &mut S,
+        context: &BasicExecContext<'_>,
+    ) -> ExecResult<()> {
+        // As in `process_single_tx`, the caller's context does not know the
+        // amendments.
+        v1::process_epoch_terminal(state, &context.with_amendments(self.amendments))
+    }
+
+    /// Predicts the log payloads of a successful transaction under these
+    /// rules' amendments.
+    pub(crate) fn predict_tx_log_payloads(
+        &self,
+        tx: &OLTransactionV1,
+        bridge_params: &BridgeParams,
+        on_payload: impl FnMut(&[u8]),
+    ) -> ExecResult<()> {
+        v1::predict_tx_log_payloads(tx, bridge_params, self.amendments, on_payload)
+            .map_err(Into::into)
     }
 
     /// Checks a snark account update's effects, then lists the proofs it

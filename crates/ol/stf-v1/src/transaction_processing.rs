@@ -15,6 +15,7 @@ use crate::context::{BasicExecContext, TxExecContext};
 use crate::errors::{ExecError, ExecResult};
 use crate::msg_payload_coin::MsgPayloadCoin;
 use crate::proof_verification::{TxProofVerificationContext, TxProofVerifierImpl, TxProofsTracker};
+use crate::rules::RuleAmendments;
 use crate::{OutputCtx, account_processing, sau_processing};
 
 /// Process a block's transaction segment.
@@ -80,7 +81,9 @@ pub fn process_single_tx<S: IStateAccessorMut>(
 /// Predicts the encoded log payloads for a successful transaction.
 ///
 /// Supplies each payload, including its type prefix, in execution order without
-/// executing state changes or verifying proofs.
+/// executing state changes or verifying proofs. `amendments` are the ones the
+/// transaction would execute under, which decide the messages that count as
+/// withdrawals.
 ///
 /// # Panics
 ///
@@ -88,6 +91,7 @@ pub fn process_single_tx<S: IStateAccessorMut>(
 pub fn predict_tx_log_payloads(
     tx: &OLTransactionV1,
     bridge_params: &BridgeParams,
+    amendments: RuleAmendments,
     mut on_payload: impl FnMut(&[u8]),
 ) -> Result<(), CodecError> {
     let TransactionPayloadV1::SnarkAccountUpdate(payload) = tx.payload() else {
@@ -110,6 +114,7 @@ pub fn predict_tx_log_payloads(
             message.payload().value().to_sat(),
             message.payload().data(),
             bridge_params,
+            amendments,
         ) {
             on_payload(&log.encode_log()?);
         }
@@ -160,7 +165,11 @@ fn process_update_tx<S: IStateAccessorMut>(
     // 2. Verify the update by calling out to the snark account library.
     let state_ctx = TxProofVerificationContext::from_account_and_state(state, account_state);
     let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
-    let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
+    let mut verifier = TxProofVerifierImpl::new(
+        state_ctx,
+        proof_tracker,
+        context.basic_context().amendments(),
+    );
     sau_processing::verify_snark_acct_update_proofs(
         target,
         account_state,

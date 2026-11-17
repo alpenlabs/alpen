@@ -24,6 +24,12 @@ pub trait OLMessageExt {
     /// Try to decode as a withdrawal message.
     fn try_as_withdrawal(&self) -> Option<WithdrawalMsgData>;
 
+    /// Tries to decode as a withdrawal message, accepting every layout of the
+    /// descriptor's length prefix.
+    ///
+    /// See [`WithdrawalMsgData::decode_with_any_len_layout`].
+    fn try_as_withdrawal_with_any_len_layout(&self) -> Option<WithdrawalMsgData>;
+
     /// Try to decode as a withdrawal fee bump message.
     fn try_as_withdrawal_fee_bump(&self) -> Option<WithdrawalFeeBumpMsgData>;
 
@@ -47,6 +53,13 @@ impl<'a> OLMessageExt for MsgRef<'a> {
             return None;
         }
         decode_msg_body(self.body())
+    }
+
+    fn try_as_withdrawal_with_any_len_layout(&self) -> Option<WithdrawalMsgData> {
+        if self.ty() != WITHDRAWAL_MSG_TYPE_ID {
+            return None;
+        }
+        WithdrawalMsgData::decode_with_any_len_layout(self.body()).ok()
     }
 
     fn try_as_withdrawal_fee_bump(&self) -> Option<WithdrawalFeeBumpMsgData> {

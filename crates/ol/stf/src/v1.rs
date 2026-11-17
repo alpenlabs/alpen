@@ -9,7 +9,7 @@ use strata_ol_state_types::{IAccountState, IStateAccessorMut, TxProofIndexer};
 use strata_ol_stf_v1::{
     self as v1, BasicExecContext, BlockComponents, BlockContext, CompletedBlock,
     ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecResult, ManifestProcessingOutcome,
-    TxExecContext,
+    RuleAmendments, TxExecContext,
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
@@ -115,7 +115,8 @@ impl OLStfSpec for StfV1 {
         bridge_params: &BridgeParams,
         on_payload: impl FnMut(&[u8]),
     ) -> ExecResult<()> {
-        v1::predict_tx_log_payloads(tx, bridge_params, on_payload).map_err(Into::into)
+        v1::predict_tx_log_payloads(tx, bridge_params, RuleAmendments::NONE, on_payload)
+            .map_err(Into::into)
     }
 
     fn check_tx_constraints<S: IStateAccessorMut>(
