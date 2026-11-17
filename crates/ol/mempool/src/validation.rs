@@ -1,5 +1,5 @@
 //! Transaction validation for mempool using STF helpers.
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
@@ -114,8 +114,12 @@ fn validate_snark_account_update_tx_seq_no(
 /// included. Block assembly proves every claim before the STF checks the
 /// update's proof, so an update that will never verify still costs the
 /// sequencer that proof work. Admission therefore caps the claim count at
-/// `max_claims` and rejects a repeated claim index. A repeated index is either
-/// a duplicate claim or one whose hash cannot match the MMR leaf.
+/// `max_claims`, counting repeats.
+///
+/// Repeated claims are admitted, as consensus admits them. Block assembly
+/// proves all of an update's claims from one read of the MMR nodes they need,
+/// so a repeat adds no reads, and a repeat whose hash differs from the leaf
+/// fails there as invalid.
 ///
 /// [`MAX_ACC_PROOF_COUNT`]: strata_ol_tx_types_v1::MAX_ACC_PROOF_COUNT
 pub(crate) fn check_l1_block_ref_claims(
@@ -137,16 +141,6 @@ pub(crate) fn check_l1_block_ref_claims(
             count: claims.len(),
             limit: max_claims,
         });
-    }
-
-    let mut seen = BTreeSet::new();
-    for claim in claims {
-        if !seen.insert(claim.idx()) {
-            return Err(OLMempoolError::DuplicateL1BlockRefClaim {
-                txid,
-                idx: claim.idx(),
-            });
-        }
     }
 
     Ok(())

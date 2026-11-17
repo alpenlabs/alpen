@@ -205,10 +205,6 @@ pub enum OLMempoolRejectReason {
     /// claims than the mempool admits.
     TooManyL1BlockRefClaims,
 
-    /// Rejected because a snark account update claims the same L1 block ref
-    /// index more than once.
-    DuplicateL1BlockRefClaim,
-
     /// Duplicate transaction (already in mempool).
     Duplicate,
 }
@@ -228,7 +224,6 @@ impl OLMempoolRejectReason {
             Self::TransactionExpired => "transaction_expired",
             Self::TransactionNotMature => "transaction_not_mature",
             Self::TooManyL1BlockRefClaims => "too_many_l1_block_ref_claims",
-            Self::DuplicateL1BlockRefClaim => "duplicate_l1_block_ref_claim",
             Self::Duplicate => "duplicate",
         }
     }
@@ -261,7 +256,6 @@ impl OLMempoolRejectReason {
             OLMempoolError::UsedSequenceNumber { .. } => Some(Self::UsedSequenceNumber),
             OLMempoolError::SequenceNumberGap { .. } => Some(Self::SequenceNumberGap),
             OLMempoolError::TooManyL1BlockRefClaims { .. } => Some(Self::TooManyL1BlockRefClaims),
-            OLMempoolError::DuplicateL1BlockRefClaim { .. } => Some(Self::DuplicateL1BlockRefClaim),
             OLMempoolError::AccountStateAccess(_)
             | OLMempoolError::TransactionNotFound(_)
             | OLMempoolError::Database(_)

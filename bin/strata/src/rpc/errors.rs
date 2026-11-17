@@ -128,8 +128,7 @@ pub(crate) fn mempool_error_to_rpc(err: OLMempoolError) -> ErrorObjectOwned {
         | OLMempoolError::TransactionNotMature { .. }
         | OLMempoolError::UsedSequenceNumber { .. }
         | OLMempoolError::SequenceNumberGap { .. }
-        | OLMempoolError::TooManyL1BlockRefClaims { .. }
-        | OLMempoolError::DuplicateL1BlockRefClaim { .. } => invalid_params_error(err.to_string()),
+        | OLMempoolError::TooManyL1BlockRefClaims { .. } => invalid_params_error(err.to_string()),
         // Service unavailable on this node — not an error condition. A node
         // that needs an upgrade for the next block admits nothing either.
         OLMempoolError::NotAvailable | OLMempoolError::UpgradeRequired(_) => {

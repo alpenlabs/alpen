@@ -88,10 +88,6 @@ pub enum OLMempoolError {
         limit: usize,
     },
 
-    /// A snark account update claims the same L1 block ref index more than once.
-    #[error("transaction {txid} claims L1 block ref index {idx} more than once")]
-    DuplicateL1BlockRefClaim { txid: OLTxId, idx: u64 },
-
     /// Database error.
     #[error("database: {0}")]
     Database(#[from] DbError),

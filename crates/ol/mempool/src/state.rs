@@ -2929,49 +2929,55 @@ mod tests {
         assert!(state.contains(&txid));
     }
 
-    /// The mempool rejects an update that claims an L1 block ref index twice,
-    /// whether the claims repeat the hash or not.
+    /// The mempool admits an update that claims an L1 block ref index more than
+    /// once, as consensus does, and counts each repeat against the claim limit.
     #[tokio::test]
-    async fn test_mempool_rejects_repeated_l1_block_ref_index() {
+    async fn test_mempool_counts_repeated_l1_block_ref_claims_against_the_limit() {
+        const LIMIT: usize = 4;
         let tip = create_test_block_commitment(100);
-        let provider = Arc::new(create_test_state_provider(tip));
-        let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig {
+                max_l1_block_ref_claims: LIMIT,
+                ..Default::default()
+            },
+            Arc::new(create_test_state_provider(tip)),
+        ));
         let mut state = MempoolServiceState::new_with_context(context, MempoolTip::new(tip, None))
             .await
             .unwrap();
 
-        let repeated_claim = vec![
+        let repeated_claims = vec![
             AccumulatorClaim::new(5, [1; 32]),
             AccumulatorClaim::new(7, [2; 32]),
             AccumulatorClaim::new(5, [1; 32]),
         ];
-        let conflicting_claim = vec![
-            AccumulatorClaim::new(5, [1; 32]),
-            AccumulatorClaim::new(5, [3; 32]),
-        ];
-        for (account, claims) in [(1, repeated_claim), (2, conflicting_claim)] {
-            let tx = create_test_snark_tx_with_l1_block_ref_claims(account, claims);
-            let tx_id = tx.compute_txid();
-            let err = state
-                .add_transaction(tx)
-                .await
-                .expect_err("a repeated claim index must be rejected");
-            assert!(
-                matches!(
-                    err,
-                    OLMempoolError::DuplicateL1BlockRefClaim { txid, idx: 5 } if txid == tx_id
-                ),
-                "{err}"
-            );
-            assert!(!state.contains(&tx_id));
-        }
-        assert_eq!(
-            state
-                .stats()
-                .rejects_by_reason()
-                .get(OLMempoolRejectReason::DuplicateL1BlockRefClaim),
-            2
+        let txid = state
+            .add_transaction(create_test_snark_tx_with_l1_block_ref_claims(
+                1,
+                repeated_claims,
+            ))
+            .await
+            .expect("an update with repeated claims under the limit is admitted");
+        assert!(state.contains(&txid));
+
+        let over_limit = create_test_snark_tx_with_l1_block_ref_claims(
+            2,
+            vec![AccumulatorClaim::new(5, [1; 32]); LIMIT + 1],
         );
+        let over_limit_id = over_limit.compute_txid();
+        let err = state
+            .add_transaction(over_limit)
+            .await
+            .expect_err("repeats count against the claim limit");
+        assert!(
+            matches!(
+                err,
+                OLMempoolError::TooManyL1BlockRefClaims { txid, count, limit }
+                    if txid == over_limit_id && count == LIMIT + 1 && limit == LIMIT
+            ),
+            "{err}"
+        );
+        assert!(!state.contains(&over_limit_id));
     }
 
     /// After a terminal tip whose epoch processed no enactment, the next block
