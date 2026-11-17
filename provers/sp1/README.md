@@ -5,6 +5,11 @@ The guest fixes `PROVED_SPEC = OLSpecId::V2`; the builder records the same spec 
 V1 epochs continue to use the V1 bundle published from `v0.4.0-rc.1`. Never rebuild or republish
 V1 from this source tree.
 
+The V2 rules are frozen at `v0.5.0-rc.2`, and deployed networks prove V2 epochs with the bundle
+published from that tag. A guest built from this tree has another verifying key, so use it for
+tests and never publish it as a network's V2 bundle. See
+[Frozen rules and V3](../../docs/ol-specs.md#frozen-rules-and-v3).
+
 Each guest lives in its own `guest-*` directory with its own Cargo workspace, so it can pin the
 SP1 patches it needs without disturbing the main workspace.
 
@@ -83,7 +88,8 @@ dispatch and reusable workflow calls. Run the workflow from `main` and set `ref`
 tag, or branch to build (default: `main`). Publishing scripts and local actions stay on the
 workflow's `main` commit; the guest builds in a separate checkout of `ref`, using its Rust
 toolchain and locked SP1 build and runner versions. The selected ref must support the builder
-and artifact bundle described above.
+and artifact bundle described above. For a spec whose rules are frozen, set `ref` to the tag
+they are frozen at, which is `v0.5.0-rc.2` for V2, and not to `main`.
 
 Supply a raw HTTPS download URL for either params format described above. GitHub `/blob/`
 URLs serve HTML and are rejected. The workflow downloads and JSON-validates the file in

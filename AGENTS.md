@@ -110,7 +110,9 @@ See [`docs/layout.md`](docs/layout.md) for every crate.
 - **Consensus changes**: changing an encoded field, its order, a hash input, a validity rule
   or a capacity is a consensus change. Mark it breaking with `!`. Once a chain runs the old
   rules, the change ships as a new OL spec; see [`docs/ol-specs.md`](docs/ol-specs.md). The
-  state root is the root of `OLRootState`, not of `OLStateV1`.
+  state root is the root of `OLRootState`, not of `OLStateV1`. A dependency update that
+  changes what the STF or the DA decoders accept is a consensus change too: keep the earlier
+  behavior for the published specs and turn the new one on in the next spec.
 - **Checkpoint verifying key**: a change to any crate the guest compiles, to the toolchain
   or to `Cargo.lock` can move the SP1 verifying key, which is consensus. The checkpoint VK
   guard workflow builds the guest at the PR base and the merge commit and flags a moved key.

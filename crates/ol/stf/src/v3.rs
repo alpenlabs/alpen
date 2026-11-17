@@ -1,11 +1,26 @@
 //! The V3 OL rules, which follow V2.
 //!
-//! V3 starts as a copy of the V2 rules: [`StfV3`] runs every operation with
-//! the [`strata_ol_stf_v1`] code within the V2 capacities
-//! ([`OLSpecLimits`]), except that it takes over a V2 state at the first
-//! block of an epoch, as V2 takes over a V1 state. [`CappedV1Rules`]
-//! implements the operations V3 shares with V2, and rules that V3 changes
-//! later replace the call of the operation they change.
+//! [`StfV3`] runs every operation with the [`strata_ol_stf_v1`] code, as V2
+//! does, and takes over a V2 state at the first block of an epoch, as V2
+//! takes over a V1 state. [`CappedV1Rules`] implements the operations V3
+//! shares with V2, and rules that V3 changes later replace the call of the
+//! operation they change.
+//!
+//! # Rules V3 changes
+//!
+//! The checkpoint programs that prove V1 and V2 epochs are published, so
+//! those rules cannot change: a node must accept exactly what the programs
+//! prove. V3 carries the fixes made after the V2 program was built:
+//!
+//! - A message payload holds at most the 4 KiB the epoch DA encodes for an inbox message
+//!   ([`OLSpecLimits`]). Earlier specs accept any payload the SSZ types allow.
+//! - A withdrawal message to the bridge gateway writes its descriptor length in the shortest
+//!   layout ([`RuleAmendments::V3`]). Earlier specs take every layout.
+//! - An accumulator proof for an inbox message or an L1 block ref leads to the peak that holds
+//!   the claimed index ([`RuleAmendments::V3`]). Earlier specs select the peak by the proof's
+//!   length and check the index only within it.
+//! - An epoch replays only from the DA bytes the encoder writes ([`DaDiffEncoding::Canonical`]).
+//!   Earlier specs replay every encoding the decoders read.
 //!
 //! # Taking over a V2 state
 //!

@@ -10,8 +10,9 @@
 //! maps spec identifiers to rule sets. From V1 on, every spec records its own
 //! identifier in the state root, so every spec has its own rule set, even one
 //! that changes no rules. V2 runs the V1 code, takes over the V1 state, and
-//! allows fewer transaction effects and block logs. V3 runs V2's rules and
-//! takes over the V2 state.
+//! allows fewer transaction effects and block logs. V3 takes over the V2
+//! state and tightens four rules: the message payload capacity, the
+//! withdrawal message encoding, accumulator proofs, and the DA encoding.
 //! The compiler requires each rule set to provide every operation. Sequencer
 //! block assembly composes the [`sequencer`] phases itself, so a rule set that
 //! changes their order or composition must also update block assembly.
@@ -37,6 +38,15 @@
 //! logs, and a spec may allow less than those bounds. [`spec_limits`] returns
 //! the capacities a spec allows, for drivers that build blocks or admit
 //! transactions.
+//!
+//! # Frozen rules
+//!
+//! The rules of a spec are fixed once its checkpoint program is published,
+//! and they include what the code the program compiles accepts. A change to
+//! that code, or to a dependency it calls, that accepts less, accepts more,
+//! or computes another result is a rule change. It keeps the earlier
+//! behavior for the published specs and turns the new one on in a later rule
+//! set, as [`strata_ol_stf_v1::RuleAmendments`] does for the V1 code.
 //!
 //! # Unknown and unimplemented specs
 //!

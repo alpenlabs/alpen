@@ -5,8 +5,9 @@
 //! it they check their transaction effect and block log capacities, and the
 //! operations that open a block or replay an epoch take over the state of the
 //! spec before them at the first block of an epoch. [`CappedV1Rules`]
-//! implements those operations once, for one spec, its predecessor, and its
-//! capacities. Each rule set's [`OLStfSpec`](crate::spec::OLStfSpec)
+//! implements those operations once, for one spec, its predecessor, its
+//! capacities, the rules it amends in the V1 code, and the DA encodings it
+//! replays. Each rule set's [`OLStfSpec`](crate::spec::OLStfSpec)
 //! implementation calls them one operation at a time, so a rule set that
 //! changes an operation replaces only its own call and leaves the other rule
 //! sets as they are.

@@ -36,14 +36,18 @@ pub enum OLSpecId {
 
     /// Rules that follow V1.
     ///
-    /// So far they are V1's rules, except that the state root records V2 from
-    /// the first block of the first V2 epoch on.
+    /// They are V1's rules with fewer transaction effects and block logs
+    /// allowed, and the state root records V2 from the first block of the
+    /// first V2 epoch on.
     V2 = 2,
 
     /// Rules that follow V2.
     ///
-    /// So far they are V2's rules, except that the state root records V3 from
-    /// the first block of the first V3 epoch on.
+    /// They bound message payloads at 4 KiB, take a withdrawal message only
+    /// with its descriptor length in the shortest layout, take an accumulator
+    /// proof only if it leads to the peak that holds the claimed index, and
+    /// replay an epoch only from the canonical encoding of its DA diff. The
+    /// state root records V3 from the first block of the first V3 epoch on.
     V3 = 3,
 }
 

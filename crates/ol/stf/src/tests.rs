@@ -1,7 +1,7 @@
 //! Smoke tests for dispatch under [`OLSpecId::V1`], tests for the
 //! [`OLSpecId::V0`] genesis and epoch replay, for the states [`OLSpecId::V2`]
-//! and [`OLSpecId::V3`] take over and the capacities V2 enforces, and for
-//! spec selection.
+//! and [`OLSpecId::V3`] take over, the capacities V2 enforces and the rules
+//! V3 changes, and for spec selection.
 //!
 //! The differential tests in `strata-ol-checkpoint` and
 //! `strata-ol-block-assembly` compare the drivers against each other.
