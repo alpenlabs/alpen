@@ -84,6 +84,7 @@ class StrataFactory(flexitest.Factory):
         auto_start: bool = True,
         service_type: ServiceType | None = None,
         bridge_params: BridgeParams | None = None,
+        genesis_spec: int | None = None,
         prover_config: ProverConfig | None = None,
         checkpoint_predicate_file: Path = CHECKPOINT_TEST_PREDICATE_FILE,
         **kwargs,
@@ -116,11 +117,16 @@ class StrataFactory(flexitest.Factory):
             bridge_params: Overrides the standard test bridge parameters when generating
                 OL params. Cannot be combined with ol_params, which already includes them.
                 Shared or existing parameter files already include them.
+            genesis_spec: Overrides the genesis OL spec (`OLSpecId` discriminant) when
+                generating OL params. Cannot be combined with ol_params, which already
+                includes it. Shared or existing parameter files already include it.
             prover_config: Checkpoint prover backend and resident artifacts.
             checkpoint_predicate_file: Genesis checkpoint predicate matching the prover.
         """
         if ol_params is not None and bridge_params is not None:
             raise ValueError("pass bridge parameters through ol_params or bridge_params, not both")
+        if ol_params is not None and genesis_spec is not None:
+            raise ValueError("pass the genesis spec through ol_params or genesis_spec, not both")
 
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -241,6 +247,7 @@ class StrataFactory(flexitest.Factory):
                     bconfig,
                     genesis_l1_height,
                     bridge_params=bridge_params if bridge_params is not None else BridgeParams(),
+                    genesis_spec=genesis_spec,
                 )
 
             # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).

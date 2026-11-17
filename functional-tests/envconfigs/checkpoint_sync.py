@@ -27,6 +27,7 @@ class CheckpointSyncEnv(flexitest.EnvConfig):
             test can start after stopping the checkpoint node
         provision_recovery_node: Provision a dormant, empty checkpoint-sync node
             for the DA continuity recovery check
+        genesis_spec: OL spec the network starts at; datatool's default (V1) if None
     """
 
     def __init__(
@@ -40,6 +41,7 @@ class CheckpointSyncEnv(flexitest.EnvConfig):
         provision_recovery_node: bool = False,
         fund_test_cli_wallet: bool = False,
         bridge_params: BridgeParams | None = None,
+        genesis_spec: int | None = None,
         prover_config: ProverConfig | None = None,
         checkpoint_predicate_file: Path = CHECKPOINT_TEST_PREDICATE_FILE,
     ):
@@ -53,6 +55,7 @@ class CheckpointSyncEnv(flexitest.EnvConfig):
             pre_generate_blocks=pre_generate_blocks,
             fund_test_cli_wallet=fund_test_cli_wallet,
             bridge_params=bridge_params,
+            genesis_spec=genesis_spec,
             prover_config=prover_config,
             checkpoint_predicate_file=checkpoint_predicate_file,
             epoch_sealing=epoch_seal_config,

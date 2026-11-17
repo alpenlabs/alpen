@@ -33,10 +33,12 @@ class StrataEnvConfig(flexitest.EnvConfig):
         ol_block_time_ms: int | None = None,
         l1_reorg_safe_depth: int | None = None,
         bridge_params: BridgeParams | None = None,
+        genesis_spec: int | None = None,
         prover_config: ProverConfig | None = None,
         checkpoint_predicate_file: Path = CHECKPOINT_TEST_PREDICATE_FILE,
     ):
         self.bridge_params = bridge_params if bridge_params is not None else BridgeParams()
+        self.genesis_spec = genesis_spec
         self.prover_config = prover_config
         self.checkpoint_predicate_file = checkpoint_predicate_file
         self.pre_generate_blocks = pre_generate_blocks
@@ -112,6 +114,8 @@ class StrataEnvConfig(flexitest.EnvConfig):
                 accounts=self.genesis_accounts,
                 bridge_params=self.bridge_params,
             ).with_genesis_l1(genesis_l1_block)
+            if self.genesis_spec is not None:
+                ol_params.genesis_spec = self.genesis_spec
 
         # Start Strata sequencer
         sequencer_node = strata_factory.create_node(
@@ -125,6 +129,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
             ol_block_time_ms=self.ol_block_time_ms,
             l1_reorg_safe_depth=self.l1_reorg_safe_depth,
             bridge_params=self.bridge_params if ol_params is None else None,
+            genesis_spec=self.genesis_spec if ol_params is None else None,
             prover_config=self.prover_config,
             checkpoint_predicate_file=self.checkpoint_predicate_file,
         )

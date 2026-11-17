@@ -18,7 +18,7 @@ env:
 
 jobs:
   upgrade:
-    name: V1 to V2 with SP1 network proofs
+    name: V1 to V2 and V2 to V3 with SP1 network proofs
     runs-on: ubuntu-latest-m
     timeout-minutes: 180
     # Configure this environment with a main-only branch policy and its own key.
@@ -116,7 +116,7 @@ jobs:
           export PATH="$HOME/.sp1/bin:$PATH"
           cargo prove --version
 
-      - name: Run upgrade test on the SP1 network
+      - name: Run upgrade tests on the SP1 network
         working-directory: functional-tests
         env:
           NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
@@ -124,7 +124,8 @@ jobs:
           SP1_PROOF_STRATEGY: ${{ vars.SP1_PROOF_STRATEGY || 'reserved' }}
         run: |
           set -o pipefail
-          ./run_tests.sh -t test_checkpoint_predicate_rotation 2>&1 | tee sp1-checkpoint-upgrade.log
+          ./run_tests.sh -t test_checkpoint_predicate_rotation_v1_v2 \
+            test_checkpoint_predicate_rotation_v2_v3 2>&1 | tee sp1-checkpoint-upgrade.log
 
       - name: Upload upgrade results and bundle metadata
         if: always()
