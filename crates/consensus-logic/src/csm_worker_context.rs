@@ -130,7 +130,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     }
 
     fn magic_bytes(&self) -> MagicBytes {
-        self.asm_params.magic
+        self.asm_params.genesis.magic
     }
 
     fn get_asm_state(&self, block: &L1BlockCommitment) -> CsmWorkerResult<AsmExecOutput> {
@@ -178,7 +178,7 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
     }
 
     fn genesis_l1_block(&self) -> L1BlockCommitment {
-        self.asm_params.anchor.block
+        self.asm_params.genesis.anchor.block
     }
 
     fn get_checkpoint_l1_refs_from(

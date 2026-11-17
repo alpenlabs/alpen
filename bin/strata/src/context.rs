@@ -297,12 +297,12 @@ struct SharedNetworkParams {
 impl SharedNetworkParams {
     /// Extracts the network parameters shared by the ASM and OL.
     fn from_asm(asm_params: &AsmParams) -> Result<Self, InitError> {
-        let bridge = asm_params.bridge_config().ok_or_else(|| {
+        let bridge = asm_params.genesis.bridge_config().ok_or_else(|| {
             InitError::InconsistentNetworkParams(
                 "ASM params are missing the Bridge subprotocol".to_string(),
             )
         })?;
-        let checkpoint = asm_params.checkpoint_config().ok_or_else(|| {
+        let checkpoint = asm_params.genesis.checkpoint_config().ok_or_else(|| {
             InitError::InconsistentNetworkParams(
                 "ASM params are missing the Checkpoint subprotocol".to_string(),
             )
@@ -310,7 +310,7 @@ impl SharedNetworkParams {
 
         Ok(Self {
             bridge_denomination: bridge.denomination.to_sat(),
-            genesis_l1_block: asm_params.anchor.block,
+            genesis_l1_block: asm_params.genesis.anchor.block,
             genesis_l1_height: checkpoint.genesis_l1_height,
             genesis_ol_blkid: checkpoint.genesis_ol_blkid,
         })
@@ -350,38 +350,41 @@ mod shared_network_params_tests {
     fn mn0_shaped_asm_params() -> AsmParams {
         let json = format!(
             r#"{{
-                "magic": "STRA",
-                "anchor": {{
-                    "block": {{
-                        "height": 961729,
-                        "blkid": "0000000000000000000055fbd96192d25981163ea0f18accc6d1e22cafe84b6f"
+                "genesis": {{
+                    "magic": "STRA",
+                    "anchor": {{
+                        "block": {{
+                            "height": 961729,
+                            "blkid": "0000000000000000000055fbd96192d25981163ea0f18accc6d1e22cafe84b6f"
+                        }},
+                        "next_target": 386020669,
+                        "epoch_start_timestamp": 1786217755,
+                        "network": "bitcoin"
                     }},
-                    "next_target": 386020669,
-                    "epoch_start_timestamp": 1786217755,
-                    "network": "bitcoin"
+                    "subprotocols": [
+                        {{
+                            "Checkpoint": {{
+                                "sequencer_key": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0",
+                                "checkpoint_predicate": "AlwaysAccept",
+                                "genesis_l1_height": 961729,
+                                "genesis_ol_blkid": "{MN0_SHAPED_V0_GENESIS_BLKID}"
+                            }}
+                        }},
+                        {{
+                            "Bridge": {{
+                                "operators": [
+                                    "02becdf7aab195ab0a42ba2f2eca5b7fa5a246267d802c627010e1672f08657f70"
+                                ],
+                                "denomination": 200000000,
+                                "assignment_duration": 0,
+                                "operator_fee": 0,
+                                "recovery_delay": 0,
+                                "safe_harbor_address": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"
+                            }}
+                        }}
+                    ]
                 }},
-                "subprotocols": [
-                    {{
-                        "Checkpoint": {{
-                            "sequencer_key": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0",
-                            "checkpoint_predicate": "AlwaysAccept",
-                            "genesis_l1_height": 961729,
-                            "genesis_ol_blkid": "{MN0_SHAPED_V0_GENESIS_BLKID}"
-                        }}
-                    }},
-                    {{
-                        "Bridge": {{
-                            "operators": [
-                                "02becdf7aab195ab0a42ba2f2eca5b7fa5a246267d802c627010e1672f08657f70"
-                            ],
-                            "denomination": 200000000,
-                            "assignment_duration": 0,
-                            "operator_fee": 0,
-                            "recovery_delay": 0,
-                            "safe_harbor_address": "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"
-                        }}
-                    }}
-                ]
+                "runtime": {{}}
             }}"#
         );
         serde_json::from_str(&json).expect("MN0-shaped ASM params parse")
@@ -537,7 +540,7 @@ fn init_status_channel(
     asm_params: &AsmParams,
     storage: &NodeStorage,
 ) -> Result<Arc<StatusChannel>, InitError> {
-    let gen_l1 = asm_params.anchor.block;
+    let gen_l1 = asm_params.genesis.anchor.block;
     let csman = storage.client_state();
     let (cur_block, cur_state) = csman
         .fetch_most_recent_state()

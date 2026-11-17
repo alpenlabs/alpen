@@ -44,7 +44,7 @@ impl AcctStateSummary {
         self.intrinsics.balance()
     }
 
-    pub fn typed_state_root(&self) -> &Hash {
+    pub fn typed_state_root(&self) -> Hash {
         (&self.typed_state_root).into()
     }
 }

@@ -127,7 +127,7 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
-            params.anchor.block,
+            params.genesis.anchor.block,
             arbgen.generate(),
             None,
             None,
@@ -139,8 +139,8 @@ mod tests {
             storage.clone(),
             status_channel,
             finality_depth,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         )
         .with_l1_fetch_failure()
         // Keep `last` on the canonical chain so the incoming target is a pure
@@ -233,7 +233,7 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
-            params.anchor.block,
+            params.genesis.anchor.block,
             arbgen.generate(),
             None,
             None,
@@ -245,8 +245,8 @@ mod tests {
             storage.clone(),
             status_channel,
             3,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
 
         let state = CsmWorkerState::init_from_context(ctx).expect("bootstrap state");

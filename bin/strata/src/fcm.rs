@@ -222,6 +222,7 @@ pub(crate) fn start(
     let checkpoint_state_rx = nodectx.status_channel().subscribe_checkpoint_state();
     let sequencer_key = nodectx
         .asm_params()
+        .genesis
         .checkpoint_config()
         .ok_or_else(|| anyhow!("ASM checkpoint config required for FCM"))?
         .sequencer_key;

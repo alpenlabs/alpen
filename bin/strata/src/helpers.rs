@@ -55,7 +55,7 @@ pub(crate) async fn generate_sequencer_address(bitcoin_client: &Client) -> Resul
 pub(crate) fn build_btcio_params(asm_params: &AsmParams, l1_reorg_safe_depth: u32) -> BtcioParams {
     BtcioParams::new(
         l1_reorg_safe_depth,
-        asm_params.magic,
-        asm_params.anchor.block.height(),
+        asm_params.genesis.magic,
+        asm_params.genesis.anchor.block.height(),
     )
 }

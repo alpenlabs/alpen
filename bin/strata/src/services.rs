@@ -212,6 +212,7 @@ mod sequencer_services {
             .ok_or_else(|| anyhow!("Sequencer config required for block assembly"))?;
         let sequencer_key = nodectx
             .asm_params()
+            .genesis
             .checkpoint_config()
             .ok_or_else(|| anyhow!("ASM checkpoint config required for block assembly"))?
             .sequencer_key;

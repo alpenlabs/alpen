@@ -182,7 +182,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         submit_rpc_host: runctx.config().client.submit_rpc_host.clone(),
         submit_rpc_port: runctx.config().client.submit_rpc_port,
         submit_rpc_bearer_token: runctx.config().client.submit_rpc_bearer_token.clone(),
-        genesis_l1_block: runctx.asm_params().anchor.block,
+        genesis_l1_block: runctx.asm_params().genesis.anchor.block,
         max_headers_range: runctx.config().client.max_headers_range,
         node_role: runctx.node_role(),
         storage: runctx.storage().clone(),

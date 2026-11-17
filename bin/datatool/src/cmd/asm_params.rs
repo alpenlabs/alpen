@@ -12,8 +12,8 @@ use serde::Serialize;
 use strata_asm_admin_types::{ConfirmationDepths, UncheckedThresholdConfig};
 use strata_asm_bridge_types::{SafeHarborAddress, UncheckedSafeHarborAddress};
 use strata_asm_params::{
-    AdministrationInitConfig, AsmParams, BridgeInitConfig, CheckpointInitConfig,
-    SubprotocolInstance,
+    AdministrationInitConfig, AsmGenesisParams, AsmParams, AsmRuntimeParams, BridgeInitConfig,
+    CheckpointInitConfig, SubprotocolInstance,
 };
 use strata_btc_types::BitcoinAmount;
 use strata_crypto::{aggregate_schnorr_keys, EvenPublicKey};
@@ -172,14 +172,19 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     };
 
     // Assemble ASM params.
+    // No runtime sections: a spec whose section is missing keeps the values the chain
+    // already has.
     let asm_params = AsmParams {
-        magic,
-        anchor,
-        subprotocols: vec![
-            SubprotocolInstance::Admin(admin),
-            SubprotocolInstance::Checkpoint(checkpoint),
-            SubprotocolInstance::Bridge(bridge),
-        ],
+        genesis: AsmGenesisParams {
+            magic,
+            anchor,
+            subprotocols: vec![
+                SubprotocolInstance::Admin(admin),
+                SubprotocolInstance::Checkpoint(checkpoint),
+                SubprotocolInstance::Bridge(bridge),
+            ],
+        },
+        runtime: AsmRuntimeParams { spec_v2: None },
     };
 
     let params_buf = serde_json::to_string_pretty(&asm_params)?;
@@ -336,12 +341,13 @@ fn build_cli_network_profile(
     );
 
     let bridge = asm_params
+        .genesis
         .bridge_config()
         .ok_or_else(|| anyhow::anyhow!("ASM params missing Bridge subprotocol config"))?;
 
     Ok(CliNetworkProfile {
-        network: asm_params.anchor.network,
-        magic_bytes: asm_params.magic,
+        network: asm_params.genesis.anchor.network,
+        magic_bytes: asm_params.genesis.magic,
         bridge_pubkey: derive_bridge_pubkey(&bridge.operators)?,
         bridge_denomination_sats: ol_bridge_params.denomination(),
         recovery_delay: bridge.recovery_delay,
