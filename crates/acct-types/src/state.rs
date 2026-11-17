@@ -189,6 +189,22 @@ mod tests {
     mod acct_state_summary {
         use super::*;
 
+        #[test]
+        fn typed_state_root_preserves_nonzero_bytes() {
+            let mut bytes = [0x5a; 32];
+            bytes[0] = 0x11;
+            bytes[31] = 0x22;
+            let root = Hash::new(bytes);
+            let state = AcctStateSummary {
+                intrinsics: AccountIntrinsicState::new_empty(AccountSerial::new(0)),
+                typed_state_root: root.into(),
+            };
+
+            assert_eq!(state.typed_state_root(), root);
+            let decoded = AcctStateSummary::from_ssz_bytes(&state.as_ssz_bytes()).unwrap();
+            assert_eq!(decoded.typed_state_root(), root);
+        }
+
         ssz_proptest!(
             AcctStateSummary,
             (
