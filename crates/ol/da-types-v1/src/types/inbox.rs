@@ -31,6 +31,10 @@ impl DaMessageEntryV1 {
 
 impl Codec for DaMessageEntryV1 {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        if self.payload.data().len() > MAX_MSG_PAYLOAD_BYTES {
+            return Err(CodecError::OverflowContainer);
+        }
+
         self.source.encode(enc)?;
         self.incl_epoch.encode(enc)?;
         self.payload.encode(enc)?;
@@ -40,10 +44,7 @@ impl Codec for DaMessageEntryV1 {
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let source = AccountId::decode(dec)?;
         let incl_epoch = u32::decode(dec)?;
-        let payload = MsgPayload::decode(dec)?;
-        if payload.data().len() > MAX_MSG_PAYLOAD_BYTES {
-            return Err(CodecError::OverflowContainer);
-        }
+        let payload = MsgPayload::decode_with_max_data_length(dec, MAX_MSG_PAYLOAD_BYTES)?;
         Ok(Self {
             source,
             incl_epoch,
