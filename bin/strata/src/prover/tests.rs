@@ -522,7 +522,11 @@ fn task_uses_its_loaded_artifact_while_its_vk_is_pending_in_asm() {
 
 #[test]
 fn first_checkpoint_after_upgrade_uses_successor_after_restart() {
-    for (start_spec, epoch_spec) in [(OLSpecId::V0, OLSpecId::V1), (OLSpecId::V1, OLSpecId::V2)] {
+    for (start_spec, epoch_spec) in [
+        (OLSpecId::V0, OLSpecId::V1),
+        (OLSpecId::V1, OLSpecId::V2),
+        (OLSpecId::V2, OLSpecId::V3),
+    ] {
         let fixture = EpochFixture::build_single_block_epoch(start_spec, epoch_spec);
         fixture.put_asm_checkpoint(
             PredicateKey::never_accept(),
@@ -551,9 +555,13 @@ fn first_checkpoint_after_upgrade_uses_successor_after_restart() {
 
 #[test]
 fn fixed_host_service_rejects_an_epoch_assigned_to_another_spec() {
-    for (epoch_spec, assigned_spec) in [(OLSpecId::V1, OLSpecId::V2), (OLSpecId::V2, OLSpecId::V1)]
-    {
-        let fixture = EpochFixture::build_single_block_epoch(OLSpecId::V1, epoch_spec);
+    for (pre_state_spec, epoch_spec, assigned_spec) in [
+        (OLSpecId::V1, OLSpecId::V1, OLSpecId::V2),
+        (OLSpecId::V1, OLSpecId::V2, OLSpecId::V1),
+        (OLSpecId::V2, OLSpecId::V2, OLSpecId::V3),
+        (OLSpecId::V2, OLSpecId::V3, OLSpecId::V2),
+    ] {
+        let fixture = EpochFixture::build_single_block_epoch(pre_state_spec, epoch_spec);
         let InputResolution::Rejected { reason } = fixture.try_resolve_on(assigned_spec).unwrap()
         else {
             panic!("the {assigned_spec:?} service must reject a {epoch_spec:?} epoch");
@@ -720,14 +728,20 @@ fn checkpoint_prover(fixture: &EpochFixture) -> Arc<Prover<CheckpointSpec>> {
         &Arc::new(ProofNotify::new()),
         |builder, host| builder.native(host),
     );
-    assert_eq!(provers.len(), 2);
+    assert_eq!(provers.len(), 3);
     Arc::new(provers.remove(&fixture.terminal_state.cur_spec()).unwrap())
 }
 
 fn assert_persisted_task_proving(recovered: bool, spec: OLSpecId, superseded: bool) {
-    let fixture = EpochFixture::build_single_block_epoch(OLSpecId::V1, spec);
+    // The first V3 epoch takes over a V2 state. V1 and V2 epochs start from a V1 one.
+    let pre_state_spec = if spec == OLSpecId::V3 {
+        OLSpecId::V2
+    } else {
+        OLSpecId::V1
+    };
+    let fixture = EpochFixture::build_single_block_epoch(pre_state_spec, spec);
     let own_store = VersionedTaskStore::new(Arc::clone(fixture.storage.prover_tasks()), spec);
-    // Both services exist, but neither may recover or mutate the other's records.
+    // Every spec has a service, but none may recover or mutate another's records.
     let foreign_spec = if spec == OLSpecId::V1 {
         OLSpecId::V2
     } else {
@@ -824,14 +838,14 @@ fn assert_persisted_task_proving(recovered: bool, spec: OLSpecId, superseded: bo
 
 #[test]
 fn fresh_checkpoint_task_proves_in_its_own_store() {
-    for spec in [OLSpecId::V1, OLSpecId::V2] {
+    for spec in [OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
         assert_persisted_task_proving(false, spec, false);
     }
 }
 
 #[test]
 fn recovered_checkpoint_task_proves_in_its_own_store() {
-    for spec in [OLSpecId::V1, OLSpecId::V2] {
+    for spec in [OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
         assert_persisted_task_proving(true, spec, false);
     }
 }

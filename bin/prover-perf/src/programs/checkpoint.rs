@@ -27,9 +27,13 @@ use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverIn
 use tracing::info;
 use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
 
+// The spec compiled into the checkpoint guest, read from the guest's own source so the
+// fixture cannot fall behind it.
+#[path = "../../../../provers/sp1/guest-checkpoint/src/spec.rs"]
+mod guest_spec;
+
 const SLOTS_PER_EPOCH: u64 = 9;
-// Keep the fixture aligned with the spec compiled into the checkpoint guest.
-const BENCHMARK_SPEC: OLSpecId = OLSpecId::V2;
+const BENCHMARK_SPEC: OLSpecId = guest_spec::PROVED_SPEC;
 
 fn prepare_checkpoint_input() -> CheckpointProverInput {
     // Build genesis under the benchmark spec so cycle counts exclude version takeover.

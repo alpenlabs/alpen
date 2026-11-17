@@ -10,9 +10,9 @@
 //! The drivers must also agree on the first V1 epoch after a V0 state, which
 //! wraps it, on the first V2 epoch after a V1 enactment, which takes over
 //! the V1 state, and on the first V3 epoch after a V2 enactment, which takes
-//! over the V2 state. The V2 program proves the V2 takeover epoch, while the
-//! V1 program refuses it. No checkpoint program proves V3 epochs yet, and the
-//! V2 program refuses the first one.
+//! over the V2 state. Each program proves the takeover epoch of its own spec,
+//! from the terminal state of the spec before it, and the program of that
+//! earlier spec refuses the epoch.
 
 use std::iter;
 
@@ -706,9 +706,21 @@ fn test_drivers_agree_on_first_v3_epoch_after_v2() {
         *epoch.previous_terminal.state_root()
     );
 
-    assert_drivers_agree_on_last_epoch(&chain, epoch, OLSpecId::V3);
-    // TODO(STR-4828): prove the epoch with the V3 checkpoint program from its
-    // V2 start container, as the first V2 epoch is proven from its V1 one.
+    let encoded_da = assert_drivers_agree_on_last_epoch(&chain, epoch, OLSpecId::V3);
+    let claim = CheckpointProgram::execute(
+        &epoch.prover_input(encoded_da),
+        OLSpecId::V3,
+        chain.runtime_params,
+    )
+    .expect("checkpoint program proves the first V3 epoch from a V2 state");
+    assert_eq!(
+        *claim.l2_range().start().blkid(),
+        epoch.previous_terminal.compute_blkid()
+    );
+    assert_eq!(
+        *claim.l2_range().end().blkid(),
+        epoch.terminal().compute_blkid()
+    );
 
     // The first V3 block commits V3 in its root, so V2 rules do not
     // reproduce it.
@@ -745,6 +757,58 @@ fn test_v2_program_refuses_the_first_v3_epoch() {
     let _ = CheckpointProgram::execute(
         &epoch.prover_input(da_state_diff_bytes),
         OLSpecId::V2,
+        chain.runtime_params,
+    );
+}
+
+#[test]
+fn test_drivers_prove_later_v3_epoch_from_v3_state() {
+    let mut chain = build_chain_into_v3();
+    chain.push(gam_components(
+        TEST_RECIPIENT_ID,
+        b"second V3 epoch".to_vec(),
+    ));
+    chain.push(manifest_components(make_empty_manifest(6, 1), true));
+    let epoch = chain.epochs.last().expect("second V3 epoch exists");
+    assert_eq!(
+        epoch.pre_epoch_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V3)
+    );
+    let encoded_da = assert_drivers_agree_on_last_epoch(&chain, epoch, OLSpecId::V3);
+    let claim = CheckpointProgram::execute(
+        &epoch.prover_input(encoded_da),
+        OLSpecId::V3,
+        chain.runtime_params,
+    )
+    .expect("checkpoint program proves subsequent V3 epochs from V3 states");
+    assert_eq!(
+        *claim.l2_range().end().blkid(),
+        epoch.terminal().compute_blkid()
+    );
+}
+
+/// The V3 program takes over only a V2 state. The first V2 epoch starts from
+/// a V1 state, which the V3 program must not run under V3.
+#[test]
+#[should_panic(expected = "epoch runs under spec V1, but this program proves spec V3")]
+fn test_v3_program_refuses_the_first_v2_epoch() {
+    let chain = build_chain_into_v2();
+    let [_, epoch] = chain.epochs.as_slice() else {
+        panic!("chain has the last V1 epoch and the first V2 epoch");
+    };
+    let (da_state_diff_bytes, _) = compute_epoch_da(
+        OLSpecId::V2,
+        epoch.pre_epoch_state.clone(),
+        &epoch.ol_blocks(),
+        &epoch.previous_terminal,
+        &chain.runtime_params,
+    )
+    .expect("epoch DA computes")
+    .into_parts();
+
+    let _ = CheckpointProgram::execute(
+        &epoch.prover_input(da_state_diff_bytes),
+        OLSpecId::V3,
         chain.runtime_params,
     );
 }

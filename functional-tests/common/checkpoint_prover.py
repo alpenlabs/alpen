@@ -11,7 +11,7 @@ from common.datatool import CHECKPOINT_TEST_PREDICATE_FILE, PREDICATE_FIXTURES_D
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _V1_BUNDLE = _REPO_ROOT / "functional-tests" / "testdata" / "sp1" / "v1"
-_V2_BUNDLE = _REPO_ROOT / "provers" / "sp1" / "generated"
+_V2_BUNDLE = _REPO_ROOT / "functional-tests" / "testdata" / "sp1" / "v2"
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class CheckpointRotationPrograms:
 
 
 def checkpoint_rotation_programs() -> CheckpointRotationPrograms:
-    """Selects native execution by default, or the frozen V1 and built V2 SP1 guests."""
+    """Selects native execution by default, or the frozen V1 and V2 SP1 guests."""
     backend = os.environ.get("OL_PROVER_BACKEND", "native")
     if backend == "native":
         return CheckpointRotationPrograms(
@@ -47,8 +47,9 @@ def checkpoint_rotation_programs() -> CheckpointRotationPrograms:
     if backend != "sp1":
         raise ValueError(f"unknown OL_PROVER_BACKEND {backend!r}; expected native or sp1")
 
-    # A build only produces the current spec. V1 must stay the deployed guest;
-    # rebuilding it from current source would stop checking historical compatibility.
+    # A build only produces the current spec, which is V3. V1 and V2 must stay the
+    # published guests; rebuilding them from current source would stop checking
+    # historical compatibility.
     for bundle in (_V1_BUNDLE, _V2_BUNDLE):
         for filename in (
             "guest-checkpoint.elf",
@@ -56,13 +57,9 @@ def checkpoint_rotation_programs() -> CheckpointRotationPrograms:
             "guest-checkpoint.artifact-manifest.json",
         ):
             if not (bundle / filename).is_file():
-                recovery = (
-                    "restore the committed V1 bundle"
-                    if bundle == _V1_BUNDLE
-                    else "run OL_PROVER_BACKEND=sp1 SP1_PROVER=network ./run_tests.sh to build V2"
-                )
                 raise FileNotFoundError(
-                    f"missing checkpoint artifact: {bundle / filename}; {recovery}"
+                    f"missing checkpoint artifact: {bundle / filename}; "
+                    "restore the committed bundle"
                 )
     runtime_params = json.loads((_V1_BUNDLE / "checkpoint-runtime-params.json").read_text())
     return CheckpointRotationPrograms(

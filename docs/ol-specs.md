@@ -123,11 +123,19 @@ another peak, so those specs keep that gap until a network moves to V3.
 ## Proofs per spec
 
 The SP1 guest in [`provers/sp1`](../provers/sp1/README.md) proves one spec, fixed by
-`PROVED_SPEC` in `guest-checkpoint/src/spec.rs`. It proves V2 today. V1 epochs keep using the
-bundle published from `v0.4.0-rc.1`. V2 proving accepts
-terminal V1 states with `cur = staged = V1` as well as V2 start states. ASM key handover and
-the verified-tip checks limit that V1 exception to the first accepted V2 epoch. No program
-proves V3 epochs yet, so a node waits for a V3 artifact before it proves one.
+`PROVED_SPEC` in `guest-checkpoint/src/spec.rs`. It proves V3 today. V1 epochs keep using the
+bundle published from `v0.4.0-rc.1` and V2 epochs the bundle published from `v0.5.0-rc.2`.
+
+No rule set stages its successor, so the first epoch of a spec starts from a terminal state
+of the spec before it. Proving a spec from V2 on therefore accepts a start state with
+`cur = staged` at its predecessor as well as states of the spec itself: V2 proving accepts a
+V1 state and V3 proving a V2 state. ASM key handover and the verified-tip checks limit that
+exception to the first accepted epoch of the new spec. A program takes over only the spec
+right before its own, so the V3 program refuses a V1 state.
+
+SP1 proving of V3 needs a configured V3 bundle; tests use one built from the checkout. If a
+node first needs V3 after it started and has no V3 artifact, proving waits. Startup fails if
+an active or enacted-pending predicate has no matching artifact.
 
 The node loads one artifact bundle per spec through
 [`crates/ol/checkpoint-artifacts`](../crates/ol/checkpoint-artifacts/README.md), and picks the
