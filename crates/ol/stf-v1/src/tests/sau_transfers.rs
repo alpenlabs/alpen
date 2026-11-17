@@ -689,3 +689,50 @@ fn test_snark_update_exact_balance_transfer() {
         "Second recipient should not receive failed transfer from drained balance"
     );
 }
+
+/// Regression test for SECFND-758: the balance check covers transfers and
+/// messages together, so outputs that each fit the balance cannot overdraw it
+/// by being split across the two kinds.
+#[test]
+fn test_snark_update_transfer_and_message_overdraw_fails_atomically() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let transfer_recipient_id = make_account_id(TEST_RECIPIENT_ID);
+    let message_recipient_id = make_account_id(TEST_RECIPIENT_ID + 1);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(
+                BitcoinAmount::try_from(100_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+        })
+        .with_genesis_empty_account(transfer_recipient_id)
+        .with_genesis_snark_account(message_recipient_id, |acct| acct)
+        .execute_genesis();
+
+    let snapshot = fixture.snapshot([snark_acct_id, transfer_recipient_id, message_recipient_id]);
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.output_message(
+                message_recipient_id,
+                BitcoinAmount::try_from(50_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+                vec![1, 2, 3],
+            )
+            .transfer(
+                transfer_recipient_id,
+                BitcoinAmount::try_from(60_000_000)
+                    .expect("amount must not exceed the Bitcoin money supply"),
+            )
+            .with_state_root(make_state_root(2))
+        })
+        .execute_err();
+
+    assert!(
+        matches!(err.into_base(), ExecError::BalanceUnderflow),
+        "Expected BalanceUnderflow"
+    );
+    snapshot.assert_unchanged(&fixture);
+}
