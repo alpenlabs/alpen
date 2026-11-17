@@ -5,6 +5,7 @@ pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_COD
 use serde_json::json;
 use strata_db_types::DbError;
 use strata_identifiers::L1BlockCommitment;
+use strata_ol_block_ancestry_provider::BlockAncestryError;
 use strata_ol_log_budget::TxLogBudgetError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_state_types::TxEffectsOverflow;
@@ -30,6 +31,17 @@ pub(crate) fn db_error(e: impl Display) -> ErrorObjectOwned {
         format!("Database error: {e}"),
         None::<()>,
     )
+}
+
+/// Maps ancestry failures from server-selected canonical walks to RPC errors.
+///
+/// Database failures remain database errors. Missing or inconsistent ancestry is internal because
+/// changing the request cannot repair the server's canonical history.
+pub(crate) fn block_ancestry_error_to_rpc(error: BlockAncestryError) -> ErrorObjectOwned {
+    match error {
+        BlockAncestryError::Db(error) => db_error(error),
+        error => internal_error(error.to_string()),
+    }
 }
 
 /// Creates an RPC error for resource not found.

@@ -6,8 +6,9 @@ use strata_btc_types::BlockHashExt;
 use strata_btcio::{is_bitcoind_warmup_error, is_block_height_out_of_range_error};
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_block::BlockStatus;
-use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
+use strata_ol_block_ancestry_provider::BlockAncestryProvider;
 use strata_ol_chain_types_v1::{OLBlockHeaderV1, OLBlockV1};
 use strata_ol_spec_selection::{
     SelectSpecAfterEpochError, SelectedSpec, select_block_spec,
@@ -124,15 +125,16 @@ pub(crate) async fn verify_l1_anchor_block(
 }
 
 fn get_ol_genesis_block(storage: &NodeStorage) -> Result<Option<OLBlockCommitment>> {
-    let genesis_commitment = storage
+    let genesis_blocks = storage
         .ol_block()
         .get_blocks_at_height_blocking(0)
-        .context("startup: failed to query OL blocks at genesis slot 0")?
+        .context("startup: failed to query OL blocks at genesis slot 0")?;
+    if genesis_blocks.len() > 1 {
+        bail!("startup: multiple OL blocks at genesis slot 0");
+    }
+    Ok(genesis_blocks
         .first()
-        .copied()
-        .map(|blkid| OLBlockCommitment::new(0, blkid));
-
-    Ok(genesis_commitment)
+        .map(|blkid| OLBlockCommitment::new(0, *blkid)))
 }
 
 /// Ensures the genesis canonical entry exists and matches `genesis_commitment`.
@@ -443,16 +445,24 @@ fn resolve_tip_ol_block(storage: &NodeStorage) -> Result<OLBlockCommitment> {
         .ok_or_else(|| anyhow!("startup: missing canonical OL tip block"))
 }
 
-/// Verifies that OL block data exists for the resolved tip commitment.
+/// Loads the OL block for the resolved tip commitment and verifies that it computes to
+/// that commitment.
 fn verify_tip_ol_block(
     storage: &NodeStorage,
     tip_commitment: OLBlockCommitment,
 ) -> Result<OLBlockV1> {
-    storage
+    let tip_block = storage
         .ol_block()
         .get_block_data_blocking(*tip_commitment.blkid())
         .context("startup: failed to query OL tip block data")?
-        .ok_or_else(|| anyhow!("startup: missing OL tip block data"))
+        .ok_or_else(|| anyhow!("startup: missing OL tip block data"))?;
+
+    let actual = tip_block.header().compute_block_commitment();
+    if actual != tip_commitment {
+        bail!("startup: OL tip block commitment mismatch: expected {tip_commitment}, got {actual}");
+    }
+
+    Ok(tip_block)
 }
 
 /// Verifies that the tip's parent block exists unless the tip is genesis.
@@ -541,12 +551,28 @@ fn verify_previous_epoch_summary_for_tip_header(
         return Ok(());
     }
 
-    let previous_epoch = tip_epoch - 1;
-    let previous_epoch_commitment = storage
-        .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(previous_epoch)
-        .context("startup: failed to query epoch commitment for previous epoch")?
-        .ok_or_else(|| anyhow!("startup: missing epoch summary for previous epoch"))?;
+    let history_base = storage
+        .ol_block()
+        .get_history_base_blocking()
+        .context("startup: failed to query OL history base")?;
+    let previous_epoch_commitment = if let Some(anchor) = history_base
+        .filter(|anchor| anchor.to_block_commitment() == tip_header.compute_block_commitment())
+    {
+        // The anchor's parent headers may not be retained. Its exact summary
+        // identifies the predecessor without walking discarded block history.
+        let summary = storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(anchor)
+            .context("startup: failed to query OL history anchor epoch summary")?
+            .ok_or_else(|| anyhow!("startup: missing OL history anchor epoch summary"))?;
+        summary
+            .get_prev_epoch_commitment()
+            .ok_or_else(|| anyhow!("startup: OL history anchor summary has no previous epoch"))?
+    } else {
+        BlockAncestryProvider::new(storage.ol_block().clone())
+            .find_previous_epoch_commitment_blocking(tip_header)
+            .context("startup: failed to resolve previous epoch from tip ancestry")?
+    };
 
     let has_summary = storage
         .ol_checkpoint()
@@ -616,17 +642,6 @@ pub(crate) fn verify_anchor_summary_and_state(
 ) -> Result<()> {
     if !header.is_terminal() {
         bail!("startup: OL history anchor header is not terminal");
-    }
-
-    let canonical_epoch = storage
-        .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(history_base.epoch())
-        .context("startup: failed to query canonical OL history anchor epoch commitment")?
-        .ok_or_else(|| anyhow!("startup: missing canonical OL history anchor epoch commitment"))?;
-    if canonical_epoch != history_base {
-        bail!(
-            "startup: canonical OL history anchor epoch commitment mismatch: expected {history_base}, got {canonical_epoch}"
-        );
     }
 
     verify_anchor_header_summary(history_base, header, summary)?;
@@ -722,7 +737,7 @@ fn verify_tip_from_history_base(
 /// manifest at the same height.
 ///
 /// If `terminal`'s own summary is not stored yet, the epoch's L1 range starts
-/// at the canonical summary of the epoch before, as
+/// at the summary of the preceding epoch on `terminal`'s branch, as
 /// [`select_spec_after_unsummarized_epoch`] describes. The sequencer checks its
 /// tip before FCM repairs a summary that a crash left missing.
 ///
@@ -784,7 +799,7 @@ fn select_spec_after_parent(
         Err(SelectSpecAfterEpochError::MissingEpochSummary(missing))
             if Some(missing) == parent_ended_epoch =>
         {
-            let prev_epoch_summary = fetch_canonical_epoch_summary(storage, missing.epoch() - 1)?;
+            let prev_epoch_summary = fetch_previous_epoch_summary(storage, missing)?;
             select_spec_after_unsummarized_epoch(
                 spec_versions,
                 parent_last_l1_block,
@@ -797,18 +812,20 @@ fn select_spec_after_parent(
     Ok(SelectedSpec::from_selection(selected)?)
 }
 
-/// Returns the canonical summary of `epoch`.
-fn fetch_canonical_epoch_summary(storage: &NodeStorage, epoch: Epoch) -> Result<EpochSummary> {
-    let commitment = storage
-        .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(epoch)
-        .context("failed to query the canonical epoch commitment")?
-        .ok_or_else(|| anyhow!("missing the canonical commitment of epoch {epoch}"))?;
+/// Returns the summary of the epoch before `epoch`, on `epoch`'s own branch.
+fn fetch_previous_epoch_summary(
+    storage: &NodeStorage,
+    epoch: EpochCommitment,
+) -> Result<EpochSummary> {
+    let ancestry = BlockAncestryProvider::new(storage.ol_block().clone())
+        .collect_epoch_block_commitments_at_blocking(epoch)
+        .context("failed to resolve the previous epoch")?;
+    let previous = ancestry.previous_epoch();
     storage
         .ol_checkpoint()
-        .get_epoch_summary_blocking(commitment)
+        .get_epoch_summary_blocking(previous)
         .context("failed to query the epoch summary")?
-        .ok_or_else(|| anyhow!("missing the epoch summary of {commitment}"))
+        .ok_or_else(|| anyhow!("missing the epoch summary of {previous}"))
 }
 
 /// Returns whether this binary builds blocks under `spec`.
@@ -962,6 +979,7 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, Hash as StrataHash, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockId};
+    use strata_ol_block_ancestry_provider::BlockAncestryError;
     use strata_ol_params::{OLParams, OLRuntimeParams};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::{IStateAccessorMut, OLSpecVersions};
@@ -1692,6 +1710,171 @@ mod tests {
         assert_eq!(upgrade.enactment_l1_height(), 1);
     }
 
+    #[test]
+    fn test_terminal_commitment_mismatch_fails_predecessor_lookup() {
+        let (storage, _, terminal) = setup_storage_with_non_genesis_tip();
+        let mismatched = EpochCommitment::new(1, terminal.slot() + 1, *terminal.blkid());
+
+        let error = fetch_previous_epoch_summary(&storage, mismatched)
+            .expect_err("test: terminal commitment mismatch must fail");
+
+        assert!(matches!(
+            error.downcast_ref::<BlockAncestryError>(),
+            Some(BlockAncestryError::EpochTerminalMismatch { expected, actual })
+                if *expected == mismatched && *actual == EpochCommitment::from_terminal(1, terminal)
+        ));
+    }
+
+    #[test]
+    fn test_terminal_epoch_mismatch_fails_predecessor_lookup() {
+        let (storage, _, terminal) = setup_storage_with_non_genesis_tip();
+        let mismatched = EpochCommitment::from_terminal(2, terminal);
+
+        let error = fetch_previous_epoch_summary(&storage, mismatched)
+            .expect_err("test: terminal epoch mismatch must fail");
+
+        assert!(matches!(
+            error.downcast_ref::<BlockAncestryError>(),
+            Some(BlockAncestryError::EpochTerminalMismatch { expected, actual })
+                if *expected == mismatched && *actual == EpochCommitment::from_terminal(1, terminal)
+        ));
+    }
+
+    #[test]
+    fn test_nonterminal_header_fails_predecessor_lookup() {
+        let (storage, _, terminal) = setup_storage_with_non_genesis_tip();
+        let mut block = storage
+            .ol_block()
+            .get_block_data_blocking(*terminal.blkid())
+            .expect("test: query terminal block")
+            .expect("test: terminal block exists");
+        block.signed_header.header.flags.set_is_terminal(false);
+        let nonterminal = block.header().compute_block_commitment();
+        storage
+            .ol_block()
+            .put_block_data_blocking(block)
+            .expect("test: insert nonterminal block");
+
+        let error =
+            fetch_previous_epoch_summary(&storage, EpochCommitment::from_terminal(1, nonterminal))
+                .expect_err("test: missing terminal flag must fail");
+
+        assert!(matches!(
+            error.downcast_ref::<BlockAncestryError>(),
+            Some(BlockAncestryError::MissingTerminalFlag(epoch))
+                if *epoch == EpochCommitment::from_terminal(1, nonterminal)
+        ));
+    }
+
+    #[test]
+    fn test_unsummarized_epoch_resolves_predecessor_on_its_branch() {
+        let (storage, genesis, previous_terminal) = setup_storage_with_non_genesis_tip();
+        let genesis_summary = storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(EpochCommitment::from_terminal(0, genesis))
+            .expect("test: query genesis summary")
+            .expect("test: genesis summary exists");
+        let previous_block = storage
+            .ol_block()
+            .get_block_data_blocking(*previous_terminal.blkid())
+            .expect("test: query previous terminal block")
+            .expect("test: previous terminal block exists");
+        let previous_summary = genesis_summary.create_next_epoch_summary(
+            previous_terminal,
+            *genesis_summary.new_l1(),
+            *previous_block.header().state_root(),
+        );
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(previous_summary)
+            .expect("test: insert previous summary");
+
+        // Make a sibling terminal block canonical and give both branches summaries. The
+        // unsummarized epoch still has to select the predecessor on its own branch.
+        let mut fork = previous_block.clone();
+        fork.signed_header.header.timestamp += 1;
+        let fork_terminal = fork.header().compute_block_commitment();
+        storage
+            .ol_block()
+            .put_block_data_blocking(fork)
+            .expect("test: insert competing terminal block");
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(genesis_summary.create_next_epoch_summary(
+                fork_terminal,
+                *genesis_summary.new_l1(),
+                *previous_block.header().state_root(),
+            ))
+            .expect("test: insert competing summary");
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                0,
+                vec![*genesis.blkid(), *fork_terminal.blkid()],
+            )
+            .expect("test: index competing branch");
+
+        let mut current_terminal = previous_block;
+        current_terminal.signed_header.header.timestamp += 2;
+        current_terminal.signed_header.header.slot = 2;
+        current_terminal.signed_header.header.epoch = 2;
+        current_terminal.signed_header.header.parent_blkid = *previous_terminal.blkid();
+        current_terminal
+            .signed_header
+            .header
+            .flags
+            .set_is_terminal(true);
+        let current_epoch =
+            EpochCommitment::from_terminal(2, current_terminal.header().compute_block_commitment());
+        storage
+            .ol_block()
+            .put_block_data_blocking(current_terminal)
+            .expect("test: insert current terminal block");
+
+        // Resolving this branch's predecessor summary, not the canonical sibling's, shows
+        // that the lookup ignores the canonical index.
+        assert_eq!(
+            fetch_previous_epoch_summary(&storage, current_epoch)
+                .expect("test: resolve previous summary from current branch"),
+            previous_summary
+        );
+    }
+
+    #[test]
+    fn test_history_anchor_selects_spec_from_stored_summary_without_parent_header() {
+        let fixture = setup_valid_history_anchor();
+        // A bootstrapped node retains the history-base header and summary but may not
+        // retain its parent, so spec selection must not attempt an ancestry walk here.
+        assert!(
+            fixture
+                .storage
+                .ol_block()
+                .get_ol_header_blocking(*fixture.header.parent_blkid())
+                .expect("test: query pruned parent header")
+                .is_none()
+        );
+        let anchor_state = fixture
+            .storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(fixture.history_base.to_block_commitment())
+            .expect("test: query anchor state")
+            .expect("test: anchor state exists");
+        let genesis_l1 = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
+
+        // Selecting V1 proves that the stored history-base summary supplied the
+        // predecessor information despite the deliberately unavailable parent.
+        assert_eq!(
+            select_spec_after_epoch_terminal_block(
+                &fixture.storage,
+                genesis_l1,
+                fixture.history_base,
+                &anchor_state,
+            )
+            .expect("test: select spec from stored anchor summary"),
+            SelectedSpec::Supported(OLSpecId::V1)
+        );
+    }
+
     /// A node on a network launched on 0.3.0 stores a V0 genesis whose state
     /// decodes against the bare root the genesis header commits to.
     #[test]
@@ -1910,21 +2093,129 @@ mod tests {
     }
 
     #[test]
+    fn test_tip_predecessor_resolves_from_ancestry_before_index_repair() {
+        let (storage, genesis, previous_terminal) = setup_storage_with_non_genesis_tip();
+        let genesis_summary = storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(EpochCommitment::from_terminal(0, genesis))
+            .expect("test: query genesis summary")
+            .expect("test: genesis summary exists");
+        let mut block = storage
+            .ol_block()
+            .get_block_data_blocking(*previous_terminal.blkid())
+            .expect("test: query previous terminal block")
+            .expect("test: previous terminal block exists");
+        let previous_summary = genesis_summary.create_next_epoch_summary(
+            previous_terminal,
+            *genesis_summary.new_l1(),
+            *block.header().state_root(),
+        );
+
+        // Both branches fork from genesis. Only the competing branch has a
+        // summary initially, so an epoch-number lookup would accept the wrong one.
+        let mut fork = block.clone();
+        fork.signed_header.header.timestamp += 1;
+        let fork_terminal = fork.header().compute_block_commitment();
+        storage
+            .ol_block()
+            .put_block_data_blocking(fork)
+            .expect("test: insert fork terminal block");
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(genesis_summary.create_next_epoch_summary(
+                fork_terminal,
+                *genesis_summary.new_l1(),
+                *block.header().state_root(),
+            ))
+            .expect("test: insert fork summary");
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+
+        for slot in 2..=4 {
+            let parent_id = block.header().compute_blkid();
+            block.signed_header.header.slot = slot;
+            block.signed_header.header.epoch = 2;
+            block.signed_header.header.parent_blkid = parent_id;
+            block.signed_header.header.flags.set_is_terminal(slot == 4);
+            storage
+                .ol_block()
+                .put_block_data_blocking(block.clone())
+                .expect("test: insert epoch-two block");
+        }
+        let err = verify_previous_epoch_summary_for_tip(&storage, &block)
+            .expect_err("test: fork summary must not satisfy predecessor lookup");
+        assert_eq!(
+            err.to_string(),
+            "startup: missing epoch summary for previous epoch"
+        );
+
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(previous_summary)
+            .expect("test: insert predecessor summary");
+        verify_previous_epoch_summary_for_tip(&storage, &block)
+            .expect("test: exact predecessor summary suffices with no canonical index");
+
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(1, vec![*fork_terminal.blkid()])
+            .expect("test: index competing branch");
+        verify_previous_epoch_summary_for_tip(&storage, &block)
+            .expect("test: a competing indexed branch must not change the tip's predecessor");
+    }
+
+    #[test]
+    fn test_anchor_validation_accepts_exact_artifacts_before_index_publication() {
+        let fixture = setup_valid_history_anchor();
+        fixture
+            .storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+
+        // A competing summary must not displace the supplied finalized anchor.
+        let mut fork_header = fixture.header.clone();
+        fork_header.parent_blkid = *fixture.genesis_commitment.blkid();
+        fork_header.timestamp += 1;
+        let fork_terminal = fork_header.compute_block_commitment();
+        let genesis_summary = fixture
+            .storage
+            .ol_checkpoint()
+            .get_epoch_summary_blocking(EpochCommitment::from_terminal(
+                0,
+                fixture.genesis_commitment,
+            ))
+            .expect("test: query genesis summary")
+            .expect("test: genesis summary exists");
+        fixture
+            .storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(genesis_summary.create_next_epoch_summary(
+                fork_terminal,
+                *genesis_summary.new_l1(),
+                *fixture.header.state_root(),
+            ))
+            .expect("test: insert competing summary");
+
+        verify_anchor_summary_and_state(
+            &fixture.storage,
+            fixture.history_base,
+            &fixture.header,
+            &fixture.summary,
+        )
+        .expect("test: exact anchor artifacts suffice before publication");
+    }
+
+    #[test]
     fn test_epoch_two_history_anchor_with_previous_epoch_summary_passes() {
         let fixture = setup_epoch_two_history_anchor(true);
 
         verify_history_anchor(&fixture.storage, fixture.history_base)
             .expect("test: valid epoch-two history anchor");
         verify_previous_epoch_summary_for_tip_header(&fixture.storage, &fixture.header)
-            .expect("test: epoch-one summary and canonical entry must be present");
-        assert!(
-            fixture
-                .storage
-                .ol_checkpoint()
-                .get_canonical_epoch_commitment_at_blocking(1)
-                .expect("test: query previous canonical epoch")
-                .is_some()
-        );
+            .expect("test: exact epoch-one summary must be present");
     }
 
     #[test]
@@ -2172,6 +2463,32 @@ mod tests {
     }
 
     #[test]
+    fn test_multiple_genesis_blocks_rejected_before_index_repair() {
+        let (storage, genesis) = setup_storage_with_genesis();
+        let mut other_genesis = storage
+            .ol_block()
+            .get_block_data_blocking(*genesis.blkid())
+            .expect("test: query genesis block")
+            .expect("test: genesis block exists");
+        other_genesis.signed_header.header.timestamp += 1;
+        storage
+            .ol_block()
+            .put_block_data_blocking(other_genesis)
+            .expect("test: insert competing genesis block");
+        storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(0, Vec::new())
+            .expect("test: clear canonical index");
+
+        assert_eq!(
+            get_ol_genesis_block(&storage)
+                .expect_err("test: ambiguous genesis must fail")
+                .to_string(),
+            "startup: multiple OL blocks at genesis slot 0"
+        );
+    }
+
+    #[test]
     fn test_persisted_state_presence_is_consistent_when_both_present() {
         let result = validate_persisted_state_presence(true, true);
         assert!(result.is_ok());
@@ -2326,6 +2643,22 @@ mod tests {
         })();
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tip_block_commitment_mismatch_fails() {
+        let (storage, _, tip_commitment) = setup_storage_with_non_genesis_tip();
+        let requested = OLBlockCommitment::new(tip_commitment.slot() + 1, *tip_commitment.blkid());
+
+        let error = verify_tip_ol_block(&storage, requested)
+            .expect_err("test: mismatched tip commitment must fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("startup: OL tip block commitment mismatch"),
+            "unexpected error: {error:#}"
+        );
     }
 
     #[test]

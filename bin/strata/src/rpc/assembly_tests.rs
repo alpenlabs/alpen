@@ -1,30 +1,38 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use jsonrpc_core::server::MethodsError;
+use jsonrpc_core::{RpcResult, server::MethodsError};
 use jsonrpsee::{RpcModule, core as jsonrpc_core, rpc_params};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, L1Status};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_tests::asm_tests::make_test_asm_state;
 use strata_db_types::ol_state_index::IndexingWrites;
-use strata_identifiers::{AccountId, Buf32, EpochCommitment, L1BlockCommitment};
+use strata_identifiers::{
+    AccountId, Buf32, Epoch, EpochCommitment, L1BlockCommitment, OLBlockCommitment,
+};
+use strata_ol_block_ancestry_provider::{BlockAncestryError, test_utils::BlockAncestryView};
 use strata_ol_canonical_chain_provider::{
     FinalizedOLChainProvider, OLCanonicalChainProvider, OLCanonicalChainProviderImpl,
     test_utils::{build_checkpoint_payload, finalize_epoch, record_l1_observation},
 };
-use strata_ol_rpc_types::{OLRpcProvider, RpcCheckpointInfo};
-use strata_status::StatusChannel;
+use strata_ol_chain_types_v1::OLBlockHeaderV1;
+use strata_ol_rpc_types::{OLRpcProvider, RpcCheckpointInfo, RpcOLBlockSummary};
+use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage, test_runtime_handle};
 
 use super::{
     RpcDeps, build_public_rpc_module, build_submit_rpc_module,
-    errors::FINALIZED_CLIENT_STATE_UNAVAILABLE_CODE, provider::NodeRpcProvider,
+    errors::{FINALIZED_CLIENT_STATE_UNAVAILABLE_CODE, INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
+    provider::NodeRpcProvider,
 };
 use crate::run_context::NodeRole;
 
 struct RpcFixture {
     /// Node storage the RPC modules and providers read.
     storage: Arc<NodeStorage>,
+
+    /// Coherent block history backed by `storage.ol_block()`.
+    block_history: BlockAncestryView,
 
     /// Genesis epoch.
     genesis_epoch: EpochCommitment,
@@ -37,15 +45,18 @@ struct RpcFixture {
 }
 
 impl RpcFixture {
-    /// Creates a fixture whose storage holds the genesis epoch's summary, its last block in
-    /// the canonical block index, and `genesis_l1` as the canonical L1 chain.
+    /// Creates a fixture storing the genesis block and summary, its slot-zero canonical OL
+    /// entry, and `genesis_l1` as the canonical L1 block at height 100.
     fn new() -> Self {
         let genesis_l1 = L1BlockCommitment::new(100, Buf32::from([100; 32]).into());
+        let storage =
+            Arc::new(create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap());
+        let block_history = BlockAncestryView::with_storage(storage.ol_block().clone());
+        let genesis = block_history.genesis().clone();
         let fixture = Self {
-            storage: Arc::new(
-                create_node_storage(get_test_sled_backend(), test_runtime_handle()).unwrap(),
-            ),
-            genesis_epoch: EpochCommitment::new(0, 0, Buf32::from([1; 32]).into()),
+            storage,
+            block_history,
+            genesis_epoch: EpochCommitment::from_terminal(0, genesis.compute_block_commitment()),
             genesis_l1,
             status_channel: Arc::new(StatusChannel::new(
                 ClientState::new(None, None),
@@ -67,6 +78,42 @@ impl RpcFixture {
             .extend_canonical_chain(fixture.genesis_l1.blkid(), 100)
             .unwrap();
         fixture
+    }
+
+    fn genesis_header(&self) -> OLBlockHeaderV1 {
+        self.block_history.genesis().clone()
+    }
+
+    fn append_block(&mut self, parent: &OLBlockHeaderV1) -> OLBlockHeaderV1 {
+        self.block_history.append_block(parent)
+    }
+
+    fn append_terminal_block(&mut self, parent: &OLBlockHeaderV1) -> OLBlockHeaderV1 {
+        self.block_history.append_terminal_block(parent)
+    }
+
+    fn drop_body(&mut self, block: &OLBlockHeaderV1) {
+        self.block_history.drop_body(block.compute_blkid());
+    }
+
+    fn drop_header(&mut self, block: &OLBlockHeaderV1) {
+        self.block_history.drop_header(block.compute_blkid());
+    }
+
+    fn promote_history_base(&mut self, terminal: &OLBlockHeaderV1) -> EpochCommitment {
+        self.block_history.promote_history_anchor(terminal)
+    }
+
+    fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>> {
+        test_runtime_handle()
+            .block_on(
+                self.public_module(NodeRole::Sequencer)
+                    .call("strata_getCheckpointInfo", rpc_params![epoch]),
+            )
+            .map_err(|error| match error {
+                MethodsError::JsonRpc(error) => error,
+                error => panic!("unexpected RPC invocation failure: {error}"),
+            })
     }
 
     fn store_summary(&self, commitment: EpochCommitment, previous: EpochCommitment) {
@@ -146,6 +193,291 @@ impl RpcFixture {
             seq_deps: None,
         }
     }
+}
+
+#[test]
+fn test_recent_blocks_follow_canonical_tip_not_sync_status() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let pivot = fixture.append_block(&genesis);
+    let branch_a = fixture.append_terminal_block(&pivot);
+    let branch_b = fixture.append_terminal_block(&pivot);
+    let tip_b = fixture.append_block(&branch_b);
+
+    // The canonical index already selects branch B while sync status still names branch A.
+    fixture
+        .status_channel
+        .update_ol_sync_status(OLSyncStatusUpdate::new(OLSyncStatus::new(
+            branch_a.compute_block_commitment(),
+            branch_a.epoch(),
+            true,
+            EpochCommitment::from_terminal(branch_a.epoch(), branch_a.compute_block_commitment()),
+            fixture.genesis_epoch,
+            fixture.genesis_epoch,
+            fixture.genesis_l1,
+        )));
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(
+            1,
+            vec![
+                pivot.compute_blkid(),
+                branch_b.compute_blkid(),
+                tip_b.compute_blkid(),
+            ],
+        )
+        .unwrap();
+    // The RPC must start from the canonical index rather than the stale status tip.
+    let summaries: Vec<RpcOLBlockSummary> = test_runtime_handle()
+        .block_on(
+            fixture
+                .public_module(NodeRole::Sequencer)
+                .call("strata_getRecentBlocks", rpc_params![3]),
+        )
+        .unwrap();
+    // The returned history is branch B's canonical suffix in execution order.
+    assert_eq!(
+        summaries
+            .iter()
+            .map(|block| block.blkid())
+            .collect::<Vec<_>>(),
+        vec![
+            pivot.compute_blkid(),
+            branch_b.compute_blkid(),
+            tip_b.compute_blkid()
+        ]
+    );
+}
+
+#[test]
+fn test_missing_body_after_header_traversal_returns_not_found() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let first = fixture.append_terminal_block(&genesis);
+    let tip = fixture.append_block(&first);
+
+    // Keep the first block's header for ancestry traversal while removing its body.
+    fixture.drop_body(&first);
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(1, vec![first.compute_blkid(), tip.compute_blkid()])
+        .unwrap();
+    // Header traversal succeeds, but rendering the recent block requires the missing body.
+    let error = test_runtime_handle()
+        .block_on(
+            fixture
+                .public_module(NodeRole::Sequencer)
+                .call::<_, Vec<RpcOLBlockSummary>>("strata_getRecentBlocks", rpc_params![2]),
+        )
+        .unwrap_err();
+    let MethodsError::JsonRpc(error) = error else {
+        panic!("expected block-read RPC error")
+    };
+    // Body absence is exposed as the existing block-not-found RPC response.
+    assert_eq!(error.code(), INVALID_PARAMS_CODE);
+    assert_eq!(
+        error.message(),
+        format!("block not found: {}", first.compute_blkid())
+    );
+}
+
+#[test]
+fn test_recent_blocks_exclude_history_base_and_pruned_prefix() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let history_base = fixture.append_terminal_block(&genesis);
+    let first = fixture.append_block(&history_base);
+    let tip = fixture.append_block(&first);
+
+    // Promotion retains only the base header below the two newer full blocks.
+    fixture.promote_history_base(&history_base);
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(
+            first.slot(),
+            vec![first.compute_blkid(), tip.compute_blkid()],
+        )
+        .unwrap();
+
+    // The production provider must stop before the history base without reading older data.
+    let summaries: Vec<RpcOLBlockSummary> = test_runtime_handle()
+        .block_on(
+            fixture
+                .public_module(NodeRole::Sequencer)
+                .call("strata_getRecentBlocks", rpc_params![10]),
+        )
+        .unwrap();
+
+    assert_eq!(
+        summaries
+            .iter()
+            .map(RpcOLBlockSummary::blkid)
+            .collect::<Vec<_>>(),
+        vec![first.compute_blkid(), tip.compute_blkid()]
+    );
+}
+
+#[test]
+fn test_checkpoint_start_changes_with_selected_branch_after_reorg() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let pivot = fixture.append_block(&genesis);
+    let previous_a = fixture.append_terminal_block(&pivot);
+    let first_a = fixture.append_block(&previous_a);
+    let terminal_a = fixture.append_terminal_block(&first_a);
+    let fork = fixture.append_block(&pivot);
+    let previous_b = fixture.append_terminal_block(&fork);
+    let first_b = fixture.append_block(&previous_b);
+    let terminal_b = fixture.append_terminal_block(&first_b);
+
+    // Both branches have exact summaries for epoch 2 but different first and terminal blocks.
+    for (previous, terminal) in [(&previous_a, &terminal_a), (&previous_b, &terminal_b)] {
+        let previous_epoch = EpochCommitment::from_terminal(1, previous.compute_block_commitment());
+        fixture.store_summary(previous_epoch, fixture.genesis_epoch);
+        fixture.store_summary(
+            EpochCommitment::from_terminal(2, terminal.compute_block_commitment()),
+            previous_epoch,
+        );
+    }
+    // Select each branch in turn and query the same checkpoint epoch.
+    for (chain, first, terminal) in [
+        (
+            vec![&pivot, &previous_a, &first_a, &terminal_a],
+            &first_a,
+            &terminal_a,
+        ),
+        (
+            vec![&pivot, &fork, &previous_b, &first_b, &terminal_b],
+            &first_b,
+            &terminal_b,
+        ),
+    ] {
+        fixture
+            .storage
+            .ol_block()
+            .replace_canonical_suffix_from_blocking(
+                1,
+                chain
+                    .into_iter()
+                    .map(OLBlockHeaderV1::compute_blkid)
+                    .collect(),
+            )
+            .unwrap();
+        let info = fixture.get_checkpoint_info(2).unwrap().unwrap();
+        // The start and end must follow the branch selected by the canonical index.
+        assert_eq!(info.l2_start, Some(first.compute_block_commitment()));
+        assert_eq!(info.l2_end, terminal.compute_block_commitment());
+    }
+}
+
+#[test]
+fn test_checkpoint_predecessor_mismatch_returns_internal_error() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let previous = fixture.append_terminal_block(&genesis);
+    let terminal = fixture.append_terminal_block(&previous);
+    let commitment = EpochCommitment::from_terminal(2, terminal.compute_block_commitment());
+
+    // The summary names the right predecessor ID at the wrong slot.
+    let wrong = OLBlockCommitment::new(previous.slot() + 1, previous.compute_blkid());
+    fixture.store_summary(commitment, EpochCommitment::from_terminal(1, wrong));
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(terminal.slot(), vec![terminal.compute_blkid()])
+        .unwrap();
+    // The RPC compares the ancestry walk's exact commitment with the summary predecessor.
+    let error = fixture.get_checkpoint_info(2).unwrap_err();
+
+    // A server-selected inconsistent summary is an internal error, not client input failure.
+    assert_eq!(error.code(), INTERNAL_ERROR_CODE);
+    let expected = BlockAncestryError::PreviousTerminalMismatch {
+        expected: wrong,
+        actual: previous.compute_block_commitment(),
+    };
+    assert_eq!(error.message(), expected.to_string());
+}
+
+#[test]
+fn test_missing_checkpoint_ancestor_returns_internal_error() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let first = fixture.append_block(&genesis);
+    let terminal = fixture.append_terminal_block(&first);
+    fixture.store_summary(
+        EpochCommitment::from_terminal(1, terminal.compute_block_commitment()),
+        fixture.genesis_epoch,
+    );
+
+    // Remove the intermediate header required to reach epoch 1's first block.
+    fixture.drop_header(&first);
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(terminal.slot(), vec![terminal.compute_blkid()])
+        .unwrap();
+    // The production ancestry provider must preserve the missing-header failure through RPC.
+    let error = fixture.get_checkpoint_info(1).unwrap_err();
+
+    assert_eq!(error.code(), INTERNAL_ERROR_CODE);
+    let expected = BlockAncestryError::MissingHeader(first.compute_blkid());
+    assert_eq!(error.message(), expected.to_string());
+}
+
+#[test]
+fn test_checkpoint_epoch_mismatch_returns_internal_error() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let terminal = fixture.append_terminal_block(&genesis);
+
+    // Store a summary that assigns the terminal to an epoch other than its header's.
+    let commitment = EpochCommitment::from_terminal(2, terminal.compute_block_commitment());
+    fixture.store_summary(commitment, fixture.genesis_epoch);
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(terminal.slot(), vec![terminal.compute_blkid()])
+        .unwrap();
+
+    let error = fixture.get_checkpoint_info(2).unwrap_err();
+
+    assert_eq!(error.code(), INTERNAL_ERROR_CODE);
+    let expected = BlockAncestryError::EpochTerminalMismatch {
+        expected: commitment,
+        actual: EpochCommitment::from_terminal(
+            terminal.epoch(),
+            terminal.compute_block_commitment(),
+        ),
+    };
+    assert_eq!(error.message(), expected.to_string());
+}
+
+#[test]
+fn test_nonterminal_checkpoint_summary_returns_internal_error() {
+    let mut fixture = RpcFixture::new();
+    let genesis = fixture.genesis_header();
+    let nonterminal = fixture.append_block(&genesis);
+
+    // A stored summary points at a block whose header does not carry the terminal flag.
+    let commitment = EpochCommitment::from_terminal(1, nonterminal.compute_block_commitment());
+    fixture.store_summary(commitment, fixture.genesis_epoch);
+    fixture
+        .storage
+        .ol_block()
+        .replace_canonical_suffix_from_blocking(
+            nonterminal.slot(),
+            vec![nonterminal.compute_blkid()],
+        )
+        .unwrap();
+
+    let error = fixture.get_checkpoint_info(1).unwrap_err();
+
+    assert_eq!(error.code(), INTERNAL_ERROR_CODE);
+    let expected = BlockAncestryError::MissingTerminalFlag(commitment);
+    assert_eq!(error.message(), expected.to_string());
 }
 
 #[test]

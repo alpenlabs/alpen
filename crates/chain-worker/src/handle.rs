@@ -104,19 +104,33 @@ impl ChainWorkerHandle {
             .map_err(convert_service_error)?
     }
 
-    /// Reconstruct and persist an epoch's state from its checkpoint (async).
-    pub async fn apply_checkpoint(&self, epoch: EpochCommitment) -> WorkerResult<()> {
+    /// Reconstructs and persists an epoch from its checkpoint and explicit predecessor (async).
+    pub async fn apply_checkpoint(
+        &self,
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+    ) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait(|completion| ChainWorkerMessage::ApplyCheckpoint(epoch, completion))
+            .send_and_wait(|completion| ChainWorkerMessage::ApplyCheckpoint {
+                epoch,
+                previous_epoch,
+                completion,
+            })
             .await
             .map_err(convert_service_error)?
     }
 
-    /// Reconstruct and persist an epoch's state from its checkpoint (blocking).
-    pub fn apply_checkpoint_blocking(&self, epoch: EpochCommitment) -> WorkerResult<()> {
+    /// Reconstructs and persists an epoch from its checkpoint and explicit predecessor (blocking).
+    pub fn apply_checkpoint_blocking(
+        &self,
+        epoch: EpochCommitment,
+        previous_epoch: EpochCommitment,
+    ) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|completion| {
-                ChainWorkerMessage::ApplyCheckpoint(epoch, completion)
+            .send_and_wait_blocking(|completion| ChainWorkerMessage::ApplyCheckpoint {
+                epoch,
+                previous_epoch,
+                completion,
             })
             .map_err(convert_service_error)?
     }

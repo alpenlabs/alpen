@@ -19,6 +19,13 @@ pub enum Error {
     #[error("missing OL block {0}")]
     MissingOLBlock(OLBlockId),
 
+    /// FCM loaded a tip header that does not compute to the selected tip commitment.
+    #[error("OL tip header commitment mismatch (expected {expected}, got {actual})")]
+    OLTipHeaderCommitmentMismatch {
+        expected: OLBlockCommitment,
+        actual: OLBlockCommitment,
+    },
+
     #[error("missing OL state for block {0}")]
     MissingOLState(OLBlockCommitment),
 
