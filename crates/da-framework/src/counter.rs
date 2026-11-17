@@ -119,15 +119,13 @@ impl<S: CounterScheme> CompoundMember for DaCounter<S> {
         <Self as DaWrite>::is_default(self)
     }
 
+    /// Reads a zero increment under a set bit as [`DaCounter::Unchanged`], as
+    /// `v0.5.0-rc.2` did, although `encode_set` never writes one. The frozen
+    /// V0 to V2 checkpoint programs accept that spelling, so rejecting it here
+    /// would fail on payloads they prove (SECFND-912). Canonical form is
+    /// checked by the V3 rules on the whole payload.
     fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self> {
-        let incr = <S::Incr as Codec>::decode(dec)?;
-        // The bitmap already says "changed", so a zero increment here is
-        // `Unchanged` spelled a second way. `encode_set` refuses to write it;
-        // refuse to read it, so the two forms cannot name one value.
-        if S::is_zero(&incr) {
-            return Err(CodecError::InvalidVariant("counter"));
-        }
-        Ok(Self::Changed(incr))
+        Ok(Self::new_changed(<S::Incr as Codec>::decode(dec)?))
     }
 
     fn encode_set(&self, enc: &mut impl Encoder) -> CodecResult<()> {
@@ -135,7 +133,7 @@ impl<S: CounterScheme> CompoundMember for DaCounter<S> {
             // The compound writes `Unchanged` as a clear bit, never through here.
             DaCounter::Unchanged => Err(CodecError::InvalidVariant("counter")),
             // A hand-built `Changed(zero)` is the malformed value the variant's
-            // doc names; refuse it here as `decode_set` refuses its bytes.
+            // doc names; refuse it so a zero increment is never written.
             DaCounter::Changed(d) if S::is_zero(d) => Err(CodecError::InvalidVariant("counter")),
             DaCounter::Changed(d) => d.encode(enc),
         }
@@ -411,24 +409,26 @@ mod tests {
     }
 
     #[test]
-    fn test_counter_decode_set_rejects_a_zero_increment() {
-        // `encode_set` never writes a zero increment under a set bit, so
-        // reading one would give `Unchanged` a second byte form.
+    fn test_counter_decode_set_reads_a_zero_increment_as_unchanged() {
+        // `encode_set` never writes a zero increment under a set bit, but the
+        // `v0.5.0-rc.2` decoder read one as `Unchanged`, and so does this one.
         let mut dec = BufDecoder::new(&[0x00]);
-        assert!(matches!(
-            DaCounter::<CtrU64ByUnsignedVarInt>::decode_set(&mut dec),
-            Err(CodecError::InvalidVariant("counter"))
-        ));
-        let mut dec = BufDecoder::new(&[0x00]);
-        assert!(matches!(
-            DaCounter::<CtrU64BySignedVarInt>::decode_set(&mut dec),
-            Err(CodecError::InvalidVariant("counter"))
-        ));
+        let decoded = DaCounter::<CtrU64ByUnsignedVarInt>::decode_set(&mut dec).unwrap();
+        assert_eq!(decoded.diff(), None);
+        assert_eq!(dec.remaining(), 0);
+
+        // A negative zero is a zero increment too.
+        for bytes in [[0x00], [0x40]] {
+            let mut dec = BufDecoder::new(&bytes);
+            let decoded = DaCounter::<CtrU64BySignedVarInt>::decode_set(&mut dec).unwrap();
+            assert_eq!(decoded.diff(), None, "{bytes:02x?}");
+            assert_eq!(dec.remaining(), 0);
+        }
+
         let mut dec = BufDecoder::new(&[0x00, 0x00]);
-        assert!(matches!(
-            DaCounter::<CtrU64ByI16>::decode_set(&mut dec),
-            Err(CodecError::InvalidVariant("counter"))
-        ));
+        let decoded = DaCounter::<CtrU64ByI16>::decode_set(&mut dec).unwrap();
+        assert_eq!(decoded.diff(), None);
+        assert_eq!(dec.remaining(), 0);
     }
 
     #[test]

@@ -1834,3 +1834,64 @@ fn test_v3_requires_the_shortest_withdrawal_len_prefix() {
         "V3 emits the update log alone"
     );
 }
+
+/// V3 replays an epoch only from the DA bytes the encoder writes. V1 and V2
+/// also replay another spelling of the same diff, as the checkpoint programs
+/// that prove them do, and reach the state the canonical bytes give.
+#[test]
+fn test_v3_replays_only_the_canonical_da_encoding() {
+    let epoch = build_v1_epoch();
+    let prev_terminal = epoch.genesis.header().compute_block_commitment();
+    let manifests = [make_empty_manifest(EPOCH_RUNNER_TERMINAL_L1_HEIGHT, 0)];
+
+    let canonical =
+        encode_to_vec(&OLDaPayloadV1::new(OLStateDiffV1::default())).expect("encode diff");
+    // The payload opens with the presence bits of the global diff's two
+    // members. The top bit names no member, so the decoders skip it and the
+    // encoder never sets it.
+    assert_eq!(canonical[0], 0x00);
+    let mut other_spelling = canonical.clone();
+    other_spelling[0] = 0x80;
+
+    // The state an epoch under `spec` starts from: V3 takes over only a V2
+    // state, and V1 and V2 open the V1 post-genesis state.
+    let pre_epoch_state = |spec: OLSpecId| {
+        let mut state = epoch.pre_epoch_state.clone();
+        if spec == OLSpecId::V3 {
+            state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+        }
+        state
+    };
+    let replay = |spec: OLSpecId, diff: &[u8]| {
+        let mut state = pre_epoch_state(spec);
+        replay_epoch_1_with_diff(spec, &mut state, prev_terminal, diff, &manifests)
+            .map(|()| state.compute_state_root().expect("state root"))
+    };
+
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        let canonical_root = replay(spec, &canonical).expect("replays the canonical bytes");
+        let other_root = replay(spec, &other_spelling).expect("replays the other spelling");
+        assert_eq!(other_root, canonical_root, "{spec:?}");
+    }
+
+    let canonical_root = replay(OLSpecId::V3, &canonical).expect("V3 replays the canonical bytes");
+    let err = replay(OLSpecId::V3, &other_spelling).expect_err("V3 rejects the other spelling");
+    assert!(matches!(err, EpochDaReplayError::Decode(_)), "{err}");
+
+    let terminal_info = BlockInfo::new(
+        EPOCH_RUNNER_GENESIS_TIMESTAMP + EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+        1,
+        1,
+    );
+    let err = verify_epoch_with_diff(
+        OLSpecId::V3,
+        &mut pre_epoch_state(OLSpecId::V3),
+        &EpochInfo::new(terminal_info, prev_terminal),
+        &other_spelling,
+        &manifests,
+        &EpochExecExpectations::new(canonical_root),
+        &OLRuntimeParams::test_default(),
+    )
+    .expect_err("V3 verification rejects the other spelling");
+    assert!(matches!(err, EpochDaReplayError::Decode(_)), "{err}");
+}

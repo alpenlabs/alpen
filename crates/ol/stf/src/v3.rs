@@ -32,7 +32,7 @@ use strata_ol_stf_v1::{
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
-use crate::capped_v1::CappedV1Rules;
+use crate::capped_v1::{CappedV1Rules, DaDiffEncoding};
 use crate::da::EpochDaReplayError;
 use crate::limits::OLSpecLimits;
 use crate::spec::OLStfSpec;
@@ -43,12 +43,13 @@ pub(crate) struct StfV3;
 
 impl StfV3 {
     /// V3 runs the V1 code with the V3 amendments, within the V3 capacities,
-    /// and takes over a V2 state.
+    /// takes over a V2 state, and replays only the canonical DA encoding.
     const RULES: CappedV1Rules = CappedV1Rules::new(
         OLSpecId::V3,
         OLSpecId::V2,
         OLSpecLimits::V3,
         RuleAmendments::V3,
+        DaDiffEncoding::Canonical,
     );
 }
 

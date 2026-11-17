@@ -106,6 +106,11 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
         self.new_entries.is_empty()
     }
 
+    /// Reads a zero entry count under a set bit as an empty diff, as
+    /// `v0.5.0-rc.2` did, although `encode_set` never writes one. The frozen
+    /// V0 to V2 checkpoint programs accept that spelling, so rejecting it here
+    /// would fail on payloads they prove (SECFND-912). Canonical form is
+    /// checked by the V3 rules on the whole payload.
     fn decode_set(dec: &mut impl Decoder) -> CodecResult<Self> {
         // Decode the counter and bounds check it.
         let cnt = <A::InsertCnt as Codec>::decode(dec)?;
@@ -115,12 +120,6 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
         }
 
         let cnt: usize = cnt.try_into().map_err(|_| CodecError::OverflowContainer)?;
-
-        // The compound writes an empty diff as a clear bit, so a set bit with
-        // no entries would be that same write spelled a second way.
-        if cnt == 0 {
-            return Err(CodecError::InvalidVariant("linacc"));
-        }
 
         // Decode each entry.
         let mut new_entries = Vec::new();
@@ -260,24 +259,29 @@ mod tests {
         let diff = DaLinacc::<TestMmr>::new();
 
         // Empty diff should be default: the compound writes it as a clear bit,
-        // and the member refuses to spell it under a set bit either way.
+        // and the member refuses to spell it under a set bit.
         assert!(DaWrite::is_default(&diff));
         let mut encoder = Vec::new();
         assert!(matches!(
             CompoundMember::encode_set(&diff, &mut encoder),
             Err(CodecError::InvalidVariant("linacc"))
         ));
+        assert_eq!(encoder, Vec::<u8>::new());
+
+        // A zero count under a set bit still decodes, to the empty diff, as it
+        // did at `v0.5.0-rc.2`.
         let zero_count = [0u8; 8]; // `TestMmr::InsertCnt` is a u64
         let mut decoder = BufDecoder::new(&zero_count);
-        assert!(matches!(
-            <DaLinacc<TestMmr> as CompoundMember>::decode_set(&mut decoder),
-            Err(CodecError::InvalidVariant("linacc"))
-        ));
+        let decoded = <DaLinacc<TestMmr> as CompoundMember>::decode_set(&mut decoder)
+            .expect("test: a zero count should decode");
+        assert_eq!(decoder.remaining(), 0);
+        assert_eq!(decoded.new_entries().len(), 0);
+        assert!(DaWrite::is_default(&decoded));
 
-        // Apply the empty diff - should be a no-op
+        // Apply the decoded empty diff - should be a no-op
         let initial_entries = mmr.0.num_entries();
         let initial_peaks: Vec<_> = mmr.0.iter_peaks().map(|(h, p)| (h, *p)).collect();
-        DaWrite::apply(&diff, &mut mmr, &()).expect("test: apply should succeed");
+        DaWrite::apply(&decoded, &mut mmr, &()).expect("test: apply should succeed");
         assert_eq!(mmr.0.num_entries(), initial_entries);
 
         // Verify peaks unchanged

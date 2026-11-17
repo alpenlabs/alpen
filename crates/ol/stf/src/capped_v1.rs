@@ -52,10 +52,13 @@
 use std::slice;
 
 use strata_acct_types::{AccountId, TxEffects};
+use strata_codec::CodecError;
 use strata_ol_chain_types_v1::{
     AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1,
 };
-use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_da_types_v1::{
+    OLDaPayloadV1, OLDaSchemeV1, decode_ol_da_payload_bytes, decode_ol_da_payload_bytes_canonical,
+};
 use strata_ol_params::{BridgeParams, OLRuntimeParams};
 use strata_ol_state_types::{
     IAccountState, IStateAccessorMut, OLSpecId, OLSpecVersions, TxProofIndexer,
@@ -74,29 +77,34 @@ use crate::limits::OLSpecLimits;
 ///
 /// `predecessor` is the spec whose state `spec` takes over, and comes before
 /// it in activation order. `amendments` are the rules the spec amends in the
-/// V1 code.
+/// V1 code, and `da_encoding` is the encoding of the epoch DA diff it
+/// replays.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CappedV1Rules {
     spec: OLSpecId,
     predecessor: OLSpecId,
     limits: OLSpecLimits,
     amendments: RuleAmendments,
+    da_encoding: DaDiffEncoding,
 }
 
 impl CappedV1Rules {
     /// Creates the rules of `spec`, which takes over `predecessor`'s state,
-    /// allows `limits`, and runs the V1 code with `amendments`.
+    /// allows `limits`, runs the V1 code with `amendments`, and replays epoch
+    /// DA diffs in `da_encoding`.
     pub(crate) const fn new(
         spec: OLSpecId,
         predecessor: OLSpecId,
         limits: OLSpecLimits,
         amendments: RuleAmendments,
+        da_encoding: DaDiffEncoding,
     ) -> Self {
         Self {
             spec,
             predecessor,
             limits,
             amendments,
+            da_encoding,
         }
     }
 
@@ -205,7 +213,10 @@ impl CappedV1Rules {
         // state before decoding, so a rejected replay never depends on the
         // diff.
         self.take_over_state(state, true)?;
-        let diff = decode_ol_da_payload_bytes(encoded_diff).map_err(EpochDaReplayError::Decode)?;
+        let diff = self
+            .da_encoding
+            .decode(encoded_diff)
+            .map_err(EpochDaReplayError::Decode)?;
         v1::apply_da_epoch::<S, OLDaSchemeV1>(state, epoch_info, diff, manifests, runtime_params)
             .map_err(EpochDaReplayError::Exec)
     }
@@ -222,7 +233,10 @@ impl CappedV1Rules {
         runtime_params: &OLRuntimeParams,
     ) -> Result<(), EpochDaReplayError> {
         self.take_over_state(state, true)?;
-        let diff = decode_ol_da_payload_bytes(encoded_diff).map_err(EpochDaReplayError::Decode)?;
+        let diff = self
+            .da_encoding
+            .decode(encoded_diff)
+            .map_err(EpochDaReplayError::Decode)?;
         v1::verify_epoch_with_diff::<S, OLDaSchemeV1>(
             state,
             epoch_info,
@@ -363,6 +377,33 @@ impl CappedV1Rules {
                 spec: self.spec,
                 state_spec_version: state_spec.into(),
             })
+        }
+    }
+}
+
+/// The encodings of an epoch's V1 DA diff a rule set replays.
+///
+/// The checkpoint claim commits to the diff's bytes, not to the diff they
+/// decode to, so the rules also decide which bytes spell a diff.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum DaDiffEncoding {
+    /// Every encoding the V1 DA decoders read, including the ones the encoder
+    /// never writes.
+    ///
+    /// The V1 and V2 checkpoint programs read all of them, so a node has to
+    /// replay each one to follow the epochs those programs prove.
+    AnyDecodable,
+
+    /// Only the encoding the encoder writes, so a diff has one spelling.
+    Canonical,
+}
+
+impl DaDiffEncoding {
+    /// Decodes an encoded DA diff, accepting the encodings this names.
+    fn decode(self, encoded_diff: &[u8]) -> Result<OLDaPayloadV1, CodecError> {
+        match self {
+            Self::AnyDecodable => decode_ol_da_payload_bytes(encoded_diff),
+            Self::Canonical => decode_ol_da_payload_bytes_canonical(encoded_diff),
         }
     }
 }
