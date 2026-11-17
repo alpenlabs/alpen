@@ -1,6 +1,7 @@
 //! Smoke tests for dispatch under [`OLSpecId::V1`], tests for the
 //! [`OLSpecId::V0`] genesis and epoch replay, for the states [`OLSpecId::V2`]
-//! takes over and the capacities it enforces, and for spec selection.
+//! and [`OLSpecId::V3`] take over and the capacities V2 enforces, and for
+//! spec selection.
 //!
 //! The differential tests in `strata-ol-checkpoint` and
 //! `strata-ol-block-assembly` compare the drivers against each other.
@@ -877,11 +878,15 @@ fn test_v0_replay_rejects_manifest_height_gap() {
     );
 }
 
-/// V2 takes over a V1 state when it opens an epoch, as the first V2 epoch
-/// does after a V1 enactment, but never continues an epoch that started
-/// under V1.
-#[test]
-fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
+/// Checks that `spec` takes over a `predecessor` state when it opens an
+/// epoch, as the first `spec` epoch does after a `predecessor` enactment, and
+/// records `spec` in the state root, but never continues an epoch that
+/// started under `predecessor`.
+///
+/// The V1 code ignores the versions of any state after V0, so a V1 epoch
+/// whose states are relabelled as `predecessor` stands for a `predecessor`
+/// epoch.
+fn assert_takes_over_only_at_an_epoch_start(spec: OLSpecId, predecessor: OLSpecId) {
     let epoch = build_v1_epoch();
     let runtime_params = OLRuntimeParams::test_default();
     let [first, second, ..] = epoch.epoch_blocks.as_slice() else {
@@ -893,12 +898,19 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
     let block_info = BlockInfo::from_header(first.header());
     let block_context = BlockContext::new(&block_info, Some(epoch.genesis.header()));
     let mut state = epoch.pre_epoch_state.clone();
-    sequencer::execute_block_initialization(OLSpecId::V2, &mut state, &block_context)
-        .expect("V2 opens the epoch");
-    assert_eq!(state.spec_versions(), OLSpecVersions::uniform(OLSpecId::V2));
+    state.set_spec_versions(OLSpecVersions::uniform(predecessor));
+    let predecessor_root = state.compute_state_root().expect("state root");
+    sequencer::execute_block_initialization(spec, &mut state, &block_context)
+        .expect("the spec opens the epoch");
+    assert_eq!(state.spec_versions(), OLSpecVersions::uniform(spec));
+    assert_ne!(
+        state.compute_state_root().expect("state root"),
+        predecessor_root,
+        "the state root records the spec that took over"
+    );
 
-    // A V1 state in the middle of an epoch, after V1 ran the epoch's first
-    // block.
+    // A predecessor state in the middle of an epoch, after the epoch's first
+    // block ran.
     let mut state = epoch.pre_epoch_state;
     verify_block(
         OLSpecId::V1,
@@ -909,36 +921,35 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
         &runtime_params,
     )
     .expect("V1 verifies its own block");
+    state.set_spec_versions(OLSpecVersions::uniform(predecessor));
     let mid_epoch_root = state.compute_state_root().expect("state root");
 
     let err = verify_block(
-        OLSpecId::V2,
+        spec,
         &mut state,
         second.header(),
         Some(first.header()),
         second.body(),
         &runtime_params,
     )
-    .expect_err("V2 must not continue a V1 epoch");
+    .expect_err("the spec must not continue a predecessor epoch");
     assert!(
         matches!(
             err,
-            ExecError::ContinuesEarlierSpecEpoch {
-                spec: OLSpecId::V2,
-                state_spec: OLSpecId::V1,
-            }
+            ExecError::ContinuesEarlierSpecEpoch { spec: s, state_spec }
+                if s == spec && state_spec == predecessor
         ),
         "{err}"
     );
 
     let err = execute_block_batch_predrain(
-        OLSpecId::V2,
+        spec,
         &mut state,
         slice::from_ref(second),
         first.header(),
         &runtime_params,
     )
-    .expect_err("V2 must not continue a V1 epoch in a batch");
+    .expect_err("the spec must not continue a predecessor epoch in a batch");
     assert!(
         matches!(err, ExecError::ContinuesEarlierSpecEpoch { .. }),
         "{err}"
@@ -946,8 +957,8 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
 
     let block_info = BlockInfo::from_header(second.header());
     let block_context = BlockContext::new(&block_info, Some(first.header()));
-    let err = sequencer::execute_block_initialization(OLSpecId::V2, &mut state, &block_context)
-        .expect_err("V2 must not open a block that continues a V1 epoch");
+    let err = sequencer::execute_block_initialization(spec, &mut state, &block_context)
+        .expect_err("the spec must not open a block that continues a predecessor epoch");
     assert!(
         matches!(err, ExecError::ContinuesEarlierSpecEpoch { .. }),
         "{err}"
@@ -960,37 +971,32 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
     );
 }
 
-/// Each enactment advances the spec by one, so V2 never takes over a V0
-/// state.
-#[test]
-fn test_v2_rejects_a_v0_state() {
+/// Checks that `spec` refuses, without touching it, a `state_spec` state at
+/// the start of an epoch, in block verification and in epoch replay, with
+/// the error `is_expected` accepts.
+fn assert_rejects_state_of(
+    spec: OLSpecId,
+    state_spec: OLSpecId,
+    is_expected: impl Fn(&ExecError) -> bool,
+) {
     let epoch = build_v1_epoch();
     let runtime_params = OLRuntimeParams::test_default();
     let first = &epoch.epoch_blocks[0];
     let terminal = epoch.epoch_blocks.last().expect("epoch has a terminal");
     let mut state = epoch.pre_epoch_state;
-    state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+    state.set_spec_versions(OLSpecVersions::uniform(state_spec));
     let pre_root = state.compute_state_root().expect("state root");
 
     let err = verify_block(
-        OLSpecId::V2,
+        spec,
         &mut state,
         first.header(),
         Some(epoch.genesis.header()),
         first.body(),
         &runtime_params,
     )
-    .expect_err("V2 must not take over a V0 state");
-    assert!(
-        matches!(
-            err,
-            ExecError::StateFromEarlierSpec {
-                spec: OLSpecId::V2,
-                state_spec: OLSpecId::V0,
-            }
-        ),
-        "{err}"
-    );
+    .expect_err("the spec must not take over the state");
+    assert!(is_expected(&err), "{err}");
 
     // Replay checks the state before it decodes the diff, so even bytes that
     // would not decode report it.
@@ -999,27 +1005,82 @@ fn test_v2_rejects_a_v0_state() {
         epoch.genesis.header().compute_block_commitment(),
     );
     let err = apply_da_epoch(
-        OLSpecId::V2,
+        spec,
         &mut state,
         &epoch_info,
         &[0xff; 3],
         &[],
         &runtime_params,
     )
-    .expect_err("V2 must not replay an epoch on a V0 state");
-    assert!(
-        matches!(
-            err,
-            EpochDaReplayError::Exec(ExecError::StateFromEarlierSpec { .. })
-        ),
-        "{err}"
-    );
+    .expect_err("the spec must not replay an epoch on the state");
+    let EpochDaReplayError::Exec(err) = err else {
+        panic!("expected an execution error, got {err}");
+    };
+    assert!(is_expected(&err), "{err}");
 
     assert_eq!(
         state.compute_state_root().expect("state root"),
         pre_root,
         "a rejected takeover must not touch the state"
     );
+}
+
+/// Checks that `spec` refuses a state of `state_spec`, a spec before its
+/// predecessor, with [`ExecError::StateFromEarlierSpec`].
+fn assert_rejects_earlier_state(spec: OLSpecId, state_spec: OLSpecId) {
+    assert_rejects_state_of(spec, state_spec, |err| {
+        matches!(
+            err,
+            ExecError::StateFromEarlierSpec { spec: s, state_spec: from }
+                if *s == spec && *from == state_spec
+        )
+    });
+}
+
+/// V2 takes over a V1 state when it opens an epoch, as the first V2 epoch
+/// does after a V1 enactment, but never continues an epoch that started
+/// under V1.
+#[test]
+fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
+    assert_takes_over_only_at_an_epoch_start(OLSpecId::V2, OLSpecId::V1);
+}
+
+/// Each enactment advances the spec by one, so V2 never takes over a V0
+/// state.
+#[test]
+fn test_v2_rejects_a_v0_state() {
+    assert_rejects_earlier_state(OLSpecId::V2, OLSpecId::V0);
+}
+
+/// V2 rules never run on a state a later spec produced.
+#[test]
+fn test_v2_rejects_a_v3_state() {
+    assert_rejects_state_of(OLSpecId::V2, OLSpecId::V3, |err| {
+        matches!(
+            err,
+            ExecError::StateFromLaterSpec {
+                spec: OLSpecId::V2,
+                state_spec_version: 3,
+            }
+        )
+    });
+}
+
+/// V3 takes over a V2 state when it opens an epoch, as the first V3 epoch
+/// does after a V2 enactment, but never continues an epoch that started
+/// under V2.
+#[test]
+fn test_v3_takes_over_a_v2_state_only_at_an_epoch_start() {
+    assert_takes_over_only_at_an_epoch_start(OLSpecId::V3, OLSpecId::V2);
+}
+
+/// Each enactment advances the spec by one, so V3 never takes over a V1 or
+/// V0 state.
+#[test]
+fn test_v3_rejects_v1_and_v0_states() {
+    for state_spec in [OLSpecId::V1, OLSpecId::V0] {
+        assert_rejects_earlier_state(OLSpecId::V3, state_spec);
+    }
 }
 
 /// Returns the commitment of the L1 block `manifest` is for.
@@ -1050,12 +1111,14 @@ fn test_next_epoch_spec_advances_only_at_an_enactment() {
     assert_eq!(next_epoch_spec(OLSpecId::V1, None), Ok(OLSpecId::V1));
     assert_eq!(next_epoch_spec(OLSpecId::V1, Some(10)), Ok(OLSpecId::V2));
     assert_eq!(next_epoch_spec(OLSpecId::V2, None), Ok(OLSpecId::V2));
+    assert_eq!(next_epoch_spec(OLSpecId::V2, Some(10)), Ok(OLSpecId::V3));
+    assert_eq!(next_epoch_spec(OLSpecId::V3, None), Ok(OLSpecId::V3));
 
-    // This binary implements no spec after V2.
-    let err = next_epoch_spec(OLSpecId::V2, Some(10)).expect_err("V2 has no known successor");
-    assert_eq!(err.prev_spec(), OLSpecId::V2);
+    // This binary implements no spec after V3.
+    let err = next_epoch_spec(OLSpecId::V3, Some(10)).expect_err("V3 has no known successor");
+    assert_eq!(err.prev_spec(), OLSpecId::V3);
     assert_eq!(err.enactment_l1_height(), 10);
-    assert_eq!(err.spec_version(), 3);
+    assert_eq!(err.spec_version(), 4);
 }
 
 #[test]
@@ -1063,30 +1126,34 @@ fn test_select_switches_at_an_enactment_the_parent_processed() {
     let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let enactment = make_checkpoint_predicate_enactment_manifest(10, 1);
 
-    for (spec, successor) in [(OLSpecId::V0, OLSpecId::V1), (OLSpecId::V1, OLSpecId::V2)] {
+    for (spec, successor) in [
+        (OLSpecId::V0, OLSpecId::V1),
+        (OLSpecId::V1, OLSpecId::V2),
+        (OLSpecId::V2, OLSpecId::V3),
+    ] {
         assert_eq!(
             select_after(spec, prev_epoch_last_l1_block, &enactment).expect("has a successor"),
             successor
         );
     }
 
-    // V2 -> V3: the epoch after a V2 epoch that processed an enactment runs
-    // V3, which this binary does not implement.
-    let err = select_after(OLSpecId::V2, prev_epoch_last_l1_block, &enactment)
+    // V3 -> V4: the epoch after a V3 epoch that processed an enactment runs
+    // V4, which this binary does not implement.
+    let err = select_after(OLSpecId::V3, prev_epoch_last_l1_block, &enactment)
         .expect_err("upgrade required");
     let EpochSpecSelectionError::UpgradeRequired(upgrade) = err else {
         panic!("expected an upgrade-required error, got {err}");
     };
-    assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
+    assert_eq!(upgrade.prev_spec(), OLSpecId::V3);
     assert_eq!(upgrade.enactment_l1_height(), 10);
-    assert_eq!(upgrade.spec_version(), 3);
+    assert_eq!(upgrade.spec_version(), 4);
 }
 
 #[test]
 fn test_select_keeps_the_spec_after_a_plain_last_manifest() {
     let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let plain = make_empty_manifest(12, 1);
-    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2] {
+    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
         assert_eq!(
             select_after(spec, prev_epoch_last_l1_block, &plain).expect("selects"),
             spec
@@ -1101,7 +1168,7 @@ fn test_select_keeps_the_spec_after_a_plain_last_manifest() {
 #[test]
 fn test_select_ignores_an_enactment_the_parent_did_not_process() {
     let b = manifest_block(&make_checkpoint_predicate_enactment_manifest(10, 1));
-    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2] {
+    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
         let selected = select_next_epoch_spec(
             OLSpecVersions::uniform(spec),
             EpochL1Range::empty(b),
@@ -1409,6 +1476,8 @@ fn test_spec_limits() {
     assert_eq!(v2.max_block_logs(), 4_096);
     assert_eq!(v2.max_msg_payload_bytes(), MAX_MSG_PAYLOAD_BYTES);
     assert_eq!(v2.max_msg_payload_bytes(), 4_096);
+
+    assert_eq!(spec_limits(OLSpecId::V3), v2);
 }
 
 /// V2 accepts a block whose logs reach its capacity and rejects one more log

@@ -10,6 +10,7 @@ use crate::spec::{OLStfSpec, dispatch_spec};
 use crate::v0::StfV0;
 use crate::v1::StfV1;
 use crate::v2::StfV2;
+use crate::v3::StfV3;
 
 /// The transaction effect and block log capacities a spec's rules allow.
 ///
@@ -65,6 +66,9 @@ impl OLSpecLimits {
         max_msg_payload_bytes: MAX_MSG_PAYLOAD_BYTES,
         ..Self::V0
     };
+
+    /// The capacities of the V3 rules, which keep the V2 capacities.
+    pub(crate) const V3: Self = Self::V2;
 
     /// Returns the most transfers a transaction may carry.
     pub fn max_tx_transfers(&self) -> usize {

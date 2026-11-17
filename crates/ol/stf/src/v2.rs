@@ -4,8 +4,8 @@
 //! the [`strata_ol_stf_v1`] code, except that it takes over a V1 state at the
 //! first block of an epoch, as V1 takes over a V0 state, and that it allows
 //! fewer transaction effects and block logs and smaller message payloads.
-//! Rules that V2 changes later replace the V1 call of the operation they
-//! change.
+//! [`CappedV1Rules`] implements the operations V2 shares with V3, and rules
+//! that V2 changes later replace the call of the operation they change.
 //!
 //! # Capacities
 //!
@@ -13,14 +13,9 @@
 //! transaction carries at most 255 transfers and 255 messages, and a block
 //! emits at most 4,096 logs ([`OLSpecLimits`]). V2 also bounds each message
 //! payload at the 4 KiB the epoch DA encodes for an inbox message, which no
-//! earlier spec checks. The V1 types keep their larger bounds, so V1 txids
-//! and encodings never change, and V2 checks its capacities around the V1
-//! code instead. Each operation that executes a
-//! transaction checks its effects before the V1 code runs it, and each
-//! operation that executes a whole block checks the block's logs after the
-//! V1 code emits them. A transaction or block above a capacity is invalid.
-//! Block assembly composes the [`sequencer`](crate::sequencer) phases itself,
-//! so it checks the block log capacity on its own.
+//! earlier spec checks. The V1 types keep their larger bounds, so V2 checks
+//! its capacities around the V1 code instead, as [`CappedV1Rules`] describes.
+//! A transaction or block above a capacity is invalid.
 //!
 //! # Taking over a V1 state
 //!
@@ -31,42 +26,23 @@
 //! which node-side spec selection reads as the epoch's spec. V2 rules never
 //! stage a spec either.
 //!
-//! Each operation that opens a block or replays an epoch takes over the state
-//! before it runs the V1 code, so every driver, DA replay included, reaches
-//! the same root. The V1 code then leaves the versions as they are: its
-//! epoch-initial processing wraps only a V0 state, and it rejects only a V0
-//! state outside an epoch start. Taking over before the V1 code checks the
-//! block changes nothing on success, and callers discard the state of a failed
-//! operation.
-//!
 //! V2 takes over nothing else. The operations that open a block or replay an
-//! epoch fail, without touching the state, on a V0 state, and on a V1 state
-//! outside an epoch start: each enactment advances the spec by one, so only a
-//! wrong spec selection reaches either. The other operations run the V1 code
-//! without checking the versions. The transaction, manifest, and
-//! epoch-terminal phases run inside a block that
-//! [`OLStfSpec::execute_block_initialization`] opened, and mempool admission
-//! checks a transaction for the first V2 block against the V1 state that
-//! block takes over.
-
-use std::slice;
+//! epoch fail, without touching the state, on a V0 state, on a V1 state
+//! outside an epoch start, and on a state of a later spec. [`CappedV1Rules`]
+//! describes how each operation takes over the state.
 
 use strata_acct_types::{AccountId, TxEffects};
-use strata_ol_chain_types_v1::{
-    AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog, OLTxSegmentV1,
-};
-use strata_ol_da_types_v1::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_chain_types_v1::{AsmManifest, OLBlockBodyV1, OLBlockHeaderV1, OLBlockV1, OLLog};
 use strata_ol_params::{BridgeParams, OLRuntimeParams};
-use strata_ol_state_types::{
-    IAccountState, IStateAccessorMut, OLSpecId, OLSpecVersions, TxProofIndexer,
-};
+use strata_ol_state_types::{IAccountState, IStateAccessorMut, OLSpecId, TxProofIndexer};
 use strata_ol_stf_v1::{
     self as v1, BasicExecContext, BlockComponents, BlockContext, CompletedBlock,
-    ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecError, ExecResult,
-    ManifestProcessingOutcome, TxExecContext,
+    ConstructBlockOutput, EpochExecExpectations, EpochInfo, ExecResult, ManifestProcessingOutcome,
+    TxExecContext,
 };
 use strata_ol_tx_types_v1::{OLTransactionV1, SauTxOperationDataV1, TxConstraintsV1};
 
+use crate::capped_v1::CappedV1Rules;
 use crate::da::EpochDaReplayError;
 use crate::limits::OLSpecLimits;
 use crate::spec::OLStfSpec;
@@ -75,9 +51,15 @@ use crate::spec::OLStfSpec;
 #[derive(Debug)]
 pub(crate) struct StfV2;
 
+impl StfV2 {
+    /// V2 runs the V1 code within the V2 capacities and takes over a V1
+    /// state.
+    const RULES: CappedV1Rules = CappedV1Rules::new(OLSpecId::V2, OLSpecId::V1, OLSpecLimits::V2);
+}
+
 impl OLStfSpec for StfV2 {
     fn limits() -> OLSpecLimits {
-        OLSpecLimits::V2
+        Self::RULES.limits()
     }
 
     fn verify_block<S: IStateAccessorMut>(
@@ -87,13 +69,7 @@ impl OLStfSpec for StfV2 {
         body: &OLBlockBodyV1,
         runtime_params: &OLRuntimeParams,
     ) -> ExecResult<Vec<OLLog>> {
-        take_over_state(state, opens_epoch(parent_header))?;
-        if let Some(tx_segment) = body.tx_segment() {
-            check_tx_segment_effects(tx_segment)?;
-        }
-        let logs = v1::verify_block(state, header, parent_header, body, runtime_params)?;
-        Self::limits().check_block_log_count(logs.len())?;
-        Ok(logs)
+        Self::RULES.verify_block(state, header, parent_header, body, runtime_params)
     }
 
     fn construct_block<S: IStateAccessorMut>(
@@ -102,11 +78,7 @@ impl OLStfSpec for StfV2 {
         block_components: BlockComponents,
         runtime_params: &OLRuntimeParams,
     ) -> ExecResult<ConstructBlockOutput> {
-        take_over_state(state, block_context.is_epoch_initial())?;
-        check_tx_segment_effects(block_components.tx_segment())?;
-        let output = v1::construct_block(state, block_context, block_components, runtime_params)?;
-        Self::limits().check_block_log_count(output.outputs().logs().len())?;
-        Ok(output)
+        Self::RULES.construct_block(state, block_context, block_components, runtime_params)
     }
 
     fn execute_and_complete_block<S: IStateAccessorMut>(
@@ -127,30 +99,7 @@ impl OLStfSpec for StfV2 {
         initial_parent: &OLBlockHeaderV1,
         runtime_params: &OLRuntimeParams,
     ) -> ExecResult<Vec<OLLog>> {
-        // Without the epoch-terminal drain the state stays in the epoch of the
-        // first block, so only that block can open an epoch.
-        if !blocks.is_empty() {
-            take_over_state(state, opens_epoch(Some(initial_parent)))?;
-        }
-        // The V1 operation concatenates the logs of all blocks, so this runs
-        // it one block at a time to count each block's logs.
-        let mut batch_logs = Vec::new();
-        let mut parent = initial_parent;
-        for block in blocks {
-            if let Some(tx_segment) = block.body().tx_segment() {
-                check_tx_segment_effects(tx_segment)?;
-            }
-            let logs = v1::execute_block_batch_predrain(
-                state,
-                slice::from_ref(block),
-                parent,
-                runtime_params,
-            )?;
-            Self::limits().check_block_log_count(logs.len())?;
-            batch_logs.extend(logs);
-            parent = block.header();
-        }
-        Ok(batch_logs)
+        Self::RULES.execute_block_batch_predrain(state, blocks, initial_parent, runtime_params)
     }
 
     fn apply_da_epoch<S: IStateAccessorMut>(
@@ -160,13 +109,7 @@ impl OLStfSpec for StfV2 {
         manifests: &[AsmManifest],
         runtime_params: &OLRuntimeParams,
     ) -> Result<(), EpochDaReplayError> {
-        // An epoch replay always opens the epoch. Taking over first checks the
-        // state before decoding, so a rejected replay never depends on the
-        // diff.
-        take_over_state(state, true)?;
-        let diff = decode_ol_da_payload_bytes(encoded_diff).map_err(EpochDaReplayError::Decode)?;
-        v1::apply_da_epoch::<S, OLDaSchemeV1>(state, epoch_info, diff, manifests, runtime_params)
-            .map_err(EpochDaReplayError::Exec)
+        Self::RULES.apply_da_epoch(state, epoch_info, encoded_diff, manifests, runtime_params)
     }
 
     fn verify_epoch_with_diff<S: IStateAccessorMut>(
@@ -177,25 +120,21 @@ impl OLStfSpec for StfV2 {
         exp: &EpochExecExpectations,
         runtime_params: &OLRuntimeParams,
     ) -> Result<(), EpochDaReplayError> {
-        take_over_state(state, true)?;
-        let diff = decode_ol_da_payload_bytes(encoded_diff).map_err(EpochDaReplayError::Decode)?;
-        v1::verify_epoch_with_diff::<S, OLDaSchemeV1>(
+        Self::RULES.verify_epoch_with_diff(
             state,
             epoch_info,
-            diff,
+            encoded_diff,
             manifests,
             exp,
             runtime_params,
         )
-        .map_err(EpochDaReplayError::Exec)
     }
 
     fn execute_block_initialization<S: IStateAccessorMut>(
         state: &mut S,
         block_context: &BlockContext<'_>,
     ) -> ExecResult<()> {
-        take_over_state(state, block_context.is_epoch_initial())?;
-        v1::execute_block_initialization(state, block_context)
+        Self::RULES.execute_block_initialization(state, block_context)
     }
 
     fn process_single_tx<S: IStateAccessorMut>(
@@ -203,8 +142,7 @@ impl OLStfSpec for StfV2 {
         tx: &OLTransactionV1,
         context: &TxExecContext<'_>,
     ) -> ExecResult<()> {
-        Self::limits().check_tx_effects(tx.data().effects())?;
-        v1::process_single_tx(state, tx, context)
+        Self::RULES.process_single_tx(state, tx, context)
     }
 
     fn predict_tx_log_payloads(
@@ -228,18 +166,7 @@ impl OLStfSpec for StfV2 {
         sau_op: &SauTxOperationDataV1,
         effects: &TxEffects,
     ) -> ExecResult<TxProofIndexer> {
-        Self::limits().check_tx_effects(effects)?;
-        // The indexer records each proof check instead of verifying it, so the
-        // update's proof checks run as a dry run that lists what it needs.
-        let mut proof_indexer = TxProofIndexer::new_fresh();
-        v1::verify_snark_acct_update_proofs(
-            target,
-            account_state,
-            sau_op,
-            effects,
-            &mut proof_indexer,
-        )?;
-        Ok(proof_indexer)
+        Self::RULES.index_snark_update_proof_requirements(target, account_state, sau_op, effects)
     }
 
     fn process_asm_manifest<S: IStateAccessorMut>(
@@ -258,58 +185,5 @@ impl OLStfSpec for StfV2 {
 
     fn verify_block_structure(header: &OLBlockHeaderV1, body: &OLBlockBodyV1) -> ExecResult<()> {
         v1::verify_block_structure(header, body)
-    }
-}
-
-/// Checks the effects of each transaction in a block against the V2
-/// capacities.
-///
-/// # Errors
-///
-/// Returns [`ExecError::TxEffectsOverflow`] for the first transaction above a
-/// capacity, wrapped with its txid and index as block execution wraps
-/// transaction errors.
-fn check_tx_segment_effects(tx_segment: &OLTxSegmentV1) -> ExecResult<()> {
-    let limits = StfV2::limits();
-    for (index, tx) in tx_segment.txs().iter().enumerate() {
-        limits
-            .check_tx_effects(tx.data().effects())
-            .map_err(|err| ExecError::from(err).with_tx(tx.compute_txid(), index))?;
-    }
-    Ok(())
-}
-
-/// Returns whether the block after `parent_header` is the first block of an
-/// epoch, as [`BlockContext::is_epoch_initial`] decides it.
-fn opens_epoch(parent_header: Option<&OLBlockHeaderV1>) -> bool {
-    parent_header.is_none_or(OLBlockHeaderV1::is_terminal)
-}
-
-/// Takes over a V1 state at the first block of an epoch, and checks that any
-/// other block runs on a V2 state.
-///
-/// `opens_epoch` says whether the work starts an epoch. A V2 state is left as
-/// it is.
-///
-/// # Errors
-///
-/// Returns [`ExecError::ContinuesEarlierSpecEpoch`] for a V1 state outside an
-/// epoch start, and [`ExecError::StateFromEarlierSpec`] for a V0 state. Neither
-/// touches the state.
-fn take_over_state<S: IStateAccessorMut>(state: &mut S, opens_epoch: bool) -> ExecResult<()> {
-    match state.spec_versions().cur_spec() {
-        OLSpecId::V2 => Ok(()),
-        OLSpecId::V1 if opens_epoch => {
-            state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
-            Ok(())
-        }
-        OLSpecId::V1 => Err(ExecError::ContinuesEarlierSpecEpoch {
-            spec: OLSpecId::V2,
-            state_spec: OLSpecId::V1,
-        }),
-        OLSpecId::V0 => Err(ExecError::StateFromEarlierSpec {
-            spec: OLSpecId::V2,
-            state_spec: OLSpecId::V0,
-        }),
     }
 }

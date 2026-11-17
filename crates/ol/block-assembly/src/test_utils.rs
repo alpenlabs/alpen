@@ -1551,6 +1551,12 @@ impl TestStorageFixtureBuilder {
                 let components =
                     BlockComponents::new_manifests(vec![genesis_manifest]).as_terminal();
 
+                // Genesis under a later spec starts from that spec's versions,
+                // as genesis built from params does, since no earlier state
+                // exists for it to take over.
+                if let Some(spec) = self.genesis_enactment {
+                    state.set_spec_versions(OLSpecVersions::uniform(spec));
+                }
                 let block_context = BlockContext::new(&block_info, None);
                 let construct_output = stf_construct_block(
                     self.genesis_enactment.unwrap_or(OLSpecId::V1),

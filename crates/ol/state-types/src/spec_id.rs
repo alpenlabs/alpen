@@ -39,6 +39,12 @@ pub enum OLSpecId {
     /// So far they are V1's rules, except that the state root records V2 from
     /// the first block of the first V2 epoch on.
     V2 = 2,
+
+    /// Rules that follow V2.
+    ///
+    /// So far they are V2's rules, except that the state root records V3 from
+    /// the first block of the first V3 epoch on.
+    V3 = 3,
 }
 
 impl OLSpecId {
@@ -50,7 +56,8 @@ impl OLSpecId {
         match self {
             Self::V0 => Some(Self::V1),
             Self::V1 => Some(Self::V2),
-            Self::V2 => None,
+            Self::V2 => Some(Self::V3),
+            Self::V3 => None,
         }
     }
 }
@@ -75,6 +82,7 @@ impl TryFrom<u32> for OLSpecId {
             0 => Ok(Self::V0),
             1 => Ok(Self::V1),
             2 => Ok(Self::V2),
+            3 => Ok(Self::V3),
             _ => Err(UnknownOLSpecId(value)),
         }
     }
@@ -110,8 +118,12 @@ mod tests {
     use super::OLSpecId;
 
     // Append each spec and its fixed wire value in activation order.
-    const KNOWN_SPECS: &[(OLSpecId, u8)] =
-        &[(OLSpecId::V0, 0), (OLSpecId::V1, 1), (OLSpecId::V2, 2)];
+    const KNOWN_SPECS: &[(OLSpecId, u8)] = &[
+        (OLSpecId::V0, 0),
+        (OLSpecId::V1, 1),
+        (OLSpecId::V2, 2),
+        (OLSpecId::V3, 3),
+    ];
 
     proptest! {
         #[test]

@@ -9,21 +9,24 @@ epoch boundary. See [architecture.md](architecture.md) for where the STF fits in
 | --- | --- |
 | V1 | The rules new networks start with |
 | V2 | V1's rules with tighter capacities (see [Capacities](#capacities)) |
+| V3 | V2's rules |
 
 `OLGenesisParams` names the network's genesis spec as a required `genesis.spec`. New networks
-use `1`; `2` starts a network under V2.
+use `1`; `2` starts a network under V2 and `3` under V3.
 
 ## Dispatch
 
 [`crates/ol/stf`](../crates/ol/stf) is the one entry point to the STF. Each spec has a rule set
-that implements the internal `OLStfSpec` trait (`v1.rs`, `v2.rs`), and the
+that implements the internal `OLStfSpec` trait (`v1.rs`, `v2.rs`, `v3.rs`), and the
 `dispatch_spec!` macro in [`spec.rs`](../crates/ol/stf/src/spec.rs) maps each `OLSpecId` to its
 rule set. The compiler makes every rule set provide every operation. Sequencer block assembly
 composes the `sequencer` phases itself, so a rule set that changes their order must also
 update [`crates/ol/block-assembly`](../crates/ol/block-assembly).
 
 The state root records the spec, so every spec needs its own rule set even if it
-changes no rules. V2 runs the V1 code.
+changes no rules. V2 and V3 run the V1 code. The operations they share live in `capped_v1.rs`,
+parameterized by the spec, the spec before it and its capacities; each rule set calls them
+one operation at a time.
 
 ## Spec selection
 
@@ -54,7 +57,8 @@ and genesis commit to the hash tree root of `OLRootState`
 `OLRootState::compute_state_root` computes it.
 
 The first block of the first V2 epoch after a V1 state sets `cur = staged = V2` in
-epoch-initial processing, so every driver, DA replay included, reaches the same root.
+epoch-initial processing, so every driver, DA replay included, reaches the same root. The
+first V3 epoch takes over a V2 state the same way, as `cur = staged = V3`.
 
 Genesis construction sets the initial versions (`new_genesis`). After that only the rules
 change them, through `IStateAccessorMut::set_spec_versions` and the `WriteBatch` version slot.
@@ -63,7 +67,7 @@ change them, through `IStateAccessorMut::set_spec_versions` and the `WriteBatch`
 
 `OLStateLayout::for_spec`
 ([`crates/ol/state-container/src/layout.rs`](../crates/ol/state-container/src/layout.rs)) maps
-`cur_spec_version` to a chainstate layout. V1 and V2 both use `OLStateV1`. Spec and layout
+`cur_spec_version` to a chainstate layout. V1, V2 and V3 all use `OLStateV1`. Spec and layout
 numbers are never compared: several specs can share a layout.
 
 `OLStateContainer` ([`crates/ol/state-container`](../crates/ol/state-container)) pairs the root
@@ -79,7 +83,7 @@ The V1 types bound transaction effects and block logs at 65,536 entries and mess
 at 1 MiB. Those bounds fix V1 txids and encodings, so they cannot shrink. V2 adds tighter
 capacities as validity rules instead: 255 transfers and 255 messages per transaction, 4 KiB
 per message payload, and 4,096 logs per block. 4 KiB is the most the epoch DA encodes for an
-inbox message.
+inbox message. V3 keeps V2's capacities.
 `spec_limits` ([`crates/ol/stf/src/limits.rs`](../crates/ol/stf/src/limits.rs)) returns a
 spec's capacities for the drivers that build blocks or admit transactions.
 
@@ -89,7 +93,8 @@ The SP1 guest in [`provers/sp1`](../provers/sp1/README.md) proves one spec, fixe
 `PROVED_SPEC` in `guest-checkpoint/src/spec.rs`. It proves V2 today. V1 epochs keep using the
 bundle published from `v0.4.0-rc.1`. V2 proving accepts
 terminal V1 states with `cur = staged = V1` as well as V2 start states. ASM key handover and
-the verified-tip checks limit that V1 exception to the first accepted V2 epoch.
+the verified-tip checks limit that V1 exception to the first accepted V2 epoch. No program
+proves V3 epochs yet, so a node waits for a V3 artifact before it proves one.
 
 The node loads one artifact bundle per spec through
 [`crates/ol/checkpoint-artifacts`](../crates/ol/checkpoint-artifacts/README.md), and picks the
@@ -110,7 +115,7 @@ A consensus change to a chain that already runs the current rules ships as a new
    `limits.rs`.
 3. Map it to a layout in `OLStateLayout::for_spec`. A new chainstate layout also needs a new
    `OLStateSeries` variant.
-4. Decide how its first epoch takes over the previous spec's state, as V1 and V2 do.
+4. Decide how its first epoch takes over the previous spec's state, as V1, V2 and V3 do.
 5. Move `PROVED_SPEC` to the new spec, publish its bundle and keep the previous spec's bundle
    frozen. Add the new spec to the native registry in `crates/ol/checkpoint-artifacts`.
 6. Cover the handover with STF tests, and keep the golden V1 test in

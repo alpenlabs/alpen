@@ -1272,7 +1272,7 @@ async fn spec_status_reports_v2_after_the_v1_enactment() {
 }
 
 #[tokio::test]
-async fn spec_status_reports_the_upgrade_after_a_v2_enactment() {
+async fn spec_status_reports_v3_after_the_v2_enactment() {
     let enactment = make_checkpoint_predicate_enactment_manifest(1, 1);
     let (provider, _) = spec_status_provider(OLSpecId::V2, Some(enactment), true);
     let status = make_rpc(provider)
@@ -1281,9 +1281,22 @@ async fn spec_status_reports_the_upgrade_after_a_v2_enactment() {
         .expect("spec status");
     assert_eq!(status.cur_spec_version(), 2);
     assert_eq!(status.next_epoch_spec_version(), Some(3));
+    assert_eq!(status.upgrade_required(), None);
+}
+
+#[tokio::test]
+async fn spec_status_reports_the_upgrade_after_a_v3_enactment() {
+    let enactment = make_checkpoint_predicate_enactment_manifest(1, 1);
+    let (provider, _) = spec_status_provider(OLSpecId::V3, Some(enactment), true);
+    let status = make_rpc(provider)
+        .get_spec_status()
+        .await
+        .expect("spec status");
+    assert_eq!(status.cur_spec_version(), 3);
+    assert_eq!(status.next_epoch_spec_version(), Some(4));
     assert_eq!(
         status.upgrade_required(),
-        Some(&RpcUpgradeRequired::new(1, 3))
+        Some(&RpcUpgradeRequired::new(1, 4))
     );
 }
 

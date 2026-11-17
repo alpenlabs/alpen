@@ -3347,12 +3347,12 @@ mod tests {
             .unwrap();
     }
 
-    /// After a terminal tip whose epoch processed a V2 enactment, the next
-    /// block runs V2's successor. The mempool rejects new transactions and
+    /// After a terminal tip whose epoch processed a V3 enactment, the next
+    /// block runs V3's successor. The mempool rejects new transactions and
     /// keeps the stored ones for later instead of dropping them.
     #[tokio::test]
-    async fn test_mempool_admits_nothing_after_a_v2_enactment() {
-        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V2, true).await;
+    async fn test_mempool_admits_nothing_after_a_v3_enactment() {
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V3, true).await;
 
         let err = state
             .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
@@ -3639,6 +3639,19 @@ mod tests {
         assert!(state.contains(&txid));
     }
 
+    /// After the last V2 terminal, which processed the enactment that ends V2,
+    /// the next block runs V3 and the mempool admits transactions under it.
+    #[tokio::test]
+    async fn test_mempool_admits_under_v3_after_the_v2_enactment() {
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V2, true).await;
+        assert_eq!(state.select_spec().unwrap(), OLSpecId::V3);
+        let txid = state
+            .add_transaction(create_test_snark_tx_with_seq_no(1, 0))
+            .await
+            .expect("admitted under V3");
+        assert!(state.contains(&txid));
+    }
+
     /// The mempool launches before FCM repairs a summary that a crash left
     /// missing. On a terminal tip without its summary, it still selects the
     /// next block's spec, from the canonical summary of the epoch before,
@@ -3654,7 +3667,7 @@ mod tests {
         let (tip, tip_state) = store_terminal_tip(
             &context.storage,
             context.genesis_l1_block,
-            OLSpecId::V2,
+            OLSpecId::V3,
             true,
         )
         .await;
@@ -3679,7 +3692,7 @@ mod tests {
         assert!(matches!(err, OLMempoolError::UpgradeRequired(_)), "{err}");
     }
 
-    /// When the tip moves to a terminal block whose epoch processed a V2
+    /// When the tip moves to a terminal block whose epoch processed a V3
     /// enactment, the mempool keeps what it holds, revalidates nothing, and
     /// rejects even a resubmission. A reorg back to a block whose next block
     /// runs V1 resumes admission.
@@ -3705,7 +3718,7 @@ mod tests {
         let (terminal_tip, terminal_state) = store_terminal_tip(
             &context.storage,
             context.genesis_l1_block,
-            OLSpecId::V2,
+            OLSpecId::V3,
             true,
         )
         .await;
@@ -3733,7 +3746,7 @@ mod tests {
     /// stored transactions once a tip's next block runs V1 again.
     #[tokio::test]
     async fn test_mempool_loads_deferred_transactions_when_admission_resumes() {
-        let (mut state, provider) = mempool_on_terminal_tip(OLSpecId::V2, true).await;
+        let (mut state, provider) = mempool_on_terminal_tip(OLSpecId::V3, true).await;
         let stored = create_test_snark_tx_with_seq_no(1, 0);
         store_tx(&state, &stored);
         state.load_from_db().await.unwrap();
@@ -3784,7 +3797,7 @@ mod tests {
         let (terminal_tip, terminal_state) = store_terminal_tip(
             &context.storage,
             context.genesis_l1_block,
-            OLSpecId::V2,
+            OLSpecId::V3,
             true,
         )
         .await;
