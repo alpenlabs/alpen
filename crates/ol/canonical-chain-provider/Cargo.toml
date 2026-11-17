@@ -1,6 +1,6 @@
 [package]
 name = "strata-ol-canonical-chain-provider"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 description = "Read-only access to the canonical OL chain"
 
