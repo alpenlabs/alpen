@@ -10,14 +10,16 @@ use std::convert::Infallible;
 use std::{iter, slice};
 
 use strata_acct_types::{
-    AccountId, BitcoinAmount, Hash, MAX_MESSAGES, MAX_MSG_PAYLOAD_DATA_BYTES, MAX_TRANSFERS,
+    AccountId, AcctError, AccumulatorClaim, BitcoinAmount, Hash, MAX_MESSAGES,
+    MAX_MSG_PAYLOAD_DATA_BYTES, MAX_TRANSFERS, RawMerkleProof,
 };
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_codec::encode_to_vec;
 use strata_da_framework::{DaCounter, DaLinacc, DaRegister};
 use strata_identifiers::{
-    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, L1BlockCommitment, OLBlockCommitment, SubjectId,
+    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockCommitment,
+    OLBlockCommitment, SubjectId,
 };
 use strata_ol_chain_types_v1::{AsmManifest, MAX_LOGS_PER_BLOCK, OLBlockV1};
 use strata_ol_da_common::{U16LenBytes, U16LenList};
@@ -1833,6 +1835,124 @@ fn test_v3_requires_the_shortest_withdrawal_len_prefix() {
         1,
         "V3 emits the update log alone"
     );
+
+    // Block assembly runs one transaction at a time on a context it builds
+    // itself, and the rules still follow the spec.
+    let single_tx_log_count = |spec: OLSpecId| {
+        let output = ExecOutputBuffer::new_empty();
+        let basic_ctx = BasicExecContext::new(capacity.block_info(), &output, &runtime_params);
+        sequencer::process_single_tx(
+            spec,
+            &mut capacity.fixture.state().clone(),
+            &padded,
+            &TxExecContext::new(&basic_ctx, Some(capacity.fixture.parent_header())),
+        )
+        .unwrap_or_else(|err| panic!("{spec:?} processes the update: {err}"));
+        output.into_logs().len()
+    };
+    assert_eq!(single_tx_log_count(OLSpecId::V1), 2);
+    assert_eq!(single_tx_log_count(OLSpecId::V2), 2);
+    assert_eq!(single_tx_log_count(OLSpecId::V3), 1);
+
+    // V3 verification runs the rule V3 construction ran: a verifier that took
+    // the padded message for a withdrawal would reach another state root.
+    let parent = capacity.fixture.parent_header();
+    let built = capacity
+        .construct(OLSpecId::V3, vec![padded])
+        .expect("V3 builds the block");
+    let block = to_ol_block(built.completed_block());
+    let verified_logs = verify_block(
+        OLSpecId::V3,
+        &mut capacity.state_to_open_under(OLSpecId::V3),
+        block.header(),
+        Some(parent),
+        block.body(),
+        &runtime_params,
+    )
+    .expect("V3 verifies the block it built");
+    assert_eq!(verified_logs, built.outputs().logs());
+    let batch_logs = execute_block_batch_predrain(
+        OLSpecId::V3,
+        &mut capacity.state_to_open_under(OLSpecId::V3),
+        slice::from_ref(&block),
+        parent,
+        &runtime_params,
+    )
+    .expect("V3 executes the block it built in a batch");
+    assert_eq!(batch_logs, built.outputs().logs());
+}
+
+/// V3 takes an L1 block ref claim only with a proof that leads to the peak
+/// holding the claimed index. V1 and V2 select the peak by the proof's length
+/// and check the index only within it, as the checkpoint programs that prove
+/// them do, so they also take the one entry of the accumulator under an index
+/// it does not hold.
+#[test]
+fn test_v3_binds_accumulator_proofs_to_the_claimed_index() {
+    let capacity = CapacityFixture::new(1);
+    let account = capacity.fixture.expect_snark_account(capacity.sender);
+    assert_eq!(
+        capacity.fixture.state().l1_block_refs_mmr().num_entries(),
+        1,
+        "genesis prefills the accumulator with one entry"
+    );
+    // The entry is a peak on its own, so its proof has no cohashes and reads
+    // no bit of the index.
+    let update_claiming = |index: u64| {
+        SnarkUpdateBuilder::from_snark_state(account.clone())
+            .with_seq_no(0)
+            .with_transfer(capacity.recipient, 1)
+            .with_ledger_refs(
+                vec![AccumulatorClaim::new(index, L1_HEIGHT_MMR_PREFILL_LEAF)],
+                vec![RawMerkleProof::new_zero()],
+            )
+            .build(capacity.sender, make_state_root(2), make_proof(1))
+    };
+    let held = update_claiming(0);
+    let not_held = update_claiming(2);
+
+    for spec in [OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
+        capacity
+            .construct(spec, vec![held.clone()])
+            .unwrap_or_else(|err| panic!("{spec:?} takes the claim at index 0: {err}"));
+    }
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        capacity
+            .construct(spec, vec![not_held.clone()])
+            .unwrap_or_else(|err| panic!("{spec:?} takes the claim at index 2: {err}"));
+    }
+
+    let is_invalid_proof = |err: &ExecError| {
+        matches!(
+            err.base(),
+            ExecError::Acct(AcctError::InvalidLedgerReference { account_id, ref_idx: 2 })
+                if *account_id == capacity.sender
+        )
+    };
+    let err = capacity
+        .construct(OLSpecId::V3, vec![not_held.clone()])
+        .expect_err("V3 rejects the claim at index 2");
+    assert!(is_invalid_proof(&err), "{err}");
+
+    let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V3, vec![not_held.clone()]);
+    for (operation, err) in capacity.block_errors(OLSpecId::V3, &block, &pre_state) {
+        assert!(is_invalid_proof(&err), "{operation}: {err}");
+    }
+
+    let runtime_params = OLRuntimeParams::test_default();
+    let process = |spec: OLSpecId| {
+        let output = ExecOutputBuffer::new_empty();
+        let basic_ctx = BasicExecContext::new(capacity.block_info(), &output, &runtime_params);
+        sequencer::process_single_tx(
+            spec,
+            &mut capacity.fixture.state().clone(),
+            &not_held,
+            &TxExecContext::new(&basic_ctx, Some(capacity.fixture.parent_header())),
+        )
+    };
+    process(OLSpecId::V2).expect("V2 transaction processing takes the claim");
+    let err = process(OLSpecId::V3).expect_err("V3 transaction processing rejects the claim");
+    assert!(is_invalid_proof(&err), "{err}");
 }
 
 /// V3 replays an epoch only from the DA bytes the encoder writes. V1 and V2
