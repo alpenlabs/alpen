@@ -530,6 +530,9 @@ pub(crate) struct MempoolDbFaults {
     /// Makes every delete fail while on.
     fail_deletes: AtomicBool,
 
+    /// Makes every batch fail while on, even one that only records a tip.
+    fail_batches: AtomicBool,
+
     /// How many more transactions the database stores before writes fail.
     put_budget: AtomicUsize,
 }
@@ -538,6 +541,7 @@ impl Default for MempoolDbFaults {
     fn default() -> Self {
         Self {
             fail_deletes: AtomicBool::new(false),
+            fail_batches: AtomicBool::new(false),
             put_budget: AtomicUsize::new(usize::MAX),
         }
     }
@@ -546,6 +550,10 @@ impl Default for MempoolDbFaults {
 impl MempoolDbFaults {
     pub(crate) fn set_fail_deletes(&self, fail: bool) {
         self.fail_deletes.store(fail, Ordering::SeqCst);
+    }
+
+    pub(crate) fn set_fail_batches(&self, fail: bool) {
+        self.fail_batches.store(fail, Ordering::SeqCst);
     }
 
     /// Makes every put fail while on.
@@ -613,6 +621,9 @@ impl<D: MempoolDatabase> MempoolDatabase for FaultyMempoolDb<D> {
     }
 
     fn apply_batch(&self, batch: MempoolWriteBatch) -> DbResult<()> {
+        if self.faults.fail_batches.load(Ordering::SeqCst) {
+            return Err(injected("batch"));
+        }
         if self.faults.fails_deletes() && !batch.deletes().is_empty() {
             return Err(injected("batch delete"));
         }

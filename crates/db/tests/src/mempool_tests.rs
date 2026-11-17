@@ -142,10 +142,16 @@ pub fn test_large_tx_bytes(db: &impl MempoolDatabase) {
 }
 
 pub fn test_apply_batch(db: &impl MempoolDatabase) {
+    // Setup: store `kept`, `deleted` and `replaced` with bytes `[1]` and no
+    // tip. `added` and `absent` are never stored. The batch below gives each
+    // row one role: `kept` stays untouched, `deleted` is deleted, `replaced`
+    // is deleted and put again with new bytes, `added` is put, and `absent`
+    // is deleted though it was never stored.
     let kept = OLTxId::from(Buf32::from([1u8; 32]));
     let deleted = OLTxId::from(Buf32::from([2u8; 32]));
     let replaced = OLTxId::from(Buf32::from([3u8; 32]));
     let added = OLTxId::from(Buf32::from([4u8; 32]));
+    let absent = OLTxId::from(Buf32::from([9u8; 32]));
     for txid in [kept, deleted, replaced] {
         db.put_tx(MempoolTxData::new(txid, vec![1], 1)).unwrap();
     }
@@ -155,7 +161,10 @@ pub fn test_apply_batch(db: &impl MempoolDatabase) {
     let mut batch = MempoolWriteBatch::default();
     batch.delete(deleted);
     batch.delete(replaced);
-    batch.delete(OLTxId::from(Buf32::from([9u8; 32])));
+    // Deleting a row the database lacks must not fail the batch.
+    batch.delete(absent);
+    // `replaced` is both deleted and put. Deletes run before puts, so the new
+    // bytes must survive; the reverse order would lose the row.
     batch.put(MempoolTxData::new(replaced, vec![2], 2));
     batch.put(MempoolTxData::new(added, vec![3], 3));
     batch.set_tip(tip);
@@ -165,6 +174,7 @@ pub fn test_apply_batch(db: &impl MempoolDatabase) {
     assert!(db.get_tx(deleted).unwrap().is_none());
     assert_eq!(db.get_tx(replaced).unwrap().unwrap().tx_bytes(), [2]);
     assert!(db.get_tx(added).unwrap().is_some());
+    assert!(db.get_tx(absent).unwrap().is_none());
     assert_eq!(db.get_tip().unwrap(), Some(tip));
 
     // A batch without a tip keeps the recorded one.

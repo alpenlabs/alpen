@@ -21,7 +21,7 @@ use strata_ol_stf::{UpgradeRequired, spec_limits};
 use strata_ol_tx_types_v1::{OLTransactionV1, TransactionPayloadV1};
 use strata_service::ServiceState;
 use strata_storage::{MempoolDbManager, NodeStorage};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument, trace, warn};
 
 use crate::tip::{MempoolTip, select_tip_spec};
 use crate::types::{MempoolEntry, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats};
@@ -272,8 +272,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
             );
             self.tip = MempoolTip::new(recorded, None);
         }
-        // A failure is logged and leaves the mempool out of sync.
-        let _ = self.handle_chain_update(current_tip).await;
+        // A failure is logged and leaves the mempool out of sync. The current
+        // tip can equal the recorded one, which `handle_chain_update` would
+        // skip, but the catch-up must still readmit and record it.
+        let _ = self.sync_to_tip(current_tip).await;
         Ok(())
     }
 
@@ -842,26 +844,33 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// mempool that cannot fit both keeps the restored transactions and evicts
     /// its most recently arrived held ones.
     ///
-    /// When the next block needs an upgrade, admission cannot run. The
-    /// restored transactions are then held without validation, like every
-    /// other held transaction, for a binary that implements the next spec, and
-    /// the reorg or restart that resumes admission revalidates them.
+    /// When the next block needs an upgrade, admission cannot run, so nothing
+    /// validates or caps the restored transactions. They are then only
+    /// stored, as a startup on that tip leaves the stored transactions, and
+    /// the chain update that resumes admission loads and readmits them.
     ///
     /// This only changes memory. It records the rows to delete for evicted
-    /// transactions and the rows to store for admitted restored ones in
-    /// `changes`, which the chain update writes before it commits.
+    /// transactions and the rows to store for restored ones in `changes`,
+    /// which the chain update writes before it commits.
     fn readmit_against_tip(
         &mut self,
         restored: Vec<(OLTxId, MempoolEntry)>,
         changes: &mut StorageChanges,
     ) -> usize {
         if !matches!(self.tip_spec, SelectedSpec::Supported(_)) {
-            let restored_count = restored.len();
-            for (txid, entry) in restored {
-                changes.puts.push(txid);
-                self.add_tx_to_in_memory_state(txid, entry);
+            if !restored.is_empty() {
+                debug!(
+                    restored_count = %restored.len(),
+                    "storing reverted transactions until admission resumes"
+                );
+                self.deferred_load = true;
             }
-            return restored_count;
+            changes.puts.extend(
+                restored
+                    .iter()
+                    .map(|(txid, entry)| stored_row(*txid, entry)),
+            );
+            return restored.len();
         }
 
         self.needs_readmit = false;
@@ -899,7 +908,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
         changes.puts.extend(
             restored_txids
                 .into_iter()
-                .filter(|txid| self.entries.contains_key(txid)),
+                .filter_map(|txid| Some(stored_row(txid, self.entries.get(&txid)?))),
         );
         self.stats.enqueues_accepted += restored_count as u64;
         self.record_mempool_gauges();
@@ -914,8 +923,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
     }
 
     /// Writes `changes` and `tip` to the mempool database in one atomic
-    /// batch: the deletes, the restored transactions memory now holds, and
-    /// the tip they reflect, which a restart catches up from.
+    /// batch: the deletes, the restored transactions, and the tip they
+    /// reflect, which a restart catches up from.
     ///
     /// # Errors
     ///
@@ -923,23 +932,15 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// nothing.
     fn apply_storage_changes(
         &self,
-        changes: &StorageChanges,
+        changes: StorageChanges,
         tip: OLBlockCommitment,
     ) -> OLMempoolResult<()> {
         let mut batch = MempoolWriteBatch::default();
-        for txid in &changes.deletes {
-            batch.delete(*txid);
+        for txid in changes.deletes {
+            batch.delete(txid);
         }
-        for txid in &changes.puts {
-            let entry = self
-                .entries
-                .get(txid)
-                .expect("restored transactions to store are held");
-            batch.put(MempoolTxData::new(
-                *txid,
-                Encode::as_ssz_bytes(entry.tx.as_ref()),
-                entry.timestamp_micros,
-            ));
+        for row in changes.puts {
+            batch.put(row);
         }
         batch.set_tip(tip);
         self.ctx.mempool_db.apply_batch(batch)?;
@@ -1181,7 +1182,27 @@ impl<P: StateProvider> MempoolServiceState<P> {
         self.try_get_block(commitment).await
     }
 
-    /// Handle chain update.
+    /// Handles a chain update from the fork-choice manager.
+    ///
+    /// The sync status is republished for changes other than the tip, such
+    /// as finalization progress, so updates often repeat the mempool tip. A
+    /// repeated tip loads the same state and selects the same spec, so once
+    /// the mempool is in sync and has readmitted what it loaded, it changes
+    /// nothing and is skipped. Every other update runs
+    /// [`Self::sync_to_tip`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the error of [`Self::sync_to_tip`].
+    pub(crate) async fn handle_chain_update(&mut self, new_tip: MempoolTip) -> OLMempoolResult<()> {
+        if new_tip == self.tip && !self.out_of_sync && !self.needs_readmit {
+            trace!(tip = %new_tip.block(), "skipping a chain update that repeats the mempool tip");
+            return Ok(());
+        }
+        self.sync_to_tip(new_tip).await
+    }
+
+    /// Moves the mempool to `new_tip`.
     ///
     /// 1. Find the blocks the update reverts and adopts relative to the mempool tip
     /// 2. Load state for new tip and install it
@@ -1209,7 +1230,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Returns an error if a block, a state, or a mempool database operation
     /// fails.
     #[instrument(skip(self), fields(component = "ol_mempool", slot = new_tip.block().slot()))]
-    pub(crate) async fn handle_chain_update(&mut self, new_tip: MempoolTip) -> OLMempoolResult<()> {
+    async fn sync_to_tip(&mut self, new_tip: MempoolTip) -> OLMempoolResult<()> {
         let result = self.apply_chain_update(new_tip).await;
         match &result {
             Ok(()) => {
@@ -1244,7 +1265,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
         result
     }
 
-    /// Applies a chain update as [`Self::handle_chain_update`] describes,
+    /// Applies a chain update as [`Self::sync_to_tip`] describes,
     /// rolling memory back if it fails.
     async fn apply_chain_update(&mut self, new_tip: MempoolTip) -> OLMempoolResult<()> {
         debug!(
@@ -1367,7 +1388,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 evicted: self.evict_all(&mut changes)?,
             },
         };
-        self.apply_storage_changes(&changes, new_tip)?;
+        self.apply_storage_changes(changes, new_tip)?;
         Ok(outcome)
     }
 }
@@ -1378,8 +1399,8 @@ pub(crate) struct StorageChanges {
     /// Rows to delete: transactions the new chain includes or evicts.
     deletes: HashSet<OLTxId>,
 
-    /// Restored transactions to store, whose entries memory holds.
-    puts: Vec<OLTxId>,
+    /// Rows of restored transactions to store.
+    puts: Vec<MempoolTxData>,
 }
 
 /// What memory held before a chain update, to restore if it fails.
@@ -1428,6 +1449,15 @@ enum TipChange {
     /// lacks the branch block `missing`. The walk reached only part of the new
     /// branch, so the mempool cannot tell which transactions it includes.
     Unresolved { missing: Option<OLBlockCommitment> },
+}
+
+/// Returns the database row that stores `entry`.
+fn stored_row(txid: OLTxId, entry: &MempoolEntry) -> MempoolTxData {
+    MempoolTxData::new(
+        txid,
+        Encode::as_ssz_bytes(entry.tx.as_ref()),
+        entry.timestamp_micros,
+    )
 }
 
 /// Returns the parent of `block`, which `commitment` commits to.
@@ -3304,7 +3334,7 @@ mod tests {
         let mut changes = StorageChanges::default();
         state.readmit_against_tip(Vec::new(), &mut changes);
         state
-            .apply_storage_changes(&changes, state.tip.block())
+            .apply_storage_changes(changes, state.tip.block())
             .unwrap();
     }
 
@@ -3717,6 +3747,84 @@ mod tests {
         assert!(
             state.contains(&stored.compute_txid()),
             "loaded once admission resumes"
+        );
+    }
+
+    /// A reorg while the next block needs an upgrade stores what it reverts
+    /// without holding it, and the reorg that resumes admission loads and
+    /// readmits it.
+    #[tokio::test]
+    async fn test_reorg_into_an_upgrade_stores_reverted_transactions_for_later() {
+        let provider = Arc::new(create_test_state_provider(create_test_block_commitment(
+            100,
+        )));
+        let context = Arc::new(create_test_context(
+            OLMempoolConfig::default(),
+            provider.clone(),
+        ));
+        let mid_epoch_tip = store_mid_epoch_sibling(&context.storage, &provider).await;
+        let mut state = MempoolServiceState::new_with_context(
+            context.clone(),
+            MempoolTip::new(mid_epoch_tip, None),
+        )
+        .await
+        .unwrap();
+        let tx = create_test_snark_tx_with_seq_no(1, 0);
+        let txid = state.add_transaction(tx.clone()).await.unwrap();
+
+        let including =
+            store_child_block(&context.storage, create_test_block_commitment(99), 2, &[tx]).await;
+        provider.insert_state(including, reorg_state_at(including, &[(1, 1)]));
+        state
+            .handle_chain_update(MempoolTip::new(including, None))
+            .await
+            .unwrap();
+        assert!(!state.contains(&txid));
+
+        let (terminal_tip, terminal_state) = store_terminal_tip(
+            &context.storage,
+            context.genesis_l1_block,
+            OLSpecId::V2,
+            true,
+        )
+        .await;
+        provider.insert_state(terminal_tip.block(), terminal_state);
+        state.handle_chain_update(terminal_tip).await.unwrap();
+        assert!(
+            !state.contains(&txid),
+            "not held while admission is stopped"
+        );
+        assert!(
+            state.ctx.mempool_db.get_tx(txid).unwrap().is_some(),
+            "stored for later"
+        );
+
+        state
+            .handle_chain_update(MempoolTip::new(mid_epoch_tip, None))
+            .await
+            .unwrap();
+        assert!(state.contains(&txid), "readmitted once admission resumes");
+    }
+
+    /// A chain update that repeats the mempool tip changes nothing, so it
+    /// writes nothing either.
+    #[tokio::test]
+    async fn test_repeated_tip_writes_nothing() {
+        let mut f = ReorgFixture::new(DEFAULT_MAX_REORG_DEPTH).await;
+        let tx = create_test_snark_tx_with_seq_no(1, 0);
+        f.add(&tx).await;
+        let a1 = f.block(f.base, 1, &[]).await;
+        f.move_tip(a1, &[]).await;
+
+        f.faults.set_fail_batches(true);
+        f.move_tip(a1, &[]).await;
+        f.assert_holds(&[&tx]);
+        assert_eq!(f.candidate_txids(), vec![tx.compute_txid()]);
+
+        let a2 = f.block(a1, 1, &[]).await;
+        assert!(
+            f.try_move_tip(a2, &[]).await.is_err(),
+            "a new tip still writes"
         );
     }
 
