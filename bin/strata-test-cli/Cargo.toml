@@ -1,6 +1,6 @@
 [package]
 name = "strata-test-cli"
-version = "0.3.0-alpha.1"
+version.workspace = true
 edition = "2021"
 
 [lints]

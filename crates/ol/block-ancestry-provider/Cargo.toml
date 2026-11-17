@@ -1,6 +1,6 @@
 [package]
 name = "strata-ol-block-ancestry-provider"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 description = "Parent-linked OL block ancestry queries"
 

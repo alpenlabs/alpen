@@ -190,3 +190,7 @@ functional tests, so their CLIs are public interfaces.
 Shared protocol types come from [strata-common](https://github.com/alpenlabs/strata-common)
 and the ASM from [asm](https://github.com/alpenlabs/asm). Both are pinned by tag in the root
 `Cargo.toml`.
+
+Every crate shares one version, set in `[workspace.package]` in the root `Cargo.toml`. It
+matches the release tag, so bump it to the new version before tagging. The SP1 guest in
+`provers/sp1/guest-checkpoint` is its own workspace and sets the same version directly.

@@ -475,7 +475,7 @@ dependencies = [
 
 [[package]]
 name = "alpen-benchmarks"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -8602,7 +8602,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strata"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "argh",
@@ -8687,7 +8687,7 @@ dependencies = [
 
 [[package]]
 name = "strata-acct-types"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "digest 0.10.7",
  "proptest",
@@ -9096,7 +9096,7 @@ dependencies = [
 
 [[package]]
 name = "strata-bridge-params"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "arbitrary",
  "serde",
@@ -9151,7 +9151,7 @@ dependencies = [
 
 [[package]]
 name = "strata-btcio"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9189,7 +9189,7 @@ dependencies = [
 
 [[package]]
 name = "strata-chain-worker"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -9235,7 +9235,7 @@ dependencies = [
 
 [[package]]
 name = "strata-checkpoint-types"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "arbitrary",
  "serde",
@@ -9273,7 +9273,7 @@ dependencies = [
 
 [[package]]
 name = "strata-cli-common"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 
 [[package]]
 name = "strata-codec"
@@ -9305,7 +9305,7 @@ dependencies = [
 
 [[package]]
 name = "strata-common"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "deadpool",
  "futures",
@@ -9320,7 +9320,7 @@ dependencies = [
 
 [[package]]
 name = "strata-config"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "bitcoin",
  "proptest",
@@ -9335,7 +9335,7 @@ dependencies = [
 
 [[package]]
 name = "strata-consensus-logic"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9413,7 +9413,7 @@ dependencies = [
 
 [[package]]
 name = "strata-csm-types"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -9432,7 +9432,7 @@ dependencies = [
 
 [[package]]
 name = "strata-csm-worker"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "bitcoin",
@@ -9472,7 +9472,7 @@ dependencies = [
 
 [[package]]
 name = "strata-da-framework"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "proptest",
  "sha2 0.10.9",
@@ -9483,7 +9483,7 @@ dependencies = [
 
 [[package]]
 name = "strata-datatool"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "argh",
@@ -9524,7 +9524,7 @@ dependencies = [
 
 [[package]]
 name = "strata-db-store-sled"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -9555,7 +9555,7 @@ dependencies = [
 
 [[package]]
 name = "strata-db-tests"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "bitcoin",
  "hex",
@@ -9578,7 +9578,7 @@ dependencies = [
 
 [[package]]
 name = "strata-db-types"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -9609,7 +9609,7 @@ dependencies = [
 
 [[package]]
 name = "strata-dbtool"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "argh",
  "ciborium",
@@ -9670,7 +9670,7 @@ dependencies = [
 
 [[package]]
 name = "strata-key-derivation"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "bitcoin",
  "secp256k1 0.29.1",
@@ -9773,7 +9773,7 @@ dependencies = [
 
 [[package]]
 name = "strata-node-context"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9790,7 +9790,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-block-ancestry-provider"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
@@ -9803,7 +9803,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-block-assembly"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9856,7 +9856,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-bridge-types"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "strata-asm-bridge-types",
  "strata-identifiers",
@@ -9864,7 +9864,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-canonical-chain-provider"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "strata-asm-checkpoint-types",
  "strata-checkpoint-types",
@@ -9878,7 +9878,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-chain-types-v1"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "proptest",
  "rand 0.8.7",
@@ -9902,7 +9902,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-checkpoint"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "metrics",
@@ -9953,7 +9953,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-checkpoint-artifacts"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "hex",
  "serde",
@@ -9982,7 +9982,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-da-common"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "strata-codec",
  "strata-da-framework",
@@ -9994,7 +9994,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-da-types-v1"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "bitcoin",
  "proptest",
@@ -10021,7 +10021,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-genesis"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "serde_json",
  "strata-acct-types",
@@ -10039,7 +10039,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-log-budget"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
@@ -10073,7 +10073,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-mempool"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "metrics",
@@ -10114,7 +10114,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-mmr-index"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "strata-acct-types",
  "strata-db-types",
@@ -10131,7 +10131,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-msg-types"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "proptest",
  "strata-codec",
@@ -10141,7 +10141,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-params"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "arbitrary",
  "serde",
@@ -10158,7 +10158,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-rpc-api"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "jsonrpsee",
  "strata-identifiers",
@@ -10171,7 +10171,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-rpc-types"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "schemars 1.2.2",
@@ -10203,7 +10203,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-sequencer"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10239,7 +10239,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-spec-selection"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "futures",
  "strata-checkpoint-types",
@@ -10253,7 +10253,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-container"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "ciborium",
  "proptest",
@@ -10269,7 +10269,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-provider"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "futures",
  "strata-db-types",
@@ -10282,7 +10282,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-support-types"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-checkpoint-types",
@@ -10303,7 +10303,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-types"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "arbitrary",
  "proptest",
@@ -10325,7 +10325,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-state-types-v1"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "proptest",
  "ssz",
@@ -10350,7 +10350,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-stf"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-common",
@@ -10374,7 +10374,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-stf-v1"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "bitcoin-bosd 0.12.0 (git+https://github.com/alpenlabs/bitcoin-bosd?tag=v0.13.0)",
  "ssz_primitives",
@@ -10406,7 +10406,7 @@ dependencies = [
 
 [[package]]
 name = "strata-ol-tx-types-v1"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "int-enum",
  "proptest",
@@ -10426,7 +10426,7 @@ dependencies = [
 
 [[package]]
 name = "strata-open-rpc"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "schemars 1.2.2",
  "serde",
@@ -10435,7 +10435,7 @@ dependencies = [
 
 [[package]]
 name = "strata-open-rpc-macros"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "derive-syn-parse",
  "itertools 0.14.0",
@@ -10447,7 +10447,7 @@ dependencies = [
 
 [[package]]
 name = "strata-paas"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -10480,7 +10480,7 @@ dependencies = [
 
 [[package]]
 name = "strata-primitives"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "bitcoin",
  "bitcoin-bosd 0.12.0 (git+https://github.com/alpenlabs/bitcoin-bosd?tag=v0.13.0)",
@@ -10494,7 +10494,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-checkpoint"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "k256 0.14.0",
  "ssz",
@@ -10522,7 +10522,7 @@ dependencies = [
 
 [[package]]
 name = "strata-proofimpl-predicate-keys"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "hex",
  "sp1-verifier",
@@ -10534,7 +10534,7 @@ dependencies = [
 
 [[package]]
 name = "strata-prover-core"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "parking_lot 0.12.5",
@@ -10548,7 +10548,7 @@ dependencies = [
 
 [[package]]
 name = "strata-provers-perf"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -10584,7 +10584,7 @@ dependencies = [
 
 [[package]]
 name = "strata-rpc-openrpc-spec"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "serde_json",
  "strata-ol-rpc-api",
@@ -10622,7 +10622,7 @@ dependencies = [
 
 [[package]]
 name = "strata-signer"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "jsonrpsee",
@@ -10643,7 +10643,7 @@ dependencies = [
 
 [[package]]
 name = "strata-signer-bin"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "argh",
@@ -10666,7 +10666,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-runtime"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "rkyv",
  "rkyv_impl",
@@ -10680,7 +10680,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-sys"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
@@ -10693,7 +10693,7 @@ dependencies = [
 
 [[package]]
 name = "strata-snark-acct-types"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "proptest",
  "ssz",
@@ -10712,7 +10712,7 @@ dependencies = [
 
 [[package]]
 name = "strata-sp1-guest-builder"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "hex",
  "serde_json",
@@ -10739,7 +10739,7 @@ dependencies = [
 
 [[package]]
 name = "strata-status"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "strata-csm-types",
  "strata-identifiers",
@@ -10751,7 +10751,7 @@ dependencies = [
 
 [[package]]
 name = "strata-storage"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -10786,7 +10786,7 @@ dependencies = [
 
 [[package]]
 name = "strata-storage-common"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "lru 0.19.0",
  "thiserror 2.0.20",
@@ -10808,7 +10808,7 @@ dependencies = [
 
 [[package]]
 name = "strata-test-cli"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "argh",
@@ -10846,7 +10846,7 @@ dependencies = [
 
 [[package]]
 name = "strata-test-utils"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "arbitrary",
  "rand_core 0.6.4",
@@ -10909,7 +10909,7 @@ dependencies = [
 
 [[package]]
 name = "strata-test-utils-l2"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "bitcoin",
  "k256 0.14.0",
@@ -10930,7 +10930,7 @@ dependencies = [
 
 [[package]]
 name = "strata-zkvm-hosts"
-version = "0.3.0-alpha.1"
+version = "0.6.0"
 dependencies = [
  "strata-sp1-guest-builder",
  "tokio",

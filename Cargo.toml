@@ -85,6 +85,9 @@ default-members = [
   "bin/strata-test-cli",
 ]
 
+[workspace.package]
+version = "0.6.0"
+
 [workspace.lints]
 rust.missing_debug_implementations = "warn"
 rust.rust_2018_idioms = { level = "deny", priority = -1 }
