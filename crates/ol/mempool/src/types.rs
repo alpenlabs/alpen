@@ -17,6 +17,16 @@ pub const DEFAULT_MAX_TX_SIZE: usize = 1024 * 1024; // 1 MB
 /// Default maximum total size of all transactions in mempool (bytes).
 pub const DEFAULT_MAX_MEMPOOL_BYTES: usize = 1024 * 1024 * 1024; // 1 GB
 
+/// Default maximum number of L1 block ref claims in one snark account update.
+///
+/// An execution environment claims each L1 block that holds part of a batch's
+/// DA once, so honest updates carry a handful. This sits far below the
+/// [`MAX_ACC_PROOF_COUNT`] claims consensus allows because block assembly
+/// proves every claim before the STF checks the update's proof.
+///
+/// [`MAX_ACC_PROOF_COUNT`]: strata_ol_tx_types_v1::MAX_ACC_PROOF_COUNT
+pub const DEFAULT_MAX_L1_BLOCK_REF_CLAIMS: usize = 256;
+
 /// Default maximum reorg depth for finding common ancestor.
 /// OL chain doesn't expect reorgs, so this is a safety limit.
 pub const DEFAULT_MAX_REORG_DEPTH: u64 = 50;
@@ -36,6 +46,9 @@ pub struct OLMempoolConfig {
     /// Maximum total size of all transactions in mempool (bytes).
     pub max_mempool_bytes: usize,
 
+    /// Maximum number of L1 block ref claims in one snark account update.
+    pub max_l1_block_ref_claims: usize,
+
     /// Maximum reorg depth for finding common ancestor during reorg handling.
     /// OL chain doesn't expect reorgs, so this is a safety limit to prevent infinite loops.
     pub max_reorg_depth: u64,
@@ -50,6 +63,7 @@ impl Default for OLMempoolConfig {
             max_tx_count: DEFAULT_MAX_TX_COUNT,
             max_tx_size: DEFAULT_MAX_TX_SIZE,
             max_mempool_bytes: DEFAULT_MAX_MEMPOOL_BYTES,
+            max_l1_block_ref_claims: DEFAULT_MAX_L1_BLOCK_REF_CLAIMS,
             max_reorg_depth: DEFAULT_MAX_REORG_DEPTH,
             command_buffer_size: DEFAULT_COMMAND_BUFFER_SIZE,
         }
@@ -187,6 +201,10 @@ pub enum OLMempoolRejectReason {
     /// Rejected due to not mature (min_slot in future).
     TransactionNotMature,
 
+    /// Rejected because a snark account update carries more L1 block ref
+    /// claims than the mempool admits.
+    TooManyL1BlockRefClaims,
+
     /// Duplicate transaction (already in mempool).
     Duplicate,
 }
@@ -205,6 +223,7 @@ impl OLMempoolRejectReason {
             Self::SequenceNumberGap => "sequence_number_gap",
             Self::TransactionExpired => "transaction_expired",
             Self::TransactionNotMature => "transaction_not_mature",
+            Self::TooManyL1BlockRefClaims => "too_many_l1_block_ref_claims",
             Self::Duplicate => "duplicate",
         }
     }
@@ -236,6 +255,7 @@ impl OLMempoolRejectReason {
             OLMempoolError::TransactionNotMature { .. } => Some(Self::TransactionNotMature),
             OLMempoolError::UsedSequenceNumber { .. } => Some(Self::UsedSequenceNumber),
             OLMempoolError::SequenceNumberGap { .. } => Some(Self::SequenceNumberGap),
+            OLMempoolError::TooManyL1BlockRefClaims { .. } => Some(Self::TooManyL1BlockRefClaims),
             OLMempoolError::AccountStateAccess(_)
             | OLMempoolError::TransactionNotFound(_)
             | OLMempoolError::Database(_)

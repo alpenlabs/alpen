@@ -1,11 +1,10 @@
 //! Block assembly logic.
 
 use std::collections::HashMap;
-use std::slice;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use strata_acct_types::AccountId;
+use strata_acct_types::{AccountId, AccumulatorClaim};
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, L1Height, OLBlockCommitment, OLTxId, Slot};
@@ -1177,31 +1176,40 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     )
     .map_err(BlockAssemblyError::SnarkUpdatePreValidation)?;
 
-    // Generate accumulator proofs for the indexed claims, preserving order.
     let inbox_leaf_count = account_state
         .as_snark_account()
         .map_err(BlockAssemblyError::State)?
         .inbox_mmr()
         .num_entries();
 
-    let mut all_acc_proofs = Vec::new();
-    for check in proof_indexer.accumulator_checks() {
-        match check {
-            AccProofCheck::L1BlockRef(claim) => {
-                let proofs =
-                    proof_gen.generate_l1_block_ref_proofs(slice::from_ref(claim), state)?;
-                all_acc_proofs.extend(proofs.l1_block_ref_proofs().iter().cloned());
-            }
-            AccProofCheck::Inbox(claim) => {
-                let inbox_proofs = proof_gen.generate_inbox_proofs_for_claims(
-                    target,
-                    slice::from_ref(claim),
-                    inbox_leaf_count,
-                )?;
-                all_acc_proofs.extend(inbox_proofs);
-            }
-        }
-    }
+    // Generate each accumulator's proofs in one batch. The update's proof is not
+    // checked until the STF runs, so this work happens for updates that will
+    // never verify. A batch range-checks every claim before reading the MMR and
+    // fetches each node once, so a repeated claim costs no extra reads and an
+    // out-of-range claim fails before any read.
+    let checks = proof_indexer.accumulator_checks();
+    let (l1_block_ref_claims, inbox_claims) = split_accumulator_claims(checks);
+    let l1_block_ref_proofs =
+        proof_gen.generate_l1_block_ref_proofs(&l1_block_ref_claims, state)?;
+    let inbox_proofs =
+        proof_gen.generate_inbox_proofs_for_claims(target, &inbox_claims, inbox_leaf_count)?;
+
+    // The STF consumes one proof per check in check order, so interleave the
+    // batches back into that order.
+    let mut l1_block_ref_proofs = l1_block_ref_proofs.l1_block_ref_proofs().iter();
+    let mut inbox_proofs = inbox_proofs.into_iter();
+    let all_acc_proofs: Vec<_> = checks
+        .iter()
+        .map(|check| match check {
+            AccProofCheck::L1BlockRef(_) => l1_block_ref_proofs
+                .next()
+                .cloned()
+                .expect("generator returns one L1 block ref proof per claim"),
+            AccProofCheck::Inbox(_) => inbox_proofs
+                .next()
+                .expect("generator returns one inbox proof per claim"),
+        })
+        .collect();
 
     debug!(
         component = "ol_block_assembly",
@@ -1216,9 +1224,28 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     Ok(mempool_tx.with_accumulator_proofs(acc_proofs))
 }
 
+/// Splits indexed accumulator checks into L1 block ref claims and inbox claims,
+/// each in check order.
+fn split_accumulator_claims(
+    checks: &[AccProofCheck],
+) -> (Vec<AccumulatorClaim>, Vec<AccumulatorClaim>) {
+    let mut l1_block_ref_claims = Vec::new();
+    let mut inbox_claims = Vec::new();
+    for check in checks {
+        match check {
+            AccProofCheck::L1BlockRef(claim) => l1_block_ref_claims.push(claim.clone()),
+            AccProofCheck::Inbox(claim) => inbox_claims.push(claim.clone()),
+        }
+    }
+    (l1_block_ref_claims, inbox_claims)
+}
+
 #[cfg(test)]
 mod tests {
     const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
+
+    use std::slice;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use strata_acct_types::*;
     use strata_asm_checkpoint_types::{MAX_OL_LOGS_PER_CHECKPOINT, OL_DA_DIFF_MAX_SIZE};
@@ -1234,6 +1261,7 @@ mod tests {
     use strata_ol_state_types_v1::OLStateV1;
     use strata_ol_stf::BlockInfo;
     use strata_ol_stf_v1::test_utils::OLStfFixture;
+    use strata_snark_acct_types::LedgerRefProofs;
 
     use super::*;
     use crate::test_utils::*;
@@ -1877,6 +1905,144 @@ mod tests {
             tx_proofs.predicate_satisfiers().is_some(),
             "Should have predicate satisfiers"
         );
+    }
+
+    /// Wraps a proof generator and counts its claim-proving calls.
+    struct CountingProofGen<P> {
+        inner: P,
+        l1_block_ref_calls: AtomicUsize,
+        inbox_claim_calls: AtomicUsize,
+    }
+
+    impl<P> CountingProofGen<P> {
+        fn new(inner: P) -> Self {
+            Self {
+                inner,
+                l1_block_ref_calls: AtomicUsize::new(0),
+                inbox_claim_calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl<P: AccumulatorProofGenerator> AccumulatorProofGenerator for CountingProofGen<P> {
+        fn generate_inbox_proofs_at(
+            &self,
+            target: AccountId,
+            messages: &[MessageEntry],
+            start_idx: u64,
+            at_leaf_count: u64,
+        ) -> BlockAssemblyResult<Vec<RawMerkleProof>> {
+            self.inner
+                .generate_inbox_proofs_at(target, messages, start_idx, at_leaf_count)
+        }
+
+        fn generate_inbox_proofs_for_claims(
+            &self,
+            target: AccountId,
+            claims: &[AccumulatorClaim],
+            at_leaf_count: u64,
+        ) -> BlockAssemblyResult<Vec<RawMerkleProof>> {
+            self.inbox_claim_calls.fetch_add(1, Ordering::Relaxed);
+            self.inner
+                .generate_inbox_proofs_for_claims(target, claims, at_leaf_count)
+        }
+
+        fn generate_l1_block_ref_proofs<T: IStateAccessor>(
+            &self,
+            l1_block_refs: &[AccumulatorClaim],
+            state: &T,
+        ) -> BlockAssemblyResult<LedgerRefProofs> {
+            self.l1_block_ref_calls.fetch_add(1, Ordering::Relaxed);
+            self.inner
+                .generate_l1_block_ref_proofs(l1_block_refs, state)
+        }
+    }
+
+    /// Batched proof generation must give the same proofs, in the same order, as
+    /// proving each indexed check on its own, including for a repeated claim, and
+    /// call the generator once per accumulator.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_batched_accumulator_proofs_match_per_check_proofs() {
+        let account_id = test_account_id(1);
+        let source_account = test_account_id(2);
+        let messages = generate_message_entries(2, source_account);
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_asm_manifests([1, 2])
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(messages.clone()))
+            .build_fixture()
+            .await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let state = MemoryStateBaseLayer::from_container(state.as_ref().clone());
+        let claim_1 = fixture
+            .l1_block_ref(1)
+            .expect("claim for L1 height 1 should exist");
+        let claim_2 = fixture
+            .l1_block_ref(2)
+            .expect("claim for L1 height 2 should exist");
+        let claims = vec![claim_2.clone(), claim_1, claim_2];
+
+        let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_l1_block_ref_claims(claims.clone())
+            .with_processed_messages(messages.clone())
+            .build();
+        let ctx = create_test_context(fixture.storage().clone());
+
+        let TransactionPayloadV1::SnarkAccountUpdate(payload) = mempool_tx.payload() else {
+            panic!("builder should produce a snark account update");
+        };
+        let account_state = state
+            .get_account_state(account_id)
+            .expect("read account state")
+            .expect("account should exist");
+        let inbox_leaf_count = account_state
+            .as_snark_account()
+            .expect("account should be a snark account")
+            .inbox_mmr()
+            .num_entries();
+        let indexer = index_snark_update_proof_requirements(
+            OLSpecId::V1,
+            account_id,
+            account_state,
+            payload.operation(),
+            mempool_tx.data().effects(),
+        )
+        .expect("update should pass the dry run");
+        let expected: Vec<RawMerkleProof> = indexer
+            .accumulator_checks()
+            .iter()
+            .flat_map(|check| match check {
+                AccProofCheck::L1BlockRef(claim) => ctx
+                    .generate_l1_block_ref_proofs(slice::from_ref(claim), &state)
+                    .expect("prove one L1 block ref claim")
+                    .l1_block_ref_proofs()
+                    .to_vec(),
+                AccProofCheck::Inbox(claim) => ctx
+                    .generate_inbox_proofs_for_claims(
+                        account_id,
+                        slice::from_ref(claim),
+                        inbox_leaf_count,
+                    )
+                    .expect("prove one inbox claim"),
+            })
+            .collect();
+        assert_eq!(expected.len(), claims.len() + messages.len());
+
+        let proof_gen = CountingProofGen::new(ctx);
+        let tx = add_accumulator_proofs(OLSpecId::V1, &proof_gen, &state, mempool_tx)
+            .expect("proof generation should succeed");
+        let acc_proofs = tx
+            .proofs()
+            .accumulator_proofs()
+            .expect("should have accumulator proofs");
+        assert_eq!(acc_proofs.proofs(), expected.as_slice());
+        assert_eq!(proof_gen.l1_block_ref_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(proof_gen.inbox_claim_calls.load(Ordering::Relaxed), 1);
     }
 
     /// Verifies that `ProofSatisfierListV1::single` constructs a valid single-element
@@ -4234,7 +4400,7 @@ mod tests {
         assert_eq!(
             acc_proofs.proofs().len(),
             50,
-            "duplicate claims should currently produce duplicate accumulator proofs (no dedup)"
+            "the STF consumes one accumulator proof per claim, repeated claims included"
         );
         assert!(
             output.failed_txs.is_empty(),

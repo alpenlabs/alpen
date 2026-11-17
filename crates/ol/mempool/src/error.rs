@@ -79,6 +79,15 @@ pub enum OLMempoolError {
     #[error("sequence number gap: expected {expected}, actual {actual}")]
     SequenceNumberGap { expected: u64, actual: u64 },
 
+    /// A snark account update carries more L1 block ref claims than the
+    /// mempool admits.
+    #[error("transaction {txid} has {count} L1 block ref claims, more than the limit {limit}")]
+    TooManyL1BlockRefClaims {
+        txid: OLTxId,
+        count: usize,
+        limit: usize,
+    },
+
     /// Database error.
     #[error("database: {0}")]
     Database(#[from] DbError),

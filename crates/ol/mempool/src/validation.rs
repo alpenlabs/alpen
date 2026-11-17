@@ -108,6 +108,44 @@ fn validate_snark_account_update_tx_seq_no(
     Ok(())
 }
 
+/// Checks a snark account update's L1 block ref claims against admission policy.
+///
+/// Consensus accepts up to [`MAX_ACC_PROOF_COUNT`] claims per update, repeats
+/// included. Block assembly proves every claim before the STF checks the
+/// update's proof, so an update that will never verify still costs the
+/// sequencer that proof work. Admission therefore caps the claim count at
+/// `max_claims`, counting repeats.
+///
+/// Repeated claims are admitted, as consensus admits them. Block assembly
+/// proves all of an update's claims from one read of the MMR nodes they need,
+/// so a repeat adds no reads, and a repeat whose hash differs from the leaf
+/// fails there as invalid.
+///
+/// [`MAX_ACC_PROOF_COUNT`]: strata_ol_tx_types_v1::MAX_ACC_PROOF_COUNT
+pub(crate) fn check_l1_block_ref_claims(
+    txid: OLTxId,
+    tx: &OLTransactionV1,
+    max_claims: usize,
+) -> OLMempoolResult<()> {
+    let TransactionPayloadV1::SnarkAccountUpdate(payload) = tx.payload() else {
+        return Ok(());
+    };
+    let Some(claim_list) = payload.operation().ledger_refs().l1_block_ref_claims() else {
+        return Ok(());
+    };
+
+    let claims = claim_list.claims();
+    if claims.len() > max_claims {
+        return Err(OLMempoolError::TooManyL1BlockRefClaims {
+            txid,
+            count: claims.len(),
+            limit: max_claims,
+        });
+    }
+
+    Ok(())
+}
+
 /// Validates a transaction using STF validation helpers.
 ///
 /// Performs stateful validation:
