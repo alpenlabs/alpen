@@ -93,6 +93,32 @@ started under V0, so convert such a file by hand: keep every value, move
 move `bridge_params` under `runtime`. Don't regenerate it, and don't use
 `"spec": 1`.
 
+## ASM params file
+
+`gen-asm-params` writes the layout ASM v0.6.0 reads, with the genesis fields
+under `genesis` and an empty `runtime` part:
+
+```json
+{
+  "genesis": {
+    "magic": "...",
+    "anchor": { ... },
+    "subprotocols": [ ... ]
+  },
+  "runtime": {}
+}
+```
+
+`runtime` holds one optional section per ASM spec after genesis. Spec 2 reads
+`runtime.spec_v2`; without it, spec 2 keeps the chain's confirmation depths.
+The spec 2 guest bakes in its network's section, so a network that adds one
+must use the guest built from the same file. `gen-asm-params` doesn't write the
+section yet, so add it by hand.
+
+Files written before ASM v0.6.0 have `magic`, `anchor` and `subprotocols` at
+the top level and no longer parse. Convert one by moving those fields under
+`genesis` unchanged and adding `"runtime": {}`.
+
 ## Alpen CLI network profile
 
 `gen-asm-params --cli-config <path>` additionally emits the network fields the

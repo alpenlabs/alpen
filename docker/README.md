@@ -67,13 +67,14 @@ settings.
   "genesis_spec_id": 0,
   "targets": [
     { "predicate": "AlwaysAccept", "spec_id": 0 },
-    { "predicate": "<spec 1 predicate>", "spec_id": 1 }
+    { "predicate": "<spec 1 predicate>", "spec_id": 1 },
+    { "predicate": "<spec 2 predicate>", "spec_id": 2 }
   ]
 }
 ```
 
-ASM v0.5.0-rc.1 compiles spec 0 and spec 1. A node executes spec 1 only after an
-admin update activates a predicate that its catalog maps to spec 1, so add that
+ASM v0.6.0 compiles specs 0, 1 and 2. A node executes a later spec only after an
+admin update activates a predicate that its catalog maps to that spec, so add its
 target before the activation reaches L1. Each predicate and each spec ID appears
 at most once. Files written for ASM v0.4.0 name the genesis program with
 `genesis_predicate`; replace it with `genesis_spec_id`, the spec ID of that
@@ -90,3 +91,13 @@ addresses on the anchor's Bitcoin network. The bridge address is named
 `safe_harbor_address_update`. Since ASM v0.5.0, `safe_harbor_address` is a
 P2TR address on the anchor's network, not a descriptor. Datatool emits the new
 format; existing parameter files must be converted separately.
+
+Since ASM v0.6.0, `asm-params.json` has two parts: `{"genesis": {..}, "runtime":
+{..}}`. The earlier top-level fields `magic`, `anchor` and `subprotocols` move
+under `genesis` unchanged. `runtime` holds one optional section per later spec.
+Spec 2 reads `runtime.spec_v2`; a network without it keeps its confirmation
+depths. The node executes spec 2 with this section, and the spec 2 guest that
+proves the ASM bakes in its network's copy, so the two must come from the same
+network's params. Datatool writes `"runtime": {}`. To convert an existing file,
+move the three fields under `genesis` and add `"runtime": {}`. The node refuses
+the old layout.
