@@ -3451,31 +3451,31 @@ mod tests {
         )
     }
 
-    /// The mempool admits a message payload above the V2 bound under V1,
-    /// rejects it under V2, and evicts it once the next block runs V2.
+    /// The mempool admits a message payload above the V3 bound under V2,
+    /// rejects it under V3, and evicts it once the next block runs V3.
     #[tokio::test]
     async fn test_mempool_rejects_message_payload_over_the_spec_capacity() {
-        let max_payload = spec_limits(OLSpecId::V2).max_msg_payload_bytes();
+        let max_payload = spec_limits(OLSpecId::V3).max_msg_payload_bytes();
         let tx = create_test_snark_tx_with_message_payload(max_payload + 1);
 
-        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, false).await;
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V2, false).await;
         let txid = state
             .add_transaction(tx.clone())
             .await
-            .expect("admitted under V1");
-        state.tip_spec = SelectedSpec::Supported(OLSpecId::V2);
+            .expect("admitted under V2");
+        state.tip_spec = SelectedSpec::Supported(OLSpecId::V3);
         readmit(&mut state);
         assert!(
             !state.contains(&txid),
-            "evicted once the next block runs V2"
+            "evicted once the next block runs V3"
         );
 
-        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V1, true).await;
-        assert_eq!(state.select_spec().unwrap(), OLSpecId::V2);
+        let (mut state, _) = mempool_on_terminal_tip(OLSpecId::V2, true).await;
+        assert_eq!(state.select_spec().unwrap(), OLSpecId::V3);
         let err = state
             .add_transaction(tx)
             .await
-            .expect_err("rejected under V2");
+            .expect_err("rejected under V3");
         assert!(
             matches!(
                 err,
@@ -3492,7 +3492,7 @@ mod tests {
         let txid = state
             .add_transaction(create_test_snark_tx_with_message_payload(max_payload))
             .await
-            .expect("admitted at the V2 payload bound");
+            .expect("admitted at the V3 payload bound");
         assert!(state.contains(&txid));
     }
 

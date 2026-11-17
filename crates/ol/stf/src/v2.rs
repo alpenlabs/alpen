@@ -3,7 +3,7 @@
 //! V2 starts as a copy of the V1 rules: [`StfV2`] runs every operation with
 //! the [`strata_ol_stf_v1`] code, except that it takes over a V1 state at the
 //! first block of an epoch, as V1 takes over a V0 state, and that it allows
-//! fewer transaction effects and block logs and smaller message payloads.
+//! fewer transaction effects and block logs.
 //! [`CappedV1Rules`] implements the operations V2 shares with V3, and rules
 //! that V2 changes later replace the call of the operation they change.
 //!
@@ -11,11 +11,10 @@
 //!
 //! V2 restores the capacities of the 0.3.0 rules, which V1 raised: a
 //! transaction carries at most 255 transfers and 255 messages, and a block
-//! emits at most 4,096 logs ([`OLSpecLimits`]). V2 also bounds each message
-//! payload at the 4 KiB the epoch DA encodes for an inbox message, which no
-//! earlier spec checks. The V1 types keep their larger bounds, so V2 checks
-//! its capacities around the V1 code instead, as [`CappedV1Rules`] describes.
-//! A transaction or block above a capacity is invalid.
+//! emits at most 4,096 logs ([`OLSpecLimits`]). The V1 types keep their
+//! larger bounds, so V2 checks its capacities around the V1 code instead, as
+//! [`CappedV1Rules`] describes. A transaction or block above a capacity is
+//! invalid.
 //!
 //! # Taking over a V1 state
 //!

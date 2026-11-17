@@ -49,26 +49,26 @@ impl OLSpecLimits {
         max_block_logs: MAX_LOGS_PER_BLOCK as usize,
     };
 
-    /// The capacities of the V2 rules.
+    /// The capacities of the V2 rules, which restore the V0 values.
     ///
-    /// V2 restores the V0 transfer, message, and block log capacities. A
-    /// transaction emits one log per bridge withdrawal message plus one for a
+    /// A transaction emits one log per bridge withdrawal message plus one for a
     /// snark account update, so a transaction at these capacities always fits
     /// a block.
-    ///
-    /// V2 also bounds each message payload at [`MAX_MSG_PAYLOAD_BYTES`], the
-    /// most the epoch DA encodes for an inbox message. Earlier specs accept
-    /// any payload the SSZ types allow, so an epoch that delivers a larger
-    /// payload to a snark account inbox has no DA diff and no checkpoint can
-    /// cover it. V2 applies the bound to every message, whatever its
-    /// destination, so the rule needs no state.
-    pub(crate) const V2: Self = Self {
-        max_msg_payload_bytes: MAX_MSG_PAYLOAD_BYTES,
-        ..Self::V0
-    };
+    pub(crate) const V2: Self = Self::V0;
 
-    /// The capacities of the V3 rules, which keep the V2 capacities.
-    pub(crate) const V3: Self = Self::V2;
+    /// The capacities of the V3 rules.
+    ///
+    /// V3 keeps the V2 transfer, message, and block log capacities, and bounds
+    /// each message payload at [`MAX_MSG_PAYLOAD_BYTES`], the most the epoch
+    /// DA encodes for an inbox message. Earlier specs accept any payload the
+    /// SSZ types allow, so an epoch that delivers a larger payload to a snark
+    /// account inbox has no DA diff and no checkpoint can cover it. V3 applies
+    /// the bound to every message, whatever its destination, so the rule
+    /// needs no state.
+    pub(crate) const V3: Self = Self {
+        max_msg_payload_bytes: MAX_MSG_PAYLOAD_BYTES,
+        ..Self::V2
+    };
 
     /// Returns the most transfers a transaction may carry.
     pub fn max_tx_transfers(&self) -> usize {

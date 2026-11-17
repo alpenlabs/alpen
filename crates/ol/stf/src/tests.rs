@@ -1372,25 +1372,27 @@ impl CapacityFixture {
         state
     }
 
-    /// Builds a block from `txs` with the V1 code on a V2 state, so the block
-    /// differs from a valid V2 block only in what V2 caps, and returns it with
-    /// the state to verify it on.
-    fn v2_block_built_by_v1(
+    /// Builds a block from `txs` with the V1 code on a state of `spec`, so
+    /// the block differs from a valid block of `spec` only in what `spec`
+    /// caps, and returns it with the state to verify it on.
+    fn block_built_by_v1(
         &self,
+        spec: OLSpecId,
         txs: Vec<OLTransactionV1>,
     ) -> (OLBlockV1, MemoryStateBaseLayer<OLStateV1>) {
-        let (mut blocks, pre_state) = self.v2_blocks_built_by_v1(vec![txs]);
+        let (mut blocks, pre_state) = self.blocks_built_by_v1(spec, vec![txs]);
         (blocks.remove(0), pre_state)
     }
 
     /// Builds consecutive blocks of epoch 1, one from each entry of
-    /// `block_txs`, as [`Self::v2_block_built_by_v1`] builds one.
-    fn v2_blocks_built_by_v1(
+    /// `block_txs`, as [`Self::block_built_by_v1`] builds one.
+    fn blocks_built_by_v1(
         &self,
+        spec: OLSpecId,
         block_txs: Vec<Vec<OLTransactionV1>>,
     ) -> (Vec<OLBlockV1>, MemoryStateBaseLayer<OLStateV1>) {
         let mut state = self.fixture.state().clone();
-        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+        state.set_spec_versions(OLSpecVersions::uniform(spec));
         let pre_state = state.clone();
         let mut parent = self.fixture.parent_header().clone();
         let mut blocks = Vec::new();
@@ -1409,9 +1411,10 @@ impl CapacityFixture {
         (blocks, pre_state)
     }
 
-    /// Runs every V2 operation that executes a whole block on `block`.
-    fn v2_block_errors(
+    /// Runs every operation of `spec` that executes a whole block on `block`.
+    fn block_errors(
         &self,
+        spec: OLSpecId,
         block: &OLBlockV1,
         pre_state: &MemoryStateBaseLayer<OLStateV1>,
     ) -> Vec<(&'static str, ExecError)> {
@@ -1422,7 +1425,7 @@ impl CapacityFixture {
             (
                 "verify_block",
                 verify_block(
-                    OLSpecId::V2,
+                    spec,
                     &mut pre_state.clone(),
                     block.header(),
                     Some(parent),
@@ -1434,7 +1437,7 @@ impl CapacityFixture {
             (
                 "execute_and_complete_block",
                 execute_and_complete_block(
-                    OLSpecId::V2,
+                    spec,
                     &mut pre_state.clone(),
                     BlockContext::new(&block_info, Some(parent)),
                     BlockComponents::from_block(block),
@@ -1445,7 +1448,7 @@ impl CapacityFixture {
             (
                 "execute_block_batch_predrain",
                 execute_block_batch_predrain(
-                    OLSpecId::V2,
+                    spec,
                     &mut pre_state.clone(),
                     slice::from_ref(block),
                     parent,
@@ -1485,10 +1488,15 @@ fn test_spec_limits() {
     assert_eq!(v2.max_tx_transfers(), 255);
     assert_eq!(v2.max_tx_messages(), 255);
     assert_eq!(v2.max_block_logs(), 4_096);
-    assert_eq!(v2.max_msg_payload_bytes(), MAX_MSG_PAYLOAD_BYTES);
-    assert_eq!(v2.max_msg_payload_bytes(), 4_096);
+    assert_eq!(v2.max_msg_payload_bytes(), v0.max_msg_payload_bytes());
+    assert_eq!(v2, v0);
 
-    assert_eq!(spec_limits(OLSpecId::V3), v2);
+    let v3 = spec_limits(OLSpecId::V3);
+    assert_eq!(v3.max_tx_transfers(), v2.max_tx_transfers());
+    assert_eq!(v3.max_tx_messages(), v2.max_tx_messages());
+    assert_eq!(v3.max_block_logs(), v2.max_block_logs());
+    assert_eq!(v3.max_msg_payload_bytes(), MAX_MSG_PAYLOAD_BYTES);
+    assert_eq!(v3.max_msg_payload_bytes(), 4_096);
 }
 
 /// V2 accepts a block whose logs reach its capacity and rejects one more log
@@ -1529,8 +1537,8 @@ fn test_v2_caps_block_logs() {
         .expect_err("V2 rejects the extra log");
     assert!(is_overflow(&err), "{err}");
 
-    let (block, pre_state) = capacity.v2_block_built_by_v1(over);
-    for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+    let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V2, over);
+    for (operation, err) in capacity.block_errors(OLSpecId::V2, &block, &pre_state) {
         assert!(is_overflow(&err), "{operation}: {err}");
     }
 }
@@ -1595,8 +1603,8 @@ fn test_v2_caps_transaction_effects() {
             "block execution names the transaction: {err}"
         );
 
-        let (block, pre_state) = capacity.v2_block_built_by_v1(txs.clone());
-        for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+        let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V2, txs.clone());
+        for (operation, err) in capacity.block_errors(OLSpecId::V2, &block, &pre_state) {
             assert!(is_overflow(&err), "{operation}: {err}");
         }
 
@@ -1625,12 +1633,13 @@ fn test_v2_caps_transaction_effects() {
     }
 }
 
-/// V2 accepts a message payload at the DA bound and rejects one more byte,
+/// V3 accepts a message payload at the DA bound and rejects one more byte,
 /// in block execution and in the sequencer phases that take a single
-/// transaction, whatever the message's destination. V1 accepts both.
+/// transaction, whatever the message's destination. V1 and V2 accept both,
+/// as the checkpoint programs that prove them do.
 #[test]
-fn test_v2_caps_message_payload() {
-    let max_payload = OLSpecLimits::V2.max_msg_payload_bytes();
+fn test_v3_caps_message_payload() {
+    let max_payload = OLSpecLimits::V3.max_msg_payload_bytes();
     let capacity = CapacityFixture::new(1);
     let account = capacity.fixture.expect_snark_account(capacity.sender);
     let update_with_payload = |len: usize| {
@@ -1641,14 +1650,16 @@ fn test_v2_caps_message_payload() {
     };
 
     capacity
-        .construct(OLSpecId::V2, vec![update_with_payload(max_payload)])
-        .expect("V2 accepts a payload at the DA bound");
+        .construct(OLSpecId::V3, vec![update_with_payload(max_payload)])
+        .expect("V3 accepts a payload at the DA bound");
 
     let tx = update_with_payload(max_payload + 1);
     let txs = vec![tx.clone()];
-    capacity
-        .construct(OLSpecId::V1, txs.clone())
-        .expect("V1 accepts the larger payload");
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        capacity
+            .construct(spec, txs.clone())
+            .unwrap_or_else(|err| panic!("{spec:?} accepts the larger payload: {err}"));
+    }
 
     let expected = TxEffectsOverflow::MessagePayload {
         index: 0,
@@ -1657,16 +1668,16 @@ fn test_v2_caps_message_payload() {
     };
     let is_overflow = |err: &ExecError| matches!(err.base(), ExecError::TxEffectsOverflow(err) if *err == expected);
     let err = capacity
-        .construct(OLSpecId::V2, txs.clone())
-        .expect_err("V2 rejects the larger payload");
+        .construct(OLSpecId::V3, txs.clone())
+        .expect_err("V3 rejects the larger payload");
     assert!(is_overflow(&err), "{err}");
     assert!(
         matches!(err, ExecError::TxExec(_, 0, _)),
         "block execution names the transaction: {err}"
     );
 
-    let (block, pre_state) = capacity.v2_block_built_by_v1(txs);
-    for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+    let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V3, txs);
+    for (operation, err) in capacity.block_errors(OLSpecId::V3, &block, &pre_state) {
         assert!(is_overflow(&err), "{operation}: {err}");
     }
 
@@ -1681,7 +1692,7 @@ fn test_v2_caps_message_payload() {
         .expect("snark account exists")
         .clone();
     let err = sequencer::index_snark_update_proof_requirements(
-        OLSpecId::V2,
+        OLSpecId::V3,
         capacity.sender,
         &sender_state,
         sau.operation(),
@@ -1694,7 +1705,7 @@ fn test_v2_caps_message_payload() {
     let output = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(capacity.block_info(), &output, &runtime_params);
     let err = sequencer::process_single_tx(
-        OLSpecId::V2,
+        OLSpecId::V3,
         &mut capacity.fixture.state().clone(),
         &tx,
         &TxExecContext::new(&basic_ctx, Some(capacity.fixture.parent_header())),
@@ -1715,10 +1726,13 @@ fn test_v2_batch_predrain_caps_each_block() {
     let first = capacity.updates_emitting(0, max_logs);
     let second_seq_no = first.len() as u64;
 
-    let (blocks, pre_state) = capacity.v2_blocks_built_by_v1(vec![
-        first.clone(),
-        capacity.updates_emitting(second_seq_no, max_logs),
-    ]);
+    let (blocks, pre_state) = capacity.blocks_built_by_v1(
+        OLSpecId::V2,
+        vec![
+            first.clone(),
+            capacity.updates_emitting(second_seq_no, max_logs),
+        ],
+    );
     let mut v2_state = pre_state.clone();
     let v2_logs = execute_block_batch_predrain(
         OLSpecId::V2,
@@ -1743,10 +1757,13 @@ fn test_v2_batch_predrain_caps_each_block() {
         v1_state.compute_state_root().expect("state root"),
     );
 
-    let (blocks, pre_state) = capacity.v2_blocks_built_by_v1(vec![
-        first,
-        capacity.updates_emitting(second_seq_no, max_logs + 1),
-    ]);
+    let (blocks, pre_state) = capacity.blocks_built_by_v1(
+        OLSpecId::V2,
+        vec![
+            first,
+            capacity.updates_emitting(second_seq_no, max_logs + 1),
+        ],
+    );
     let err = execute_block_batch_predrain(
         OLSpecId::V2,
         &mut pre_state.clone(),
