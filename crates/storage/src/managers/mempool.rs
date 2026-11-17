@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use ops::mempool::MempoolDataOps;
-use strata_db_types::mempool::{MempoolDatabase, MempoolTxData};
+use strata_db_types::mempool::{MempoolDatabase, MempoolTxData, MempoolWriteBatch};
 use strata_db_types::DbResult;
-use strata_identifiers::OLTxId;
+use strata_identifiers::{OLBlockCommitment, OLTxId};
 use tokio::runtime::Handle;
 
 use crate::ops;
@@ -44,6 +44,16 @@ impl MempoolDbManager {
     /// Returns `true` if the transaction existed, `false` otherwise.
     pub fn del_tx(&self, txid: OLTxId) -> DbResult<bool> {
         self.ops.del_tx_blocking(txid)
+    }
+
+    /// Applies `batch` atomically: either every write lands or none does.
+    pub fn apply_batch(&self, batch: MempoolWriteBatch) -> DbResult<()> {
+        self.ops.apply_batch_blocking(batch)
+    }
+
+    /// Returns the tip the last batch recorded, if any.
+    pub fn get_tip(&self) -> DbResult<Option<OLBlockCommitment>> {
+        self.ops.get_tip_blocking()
     }
 }
 

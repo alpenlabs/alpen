@@ -1,10 +1,10 @@
 use sled::IVec;
 use ssz_derive::{Decode, Encode};
-use strata_identifiers::OLTxId;
+use strata_identifiers::{OLBlockCommitment, OLTxId};
 use thiserror::Error;
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
 
-use crate::define_table_without_codec;
+use crate::{define_table_without_codec, impl_codec_value_codec};
 
 /// Errors raised while decoding mempool SSZ payloads from sled.
 #[derive(Debug, Error)]
@@ -41,6 +41,14 @@ impl MempoolTxEntry {
         (self.tx_bytes, self.timestamp_micros)
     }
 }
+
+define_table_without_codec!(
+    /// A single-entry table recording the chain tip the stored mempool
+    /// transactions reflect.
+    /// Maps a constant `u8` key => [`OLBlockCommitment`]
+    (MempoolTipSchema) u8 => OLBlockCommitment
+);
+impl_codec_value_codec!(MempoolTipSchema, OLBlockCommitment);
 
 define_table_without_codec!(
     /// A table to store mempool transactions.
