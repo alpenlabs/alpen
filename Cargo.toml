@@ -160,55 +160,55 @@ strata-test-utils-l2 = { path = "crates/test-utils/l2" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
-strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
+strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
-], tag = "v0.5.0" }
-strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-codec-utils = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-db-macros = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
+], tag = "v0.5.1" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-codec-utils = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-db-macros = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
   "legacy_compact",
-], tag = "v0.5.0" }
-strata-merkle-node-store = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-ol-logs = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
+], tag = "v0.5.1" }
+strata-merkle-node-store = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-metrics = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-ol-logs = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common", features = [
   "serde",
-], tag = "v0.5.0" }
-strata-retry = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-rpc-tracing = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-ssz-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
-strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.0" }
+], tag = "v0.5.1" }
+strata-retry = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-rpc-tracing = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-ssz-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
+strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.5.1" }
 
 # asm
-strata-asm-admin-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-bridge-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-checkpoint-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-common = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-logs = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-manifest-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-params = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-proto-admin-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-proto-bridge-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-proto-checkpoint-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-proto-txs-test-utils = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-asm-spec = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2", features = [
+strata-asm-admin-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-bridge-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-checkpoint-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-common = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-logs = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-manifest-types = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-params = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-proto-admin-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-proto-bridge-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-proto-checkpoint-txs = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-proto-txs-test-utils = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-asm-spec = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2", features = [
   "host",
 ] }
-strata-asm-worker = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-btc-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-checkpoint-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
-strata-test-utils-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.5.0-rc.2" }
+strata-asm-worker = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-btc-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-checkpoint-verification = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
+strata-test-utils-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.6.0-rc.2" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }

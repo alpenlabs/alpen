@@ -345,8 +345,8 @@ mod tests {
             storage.clone(),
             status_channel,
             3,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
         for height in 0..=200 {
             ctx =
@@ -499,7 +499,7 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
-            params.anchor.block,
+            params.genesis.anchor.block,
             arbgen.generate(),
             None,
             None,
@@ -570,8 +570,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
         for height in 17..20 {
             ctx =
@@ -668,8 +668,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
         for height in 17..20 {
             ctx =
@@ -701,7 +701,7 @@ mod tests {
             storage,
             status_channel,
             depth,
-            params.magic,
+            params.genesis.magic,
             L1BlockCommitment::new(0, L1BlockId::default()),
         )
     }
@@ -777,14 +777,20 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
-            params.anchor.block,
+            params.genesis.anchor.block,
             arbgen.generate(),
             None,
             None,
         ));
 
-        let genesis = params.anchor.block;
-        let ctx = StubCtx::new(storage.clone(), status_channel, 4, params.magic, genesis);
+        let genesis = params.genesis.anchor.block;
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.genesis.magic,
+            genesis,
+        );
         CsmWorkerState::init_from_context(ctx).expect("bootstrap");
 
         assert!(
@@ -817,8 +823,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
         for height in 40326..=40329 {
             ctx = ctx.with_canonical_block(height, blkid(height as u8));
@@ -847,8 +853,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
         for height in 40326..=40329 {
             ctx = ctx.with_canonical_block(height, blkid(height as u8));
@@ -899,8 +905,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
         super::delete_orphan_rows_above(&ctx, canonical_tip).expect("delete orphans");
 
@@ -938,8 +944,8 @@ mod tests {
             storage.clone(),
             status_channel,
             4,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         );
         for h in 40326..height {
             ctx = ctx.with_canonical_block(h, blkid(h as u8));

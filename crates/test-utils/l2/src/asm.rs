@@ -1,7 +1,7 @@
 //! ASM params test fixtures for L2/CSM components.
 
 use bitcoin::{hashes::Hash, params::Params as BitcoinParams, CompactTarget};
-use strata_asm_params::AsmParams;
+use strata_asm_params::{AsmGenesisParams, AsmParams, AsmRuntimeParams};
 use strata_btc_verification::L1Anchor;
 use strata_primitives::{
     buf::Buf32,
@@ -19,9 +19,12 @@ pub fn gen_asm_params() -> AsmParams {
     let segment = BtcMainnetSegment::load();
     let anchor = compute_l1_anchor(&segment, 40_320);
     AsmParams {
-        magic: (*b"ALPN").into(),
-        anchor,
-        subprotocols: Vec::new(),
+        genesis: AsmGenesisParams {
+            magic: (*b"ALPN").into(),
+            anchor,
+            subprotocols: Vec::new(),
+        },
+        runtime: AsmRuntimeParams { spec_v2: None },
     }
 }
 

@@ -132,13 +132,14 @@ pub fn spawn_asm_worker(
             .targets()
             .iter()
             .map(|target| (target.predicate().clone(), target.spec_id())),
+        &asm_params.runtime,
     )?;
     let genesis_predicate = registry
         .predicate(execution.genesis_spec_id())
         .context("ASM genesis_spec_id is not listed in the execution targets")?
         .clone();
     let genesis =
-        CompiledSpec::resolve(execution.genesis_spec_id())?.construct_genesis_state(&asm_params);
+        CompiledSpec::resolve(execution.genesis_spec_id())?.construct_genesis_state(&asm_params)?;
 
     let context = AsmWorkerCtx::new(
         handle.clone(),

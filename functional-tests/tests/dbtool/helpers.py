@@ -165,7 +165,7 @@ def _load_asm_params(datadir: str) -> dict[str, Any]:
 def load_genesis_height(datadir: str) -> int:
     """Load genesis L1 height from the ASM anchor in asm-params.json."""
     params = _load_asm_params(datadir)
-    return int(params["anchor"]["block"]["height"])
+    return int(params["genesis"]["anchor"]["block"]["height"])
 
 
 def load_l1_reorg_safe_depth(datadir: str) -> int:

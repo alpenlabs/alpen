@@ -191,8 +191,10 @@ loads one bundle per spec. [`crates/prover-core`](../crates/prover-core/README.m
 
 Configuration is split by owner:
 
-- **ASM parameters** (`AsmParams`, `--asm-params`): the L1 anchor, network, magic bytes and
-  subprotocol genesis config.
+- **ASM parameters** (`AsmParams`, `--asm-params`): `AsmGenesisParams`, with the L1 anchor,
+  network, magic bytes and subprotocol genesis config, and `AsmRuntimeParams`, with one
+  optional section per later ASM spec. The node executes those specs with their sections, and
+  each spec's guest bakes in the same section, so the two must come from one network's file.
 - **OL parameters** (`OLParams`, `--ol-params`): `OLGenesisParams`, including the network's
   genesis spec, and `OLRuntimeParams`. Real guest builds embed the runtime parameters, so
   changing them changes the checkpoint verifying key.

@@ -512,8 +512,8 @@ mod tests {
             storage,
             status_channel,
             TEST_L1_REORG_SAFE_DEPTH,
-            params.magic,
-            params.anchor.block,
+            params.genesis.magic,
+            params.genesis.anchor.block,
         )
     }
 
