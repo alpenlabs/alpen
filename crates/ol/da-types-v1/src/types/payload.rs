@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::marker::PhantomData;
 
 use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
-use strata_codec::{Codec, CodecError, decode_buf_exact};
+use strata_codec::{Codec, CodecError, Encoder, decode_buf_exact};
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
 use strata_ol_da_common::DaError;
@@ -47,8 +47,98 @@ impl OLDaPayloadV1 {
 }
 
 /// Decodes [`OLDaPayloadV1`] from raw bytes using exact `strata_codec` decoding.
+///
+/// It accepts every encoding the frozen V1 and V2 checkpoint programs accept,
+/// including spellings the encoder never writes (SECFND-912), so the V1 and V2
+/// rules replay epochs with it. V0 payloads decode with
+/// [`decode_v0_payload_bytes`](super::decode_v0_payload_bytes), and the V3
+/// rules use [`decode_ol_da_payload_bytes_canonical`].
 pub fn decode_ol_da_payload_bytes(bytes: &[u8]) -> Result<OLDaPayloadV1, CodecError> {
     decode_buf_exact(bytes)
+}
+
+/// Error for payload bytes that decode but are not what the encoder writes for
+/// the decoded payload.
+const NONCANONICAL_PAYLOAD: CodecError = CodecError::MalformedField("noncanonical OL DA payload");
+
+/// Decodes [`OLDaPayloadV1`] from raw bytes and requires them to be the
+/// payload's canonical encoding, the one the encoder writes.
+///
+/// It decodes with [`decode_ol_da_payload_bytes`] and then requires that
+/// re-encoding the payload reproduces `bytes` exactly. That rejects every
+/// spelling the lenient decoder accepts but the encoder never writes:
+///
+/// - a varint with padding (a final byte with no data bits), with data bits above the 64th, or
+///   running to an eleventh byte, and a signed varint with a sign bit on zero;
+/// - a presence bit set over a member that decodes to its default: a zero counter increment, an
+///   inbox accumulator with no entries, or a nested diff with none of its own bits set;
+/// - presence bits past a compound's last member;
+/// - an inbox message length prefix wider than its value needs.
+///
+/// The V3 rules decode DA payloads with this. The V0 to V2 rules use
+/// [`decode_ol_da_payload_bytes`] or
+/// [`decode_v0_payload_bytes`](super::decode_v0_payload_bytes), which accept
+/// what their frozen checkpoint programs accept (SECFND-912, STR-4808).
+///
+/// The re-encoding is checked against `bytes` as it is produced, so the check
+/// allocates nothing and stops at the first byte that differs.
+///
+/// # Errors
+///
+/// Returns [`CodecError::MalformedField`] if `bytes` decode but are not the
+/// canonical encoding of the decoded payload, and otherwise the error decoding
+/// or re-encoding the payload returns.
+pub fn decode_ol_da_payload_bytes_canonical(bytes: &[u8]) -> Result<OLDaPayloadV1, CodecError> {
+    let payload = decode_ol_da_payload_bytes(bytes)?;
+
+    let mut expected = ExpectedBytes::new(bytes);
+    let reencoded = payload.encode(&mut expected);
+    if expected.diverged {
+        return Err(NONCANONICAL_PAYLOAD);
+    }
+    reencoded?;
+    // Every byte the encoder wrote matched, but it wrote fewer: the input
+    // spells the payload in more bytes than it needs.
+    if !expected.rest.is_empty() {
+        return Err(NONCANONICAL_PAYLOAD);
+    }
+
+    Ok(payload)
+}
+
+/// [`Encoder`] that checks the bytes written to it against an expected byte
+/// string instead of storing them.
+struct ExpectedBytes<'a> {
+    /// Expected bytes not yet written.
+    rest: &'a [u8],
+
+    /// Whether a write differed from the expected bytes.
+    diverged: bool,
+}
+
+impl<'a> ExpectedBytes<'a> {
+    fn new(expected: &'a [u8]) -> Self {
+        Self {
+            rest: expected,
+            diverged: false,
+        }
+    }
+}
+
+impl Encoder for ExpectedBytes<'_> {
+    fn write_buf(&mut self, buf: &[u8]) -> Result<(), CodecError> {
+        match self.rest.strip_prefix(buf) {
+            Some(rest) => {
+                self.rest = rest;
+                Ok(())
+            }
+            None => {
+                // Failing the write stops the encoder at the first difference.
+                self.diverged = true;
+                Err(NONCANONICAL_PAYLOAD)
+            }
+        }
+    }
 }
 
 /// Epoch OL state diff (global + ledger).
@@ -598,34 +688,232 @@ mod tests {
         encode_to_vec(&OLDaPayloadV1::new(state_diff)).expect("encode payload")
     }
 
-    /// The one-encoding rules of the DA members hold through the payload
-    /// decoder. Each tail below spells the same diff as the canonical one
-    /// (a balance delta of +5, or no change at all) and must not decode.
-    #[test]
-    fn test_decode_ol_da_payload_bytes_rejects_other_spellings_of_a_member() {
-        let canonical =
+    /// Source of the inbox message in [`inbox_tail`].
+    const INBOX_TAIL_SOURCE: u8 = 0xB1;
+
+    /// Inclusion epoch of the inbox message in [`inbox_tail`].
+    const INBOX_TAIL_EPOCH: u32 = 7;
+
+    /// Account diff bytes for a snark diff whose only change is one inbox
+    /// message from [`INBOX_TAIL_SOURCE`] with zero value, written with the
+    /// given length prefix.
+    fn inbox_tail(len_prefix: &[u8], data: &[u8]) -> Vec<u8> {
+        // Snark bit, then the snark bitmap with only the inbox bit, then a
+        // u16 entry count of one.
+        let mut tail = vec![0x02, 0x04, 0x00, 0x01];
+        tail.extend([INBOX_TAIL_SOURCE; 32]);
+        tail.extend(INBOX_TAIL_EPOCH.to_be_bytes());
+        tail.extend([0; 8]); // zero value
+        tail.extend(len_prefix);
+        tail.extend(data);
+        tail
+    }
+
+    /// Encodes the payload [`inbox_tail`] spells with a canonical prefix.
+    fn payload_ending_in_inbox_msg(data_len: usize, byte: u8) -> Vec<u8> {
+        let msg = build::inbox_msg(
+            test_account_id(INBOX_TAIL_SOURCE),
+            INBOX_TAIL_EPOCH,
+            data_len,
+            byte,
+        );
+        payload_ending_in_account_diff(AccountDiffV1::new(
+            DaCounter::new_unchanged(),
+            build::snark_diff(0, None, 0, vec![msg], None),
+        ))
+    }
+
+    /// Every spelling the encoder never writes, each paired with the canonical
+    /// encoding of the payload it decodes to.
+    fn noncanonical_payload_spellings() -> Vec<(&'static str, Vec<u8>, Vec<u8>)> {
+        let no_change = payload_ending_in_account_diff(AccountDiffV1::default());
+        // Account diff bitmap with no bit set.
+        assert!(no_change.ends_with(&[0x00]), "{no_change:02x?}");
+        let prefix = no_change[..no_change.len() - 1].to_vec();
+        let with_tail = |tail: &[u8]| [&prefix[..], tail].concat();
+
+        let plus_five =
             payload_ending_in_account_diff(build::balance_diff(SignedVarInt::positive(5)));
         // Account diff bitmap with the balance bit set, then the delta.
-        assert!(canonical.ends_with(&[0x01, 0x05]), "{canonical:02x?}");
-        decode_ol_da_payload_bytes(&canonical).expect("canonical payload decodes");
-        let prefix = &canonical[..canonical.len() - 2];
+        assert_eq!(plus_five, with_tail(&[0x01, 0x05]));
 
-        for (tail, spelling) in [
-            (&[0x01, 0x85, 0x00][..], "a padded varint for +5"),
-            (&[0x01, 0x00][..], "a zero balance delta under a set bit"),
-            (&[0x01, 0x40][..], "a negative-zero balance delta"),
-            // Snark bit set, then the snark bitmap with only the inbox bit
-            // set, then a zero u16 entry count.
+        let neg_max =
+            payload_ending_in_account_diff(build::balance_diff(SignedVarInt::negative(u64::MAX)));
+        let mut neg_max_tail = vec![0x01];
+        neg_max_tail.extend([0xFF; 9]);
+        neg_max_tail.push(0x03); // bits 62 and 63 of the magnitude
+        assert_eq!(neg_max, with_tail(&neg_max_tail));
+        // The tenth group with junk above bit 63, which the decoder drops.
+        let mut neg_max_alias_tail = neg_max_tail.clone();
+        *neg_max_alias_tail.last_mut().unwrap() = 0x07;
+
+        // +5 padded with empty groups out to an eleventh byte.
+        let mut eleven_byte_tail = vec![0x01, 0x85];
+        eleven_byte_tail.extend([0x80; 9]);
+        eleven_byte_tail.push(0x00);
+        assert_eq!(eleven_byte_tail.len(), 1 + 11);
+
+        let short_msg = payload_ending_in_inbox_msg(3, 0xEE);
+        let data = [0xEE; 3];
+        assert_eq!(short_msg, with_tail(&inbox_tail(&[0x03], &data)));
+        let long_msg = payload_ending_in_inbox_msg(200, 0xCD);
+        let long_data = [0xCD; 200];
+        assert_eq!(long_msg, with_tail(&inbox_tail(&[0x80, 0xC8], &long_data)));
+
+        let mut global_high_bit = no_change.clone();
+        // The payload opens with the global diff bitmap, which has two members.
+        assert_eq!(global_high_bit[0], 0x00);
+        global_high_bit[0] = 0x80;
+
+        vec![
             (
-                &[0x02, 0x04, 0x00, 0x00][..],
-                "an empty inbox under a set bit",
+                "a padded balance delta",
+                with_tail(&[0x01, 0x85, 0x00]),
+                plus_five.clone(),
             ),
-        ] {
-            let bytes = [prefix, tail].concat();
-            assert!(
-                decode_ol_da_payload_bytes(&bytes).is_err(),
-                "{spelling} must not decode: {tail:02x?}"
+            (
+                "an eleven-byte balance delta",
+                with_tail(&eleven_byte_tail),
+                plus_five.clone(),
+            ),
+            (
+                "a balance delta with data bits above the 64th",
+                with_tail(&neg_max_alias_tail),
+                neg_max,
+            ),
+            (
+                "a negative-zero balance delta",
+                with_tail(&[0x01, 0x40]),
+                no_change.clone(),
+            ),
+            (
+                "a zero balance delta under a set bit",
+                with_tail(&[0x01, 0x00]),
+                no_change.clone(),
+            ),
+            (
+                "a zero seqno increment under a set bit",
+                with_tail(&[0x02, 0x01, 0x00, 0x00]),
+                no_change.clone(),
+            ),
+            (
+                "an empty inbox under a set bit",
+                with_tail(&[0x02, 0x04, 0x00, 0x00]),
+                no_change.clone(),
+            ),
+            (
+                "a set snark bit over an all-default snark diff",
+                with_tail(&[0x02, 0x00]),
+                no_change.clone(),
+            ),
+            (
+                "a set proof state bit over an all-default proof state diff",
+                with_tail(&[0x02, 0x02, 0x00]),
+                no_change.clone(),
+            ),
+            (
+                "an account diff bitmap bit past its members",
+                with_tail(&[0x81, 0x05]),
+                plus_five.clone(),
+            ),
+            (
+                "a snark diff bitmap bit past its members",
+                with_tail(&[0x02, 0x10]),
+                no_change.clone(),
+            ),
+            (
+                "a global diff bitmap bit past its members",
+                global_high_bit,
+                no_change,
+            ),
+            (
+                "a two-byte length prefix for a one-byte length",
+                with_tail(&inbox_tail(&[0x80, 0x03], &data)),
+                short_msg.clone(),
+            ),
+            (
+                "a four-byte length prefix for a one-byte length",
+                with_tail(&inbox_tail(&[0xC0, 0x00, 0x00, 0x03], &data)),
+                short_msg,
+            ),
+            (
+                "a four-byte length prefix for a two-byte length",
+                with_tail(&inbox_tail(&[0xC0, 0x00, 0x00, 0xC8], &long_data)),
+                long_msg,
+            ),
+        ]
+    }
+
+    /// Each spelling the encoder never writes decodes, as the frozen V0 to V2
+    /// checkpoint programs decode it, to the payload its canonical encoding
+    /// spells, and only the canonical decoder rejects it.
+    #[test]
+    fn test_noncanonical_payload_decodes_leniently_and_fails_the_canonical_check() {
+        for (spelling, noncanonical, canonical) in noncanonical_payload_spellings() {
+            assert_ne!(noncanonical, canonical, "{spelling}");
+
+            let lenient = decode_ol_da_payload_bytes(&noncanonical)
+                .unwrap_or_else(|e| panic!("{spelling} must decode leniently, got {e:?}"));
+            assert_eq!(
+                encode_to_vec(&lenient).expect("re-encode lenient payload"),
+                canonical,
+                "{spelling} must decode to the canonical payload"
             );
+
+            let res = decode_ol_da_payload_bytes_canonical(&noncanonical);
+            assert!(
+                matches!(
+                    res,
+                    Err(CodecError::MalformedField("noncanonical OL DA payload"))
+                ),
+                "{spelling} must fail the canonical check, got {res:?}"
+            );
+
+            let strict = decode_ol_da_payload_bytes_canonical(&canonical)
+                .unwrap_or_else(|e| panic!("canonical form of {spelling} must decode, got {e:?}"));
+            assert_eq!(format!("{strict:?}"), format!("{lenient:?}"), "{spelling}");
+        }
+    }
+
+    /// The canonical decoder reads every golden payload unchanged, to the
+    /// value the lenient decoder reads.
+    #[test]
+    fn test_canonical_decoder_accepts_golden_payloads() {
+        for golden_hex in [
+            GOLDEN_PAYLOAD_V1_HEX,
+            GOLDEN_PAYLOAD_V1_UPDATE_VK_HEX,
+            V0_APPLY_PAYLOAD_HEX,
+        ] {
+            let golden = hex_to_bytes(golden_hex);
+            let strict =
+                decode_ol_da_payload_bytes_canonical(&golden).expect("canonical decode golden");
+            let lenient = decode_ol_da_payload_bytes(&golden).expect("decode golden");
+            assert_eq!(format!("{strict:?}"), format!("{lenient:?}"));
+            assert_eq!(encode_to_vec(&strict).expect("re-encode golden"), golden);
+        }
+    }
+
+    /// A payload whose inbox message declares one byte more than the 4 KiB
+    /// bound fails under both decoders on the length alone, before any of the
+    /// data is read.
+    #[test]
+    fn test_oversize_inbox_message_fails_both_decoders_before_its_data() {
+        let len = MAX_MSG_PAYLOAD_BYTES + 1;
+        let prefix = payload_ending_in_account_diff(AccountDiffV1::default());
+        let prefix = &prefix[..prefix.len() - 1];
+        let canonical_len = [0x80 | (len >> 8) as u8, len as u8];
+        let wide_len = (0xC000_0000 | len as u32).to_be_bytes();
+        for len_prefix in [&canonical_len[..], &wide_len[..]] {
+            let bytes = [prefix, &inbox_tail(len_prefix, &[])].concat();
+            for (decoder, res) in [
+                ("lenient", decode_ol_da_payload_bytes(&bytes)),
+                ("canonical", decode_ol_da_payload_bytes_canonical(&bytes)),
+            ] {
+                assert!(
+                    matches!(res, Err(CodecError::OverflowContainer)),
+                    "{decoder} decoder with prefix {len_prefix:02x?} got {res:?}"
+                );
+            }
         }
     }
 
@@ -1860,6 +2148,17 @@ mod tests {
             let decoded = decode_ol_da_payload_bytes(&bytes).expect("decode payload");
             let reencoded = encode_to_vec(&decoded).expect("re-encode payload");
             proptest::prop_assert_eq!(reencoded, bytes);
+        }
+
+        /// The canonical decoder accepts whatever the encoder writes, and
+        /// reads it as the lenient decoder does.
+        #[test]
+        fn proptest_canonical_decoder_accepts_encoded_payloads(diff in strategy::state_diff()) {
+            let bytes = encode_to_vec(&OLDaPayloadV1::new(diff)).expect("encode payload");
+            let strict = decode_ol_da_payload_bytes_canonical(&bytes).expect("canonical decode");
+            let lenient = decode_ol_da_payload_bytes(&bytes).expect("decode payload");
+            proptest::prop_assert_eq!(format!("{strict:?}"), format!("{lenient:?}"));
+            proptest::prop_assert_eq!(encode_to_vec(&strict).expect("re-encode payload"), bytes);
         }
     }
 }

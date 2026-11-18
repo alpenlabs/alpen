@@ -211,8 +211,8 @@ impl CheckpointSyncCtx for MockCtx {
             .upgrade_required_from
             .is_some_and(|from| epoch.epoch() >= from)
         {
-            let upgrade = next_epoch_spec(OLSpecId::V2, Some(7))
-                .expect_err("this binary implements no spec after V2");
+            let upgrade = next_epoch_spec(OLSpecId::V3, Some(7))
+                .expect_err("this binary implements no spec after V3");
             return Err(CheckpointSyncError::EpochOp {
                 epoch,
                 op: "apply_checkpoint",

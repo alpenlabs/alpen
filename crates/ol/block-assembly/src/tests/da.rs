@@ -395,6 +395,17 @@ async fn test_assembly_after_v1_enactment_matches_node_and_rebuild() {
     assert_takeover_epoch_matches_node_and_rebuild(builder, OLSpecId::V1).await;
 }
 
+/// Sequencer assembly of the first V3 epoch on a V2 terminal parent that
+/// processed a checkpoint predicate enactment.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_assembly_after_v2_enactment_matches_node_and_rebuild() {
+    let builder = TestStorageFixtureBuilder::new()
+        .with_parent_slot(0)
+        .with_genesis_enactment(OLSpecId::V2)
+        .with_l1_manifest_height_range(1..=3);
+    assert_takeover_epoch_matches_node_and_rebuild(builder, OLSpecId::V2).await;
+}
+
 /// `rebuild_epoch_resource_state_upto` must produce the same DA as incremental accumulation.
 ///
 /// This exercises the `collect_epoch_blocks_until` -> `execute_block_batch` path,

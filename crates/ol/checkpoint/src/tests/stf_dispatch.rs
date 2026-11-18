@@ -8,9 +8,11 @@
 //! root through both [`apply_da_epoch`] and [`verify_epoch_with_diff`]. The
 //! checkpoint program must prove each epoch from its start state container.
 //! The drivers must also agree on the first V1 epoch after a V0 state, which
-//! wraps it, and on the first V2 epoch after a V1 enactment, which takes over
-//! the V1 state. The V2 program proves that takeover epoch, while the V1
-//! program refuses it.
+//! wraps it, on the first V2 epoch after a V1 enactment, which takes over
+//! the V1 state, and on the first V3 epoch after a V2 enactment, which takes
+//! over the V2 state. The V2 program proves the V2 takeover epoch, while the
+//! V1 program refuses it. No checkpoint program proves V3 epochs yet, and the
+//! V2 program refuses the first one.
 
 use std::iter;
 
@@ -664,5 +666,85 @@ fn test_drivers_prove_later_v2_epoch_from_v2_state() {
     assert_eq!(
         *claim.l2_range().end().blkid(),
         epoch.terminal().compute_blkid()
+    );
+}
+
+/// Builds the chain of [`build_chain_into_v2`], a V2 epoch that processes a
+/// checkpoint predicate enactment at its terminal, then the first V3 epoch,
+/// which runs V3 as the node selects it after that enactment.
+fn build_chain_into_v3() -> ChainBuilder {
+    let mut chain = build_chain_into_v2();
+    chain.push(gam_components(TEST_RECIPIENT_ID, b"last V2 epoch".to_vec()));
+    chain.push(manifest_components(
+        make_checkpoint_predicate_enactment_manifest(4, 1),
+        true,
+    ));
+
+    chain.spec = OLSpecId::V3;
+    chain.push(gam_components(
+        TEST_RECIPIENT_ID,
+        b"first V3 epoch".to_vec(),
+    ));
+    chain.push(BlockComponents::new_empty());
+    chain.push(manifest_components(make_empty_manifest(5, 1), true));
+    chain
+}
+
+#[test]
+fn test_drivers_agree_on_first_v3_epoch_after_v2() {
+    let chain = build_chain_into_v3();
+    let epoch = chain.epochs.last().expect("the first V3 epoch exists");
+
+    // The epoch starts from the V2 terminal that processed the enactment,
+    // which staged no successor.
+    assert_eq!(
+        epoch.pre_epoch_state.spec_versions(),
+        OLSpecVersions::uniform(OLSpecId::V2)
+    );
+    assert_eq!(
+        epoch.pre_epoch_state.compute_state_root().expect("V2 root"),
+        *epoch.previous_terminal.state_root()
+    );
+
+    assert_drivers_agree_on_last_epoch(&chain, epoch, OLSpecId::V3);
+    // TODO(STR-4828): prove the epoch with the V3 checkpoint program from its
+    // V2 start container, as the first V2 epoch is proven from its V1 one.
+
+    // The first V3 block commits V3 in its root, so V2 rules do not
+    // reproduce it.
+    let first = &epoch.blocks[0].block;
+    let err = verify_block(
+        OLSpecId::V2,
+        &mut epoch.pre_epoch_state.clone(),
+        first.header(),
+        Some(&epoch.previous_terminal),
+        first.body(),
+        &chain.runtime_params,
+    )
+    .expect_err("V2 rules must not verify the first V3 block");
+    assert!(matches!(err, ExecError::ChainIntegrity), "{err}");
+}
+
+#[test]
+#[should_panic(expected = "computed block header does not match input block header")]
+fn test_v2_program_refuses_the_first_v3_epoch() {
+    let chain = build_chain_into_v3();
+    let epoch = chain.epochs.last().expect("the first V3 epoch exists");
+    let (da_state_diff_bytes, _) = compute_epoch_da(
+        OLSpecId::V3,
+        epoch.pre_epoch_state.clone(),
+        &epoch.ol_blocks(),
+        &epoch.previous_terminal,
+        &chain.runtime_params,
+    )
+    .expect("epoch DA computes")
+    .into_parts();
+
+    // The V2 terminal stages V2, so the program runs the epoch under V2, and
+    // the first block's root, which commits V3, does not match.
+    let _ = CheckpointProgram::execute(
+        &epoch.prover_input(da_state_diff_bytes),
+        OLSpecId::V2,
+        chain.runtime_params,
     );
 }

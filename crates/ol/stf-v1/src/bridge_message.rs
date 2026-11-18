@@ -9,6 +9,8 @@ use strata_ol_chain_types_v1::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
 use strata_ol_params::BridgeParams;
 
+use crate::rules::RuleAmendments;
+
 /// Identifies why a bridge gateway message is not a valid withdrawal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BridgeMessageRejection {
@@ -38,17 +40,25 @@ pub(crate) enum BridgeMessageRejection {
 /// failure. STF execution sends rejected messages' funds to limbo; transaction
 /// admission counts no withdrawal log for them.
 ///
+/// `amendments` selects how the withdrawal body decodes: a body whose
+/// descriptor length is not in the shortest layout is a withdrawal without
+/// the canonical length prefix amendment and is rejected with it.
+///
 /// The caller must check that the message targets the bridge gateway first.
 pub(crate) fn parse_bridge_withdrawal(
     amount: u64,
     data: &[u8],
     bridge_params: &BridgeParams,
+    amendments: RuleAmendments,
 ) -> Result<SimpleWithdrawalIntentLogData, BridgeMessageRejection> {
     // 1. Parse the message from the payload data.
     let message = MsgRef::try_from(data).map_err(|_| BridgeMessageRejection::MalformedMessage)?;
-    let withdrawal = message
-        .try_as_withdrawal()
-        .ok_or(BridgeMessageRejection::NotWithdrawal)?;
+    let withdrawal = if amendments.requires_canonical_withdrawal_len_prefix() {
+        message.try_as_withdrawal()
+    } else {
+        message.try_as_withdrawal_with_any_len_layout()
+    }
+    .ok_or(BridgeMessageRejection::NotWithdrawal)?;
 
     // 2. Validate the withdrawal amount against params.
     if !bridge_params.validate_withdrawal_amount(amount) {

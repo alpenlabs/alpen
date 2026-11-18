@@ -12,8 +12,9 @@ the OL may be ahead of checkpoint acceptance, or proving older work.
 
 ## Configuration
 
-Native proving uses fixed-spec built-in V1 and V2 programs. SP1 deployments can
-configure independent release bundles:
+Native proving uses fixed-spec built-in V1 and V2 programs. No program proves V3
+yet, so the prover waits for a V3 artifact. SP1 deployments can configure
+independent release bundles:
 
 ```toml
 [prover]
@@ -192,8 +193,12 @@ cargo test --release -p strata-ol-checkpoint-artifacts --features sp1 \
 ```
 
 This test loads a V2 bundle built from the current guest. Use runtime parameters
-matching that bundle's build. V1 epochs continue using the published
-`v0.4.0-rc.1` bundle; do not rebuild or replace it with the current V2 guest.
+matching that bundle's build. Such a build is for this test: its verifying key is
+not the key of a published bundle. V1 epochs continue using the published
+`v0.4.0-rc.1` bundle and V2 epochs the bundle published from `v0.5.0-rc.2`; do not
+rebuild or replace either with the current guest. Proving after a rotation past V2
+also requires a V3 checkpoint program and its bundle, which this release does not
+build.
 
 To check the deployed V0 ELF against its independently published predicate:
 

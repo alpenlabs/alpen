@@ -13,6 +13,7 @@ use crate::context::{BasicExecContext, BlockContext, TxExecContext};
 use crate::errors::{ExecError, ExecResult};
 use crate::manifest_processing::ManifestProcessingOutcome;
 use crate::output::ExecOutputBuffer;
+use crate::rules::RuleAmendments;
 use crate::verification::{
     BlockExecInput, verify_block_predrain, verify_checkpoint_predicate_boundaries,
 };
@@ -140,6 +141,7 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     block_context: BlockContext<'_>,
     block_exec_input: BlockExecInput<'_>,
     runtime_params: &OLRuntimeParams,
+    amendments: RuleAmendments,
 ) -> ExecResult<BlockExecOutputs> {
     if let Some(manifests) = block_exec_input.manifest_container() {
         verify_checkpoint_predicate_boundaries(
@@ -157,7 +159,8 @@ pub fn execute_block_inputs<S: IStateAccessorMut>(
     execute_block_initialization(state, &block_context)?;
 
     // 2. Call process_block_tx_segment for every block as usual.
-    let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output, runtime_params);
+    let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output, runtime_params)
+        .with_amendments(amendments);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     execute_block_tx_segment(state, block_exec_input.tx_segment(), &tx_ctx)?;
     // Defense-in-depth: `emit_logs` enforces the cap at insertion time, and this
@@ -384,9 +387,28 @@ impl CompletedBlock {
     }
 }
 
-/// Given components of a block, executes it and uses it to construct the
-/// components of a block that can be signed, returning the completed block and
-/// the execution outputs (like logs).
+/// Constructs a block under the rules without amendments.
+///
+/// See [`construct_block_with_amendments`].
+pub fn construct_block<S: IStateAccessorMut>(
+    state: &mut S,
+    block_context: BlockContext<'_>,
+    block_components: BlockComponents,
+    runtime_params: &OLRuntimeParams,
+) -> ExecResult<ConstructBlockOutput> {
+    construct_block_with_amendments(
+        state,
+        block_context,
+        block_components,
+        runtime_params,
+        RuleAmendments::NONE,
+    )
+}
+
+/// Given components of a block, executes it under the rules `amendments`
+/// select and uses it to construct the components of a block that can be
+/// signed, returning the completed block and the execution outputs (like
+/// logs).
 #[tracing::instrument(
     skip_all,
     fields(
@@ -396,16 +418,22 @@ impl CompletedBlock {
         tx_count = block_components.tx_segment.txs().len(),
     ),
 )]
-pub fn construct_block<S: IStateAccessorMut>(
+pub fn construct_block_with_amendments<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
     runtime_params: &OLRuntimeParams,
+    amendments: RuleAmendments,
 ) -> ExecResult<ConstructBlockOutput> {
     // 1. First just execute the block with the inputs.
     let block_exec_input = block_components.to_exec_input();
-    let exec_outputs =
-        execute_block_inputs(state, block_context, block_exec_input, runtime_params)?;
+    let exec_outputs = execute_block_inputs(
+        state,
+        block_context,
+        block_exec_input,
+        runtime_params,
+        amendments,
+    )?;
 
     // 2. Take the inputs and outputs and compute the commitments for the header.
     Ok(complete_block(
@@ -508,8 +536,26 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
     Ok(batch_logs.concat())
 }
 
+/// Runs [`execute_block_batch_predrain_with_amendments`] under the rules
+/// without amendments.
+pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
+    state: &mut S,
+    blocks: &[OLBlockV1],
+    initial_parent: &OLBlockHeaderV1,
+    runtime_params: &OLRuntimeParams,
+) -> ExecResult<Vec<OLLog>> {
+    execute_block_batch_predrain_with_amendments(
+        state,
+        blocks,
+        initial_parent,
+        runtime_params,
+        RuleAmendments::NONE,
+    )
+}
+
 /// Like [`execute_block_batch`] but skips the epoch-terminal drain on every
-/// block. Returns the concatenated tx-segment logs.
+/// block, and runs the rules `amendments` select. Returns the concatenated
+/// tx-segment logs.
 ///
 /// Intended for DA-rebuild paths: wrapping `state` in `DaAccumulatingState`
 /// here produces a blob containing only tx writes. Manifest buffering still
@@ -517,11 +563,12 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
 /// not capture; the deferred drain effects (which would mutate DA-covered
 /// ledger state) are skipped so they are not double-counted when the manifests
 /// are replayed on top of the diff during rebuild.
-pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
+pub fn execute_block_batch_predrain_with_amendments<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlockV1],
     initial_parent: &OLBlockHeaderV1,
     runtime_params: &OLRuntimeParams,
+    amendments: RuleAmendments,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
     let mut batch_logs = Vec::with_capacity(blocks.len());
@@ -533,6 +580,7 @@ pub fn execute_block_batch_predrain<S: IStateAccessorMut>(
             Some(&parent),
             block.body(),
             runtime_params,
+            amendments,
         )?;
         parent = block.header().clone();
         batch_logs.push(logs);

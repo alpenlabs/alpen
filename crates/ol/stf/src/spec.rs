@@ -140,6 +140,7 @@ macro_rules! dispatch_spec {
             OLSpecId::V0 => <StfV0 as OLStfSpec>::$op($($arg),*),
             OLSpecId::V1 => <StfV1 as OLStfSpec>::$op($($arg),*),
             OLSpecId::V2 => <StfV2 as OLStfSpec>::$op($($arg),*),
+            OLSpecId::V3 => <StfV3 as OLStfSpec>::$op($($arg),*),
         }
     };
 }

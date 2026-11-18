@@ -823,18 +823,18 @@ mod tests {
         )
     }
 
-    /// A tip that ends a V1 epoch which processed a checkpoint predicate
-    /// enactment is followed by V2, which this binary builds blocks under.
-    #[tokio::test]
-    async fn generation_continues_after_a_v1_enactment() {
+    /// Checks that generation builds a template on a genesis tip that ends a
+    /// `spec` epoch which processed a checkpoint predicate enactment, because
+    /// this binary builds blocks under the spec after `spec`.
+    async fn assert_generation_continues_after_enactment(spec: OLSpecId) {
         let (_task_manager, blockasm_handle, sequencer_context, parent_commitment) =
-            sequencer_on_genesis_enactment(OLSpecId::V1).await;
+            sequencer_on_genesis_enactment(spec).await;
 
         assert_eq!(
             sequencer_context
                 .generate_template_for_tip()
                 .await
-                .expect("test: generate after a V1 enactment"),
+                .expect("test: generate after an enactment"),
             Some(*parent_commitment.blkid())
         );
         assert!(
@@ -851,13 +851,27 @@ mod tests {
         assert_eq!(template.header().parent_blkid(), parent_commitment.blkid());
     }
 
+    /// A tip that ends a V1 epoch which processed a checkpoint predicate
+    /// enactment is followed by V2, which this binary builds blocks under.
+    #[tokio::test]
+    async fn generation_continues_after_a_v1_enactment() {
+        assert_generation_continues_after_enactment(OLSpecId::V1).await;
+    }
+
     /// A tip that ends a V2 epoch which processed a checkpoint predicate
+    /// enactment is followed by V3, which this binary builds blocks under.
+    #[tokio::test]
+    async fn generation_continues_after_a_v2_enactment() {
+        assert_generation_continues_after_enactment(OLSpecId::V2).await;
+    }
+
+    /// A tip that ends a V3 epoch which processed a checkpoint predicate
     /// enactment is the last block this binary builds on: generation stops
     /// without an error and leaves no template, on every tick.
     #[tokio::test]
-    async fn generation_stops_after_a_v2_enactment() {
+    async fn generation_stops_after_a_v3_enactment() {
         let (_task_manager, blockasm_handle, sequencer_context, parent_commitment) =
-            sequencer_on_genesis_enactment(OLSpecId::V2).await;
+            sequencer_on_genesis_enactment(OLSpecId::V3).await;
 
         for _ in 0..2 {
             assert_eq!(

@@ -835,7 +835,7 @@ fn fetch_previous_epoch_summary(
 pub(crate) fn builds_blocks_under(spec: OLSpecId) -> bool {
     match spec {
         OLSpecId::V0 => false,
-        OLSpecId::V1 | OLSpecId::V2 => true,
+        OLSpecId::V1 | OLSpecId::V2 | OLSpecId::V3 => true,
     }
 }
 
@@ -1662,12 +1662,9 @@ mod tests {
     }
 
     /// A V2 tip that ends an epoch which processed a checkpoint predicate
-    /// enactment is followed by V3, which this binary does not implement. The
-    /// spec check still lets the sequencer start on the tip, and block assembly
-    /// builds nothing after it. The prover can still prove the V2 checkpoint
-    /// that ends at the tip using its configured V2 program.
+    /// enactment is followed by V3, which the sequencer builds blocks under.
     #[test]
-    fn test_sequencer_starts_on_the_tip_after_a_v2_enactment() {
+    fn test_sequencer_builds_v3_after_a_v2_enactment() {
         let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V2, true);
         verify_sequencer_tip_spec(&storage, genesis_l1).expect("the sequencer starts");
         let tip = resolve_tip_ol_block(&storage).expect("tip");
@@ -1677,8 +1674,27 @@ mod tests {
             .unwrap()
             .unwrap();
         let selected = select_spec_after_block(&storage, genesis_l1, tip, &state).expect("selects");
-        let upgrade = selected.upgrade_required().expect("the next epoch runs V3");
-        assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
+        assert_eq!(selected, SelectedSpec::Supported(OLSpecId::V3));
+    }
+
+    /// A V3 tip that ends an epoch which processed a checkpoint predicate
+    /// enactment is followed by V4, which this binary does not implement. The
+    /// spec check still lets the sequencer start on the tip, and block assembly
+    /// builds nothing after it. Proving the checkpoint that ends at the tip
+    /// needs a V3 checkpoint program, which this build does not have.
+    #[test]
+    fn test_sequencer_starts_on_the_tip_after_a_v3_enactment() {
+        let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V3, true);
+        verify_sequencer_tip_spec(&storage, genesis_l1).expect("the sequencer starts");
+        let tip = resolve_tip_ol_block(&storage).expect("tip");
+        let state = storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(tip)
+            .unwrap()
+            .unwrap();
+        let selected = select_spec_after_block(&storage, genesis_l1, tip, &state).expect("selects");
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V4");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V3);
         assert_eq!(upgrade.enactment_l1_height(), 1);
     }
 
@@ -1689,7 +1705,7 @@ mod tests {
     /// summary that FCM's acceptance replay stores.
     #[test]
     fn test_sequencer_selects_after_a_terminal_tip_without_its_summary() {
-        let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V2, true);
+        let (storage, genesis_l1) = setup_tip_on_enactment(OLSpecId::V3, true);
         let tip = resolve_tip_ol_block(&storage).expect("test: resolve tip");
         assert!(
             storage
@@ -1705,8 +1721,8 @@ mod tests {
             .unwrap();
         let selected = select_spec_after_block(&storage, genesis_l1, tip, &state)
             .expect("selects without the tip's summary");
-        let upgrade = selected.upgrade_required().expect("the next epoch runs V3");
-        assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
+        let upgrade = selected.upgrade_required().expect("the next epoch runs V4");
+        assert_eq!(upgrade.prev_spec(), OLSpecId::V3);
         assert_eq!(upgrade.enactment_l1_height(), 1);
     }
 

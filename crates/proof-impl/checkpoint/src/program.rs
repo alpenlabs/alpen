@@ -16,6 +16,7 @@ fn test_signing_key(spec: OLSpecId) -> SigningKey {
     let byte = match spec {
         OLSpecId::V0 | OLSpecId::V1 => 0x01,
         OLSpecId::V2 => 0x03,
+        OLSpecId::V3 => 0x04,
     };
     SigningKey::from_slice(&[byte; 32]).expect("valid test signing key")
 }
@@ -80,8 +81,8 @@ impl CheckpointProgram {
 
     /// Returns the predicate for the fixed-spec native program.
     ///
-    /// V1 and V2 use distinct test keys so verification catches proofs routed to
-    /// the preceding spec's host. V0 shares V1's key for compatibility, but the
+    /// V1, V2, and V3 use distinct test keys so verification catches proofs
+    /// routed to the preceding spec's host. V0 shares V1's key for compatibility, but the
     /// native checkpoint registry does not register a V0 program.
     /// These keys are public test fixtures.
     pub fn test_predicate_key_for_spec(spec: OLSpecId) -> PredicateKey {
@@ -397,11 +398,23 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "epoch runs under spec V3, but this program proves spec V2")]
+    fn test_v2_program_rejects_v3_start_state() {
+        let mut input = prepare_input();
+        let (_, chainstate) = input.start_state.clone().into_parts();
+        input.start_state =
+            OLStateContainer::new(OLSpecVersions::uniform(OLSpecId::V3), chainstate);
+        // Authenticate the altered state so that the spec check is what fails.
+        input.parent.state_root = input.start_state.compute_state_root();
+        let _ = CheckpointProgram::execute(&input, OLSpecId::V2, OLRuntimeParams::test_default());
+    }
+
+    #[test]
     #[should_panic(expected = "initial state stages a spec this program does not prove")]
     fn test_statements_reject_start_state_staging_another_spec() {
         let mut input = prepare_input();
         let (_, chainstate) = input.start_state.clone().into_parts();
-        let versions = OLSpecVersions::new(OLSpecId::V1, 3).expect("V1 may stage any spec");
+        let versions = OLSpecVersions::new(OLSpecId::V1, 4).expect("V1 may stage any spec");
         input.start_state = OLStateContainer::new(versions, chainstate);
         // Authenticate the altered state so that the spec check is what fails.
         input.parent.state_root = input.start_state.compute_state_root();
