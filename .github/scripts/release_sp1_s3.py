@@ -23,6 +23,7 @@ from sp1_artifact_publish import (
     artifact_version,
     aws_output,
     s3_put,
+    sha256_hex,
     write_sha256_sidecar,
 )
 
@@ -61,20 +62,25 @@ def upload(tag: str) -> None:
     params_hash = digests[PARAMS.name]
     version = artifact_version(sha, params_hash)
     bucket = os.environ["S3_BUCKET"]
-    prefix = f"{os.environ['S3_PREFIX']}/{version}/"
-    listing = json.loads(
-        aws_output(
-            "s3api",
-            "list-objects-v2",
-            "--bucket",
-            bucket,
-            "--prefix",
-            prefix,
-            "--output",
-            "json",
+    root = os.environ["S3_PREFIX"]
+    prefix = f"{root}/{version}/"
+
+    def listed_keys(key_prefix: str) -> set[str]:
+        listing = json.loads(
+            aws_output(
+                "s3api",
+                "list-objects-v2",
+                "--bucket",
+                bucket,
+                "--prefix",
+                key_prefix,
+                "--output",
+                "json",
+            )
         )
-    )
-    existing = {obj["Key"] for obj in listing.get("Contents", [])}
+        return {obj["Key"] for obj in listing.get("Contents", [])}
+
+    existing = listed_keys(prefix)
 
     def read(key: str) -> bytes:
         return subprocess.check_output(
@@ -97,7 +103,21 @@ def upload(tag: str) -> None:
         sidecar = write_sha256_sidecar(digests[name], name, ASSETS)
         objects[prefix + sidecar.name] = sidecar
     # The release manifest includes its tag. Several tags can share the same canonical files.
-    objects[f"{prefix}releases/{tag}/{MANIFEST}"] = ASSETS / MANIFEST
+    release_key = f"{prefix}releases/{tag}/{MANIFEST}"
+    objects[release_key] = ASSETS / MANIFEST
+
+    alias_key = f"{root}/{tag}-{sha[:7]}/manifest.json"
+    alias = ASSETS / "release-reference.json"
+    reference = {
+        "bundle": f"s3://{bucket}/{prefix}",
+        "manifest": f"s3://{bucket}/{release_key}",
+        "sha256": sha256_hex(ASSETS / MANIFEST),
+    }
+    alias.write_text(json.dumps(reference, indent=2, sort_keys=True) + "\n")
+    alias_exists = alias_key in listed_keys(alias_key)
+    if alias_exists and read(alias_key) != alias.read_bytes():
+        raise SystemExit(f"conflicting release reference at {alias_key}")
+
     for key, path in objects.items():
         if key in existing and read(key) != path.read_bytes():
             raise SystemExit(f"conflicting S3 object at {key}")
@@ -125,7 +145,9 @@ def upload(tag: str) -> None:
         path = ASSETS / "manifest.json"
         path.write_text(json.dumps(canonical, indent=2, sort_keys=True) + "\n")
         s3_put(path, bucket, marker)
-    print(f"Verified release bundle: s3://{bucket}/{prefix}")
+    if not alias_exists:
+        s3_put(alias, bucket, alias_key)
+    print(f"Release reference: s3://{bucket}/{alias_key}")
 
 
 if __name__ == "__main__":

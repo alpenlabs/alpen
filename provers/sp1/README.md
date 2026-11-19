@@ -155,8 +155,12 @@ attestation, and compares the params bytes with the file at the released commit.
 Find the files under `s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>/`.
 The exact release-specific manifest is at `releases/<tag>/proving-manifest.json`
 inside that bundle. Tags with the same commit and params share the guest files.
-The uploader compares existing objects byte-for-byte, fills missing files, and
-writes the canonical `manifest.json` last. Conflicting data fails the upload.
+To find a bundle using the Docker image tag, read
+`s3://alpen-mosaic-artifacts/elfs/alpen/<release>-<commit7>/manifest.json`
+(for example, `v0.6.0-81ea40e/manifest.json`). Its `bundle` field gives the
+canonical S3 prefix. The `manifest` and `sha256` fields identify the exact release
+manifest and its checksum. CI writes this reference after the bundle is complete.
+Identical retries reuse the reference. A conflicting reference fails the upload.
 To retry or backfill, run **Copy SP1 release assets to S3** from `main` with the tag.
 This retry needs only the published release. The existing manual build-and-publish
 workflow remains available for custom runtime parameters.

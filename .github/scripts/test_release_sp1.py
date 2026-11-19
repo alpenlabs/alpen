@@ -145,7 +145,14 @@ class ReleaseMirrorTest(unittest.TestCase):
                 stored[key] = path.read_bytes()
 
             def list_objects(*args):
-                return json.dumps({"Contents": [{"Key": key} for key in stored]})
+                prefix_arg = args[args.index("--prefix") + 1]
+                return json.dumps(
+                    {
+                        "Contents": [
+                            {"Key": key} for key in stored if key.startswith(prefix_arg)
+                        ]
+                    }
+                )
 
             def read(args):
                 return stored[args[3].removeprefix("s3://bucket/")]
@@ -159,7 +166,14 @@ class ReleaseMirrorTest(unittest.TestCase):
             ):
                 stage("v1")
                 mirror.upload("v1")
-                self.assertEqual(list(stored)[-1], prefix + "manifest.json")
+                alias = "elfs/alpen/v1-aaaaaaa/manifest.json"
+                self.assertEqual(list(stored)[-2:], [prefix + "manifest.json", alias])
+                reference = json.loads(stored[alias])
+                self.assertEqual(reference["bundle"], f"s3://bucket/{prefix}")
+                target = reference["manifest"].removeprefix("s3://bucket/")
+                self.assertEqual(
+                    reference["sha256"], hashlib.sha256(stored[target]).hexdigest()
+                )
                 for name, data in files.items():
                     self.assertEqual(stored[prefix + name], data)
                 writes.reset_mock()
@@ -167,7 +181,20 @@ class ReleaseMirrorTest(unittest.TestCase):
                 writes.assert_not_called()
                 stage("v2")
                 mirror.upload("v2")
-                self.assertEqual(writes.call_count, 1)
+                self.assertEqual(writes.call_count, 2)
+                second_alias = "elfs/alpen/v2-aaaaaaa/manifest.json"
+                self.assertEqual(
+                    json.loads(stored[second_alias])["bundle"], reference["bundle"]
+                )
+                stored[alias] = b"conflict"
+                stage("v1")
+                writes.reset_mock()
+                with self.assertRaisesRegex(
+                    SystemExit, "conflicting release reference"
+                ):
+                    mirror.upload("v1")
+                writes.assert_not_called()
+                stage("v2")
                 self.assertEqual(
                     stored[prefix + "releases/v2/" + sp1.MANIFEST],
                     (assets / sp1.MANIFEST).read_bytes(),
