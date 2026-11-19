@@ -10,7 +10,9 @@
 //! maps spec identifiers to rule sets. From V1 on, every spec records its own
 //! identifier in the state root, so every spec has its own rule set, even one
 //! that changes no rules. V2 runs the V1 code, takes over the V1 state, and
-//! allows fewer transaction effects and block logs.
+//! allows fewer transaction effects and block logs. V3 takes over the V2
+//! state and tightens four rules: the message payload capacity, the
+//! withdrawal message encoding, accumulator proofs, and the DA encoding.
 //! The compiler requires each rule set to provide every operation. Sequencer
 //! block assembly composes the [`sequencer`] phases itself, so a rule set that
 //! changes their order or composition must also update block assembly.
@@ -37,6 +39,15 @@
 //! the capacities a spec allows, for drivers that build blocks or admit
 //! transactions.
 //!
+//! # Frozen rules
+//!
+//! The rules of a spec are fixed once its checkpoint program is published,
+//! and they include what the code the program compiles accepts. A change to
+//! that code, or to a dependency it calls, that accepts less, accepts more,
+//! or computes another result is a rule change. It keeps the earlier
+//! behavior for the published specs and turns the new one on in a later rule
+//! set, as [`strata_ol_stf_v1::RuleAmendments`] does for the V1 code.
+//!
 //! # Unknown and unimplemented specs
 //!
 //! Decoding rejects unknown identifiers, and dispatch matches every variant,
@@ -61,8 +72,9 @@
 //! driver runs that processing, DA replay included, so they all reach the same
 //! wrapped root. A V1 block that does not start an epoch fails on a V0 state
 //! with [`ExecError::ContinuesV0Epoch`]. V2 rules take over a V1 state the same
-//! way, as `cur = staged = V2`, and fail a block that continues a V1 epoch with
-//! [`ExecError::ContinuesEarlierSpecEpoch`].
+//! way, as `cur = staged = V2`, and V3 rules a V2 state, as
+//! `cur = staged = V3`. Each fails a block that continues an epoch of the spec
+//! before it with [`ExecError::ContinuesEarlierSpecEpoch`].
 //!
 //! # V1-compatible surface
 //!
@@ -74,6 +86,7 @@
 //! decoder used by [`apply_da_epoch`] and [`verify_epoch_with_diff`].
 
 mod block;
+mod capped_v1;
 mod da;
 mod limits;
 mod selection;
@@ -82,6 +95,7 @@ mod spec;
 mod v0;
 mod v1;
 mod v2;
+mod v3;
 
 pub use block::{
     construct_block, execute_and_complete_block, execute_block_batch_predrain, verify_block,

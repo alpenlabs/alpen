@@ -192,14 +192,15 @@ pub enum EpochSpecSelectionError<E> {
 /// `parent_versions` are the spec versions of the parent epoch's terminal
 /// state. Its current spec is the parent epoch's spec: every rule set leaves
 /// the state's current spec at its own identifier from the first block of its
-/// epoch on, as V1 does by wrapping a V0 state and V2 by taking over a V1
-/// state. The staged version is never read; no rule set stages a spec.
+/// epoch on, as V1 does by wrapping a V0 state and each later spec by taking
+/// over the state of the spec before it. The staged version is never read; no
+/// rule set stages a spec.
 ///
 /// `parent_l1_range` is the range of L1 blocks the parent epoch processed.
 /// Only an enactment the parent epoch processed itself counts. A checkpoint
 /// predicate enactment always ends the epoch that processes it: every rule set
-/// from V1 on requires it to be the last manifest of a terminal block (V2
-/// through V1's manifest processing), and the ASM accepts no checkpoint whose
+/// from V1 on requires it to be the last manifest of a terminal block (later
+/// specs through V1's manifest processing), and the ASM accepts no checkpoint whose
 /// L1 range crosses one. So the parent epoch processed an enactment exactly
 /// when its range is not empty and its last L1 block's manifest carries one.
 /// An epoch that processed no manifests still ends on the previous epoch's

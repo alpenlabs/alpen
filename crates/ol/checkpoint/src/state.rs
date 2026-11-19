@@ -1199,12 +1199,15 @@ mod tests {
     /// Checks the L1 range produced by OL execution and checkpoint DA replay
     /// against ASM. The checkpoint ends at the predicate boundary `B`, and the
     /// worker replays the epoch after it under V2. That epoch ends at another
-    /// enactment, and the worker builds no checkpoint for the epoch after it:
-    /// that epoch runs V2's successor, which this binary does not implement.
+    /// enactment, the worker replays the epoch after it under V3, and that
+    /// epoch ends at a third. The worker builds no checkpoint for the epoch
+    /// after it: that epoch runs V3's successor, which this binary does not
+    /// implement.
     #[test]
-    fn checkpoint_payload_ends_at_predicate_boundary_and_stops_after_v2() {
+    fn checkpoint_payload_ends_at_predicate_boundary_and_stops_after_v3() {
         let boundary = 2;
         let v2_boundary = boundary + 1;
+        let v3_boundary = v2_boundary + 1;
         let new_predicate = PredicateKey::never_accept();
         let enactment =
             AsmLogEntry::from_log(&CheckpointPredicateEnacted::new(new_predicate.clone()))
@@ -1221,10 +1224,10 @@ mod tests {
             OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid());
         let mut previous_terminal = OLBlockCommitment::null();
 
-        // Persist genesis and three terminal blocks with their executed states,
-        // and the non-terminal block that starts epoch 2. The checkpoint worker
-        // replays each epoch from the preceding terminal state.
-        for epoch in 0..=3 {
+        // Persist genesis and four terminal blocks with their executed states,
+        // and the non-terminal blocks that start epochs 2 and 3. The checkpoint
+        // worker replays each epoch from the preceding terminal state.
+        for epoch in 0..=4 {
             if epoch == 1 {
                 let boundary_manifest = FixtureAsmManifestBuilder::new_at_height(boundary)
                     .with_logs(vec![enactment.clone()])
@@ -1239,37 +1242,46 @@ mod tests {
                     .with_manifest(boundary_manifest)
                     .terminal()
                     .execute();
-            } else if epoch == 2 {
+            } else if epoch == 2 || epoch == 3 {
                 // The epoch after B runs V2, whose first block takes over the
-                // V1 state. The fixture runs the V1 code, which leaves the V2
-                // versions as they are, so it builds the epoch as V2 does.
+                // V1 state, and the epoch after the V2 enactment runs V3, whose
+                // first block takes over the V2 state. The fixture runs the V1
+                // code, which leaves the versions as they are, so it builds
+                // each epoch as its spec does.
+                let (spec, spec_boundary) = if epoch == 2 {
+                    (OLSpecId::V2, v2_boundary)
+                } else {
+                    (OLSpecId::V3, v3_boundary)
+                };
                 fixture
                     .state_mut()
-                    .set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
-                // A non-terminal first block, whose root commits V2, makes a
-                // replay of the epoch under V1 fail its root check.
+                    .set_spec_versions(OLSpecVersions::uniform(spec));
+                // A non-terminal first block, whose root commits the spec,
+                // makes a replay of the epoch under the spec before it fail
+                // its root check.
                 fixture.child_block().execute();
                 storage
                     .ol_block()
                     .put_block_data_blocking(to_ol_block(fixture.last_completed_block()))
                     .unwrap();
-                let v2_boundary_manifest = FixtureAsmManifestBuilder::new_at_height(v2_boundary)
-                    .with_logs(vec![enactment.clone()])
-                    .build();
+                let spec_boundary_manifest =
+                    FixtureAsmManifestBuilder::new_at_height(spec_boundary)
+                        .with_logs(vec![enactment.clone()])
+                        .build();
                 storage
                     .l1()
-                    .put_block_data(v2_boundary_manifest.clone())
+                    .put_block_data(spec_boundary_manifest.clone())
                     .unwrap();
                 fixture
                     .child_block()
-                    .with_manifest(v2_boundary_manifest)
+                    .with_manifest(spec_boundary_manifest)
                     .terminal()
                     .execute();
-            } else if epoch == 3 {
+            } else if epoch == 4 {
                 fixture
                     .child_block()
                     .with_manifest(
-                        FixtureAsmManifestBuilder::new_at_height(v2_boundary + 1).build(),
+                        FixtureAsmManifestBuilder::new_at_height(v3_boundary + 1).build(),
                     )
                     .terminal()
                     .execute();
@@ -1315,9 +1327,10 @@ mod tests {
             boundary,
         ));
 
-        // The worker builds the checkpoints of the epoch that ends at B and of
-        // the V2 epoch after it, then refuses to replay the epoch after the V2
-        // enactment and stores nothing for it.
+        // The worker builds the checkpoints of the epoch that ends at B, of
+        // the V2 epoch after it and of the V3 epoch after that, then refuses
+        // to replay the epoch after the V3 enactment and stores nothing for
+        // it.
         let ctx = CheckpointWorkerContextImpl::new(
             Arc::clone(&storage),
             OLRuntimeParams::test_default(),
@@ -1326,20 +1339,27 @@ mod tests {
         let ends_at_b = ctx.get_canonical_epoch_commitment_at(1).unwrap().unwrap();
         let after_b = ctx.get_canonical_epoch_commitment_at(2).unwrap().unwrap();
         let after_v2 = ctx.get_canonical_epoch_commitment_at(3).unwrap().unwrap();
+        let after_v3 = ctx.get_canonical_epoch_commitment_at(4).unwrap().unwrap();
         let mut state = OLCheckpointServiceState::new(ctx);
         state.initialize().expect("initialize checkpoint cursor");
         let err = state
             .handle_chain_update()
-            .expect_err("no checkpoint follows the V2 enactment");
+            .expect_err("no checkpoint follows the V3 enactment");
         assert!(format!("{err:#}").contains("upgrade required"), "{err:#}");
-        assert_eq!(state.last_processed_epoch(), Some(2));
-        assert!(
+        assert_eq!(state.last_processed_epoch(), Some(3));
+        assert_eq!(
             storage
                 .ol_checkpoint()
-                .get_checkpoint_payload_entry_blocking(after_v2)
-                .unwrap()
-                .is_none()
+                .get_checkpoint_payload_entry_blocking(after_v3)
+                .unwrap(),
+            None
         );
+        let v3_payload = storage
+            .ol_checkpoint()
+            .get_checkpoint_payload_entry_blocking(after_v2)
+            .unwrap()
+            .expect("the checkpoint of the V3 epoch is stored");
+        assert_eq!(v3_payload.new_tip().l1_height(), v3_boundary);
         let v2_payload = storage
             .ol_checkpoint()
             .get_checkpoint_payload_entry_blocking(after_b)

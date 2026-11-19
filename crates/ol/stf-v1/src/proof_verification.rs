@@ -2,7 +2,7 @@
 #![expect(missing_debug_implementations, reason = "opaque hash types")]
 
 use strata_acct_types::{AccumulatorClaim, Mmr64, RawMerkleProof};
-use strata_merkle::Mmr64B32;
+use strata_merkle::{MerkleProofB32, Mmr64B32, MmrState, ProofData, Sha256Hasher, compute_root};
 use strata_ol_state_types::{
     AccountTypeStateRef, IAccountState, ISnarkAccountState, IStateAccessor, ProofVerifyError,
     TxProofVerifier,
@@ -10,6 +10,8 @@ use strata_ol_state_types::{
 use strata_ol_tx_types_v1::{ProofSatisfierListV1, RawMerkleProofListV1, TxProofsV1};
 use strata_predicate::PredicateKey;
 use tracing::warn;
+
+use crate::rules::RuleAmendments;
 
 /// Context for accumulators/keys we verify proofs against when verifying a
 /// proof.
@@ -122,17 +124,21 @@ impl<'a> TxProofsTracker<'a> {
 pub struct TxProofVerifierImpl<'a> {
     state_ctx: TxProofVerificationContext<'a>,
     proof_tracker: TxProofsTracker<'a>,
+    amendments: RuleAmendments,
 }
 
 impl<'a> TxProofVerifierImpl<'a> {
-    /// Creates a new verifier from the account state context and proof tracker.
+    /// Creates a new verifier from the account state context and proof
+    /// tracker, which verifies accumulator proofs as `amendments` select.
     pub(crate) fn new(
         state_ctx: TxProofVerificationContext<'a>,
         proof_tracker: TxProofsTracker<'a>,
+        amendments: RuleAmendments,
     ) -> Self {
         Self {
             state_ctx,
             proof_tracker,
+            amendments,
         }
     }
 
@@ -152,13 +158,44 @@ impl<'a> TxProofVerifierImpl<'a> {
         let indexed_proof = raw_proof.into_indexed(claim.idx());
         let leaf: [u8; 32] = claim.entry_hash().0;
 
-        if !mmr.verify(&indexed_proof, &leaf) {
+        let verified = if self.amendments.accumulator_proofs_bind_index() {
+            mmr.verify(&indexed_proof, &leaf)
+        } else {
+            verify_mmr_proof_by_path_len(mmr, &indexed_proof, &leaf)
+        };
+        if !verified {
             return Err(ProofVerifyError::InvalidProof);
         }
 
         self.proof_tracker.inc_next_acc_proof()?;
         Ok(())
     }
+}
+
+/// Verifies an MMR proof the way `strata-merkle` did before v0.5.0, which the
+/// rules without the index binding amendment are fixed to.
+///
+/// The number of cohashes selects the peak, and the path from `leaf` must
+/// hash to it. Each cohash reads one bit of the proof's index, from the
+/// lowest, to pick its side, and the bits above the path are ignored. So the
+/// index is checked only modulo the size of the peak: an entry also verifies
+/// under the index of an entry at the same position in another peak, or under
+/// an index the MMR does not hold yet. [`Mmr64B32::verify`] rejects both.
+///
+/// A proof holds at most 64 cohashes. With all 64 the earlier check compared
+/// against a peak that could only match through a SHA-256 preimage, so this
+/// rejects such a proof outright.
+fn verify_mmr_proof_by_path_len(mmr: &Mmr64B32, proof: &MerkleProofB32, leaf: &[u8; 32]) -> bool {
+    let Some(height) = u8::try_from(proof.cohashes_len())
+        .ok()
+        .filter(|height| u32::from(*height) < u64::BITS)
+    else {
+        return false;
+    };
+    let Some(peak) = mmr.get_peak(height) else {
+        return false;
+    };
+    compute_root::<_, Sha256Hasher>(proof, leaf) == *peak
 }
 
 impl TxProofVerifier for TxProofVerifierImpl<'_> {
@@ -215,13 +252,125 @@ impl TxProofVerifier for TxProofVerifierImpl<'_> {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::RawMerkleProof;
+    use ssz_primitives::FixedBytes;
+    use strata_acct_types::{RawMerkleProof, StrataHasher};
+    use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
     use strata_ol_tx_types_v1::{
         ProofSatisfierListV1, ProofSatisfierV1, RawMerkleProofListV1, TxProofsV1,
     };
     use strata_predicate::{PredicateError, PredicateKey, PredicateTypeId};
 
     use super::*;
+
+    /// Builds an MMR over six leaves, whose peaks hold the entries 0 to 3 and
+    /// 4 to 5, and returns it with the leaves and the current proof of each.
+    fn six_leaf_mmr() -> (Mmr64, Vec<[u8; 32]>, Vec<RawMerkleProof>) {
+        let leaves: Vec<[u8; 32]> = (1..=6).map(|byte| [byte; 32]).collect();
+        let mut mmr = Mmr64::from_generic(&CompactMmr64::new(64));
+        let mut proofs: Vec<MerkleProof<[u8; 32]>> = Vec::new();
+        for leaf in &leaves {
+            let proof =
+                Mmr::<StrataHasher>::add_leaf_updating_proof_list(&mut mmr, *leaf, &mut proofs)
+                    .expect("the MMR has room for the leaf");
+            proofs.push(proof);
+        }
+        let raw_proofs = proofs
+            .iter()
+            .map(|proof| raw_proof(proof.cohashes()))
+            .collect();
+        (mmr, leaves, raw_proofs)
+    }
+
+    fn raw_proof(cohashes: &[[u8; 32]]) -> RawMerkleProof {
+        RawMerkleProof {
+            cohashes: cohashes
+                .iter()
+                .map(|hash| FixedBytes::from(*hash))
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("cohashes fit the proof depth"),
+        }
+    }
+
+    /// Verifies one L1 block ref claim against `mmr` with `proof`.
+    fn verify_claim(
+        mmr: &Mmr64,
+        proof: &RawMerkleProof,
+        claim: &AccumulatorClaim,
+        amendments: RuleAmendments,
+    ) -> Result<(), ProofVerifyError> {
+        let tx_proofs = TxProofsV1::new(
+            None,
+            Some(RawMerkleProofListV1 {
+                proofs: vec![proof.clone()]
+                    .try_into()
+                    .expect("one proof fits the list"),
+            }),
+        );
+        let state_ctx = TxProofVerificationContext {
+            l1_block_refs_mmr: mmr,
+            local_inbox_mmr: None,
+            local_predicate_key: None,
+        };
+        let mut verifier = TxProofVerifierImpl::new(
+            state_ctx,
+            TxProofsTracker::from_txproofs(&tx_proofs),
+            amendments,
+        );
+        verifier.verify_l1_block_ref_mmr_proof_next(claim)
+    }
+
+    #[test]
+    fn test_accumulator_proof_of_the_claimed_entry_verifies_under_both_rules() {
+        let (mmr, leaves, proofs) = six_leaf_mmr();
+        for (index, (leaf, proof)) in leaves.iter().zip(&proofs).enumerate() {
+            let claim = AccumulatorClaim::new(index as u64, *leaf);
+            for amendments in [RuleAmendments::NONE, RuleAmendments::V3] {
+                verify_claim(&mmr, proof, &claim, amendments)
+                    .unwrap_or_else(|err| panic!("entry {index} under {amendments:?}: {err}"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_accumulator_proof_binds_the_index_only_with_the_amendment() {
+        let (mmr, leaves, proofs) = six_leaf_mmr();
+
+        // Entry 0 sits at position 0 of the four-entry peak. Index 4 is
+        // position 0 of the other peak, and index 8 is one the MMR does not
+        // hold yet. Both share index 0's two low bits, which are all the path
+        // of two cohashes reads.
+        for index in [4, 8] {
+            let claim = AccumulatorClaim::new(index, leaves[0]);
+            verify_claim(&mmr, &proofs[0], &claim, RuleAmendments::NONE)
+                .unwrap_or_else(|err| panic!("index {index} without the amendment: {err}"));
+            let err = verify_claim(&mmr, &proofs[0], &claim, RuleAmendments::V3)
+                .expect_err("the amended rules bind the index");
+            assert!(matches!(err, ProofVerifyError::InvalidProof), "{err}");
+        }
+    }
+
+    #[test]
+    fn test_accumulator_proof_with_a_wrong_path_fails_under_both_rules() {
+        let (mmr, leaves, proofs) = six_leaf_mmr();
+
+        // Index 1 differs from entry 0's index in a bit the path reads, a
+        // wrong leaf hashes to another root, and no peak has the height of a
+        // 64-cohash path.
+        let wrong_position = (AccumulatorClaim::new(1, leaves[0]), proofs[0].clone());
+        let wrong_leaf = (AccumulatorClaim::new(0, leaves[1]), proofs[0].clone());
+        let overlong = (
+            AccumulatorClaim::new(0, leaves[0]),
+            raw_proof(&[[0; 32]; 64]),
+        );
+        for (claim, proof) in [wrong_position, wrong_leaf, overlong] {
+            for amendments in [RuleAmendments::NONE, RuleAmendments::V3] {
+                let err = verify_claim(&mmr, &proof, &claim, amendments)
+                    .expect_err("the proof does not lead to a peak");
+                assert!(matches!(err, ProofVerifyError::InvalidProof), "{err}");
+            }
+        }
+    }
 
     fn make_acc_proofs(n: usize) -> TxProofsV1 {
         let proofs: Vec<RawMerkleProof> = (0..n).map(|_| RawMerkleProof::new_zero()).collect();

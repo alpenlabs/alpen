@@ -1,6 +1,7 @@
 //! Smoke tests for dispatch under [`OLSpecId::V1`], tests for the
 //! [`OLSpecId::V0`] genesis and epoch replay, for the states [`OLSpecId::V2`]
-//! takes over and the capacities it enforces, and for spec selection.
+//! and [`OLSpecId::V3`] take over, the capacities V2 enforces and the rules
+//! V3 changes, and for spec selection.
 //!
 //! The differential tests in `strata-ol-checkpoint` and
 //! `strata-ol-block-assembly` compare the drivers against each other.
@@ -9,14 +10,16 @@ use std::convert::Infallible;
 use std::{iter, slice};
 
 use strata_acct_types::{
-    AccountId, BitcoinAmount, Hash, MAX_MESSAGES, MAX_MSG_PAYLOAD_DATA_BYTES, MAX_TRANSFERS,
+    AccountId, AcctError, AccumulatorClaim, BitcoinAmount, Hash, MAX_MESSAGES,
+    MAX_MSG_PAYLOAD_DATA_BYTES, MAX_TRANSFERS, RawMerkleProof,
 };
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_codec::encode_to_vec;
 use strata_da_framework::{DaCounter, DaLinacc, DaRegister};
 use strata_identifiers::{
-    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, L1BlockCommitment, OLBlockCommitment, SubjectId,
+    AccountSerial, BRIDGE_GATEWAY_ACCT_ID, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockCommitment,
+    OLBlockCommitment, SubjectId,
 };
 use strata_ol_chain_types_v1::{AsmManifest, MAX_LOGS_PER_BLOCK, OLBlockV1};
 use strata_ol_da_common::{U16LenBytes, U16LenList};
@@ -877,11 +880,15 @@ fn test_v0_replay_rejects_manifest_height_gap() {
     );
 }
 
-/// V2 takes over a V1 state when it opens an epoch, as the first V2 epoch
-/// does after a V1 enactment, but never continues an epoch that started
-/// under V1.
-#[test]
-fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
+/// Checks that `spec` takes over a `predecessor` state when it opens an
+/// epoch, as the first `spec` epoch does after a `predecessor` enactment, and
+/// records `spec` in the state root, but never continues an epoch that
+/// started under `predecessor`.
+///
+/// The V1 code ignores the versions of any state after V0, so a V1 epoch
+/// whose states are relabelled as `predecessor` stands for a `predecessor`
+/// epoch.
+fn assert_takes_over_only_at_an_epoch_start(spec: OLSpecId, predecessor: OLSpecId) {
     let epoch = build_v1_epoch();
     let runtime_params = OLRuntimeParams::test_default();
     let [first, second, ..] = epoch.epoch_blocks.as_slice() else {
@@ -893,12 +900,19 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
     let block_info = BlockInfo::from_header(first.header());
     let block_context = BlockContext::new(&block_info, Some(epoch.genesis.header()));
     let mut state = epoch.pre_epoch_state.clone();
-    sequencer::execute_block_initialization(OLSpecId::V2, &mut state, &block_context)
-        .expect("V2 opens the epoch");
-    assert_eq!(state.spec_versions(), OLSpecVersions::uniform(OLSpecId::V2));
+    state.set_spec_versions(OLSpecVersions::uniform(predecessor));
+    let predecessor_root = state.compute_state_root().expect("state root");
+    sequencer::execute_block_initialization(spec, &mut state, &block_context)
+        .expect("the spec opens the epoch");
+    assert_eq!(state.spec_versions(), OLSpecVersions::uniform(spec));
+    assert_ne!(
+        state.compute_state_root().expect("state root"),
+        predecessor_root,
+        "the state root records the spec that took over"
+    );
 
-    // A V1 state in the middle of an epoch, after V1 ran the epoch's first
-    // block.
+    // A predecessor state in the middle of an epoch, after the epoch's first
+    // block ran.
     let mut state = epoch.pre_epoch_state;
     verify_block(
         OLSpecId::V1,
@@ -909,36 +923,35 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
         &runtime_params,
     )
     .expect("V1 verifies its own block");
+    state.set_spec_versions(OLSpecVersions::uniform(predecessor));
     let mid_epoch_root = state.compute_state_root().expect("state root");
 
     let err = verify_block(
-        OLSpecId::V2,
+        spec,
         &mut state,
         second.header(),
         Some(first.header()),
         second.body(),
         &runtime_params,
     )
-    .expect_err("V2 must not continue a V1 epoch");
+    .expect_err("the spec must not continue a predecessor epoch");
     assert!(
         matches!(
             err,
-            ExecError::ContinuesEarlierSpecEpoch {
-                spec: OLSpecId::V2,
-                state_spec: OLSpecId::V1,
-            }
+            ExecError::ContinuesEarlierSpecEpoch { spec: s, state_spec }
+                if s == spec && state_spec == predecessor
         ),
         "{err}"
     );
 
     let err = execute_block_batch_predrain(
-        OLSpecId::V2,
+        spec,
         &mut state,
         slice::from_ref(second),
         first.header(),
         &runtime_params,
     )
-    .expect_err("V2 must not continue a V1 epoch in a batch");
+    .expect_err("the spec must not continue a predecessor epoch in a batch");
     assert!(
         matches!(err, ExecError::ContinuesEarlierSpecEpoch { .. }),
         "{err}"
@@ -946,8 +959,8 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
 
     let block_info = BlockInfo::from_header(second.header());
     let block_context = BlockContext::new(&block_info, Some(first.header()));
-    let err = sequencer::execute_block_initialization(OLSpecId::V2, &mut state, &block_context)
-        .expect_err("V2 must not open a block that continues a V1 epoch");
+    let err = sequencer::execute_block_initialization(spec, &mut state, &block_context)
+        .expect_err("the spec must not open a block that continues a predecessor epoch");
     assert!(
         matches!(err, ExecError::ContinuesEarlierSpecEpoch { .. }),
         "{err}"
@@ -960,37 +973,32 @@ fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
     );
 }
 
-/// Each enactment advances the spec by one, so V2 never takes over a V0
-/// state.
-#[test]
-fn test_v2_rejects_a_v0_state() {
+/// Checks that `spec` refuses, without touching it, a `state_spec` state at
+/// the start of an epoch, in block verification and in epoch replay, with
+/// the error `is_expected` accepts.
+fn assert_rejects_state_of(
+    spec: OLSpecId,
+    state_spec: OLSpecId,
+    is_expected: impl Fn(&ExecError) -> bool,
+) {
     let epoch = build_v1_epoch();
     let runtime_params = OLRuntimeParams::test_default();
     let first = &epoch.epoch_blocks[0];
     let terminal = epoch.epoch_blocks.last().expect("epoch has a terminal");
     let mut state = epoch.pre_epoch_state;
-    state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V0));
+    state.set_spec_versions(OLSpecVersions::uniform(state_spec));
     let pre_root = state.compute_state_root().expect("state root");
 
     let err = verify_block(
-        OLSpecId::V2,
+        spec,
         &mut state,
         first.header(),
         Some(epoch.genesis.header()),
         first.body(),
         &runtime_params,
     )
-    .expect_err("V2 must not take over a V0 state");
-    assert!(
-        matches!(
-            err,
-            ExecError::StateFromEarlierSpec {
-                spec: OLSpecId::V2,
-                state_spec: OLSpecId::V0,
-            }
-        ),
-        "{err}"
-    );
+    .expect_err("the spec must not take over the state");
+    assert!(is_expected(&err), "{err}");
 
     // Replay checks the state before it decodes the diff, so even bytes that
     // would not decode report it.
@@ -999,27 +1007,82 @@ fn test_v2_rejects_a_v0_state() {
         epoch.genesis.header().compute_block_commitment(),
     );
     let err = apply_da_epoch(
-        OLSpecId::V2,
+        spec,
         &mut state,
         &epoch_info,
         &[0xff; 3],
         &[],
         &runtime_params,
     )
-    .expect_err("V2 must not replay an epoch on a V0 state");
-    assert!(
-        matches!(
-            err,
-            EpochDaReplayError::Exec(ExecError::StateFromEarlierSpec { .. })
-        ),
-        "{err}"
-    );
+    .expect_err("the spec must not replay an epoch on the state");
+    let EpochDaReplayError::Exec(err) = err else {
+        panic!("expected an execution error, got {err}");
+    };
+    assert!(is_expected(&err), "{err}");
 
     assert_eq!(
         state.compute_state_root().expect("state root"),
         pre_root,
         "a rejected takeover must not touch the state"
     );
+}
+
+/// Checks that `spec` refuses a state of `state_spec`, a spec before its
+/// predecessor, with [`ExecError::StateFromEarlierSpec`].
+fn assert_rejects_earlier_state(spec: OLSpecId, state_spec: OLSpecId) {
+    assert_rejects_state_of(spec, state_spec, |err| {
+        matches!(
+            err,
+            ExecError::StateFromEarlierSpec { spec: s, state_spec: from }
+                if *s == spec && *from == state_spec
+        )
+    });
+}
+
+/// V2 takes over a V1 state when it opens an epoch, as the first V2 epoch
+/// does after a V1 enactment, but never continues an epoch that started
+/// under V1.
+#[test]
+fn test_v2_takes_over_a_v1_state_only_at_an_epoch_start() {
+    assert_takes_over_only_at_an_epoch_start(OLSpecId::V2, OLSpecId::V1);
+}
+
+/// Each enactment advances the spec by one, so V2 never takes over a V0
+/// state.
+#[test]
+fn test_v2_rejects_a_v0_state() {
+    assert_rejects_earlier_state(OLSpecId::V2, OLSpecId::V0);
+}
+
+/// V2 rules never run on a state a later spec produced.
+#[test]
+fn test_v2_rejects_a_v3_state() {
+    assert_rejects_state_of(OLSpecId::V2, OLSpecId::V3, |err| {
+        matches!(
+            err,
+            ExecError::StateFromLaterSpec {
+                spec: OLSpecId::V2,
+                state_spec_version: 3,
+            }
+        )
+    });
+}
+
+/// V3 takes over a V2 state when it opens an epoch, as the first V3 epoch
+/// does after a V2 enactment, but never continues an epoch that started
+/// under V2.
+#[test]
+fn test_v3_takes_over_a_v2_state_only_at_an_epoch_start() {
+    assert_takes_over_only_at_an_epoch_start(OLSpecId::V3, OLSpecId::V2);
+}
+
+/// Each enactment advances the spec by one, so V3 never takes over a V1 or
+/// V0 state.
+#[test]
+fn test_v3_rejects_v1_and_v0_states() {
+    for state_spec in [OLSpecId::V1, OLSpecId::V0] {
+        assert_rejects_earlier_state(OLSpecId::V3, state_spec);
+    }
 }
 
 /// Returns the commitment of the L1 block `manifest` is for.
@@ -1050,12 +1113,14 @@ fn test_next_epoch_spec_advances_only_at_an_enactment() {
     assert_eq!(next_epoch_spec(OLSpecId::V1, None), Ok(OLSpecId::V1));
     assert_eq!(next_epoch_spec(OLSpecId::V1, Some(10)), Ok(OLSpecId::V2));
     assert_eq!(next_epoch_spec(OLSpecId::V2, None), Ok(OLSpecId::V2));
+    assert_eq!(next_epoch_spec(OLSpecId::V2, Some(10)), Ok(OLSpecId::V3));
+    assert_eq!(next_epoch_spec(OLSpecId::V3, None), Ok(OLSpecId::V3));
 
-    // This binary implements no spec after V2.
-    let err = next_epoch_spec(OLSpecId::V2, Some(10)).expect_err("V2 has no known successor");
-    assert_eq!(err.prev_spec(), OLSpecId::V2);
+    // This binary implements no spec after V3.
+    let err = next_epoch_spec(OLSpecId::V3, Some(10)).expect_err("V3 has no known successor");
+    assert_eq!(err.prev_spec(), OLSpecId::V3);
     assert_eq!(err.enactment_l1_height(), 10);
-    assert_eq!(err.spec_version(), 3);
+    assert_eq!(err.spec_version(), 4);
 }
 
 #[test]
@@ -1063,30 +1128,34 @@ fn test_select_switches_at_an_enactment_the_parent_processed() {
     let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let enactment = make_checkpoint_predicate_enactment_manifest(10, 1);
 
-    for (spec, successor) in [(OLSpecId::V0, OLSpecId::V1), (OLSpecId::V1, OLSpecId::V2)] {
+    for (spec, successor) in [
+        (OLSpecId::V0, OLSpecId::V1),
+        (OLSpecId::V1, OLSpecId::V2),
+        (OLSpecId::V2, OLSpecId::V3),
+    ] {
         assert_eq!(
             select_after(spec, prev_epoch_last_l1_block, &enactment).expect("has a successor"),
             successor
         );
     }
 
-    // V2 -> V3: the epoch after a V2 epoch that processed an enactment runs
-    // V3, which this binary does not implement.
-    let err = select_after(OLSpecId::V2, prev_epoch_last_l1_block, &enactment)
+    // V3 -> V4: the epoch after a V3 epoch that processed an enactment runs
+    // V4, which this binary does not implement.
+    let err = select_after(OLSpecId::V3, prev_epoch_last_l1_block, &enactment)
         .expect_err("upgrade required");
     let EpochSpecSelectionError::UpgradeRequired(upgrade) = err else {
         panic!("expected an upgrade-required error, got {err}");
     };
-    assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
+    assert_eq!(upgrade.prev_spec(), OLSpecId::V3);
     assert_eq!(upgrade.enactment_l1_height(), 10);
-    assert_eq!(upgrade.spec_version(), 3);
+    assert_eq!(upgrade.spec_version(), 4);
 }
 
 #[test]
 fn test_select_keeps_the_spec_after_a_plain_last_manifest() {
     let prev_epoch_last_l1_block = manifest_block(&make_empty_manifest(9, 0));
     let plain = make_empty_manifest(12, 1);
-    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2] {
+    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
         assert_eq!(
             select_after(spec, prev_epoch_last_l1_block, &plain).expect("selects"),
             spec
@@ -1101,7 +1170,7 @@ fn test_select_keeps_the_spec_after_a_plain_last_manifest() {
 #[test]
 fn test_select_ignores_an_enactment_the_parent_did_not_process() {
     let b = manifest_block(&make_checkpoint_predicate_enactment_manifest(10, 1));
-    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2] {
+    for spec in [OLSpecId::V0, OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
         let selected = select_next_epoch_spec(
             OLSpecVersions::uniform(spec),
             EpochL1Range::empty(b),
@@ -1287,32 +1356,45 @@ impl CapacityFixture {
         let block_info = self.block_info();
         construct_block(
             spec,
-            &mut self.fixture.state().clone(),
+            &mut self.state_to_open_under(spec),
             BlockContext::new(&block_info, Some(self.fixture.parent_header())),
             BlockComponents::new_txs_from_ol_transactions(txs),
             &OLRuntimeParams::test_default(),
         )
     }
 
-    /// Builds a block from `txs` with the V1 code on a V2 state, so the block
-    /// differs from a valid V2 block only in what V2 caps, and returns it with
-    /// the state to verify it on.
-    fn v2_block_built_by_v1(
+    /// Returns the post-genesis state as the first block of an epoch under
+    /// `spec` finds it: V3 takes over only a V2 state, and V1 and V2 open the
+    /// V1 genesis state.
+    fn state_to_open_under(&self, spec: OLSpecId) -> MemoryStateBaseLayer<OLStateV1> {
+        let mut state = self.fixture.state().clone();
+        if spec == OLSpecId::V3 {
+            state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+        }
+        state
+    }
+
+    /// Builds a block from `txs` with the V1 code on a state of `spec`, so
+    /// the block differs from a valid block of `spec` only in what `spec`
+    /// caps, and returns it with the state to verify it on.
+    fn block_built_by_v1(
         &self,
+        spec: OLSpecId,
         txs: Vec<OLTransactionV1>,
     ) -> (OLBlockV1, MemoryStateBaseLayer<OLStateV1>) {
-        let (mut blocks, pre_state) = self.v2_blocks_built_by_v1(vec![txs]);
+        let (mut blocks, pre_state) = self.blocks_built_by_v1(spec, vec![txs]);
         (blocks.remove(0), pre_state)
     }
 
     /// Builds consecutive blocks of epoch 1, one from each entry of
-    /// `block_txs`, as [`Self::v2_block_built_by_v1`] builds one.
-    fn v2_blocks_built_by_v1(
+    /// `block_txs`, as [`Self::block_built_by_v1`] builds one.
+    fn blocks_built_by_v1(
         &self,
+        spec: OLSpecId,
         block_txs: Vec<Vec<OLTransactionV1>>,
     ) -> (Vec<OLBlockV1>, MemoryStateBaseLayer<OLStateV1>) {
         let mut state = self.fixture.state().clone();
-        state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+        state.set_spec_versions(OLSpecVersions::uniform(spec));
         let pre_state = state.clone();
         let mut parent = self.fixture.parent_header().clone();
         let mut blocks = Vec::new();
@@ -1331,9 +1413,10 @@ impl CapacityFixture {
         (blocks, pre_state)
     }
 
-    /// Runs every V2 operation that executes a whole block on `block`.
-    fn v2_block_errors(
+    /// Runs every operation of `spec` that executes a whole block on `block`.
+    fn block_errors(
         &self,
+        spec: OLSpecId,
         block: &OLBlockV1,
         pre_state: &MemoryStateBaseLayer<OLStateV1>,
     ) -> Vec<(&'static str, ExecError)> {
@@ -1344,7 +1427,7 @@ impl CapacityFixture {
             (
                 "verify_block",
                 verify_block(
-                    OLSpecId::V2,
+                    spec,
                     &mut pre_state.clone(),
                     block.header(),
                     Some(parent),
@@ -1356,7 +1439,7 @@ impl CapacityFixture {
             (
                 "execute_and_complete_block",
                 execute_and_complete_block(
-                    OLSpecId::V2,
+                    spec,
                     &mut pre_state.clone(),
                     BlockContext::new(&block_info, Some(parent)),
                     BlockComponents::from_block(block),
@@ -1367,7 +1450,7 @@ impl CapacityFixture {
             (
                 "execute_block_batch_predrain",
                 execute_block_batch_predrain(
-                    OLSpecId::V2,
+                    spec,
                     &mut pre_state.clone(),
                     slice::from_ref(block),
                     parent,
@@ -1407,8 +1490,15 @@ fn test_spec_limits() {
     assert_eq!(v2.max_tx_transfers(), 255);
     assert_eq!(v2.max_tx_messages(), 255);
     assert_eq!(v2.max_block_logs(), 4_096);
-    assert_eq!(v2.max_msg_payload_bytes(), MAX_MSG_PAYLOAD_BYTES);
-    assert_eq!(v2.max_msg_payload_bytes(), 4_096);
+    assert_eq!(v2.max_msg_payload_bytes(), v0.max_msg_payload_bytes());
+    assert_eq!(v2, v0);
+
+    let v3 = spec_limits(OLSpecId::V3);
+    assert_eq!(v3.max_tx_transfers(), v2.max_tx_transfers());
+    assert_eq!(v3.max_tx_messages(), v2.max_tx_messages());
+    assert_eq!(v3.max_block_logs(), v2.max_block_logs());
+    assert_eq!(v3.max_msg_payload_bytes(), MAX_MSG_PAYLOAD_BYTES);
+    assert_eq!(v3.max_msg_payload_bytes(), 4_096);
 }
 
 /// V2 accepts a block whose logs reach its capacity and rejects one more log
@@ -1449,8 +1539,8 @@ fn test_v2_caps_block_logs() {
         .expect_err("V2 rejects the extra log");
     assert!(is_overflow(&err), "{err}");
 
-    let (block, pre_state) = capacity.v2_block_built_by_v1(over);
-    for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+    let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V2, over);
+    for (operation, err) in capacity.block_errors(OLSpecId::V2, &block, &pre_state) {
         assert!(is_overflow(&err), "{operation}: {err}");
     }
 }
@@ -1515,8 +1605,8 @@ fn test_v2_caps_transaction_effects() {
             "block execution names the transaction: {err}"
         );
 
-        let (block, pre_state) = capacity.v2_block_built_by_v1(txs.clone());
-        for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+        let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V2, txs.clone());
+        for (operation, err) in capacity.block_errors(OLSpecId::V2, &block, &pre_state) {
             assert!(is_overflow(&err), "{operation}: {err}");
         }
 
@@ -1545,12 +1635,13 @@ fn test_v2_caps_transaction_effects() {
     }
 }
 
-/// V2 accepts a message payload at the DA bound and rejects one more byte,
+/// V3 accepts a message payload at the DA bound and rejects one more byte,
 /// in block execution and in the sequencer phases that take a single
-/// transaction, whatever the message's destination. V1 accepts both.
+/// transaction, whatever the message's destination. V1 and V2 accept both,
+/// as the checkpoint programs that prove them do.
 #[test]
-fn test_v2_caps_message_payload() {
-    let max_payload = OLSpecLimits::V2.max_msg_payload_bytes();
+fn test_v3_caps_message_payload() {
+    let max_payload = OLSpecLimits::V3.max_msg_payload_bytes();
     let capacity = CapacityFixture::new(1);
     let account = capacity.fixture.expect_snark_account(capacity.sender);
     let update_with_payload = |len: usize| {
@@ -1561,14 +1652,16 @@ fn test_v2_caps_message_payload() {
     };
 
     capacity
-        .construct(OLSpecId::V2, vec![update_with_payload(max_payload)])
-        .expect("V2 accepts a payload at the DA bound");
+        .construct(OLSpecId::V3, vec![update_with_payload(max_payload)])
+        .expect("V3 accepts a payload at the DA bound");
 
     let tx = update_with_payload(max_payload + 1);
     let txs = vec![tx.clone()];
-    capacity
-        .construct(OLSpecId::V1, txs.clone())
-        .expect("V1 accepts the larger payload");
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        capacity
+            .construct(spec, txs.clone())
+            .unwrap_or_else(|err| panic!("{spec:?} accepts the larger payload: {err}"));
+    }
 
     let expected = TxEffectsOverflow::MessagePayload {
         index: 0,
@@ -1577,16 +1670,16 @@ fn test_v2_caps_message_payload() {
     };
     let is_overflow = |err: &ExecError| matches!(err.base(), ExecError::TxEffectsOverflow(err) if *err == expected);
     let err = capacity
-        .construct(OLSpecId::V2, txs.clone())
-        .expect_err("V2 rejects the larger payload");
+        .construct(OLSpecId::V3, txs.clone())
+        .expect_err("V3 rejects the larger payload");
     assert!(is_overflow(&err), "{err}");
     assert!(
         matches!(err, ExecError::TxExec(_, 0, _)),
         "block execution names the transaction: {err}"
     );
 
-    let (block, pre_state) = capacity.v2_block_built_by_v1(txs);
-    for (operation, err) in capacity.v2_block_errors(&block, &pre_state) {
+    let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V3, txs);
+    for (operation, err) in capacity.block_errors(OLSpecId::V3, &block, &pre_state) {
         assert!(is_overflow(&err), "{operation}: {err}");
     }
 
@@ -1601,7 +1694,7 @@ fn test_v2_caps_message_payload() {
         .expect("snark account exists")
         .clone();
     let err = sequencer::index_snark_update_proof_requirements(
-        OLSpecId::V2,
+        OLSpecId::V3,
         capacity.sender,
         &sender_state,
         sau.operation(),
@@ -1614,7 +1707,7 @@ fn test_v2_caps_message_payload() {
     let output = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(capacity.block_info(), &output, &runtime_params);
     let err = sequencer::process_single_tx(
-        OLSpecId::V2,
+        OLSpecId::V3,
         &mut capacity.fixture.state().clone(),
         &tx,
         &TxExecContext::new(&basic_ctx, Some(capacity.fixture.parent_header())),
@@ -1635,10 +1728,13 @@ fn test_v2_batch_predrain_caps_each_block() {
     let first = capacity.updates_emitting(0, max_logs);
     let second_seq_no = first.len() as u64;
 
-    let (blocks, pre_state) = capacity.v2_blocks_built_by_v1(vec![
-        first.clone(),
-        capacity.updates_emitting(second_seq_no, max_logs),
-    ]);
+    let (blocks, pre_state) = capacity.blocks_built_by_v1(
+        OLSpecId::V2,
+        vec![
+            first.clone(),
+            capacity.updates_emitting(second_seq_no, max_logs),
+        ],
+    );
     let mut v2_state = pre_state.clone();
     let v2_logs = execute_block_batch_predrain(
         OLSpecId::V2,
@@ -1663,10 +1759,13 @@ fn test_v2_batch_predrain_caps_each_block() {
         v1_state.compute_state_root().expect("state root"),
     );
 
-    let (blocks, pre_state) = capacity.v2_blocks_built_by_v1(vec![
-        first,
-        capacity.updates_emitting(second_seq_no, max_logs + 1),
-    ]);
+    let (blocks, pre_state) = capacity.blocks_built_by_v1(
+        OLSpecId::V2,
+        vec![
+            first,
+            capacity.updates_emitting(second_seq_no, max_logs + 1),
+        ],
+    );
     let err = execute_block_batch_predrain(
         OLSpecId::V2,
         &mut pre_state.clone(),
@@ -1680,4 +1779,239 @@ fn test_v2_batch_predrain_caps_each_block() {
             if *count == max_logs + 1 && *max == max_logs),
         "{err}"
     );
+}
+
+/// V3 takes a withdrawal message only with its descriptor length in the
+/// shortest layout. V1 and V2 take every layout, as the checkpoint programs
+/// that prove them do, so the same message withdraws under them and goes to
+/// limbo under V3.
+#[test]
+fn test_v3_requires_the_shortest_withdrawal_len_prefix() {
+    let capacity = CapacityFixture::new(1);
+    let account = capacity.fixture.expect_snark_account(capacity.sender);
+    let dest_desc = make_p2wpkh_bosd_descriptor(0x15);
+    let withdrawal_with = |payload: Vec<u8>| {
+        SnarkUpdateBuilder::from_snark_state(account.clone())
+            .with_seq_no(0)
+            .with_output_message(BRIDGE_GATEWAY_ACCT_ID, WITHDRAWAL_SATS, payload)
+            .build(capacity.sender, make_state_root(2), make_proof(1))
+    };
+    let shortest = withdrawal_with(make_withdrawal_payload(dest_desc.clone()));
+    let padded = withdrawal_with(make_withdrawal_payload_with_padded_len_prefix(&dest_desc));
+
+    let runtime_params = OLRuntimeParams::test_default();
+    let logs = |spec: OLSpecId, tx: &OLTransactionV1| {
+        let executed = capacity
+            .construct(spec, vec![tx.clone()])
+            .unwrap_or_else(|err| panic!("{spec:?} executes the update: {err}"))
+            .outputs()
+            .logs()
+            .to_vec();
+        let mut predicted = 0;
+        sequencer::predict_tx_log_payloads(spec, tx, runtime_params.bridge_params(), |_| {
+            predicted += 1;
+        })
+        .expect("log prediction succeeds");
+        assert_eq!(predicted, executed.len(), "{spec:?} predicts what it emits");
+        executed
+    };
+
+    // The update log, then the withdrawal log.
+    let withdrawal_logs = logs(OLSpecId::V1, &shortest);
+    assert_eq!(withdrawal_logs.len(), 2);
+    for spec in [OLSpecId::V2, OLSpecId::V3] {
+        assert_eq!(logs(spec, &shortest), withdrawal_logs, "{spec:?}");
+    }
+
+    // Both layouts decode to the same withdrawal, so V1 and V2 emit the same
+    // withdrawal log for the padded one.
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        let padded_logs = logs(spec, &padded);
+        assert_eq!(padded_logs.len(), 2, "{spec:?}");
+        assert_eq!(padded_logs[1], withdrawal_logs[1], "{spec:?}");
+    }
+    assert_eq!(
+        logs(OLSpecId::V3, &padded).len(),
+        1,
+        "V3 emits the update log alone"
+    );
+
+    // Block assembly runs one transaction at a time on a context it builds
+    // itself, and the rules still follow the spec.
+    let single_tx_log_count = |spec: OLSpecId| {
+        let output = ExecOutputBuffer::new_empty();
+        let basic_ctx = BasicExecContext::new(capacity.block_info(), &output, &runtime_params);
+        sequencer::process_single_tx(
+            spec,
+            &mut capacity.fixture.state().clone(),
+            &padded,
+            &TxExecContext::new(&basic_ctx, Some(capacity.fixture.parent_header())),
+        )
+        .unwrap_or_else(|err| panic!("{spec:?} processes the update: {err}"));
+        output.into_logs().len()
+    };
+    assert_eq!(single_tx_log_count(OLSpecId::V1), 2);
+    assert_eq!(single_tx_log_count(OLSpecId::V2), 2);
+    assert_eq!(single_tx_log_count(OLSpecId::V3), 1);
+
+    // V3 verification runs the rule V3 construction ran: a verifier that took
+    // the padded message for a withdrawal would reach another state root.
+    let parent = capacity.fixture.parent_header();
+    let built = capacity
+        .construct(OLSpecId::V3, vec![padded])
+        .expect("V3 builds the block");
+    let block = to_ol_block(built.completed_block());
+    let verified_logs = verify_block(
+        OLSpecId::V3,
+        &mut capacity.state_to_open_under(OLSpecId::V3),
+        block.header(),
+        Some(parent),
+        block.body(),
+        &runtime_params,
+    )
+    .expect("V3 verifies the block it built");
+    assert_eq!(verified_logs, built.outputs().logs());
+    let batch_logs = execute_block_batch_predrain(
+        OLSpecId::V3,
+        &mut capacity.state_to_open_under(OLSpecId::V3),
+        slice::from_ref(&block),
+        parent,
+        &runtime_params,
+    )
+    .expect("V3 executes the block it built in a batch");
+    assert_eq!(batch_logs, built.outputs().logs());
+}
+
+/// V3 takes an L1 block ref claim only with a proof that leads to the peak
+/// holding the claimed index. V1 and V2 select the peak by the proof's length
+/// and check the index only within it, as the checkpoint programs that prove
+/// them do, so they also take the one entry of the accumulator under an index
+/// it does not hold.
+#[test]
+fn test_v3_binds_accumulator_proofs_to_the_claimed_index() {
+    let capacity = CapacityFixture::new(1);
+    let account = capacity.fixture.expect_snark_account(capacity.sender);
+    assert_eq!(
+        capacity.fixture.state().l1_block_refs_mmr().num_entries(),
+        1,
+        "genesis prefills the accumulator with one entry"
+    );
+    // The entry is a peak on its own, so its proof has no cohashes and reads
+    // no bit of the index.
+    let update_claiming = |index: u64| {
+        SnarkUpdateBuilder::from_snark_state(account.clone())
+            .with_seq_no(0)
+            .with_transfer(capacity.recipient, 1)
+            .with_ledger_refs(
+                vec![AccumulatorClaim::new(index, L1_HEIGHT_MMR_PREFILL_LEAF)],
+                vec![RawMerkleProof::new_zero()],
+            )
+            .build(capacity.sender, make_state_root(2), make_proof(1))
+    };
+    let held = update_claiming(0);
+    let not_held = update_claiming(2);
+
+    for spec in [OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
+        capacity
+            .construct(spec, vec![held.clone()])
+            .unwrap_or_else(|err| panic!("{spec:?} takes the claim at index 0: {err}"));
+    }
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        capacity
+            .construct(spec, vec![not_held.clone()])
+            .unwrap_or_else(|err| panic!("{spec:?} takes the claim at index 2: {err}"));
+    }
+
+    let is_invalid_proof = |err: &ExecError| {
+        matches!(
+            err.base(),
+            ExecError::Acct(AcctError::InvalidLedgerReference { account_id, ref_idx: 2 })
+                if *account_id == capacity.sender
+        )
+    };
+    let err = capacity
+        .construct(OLSpecId::V3, vec![not_held.clone()])
+        .expect_err("V3 rejects the claim at index 2");
+    assert!(is_invalid_proof(&err), "{err}");
+
+    let (block, pre_state) = capacity.block_built_by_v1(OLSpecId::V3, vec![not_held.clone()]);
+    for (operation, err) in capacity.block_errors(OLSpecId::V3, &block, &pre_state) {
+        assert!(is_invalid_proof(&err), "{operation}: {err}");
+    }
+
+    let runtime_params = OLRuntimeParams::test_default();
+    let process = |spec: OLSpecId| {
+        let output = ExecOutputBuffer::new_empty();
+        let basic_ctx = BasicExecContext::new(capacity.block_info(), &output, &runtime_params);
+        sequencer::process_single_tx(
+            spec,
+            &mut capacity.fixture.state().clone(),
+            &not_held,
+            &TxExecContext::new(&basic_ctx, Some(capacity.fixture.parent_header())),
+        )
+    };
+    process(OLSpecId::V2).expect("V2 transaction processing takes the claim");
+    let err = process(OLSpecId::V3).expect_err("V3 transaction processing rejects the claim");
+    assert!(is_invalid_proof(&err), "{err}");
+}
+
+/// V3 replays an epoch only from the DA bytes the encoder writes. V1 and V2
+/// also replay another spelling of the same diff, as the checkpoint programs
+/// that prove them do, and reach the state the canonical bytes give.
+#[test]
+fn test_v3_replays_only_the_canonical_da_encoding() {
+    let epoch = build_v1_epoch();
+    let prev_terminal = epoch.genesis.header().compute_block_commitment();
+    let manifests = [make_empty_manifest(EPOCH_RUNNER_TERMINAL_L1_HEIGHT, 0)];
+
+    let canonical =
+        encode_to_vec(&OLDaPayloadV1::new(OLStateDiffV1::default())).expect("encode diff");
+    // The payload opens with the presence bits of the global diff's two
+    // members. The top bit names no member, so the decoders skip it and the
+    // encoder never sets it.
+    assert_eq!(canonical[0], 0x00);
+    let mut other_spelling = canonical.clone();
+    other_spelling[0] = 0x80;
+
+    // The state an epoch under `spec` starts from: V3 takes over only a V2
+    // state, and V1 and V2 open the V1 post-genesis state.
+    let pre_epoch_state = |spec: OLSpecId| {
+        let mut state = epoch.pre_epoch_state.clone();
+        if spec == OLSpecId::V3 {
+            state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+        }
+        state
+    };
+    let replay = |spec: OLSpecId, diff: &[u8]| {
+        let mut state = pre_epoch_state(spec);
+        replay_epoch_1_with_diff(spec, &mut state, prev_terminal, diff, &manifests)
+            .map(|()| state.compute_state_root().expect("state root"))
+    };
+
+    for spec in [OLSpecId::V1, OLSpecId::V2] {
+        let canonical_root = replay(spec, &canonical).expect("replays the canonical bytes");
+        let other_root = replay(spec, &other_spelling).expect("replays the other spelling");
+        assert_eq!(other_root, canonical_root, "{spec:?}");
+    }
+
+    let canonical_root = replay(OLSpecId::V3, &canonical).expect("V3 replays the canonical bytes");
+    let err = replay(OLSpecId::V3, &other_spelling).expect_err("V3 rejects the other spelling");
+    assert!(matches!(err, EpochDaReplayError::Decode(_)), "{err}");
+
+    let terminal_info = BlockInfo::new(
+        EPOCH_RUNNER_GENESIS_TIMESTAMP + EPOCH_RUNNER_SLOT_TIMESTAMP_STEP,
+        1,
+        1,
+    );
+    let err = verify_epoch_with_diff(
+        OLSpecId::V3,
+        &mut pre_epoch_state(OLSpecId::V3),
+        &EpochInfo::new(terminal_info, prev_terminal),
+        &other_spelling,
+        &manifests,
+        &EpochExecExpectations::new(canonical_root),
+        &OLRuntimeParams::test_default(),
+    )
+    .expect_err("V3 verification rejects the other spelling");
+    assert!(matches!(err, EpochDaReplayError::Decode(_)), "{err}");
 }

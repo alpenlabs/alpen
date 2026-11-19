@@ -13,6 +13,7 @@ mod manifest_processing;
 mod msg_payload_coin;
 mod output;
 mod proof_verification;
+mod rules;
 mod sau_processing;
 mod transaction_processing;
 mod verification;
@@ -33,6 +34,7 @@ pub use manifest_processing::{
 };
 pub use output::*;
 pub use proof_verification::TxProofVerifierImpl;
+pub use rules::RuleAmendments;
 pub use sau_processing::verify_snark_acct_update_proofs;
 pub use transaction_processing::{
     check_tx_constraints, predict_tx_log_payloads, process_block_tx_segment, process_single_tx,

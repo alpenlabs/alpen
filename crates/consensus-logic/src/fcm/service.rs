@@ -1212,8 +1212,8 @@ mod tests {
         async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()> {
             match *self.upgrade_required_at.lock().unwrap() {
                 Some(slot) if block.slot() == slot => {
-                    let upgrade = next_epoch_spec(OLSpecId::V2, Some(7))
-                        .expect_err("this binary implements no spec after V2");
+                    let upgrade = next_epoch_spec(OLSpecId::V3, Some(7))
+                        .expect_err("this binary implements no spec after V3");
                     return Err(WorkerError::UpgradeRequired(upgrade).into());
                 }
                 Some(slot) if block.slot() > slot => {

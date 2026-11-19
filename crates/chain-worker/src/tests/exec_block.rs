@@ -718,12 +718,12 @@ fn test_accepted_terminal_recovers_despite_other_summary_at_same_epoch() {
     );
 }
 
-/// Block execution refuses the first block after a terminal block whose V2
+/// Block execution refuses the first block after a terminal block whose V3
 /// epoch processed a checkpoint predicate enactment: that block would run
-/// V2's successor, which this binary does not implement. Nothing is stored
+/// V3's successor, which this binary does not implement. Nothing is stored
 /// for it.
 #[test]
-fn test_exec_refuses_the_block_after_a_v2_enactment() {
+fn test_exec_refuses_the_block_after_a_v3_enactment() {
     let mut state = make_marked_genesis_state();
     seed_accounts(&mut state);
     let genesis_l1_anchor = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
@@ -744,10 +744,10 @@ fn test_exec_refuses_the_block_after_a_v2_enactment() {
         *genesis_header.state_root(),
     );
 
-    // Epoch 1 runs V2: one terminal block that processes the enactment. V2's
-    // first block takes over the V1 state, and the V1 code the fixture runs
-    // leaves the V2 versions as they are, so it builds the epoch as V2 does.
-    state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V2));
+    // Epoch 1 runs V3: one terminal block that processes the enactment. V3's
+    // first block takes over the V2 state, and the V1 code the fixture runs
+    // leaves the V3 versions as they are, so it builds the epoch as V3 does.
+    state.set_spec_versions(OLSpecVersions::uniform(OLSpecId::V3));
     let enactment = make_checkpoint_predicate_enactment_manifest(TERMINAL_L1_HEIGHT, 1);
     let mut blocks = Vec::new();
     run_terminal(&mut state, &mut blocks, &genesis_header, enactment.clone());
@@ -760,7 +760,7 @@ fn test_exec_refuses_the_block_after_a_v2_enactment() {
         *terminal_header.state_root(),
     );
 
-    // Epoch 2: the block V2 rules would build next.
+    // Epoch 2: the block V3 rules would build next.
     let slot = terminal_header.slot() + 1;
     let next = execute_block(
         &mut state,
@@ -772,7 +772,7 @@ fn test_exec_refuses_the_block_after_a_v2_enactment() {
         Some(&terminal_header),
         BlockComponents::new_empty(),
     )
-    .expect("V2 rules build the block");
+    .expect("V3 rules build the block");
     let next_commitment = next.header().compute_block_commitment();
 
     let ctx = OrderEnforcingContext::new(
@@ -785,11 +785,11 @@ fn test_exec_refuses_the_block_after_a_v2_enactment() {
     );
 
     let err = exec_block(&ctx, OLRuntimeParams::test_default(), &next_commitment)
-        .expect_err("no block executes after the V2 enactment");
+        .expect_err("no block executes after the V3 enactment");
     let WorkerError::UpgradeRequired(upgrade) = err else {
         panic!("expected an upgrade-required error, got {err}");
     };
-    assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
+    assert_eq!(upgrade.prev_spec(), OLSpecId::V3);
     assert_eq!(upgrade.enactment_l1_height(), TERMINAL_L1_HEIGHT);
     assert!(ctx.stored_states.lock().unwrap().is_empty());
     assert!(ctx.write_batches.lock().unwrap().is_empty());

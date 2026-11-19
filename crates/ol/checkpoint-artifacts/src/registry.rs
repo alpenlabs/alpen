@@ -148,7 +148,8 @@ impl LoadedCheckpointPredicates {
 ///
 /// Native programs use distinct test signing keys so verification detects stale-spec routing.
 /// Each entry binds its spec to the corresponding program closure and predicate.
-/// V1 and V2 each have a fixed-spec host; unknown specs never get a program.
+/// V1 and V2 each have a fixed-spec host. V3 has none yet, so the prover
+/// proves no V3 epoch; unknown specs never get a program.
 #[cfg(feature = "native")]
 pub fn native_checkpoint_registry(
     runtime_params: OLRuntimeParams,
@@ -209,7 +210,9 @@ mod tests {
         assert_eq!(registry.get(OLSpecId::V1).unwrap().spec(), OLSpecId::V1);
         assert_eq!(registry.get(OLSpecId::V2).unwrap().spec(), OLSpecId::V2);
         assert!(registry.get(OLSpecId::V0).is_none());
-        assert!(registry.to_predicates().predicate(OLSpecId::V0).is_none());
+        assert_eq!(registry.to_predicates().predicate(OLSpecId::V0), None);
+        assert!(registry.get(OLSpecId::V3).is_none());
+        assert_eq!(registry.to_predicates().predicate(OLSpecId::V3), None);
         assert_eq!(
             registry
                 .into_proving_hosts()

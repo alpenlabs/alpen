@@ -3,13 +3,19 @@
 //! Provides compact LEB128-style encoding for both signed and unsigned values
 //! where small values (the common case) use fewer bytes.
 //!
-//! The encoding is canonical: `decode` accepts only the bytes `encode` writes.
-//! A value is written in the fewest bytes that hold it, and decoding rejects
-//! the other spellings a reader could take: a final byte with no data bits
-//! (padding), data bits above the 64th in the tenth byte or an eleventh byte
-//! (overflow), and a sign bit on a zero magnitude. Every value therefore has
-//! exactly one byte representation, so bytes covered by a hash or a signature
-//! cannot be rewritten without changing what they decode to.
+//! `encode` is canonical: it writes a value in the fewest bytes that hold it
+//! and never sets the sign bit on a zero magnitude.
+//!
+//! `decode` deliberately accepts more than `encode` writes, exactly what it
+//! accepted at `v0.5.0-rc.2`: a final byte with no data bits (padding), an
+//! eleventh byte with no data bits, a sign bit on a zero magnitude (read as
+//! zero), and data bits above the 64th in the tenth byte (dropped). The frozen
+//! checkpoint programs that prove V0 to V2 epochs decode DA payloads this way
+//! and nothing binds the DA bytes to a canonical form, so a stricter decoder
+//! here would fail on payloads those programs accept and stall nodes replaying
+//! those epochs (SECFND-912). The V3 rules check canonical form for the whole
+//! payload instead, by requiring that re-encoding the decoded payload
+//! reproduces its bytes.
 //!
 //! TODO(STR-2148): Eventually move to strata-codec and reconcile with its VarInt type.
 
@@ -39,44 +45,42 @@ fn encode_magnitude_tail(
 /// Decodes the magnitude bits after the first byte, accumulating into `value`
 /// from bit position `start_bits`.
 ///
-/// `start_bits` is the number of bits the first byte held: 7 for an unsigned
-/// value, 6 for a signed one. The overflow check shifts by `64 - shift`, so it
-/// must be at least 1; a `debug_assert!` holds it to `1..64`.
+/// The body is the `v0.5.0-rc.2` decoder, kept byte for byte because the
+/// frozen V0 to V2 checkpoint programs run it (SECFND-912). It accepts
+/// noncanonical encodings and decodes them as those programs do:
+///
+/// - A final byte with no data bits is padding and adds nothing.
+/// - The group at bit 63 (unsigned) or 62 (signed) is shifted in with a plain `<<`, which drops its
+///   data bits above the 64th instead of rejecting them.
+/// - One more group past the 64th bit is accepted if it carries no data bits, so an encoding may
+///   run to eleven bytes.
+///
+/// Canonical form is checked by the V3 rules on the whole payload, not here.
 ///
 /// # Errors
 ///
-/// Rejects a group that starts past the 64th bit (ten bytes already hold a
-/// u64, so an eleventh could only be padding or overflow), a group with data
-/// bits above the 64th, and a final byte with no data bits set:
-/// [`encode_magnitude_tail`] stops as soon as the magnitude is exhausted, so
-/// a zero last byte is padding that gives the same value a second
-/// representation. Together these leave every value exactly one encoding.
+/// Rejects a group past the 64th bit that carries data bits, and a twelfth
+/// byte.
 fn decode_magnitude_tail(
     mut value: u64,
     start_bits: u32,
     dec: &mut impl Decoder,
 ) -> Result<u64, CodecError> {
-    debug_assert!(
-        (1..64).contains(&start_bits),
-        "varint64: first byte holds 1..=63 bits"
-    );
     let mut shift = start_bits;
     loop {
-        if shift >= 64 {
+        if shift >= 64 + 7 {
             return Err(CodecError::MalformedField("varint64 too many bytes"));
         }
         let [byte] = dec.read_arr::<1>()?;
         let data = (byte & 0x7F) as u64;
-        // The group must fit the bits a u64 has left at this position; a
-        // plain `<<` would drop the excess and make the value ambiguous.
-        if data >> (64 - shift) != 0 {
+        // Guard against shift overflow: only accumulate bits that fit in u64.
+        if shift < 64 {
+            value |= data << shift;
+        } else if data != 0 {
+            // Bits beyond 64 must be zero for a valid u64.
             return Err(CodecError::MalformedField("varint64 overflow"));
         }
-        value |= data << shift;
         if byte & 0x80 == 0 {
-            if data == 0 {
-                return Err(CodecError::MalformedField("varint64 not minimal"));
-            }
             break;
         }
         shift += 7;
@@ -126,6 +130,10 @@ impl Codec for UnsignedVarInt {
         encode_magnitude_tail(value, 7, enc)
     }
 
+    /// Decodes as `v0.5.0-rc.2` did, accepting `decode_magnitude_tail`'s
+    /// noncanonical forms because the frozen V0 to V2 checkpoint programs
+    /// accept them (SECFND-912). Canonical form is checked by the V3 rules on
+    /// the whole payload.
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let [first] = dec.read_arr::<1>()?;
         let value = (first & 0x7F) as u64;
@@ -149,7 +157,7 @@ pub struct SignedVarInt {
 }
 
 /// Zero, as [`SignedVarInt::ZERO`]: the derived default would be a negative
-/// zero, which `new` never produces and `decode` refuses.
+/// zero, which `new` never produces and `decode` reads as zero.
 impl Default for SignedVarInt {
     fn default() -> Self {
         Self::ZERO
@@ -240,7 +248,7 @@ impl Codec for SignedVarInt {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         let mag = self.magnitude;
         // Zero has no sign: the constructors already normalize it, and the
-        // decoder refuses a sign bit on it, so never write one.
+        // decoder reads a sign bit on it as zero, so never write one.
         let sign_bit: u8 = if self.positive || mag == 0 { 0 } else { 0x40 };
 
         // First byte: [C][S][D5..D0] — 6 data bits
@@ -259,6 +267,11 @@ impl Codec for SignedVarInt {
         encode_magnitude_tail(mag, 6, enc)
     }
 
+    /// Decodes as `v0.5.0-rc.2` did, through `decode_magnitude_tail`'s
+    /// noncanonical forms and with a sign bit on a zero magnitude normalized
+    /// to zero by [`Self::new`] rather than rejected, because the frozen V0 to
+    /// V2 checkpoint programs accept it (SECFND-912). Canonical form is
+    /// checked by the V3 rules on the whole payload.
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         let [first] = dec.read_arr::<1>()?;
 
@@ -272,18 +285,7 @@ impl Codec for SignedVarInt {
             decode_magnitude_tail(first_data, 6, dec)?
         };
 
-        // `new` normalizes a zero magnitude to positive and `encode` never sets
-        // the sign bit on one, so a sign bit here is a second spelling of zero.
-        if !positive && magnitude == 0 {
-            return Err(CodecError::MalformedField("varint64 negative zero"));
-        }
-
-        // With negative zero refused the fields are already normalized, so
-        // they are taken as decoded rather than through `new`.
-        Ok(Self {
-            positive,
-            magnitude,
-        })
+        Ok(Self::new(positive, magnitude))
     }
 }
 
@@ -325,148 +327,158 @@ mod tests {
         one.chain(two)
     }
 
+    /// Spellings `encode` never writes decode to the value they spell, as at
+    /// `v0.5.0-rc.2`: a final byte with no data bits is padding.
     #[test]
-    fn test_unsigned_varint_rejects_noncanonical_encodings() {
-        for buf in [
-            &[0x80, 0x00][..],       // 0 in two bytes
-            &[0x81, 0x00][..],       // 1 in two bytes
-            &[0xFF, 0x00][..],       // 127 in two bytes
-            &[0x80, 0x80, 0x00][..], // 0 in three bytes
+    fn test_unsigned_varint_decodes_padded_encodings_to_their_value() {
+        for (buf, value) in [
+            (&[0x80, 0x00][..], 0),       // 0 in two bytes
+            (&[0x81, 0x00][..], 1),       // 1 in two bytes
+            (&[0xFF, 0x00][..], 127),     // 127 in two bytes
+            (&[0x80, 0x80, 0x00][..], 0), // 0 in three bytes
         ] {
-            let res = decode_buf_exact::<UnsignedVarInt>(buf);
-            assert!(
-                matches!(res, Err(CodecError::MalformedField("varint64 not minimal"))),
-                "{buf:02x?} must be rejected, got {res:?}"
-            );
+            let decoded = decode_buf_exact::<UnsignedVarInt>(buf)
+                .unwrap_or_else(|e| panic!("{buf:02x?} must decode, got {e:?}"));
+            assert_eq!(decoded, UnsignedVarInt::new(value), "{buf:02x?}");
         }
     }
 
+    /// As for the unsigned form, and a sign bit on a zero magnitude decodes to
+    /// the positive zero `new` builds.
     #[test]
-    fn test_signed_varint_rejects_noncanonical_encodings() {
-        for (buf, reason) in [
-            (&[0x40][..], "varint64 negative zero"),     // -0
-            (&[0x80, 0x00][..], "varint64 not minimal"), // +0 in two bytes
-            (&[0xC0, 0x00][..], "varint64 not minimal"), // -0 in two bytes
-            (&[0xBF, 0x00][..], "varint64 not minimal"), // 63 in two bytes
+    fn test_signed_varint_decodes_noncanonical_encodings_to_their_value() {
+        for (buf, value) in [
+            (&[0x40][..], SignedVarInt::ZERO),               // -0
+            (&[0x80, 0x00][..], SignedVarInt::ZERO),         // +0 in two bytes
+            (&[0xC0, 0x00][..], SignedVarInt::ZERO),         // -0 in two bytes
+            (&[0xBF, 0x00][..], SignedVarInt::positive(63)), // 63 in two bytes
+            (&[0xFF, 0x00][..], SignedVarInt::negative(63)), // -63 in two bytes
         ] {
-            let res = decode_buf_exact::<SignedVarInt>(buf);
-            assert!(
-                matches!(res, Err(CodecError::MalformedField(r)) if r == reason),
-                "{buf:02x?} must be rejected with {reason:?}, got {res:?}"
-            );
+            let decoded = decode_buf_exact::<SignedVarInt>(buf)
+                .unwrap_or_else(|e| panic!("{buf:02x?} must decode, got {e:?}"));
+            assert_eq!(decoded, value, "{buf:02x?}");
         }
     }
 
+    /// Every well-formed one- and two-byte input decodes. Re-encoding writes
+    /// the minimal spelling of the same value, which is the input itself
+    /// exactly when the input is minimal: the rule the V3 payload check
+    /// relies on.
     #[test]
-    fn test_unsigned_varint_every_accepted_short_encoding_reencodes_to_itself() {
+    fn test_unsigned_varint_every_short_encoding_reencodes_minimally() {
         for buf in short_inputs() {
-            match decode_buf_exact::<UnsignedVarInt>(&buf) {
-                Ok(v) => {
-                    assert!(
-                        is_minimal(&buf, false),
-                        "{buf:02x?} accepted but not minimal"
-                    );
-                    assert_eq!(encode_to_vec(&v).unwrap(), buf, "{buf:02x?}");
-                }
-                Err(CodecError::MalformedField(_)) => {
-                    assert!(!is_minimal(&buf, false), "{buf:02x?} rejected but minimal")
-                }
-                Err(e) => panic!("{buf:02x?}: unexpected error {e:?}"),
-            }
+            let v = decode_buf_exact::<UnsignedVarInt>(&buf)
+                .unwrap_or_else(|e| panic!("{buf:02x?} must decode, got {e:?}"));
+            let reencoded = encode_to_vec(&v).unwrap();
+            assert!(is_minimal(&reencoded, false), "{buf:02x?}");
+            assert_eq!(decode_buf_exact::<UnsignedVarInt>(&reencoded).unwrap(), v);
+            assert_eq!(reencoded == buf, is_minimal(&buf, false), "{buf:02x?}");
         }
     }
 
     #[test]
-    fn test_signed_varint_every_accepted_short_encoding_reencodes_to_itself() {
+    fn test_signed_varint_every_short_encoding_reencodes_minimally() {
         for buf in short_inputs() {
-            match decode_buf_exact::<SignedVarInt>(&buf) {
-                Ok(v) => {
-                    assert!(
-                        is_minimal(&buf, true),
-                        "{buf:02x?} accepted but not minimal"
-                    );
-                    assert_eq!(encode_to_vec(&v).unwrap(), buf, "{buf:02x?}");
-                }
-                Err(CodecError::MalformedField(_)) => {
-                    assert!(!is_minimal(&buf, true), "{buf:02x?} rejected but minimal")
-                }
-                Err(e) => panic!("{buf:02x?}: unexpected error {e:?}"),
-            }
+            let v = decode_buf_exact::<SignedVarInt>(&buf)
+                .unwrap_or_else(|e| panic!("{buf:02x?} must decode, got {e:?}"));
+            let reencoded = encode_to_vec(&v).unwrap();
+            assert!(is_minimal(&reencoded, true), "{buf:02x?}");
+            assert_eq!(decode_buf_exact::<SignedVarInt>(&reencoded).unwrap(), v);
+            assert_eq!(reencoded == buf, is_minimal(&buf, true), "{buf:02x?}");
         }
     }
 
-    /// Ten-byte inputs at the top of the u64 range: the last group holds the
-    /// one (unsigned) or two (signed) bits a u64 has left, so any higher bit
-    /// set there is overflow, which a plain shift used to drop silently.
+    /// Ten-byte inputs at the top of the u64 range decode as `v0.5.0-rc.2`
+    /// decodes them. The tenth group starts at bit 63 (unsigned) or 62
+    /// (signed) and is shifted in with a plain `<<`, which drops its data bits
+    /// above the 64th, so these alias values the encoder spells differently.
     #[test]
-    fn test_varint64_rejects_overflow_and_padding_in_the_last_group() {
+    fn test_varint64_drops_data_bits_above_the_64th_in_the_tenth_byte() {
         let nine_ff = [0xFFu8; MAX_VARINT_BYTES - 1];
+        let mut max_canonical = nine_ff.to_vec();
+        max_canonical.push(0x01);
         let mut max_alias = nine_ff.to_vec();
         max_alias.push(0x7F); // u64::MAX with junk above bit 63
         let mut two_pow_64 = [0x80u8; MAX_VARINT_BYTES - 1].to_vec();
-        two_pow_64.push(0x02); // bit 64
-        let mut eleven = [0x80u8; MAX_VARINT_BYTES].to_vec();
-        eleven.push(0x00); // one group past the maximum
-        let mut max_canonical = nine_ff.to_vec();
-        max_canonical.push(0x01);
+        two_pow_64.push(0x02); // bit 64 alone
 
+        for (buf, value) in [
+            (&max_canonical[..], UnsignedVarInt::MAX),
+            // 0x7F << 63 keeps only bit 63, so the value is u64::MAX.
+            (&max_alias[..], UnsignedVarInt::MAX),
+            // 0x02 << 63 shifts the one data bit out, so the value is 0.
+            (&two_pow_64[..], UnsignedVarInt::ZERO),
+        ] {
+            let decoded = decode_buf_exact::<UnsignedVarInt>(buf)
+                .unwrap_or_else(|e| panic!("unsigned {buf:02x?} must decode, got {e:?}"));
+            assert_eq!(decoded, value, "unsigned {buf:02x?}");
+        }
+        assert_eq!(encode_to_vec(&UnsignedVarInt::MAX).unwrap(), max_canonical);
+
+        // Signed: six bits in the first byte, so the tenth group holds two.
+        let mut signed_canonical = nine_ff.to_vec();
+        signed_canonical.push(0x03);
+        let mut signed_alias = nine_ff.to_vec();
+        signed_alias.push(0x07); // -u64::MAX with junk above bit 63
+        let neg_max = SignedVarInt::negative(u64::MAX);
+        // 0x07 << 62 keeps bits 62 and 63, so the magnitude is u64::MAX.
+        for buf in [&signed_canonical, &signed_alias] {
+            let decoded = decode_buf_exact::<SignedVarInt>(buf)
+                .unwrap_or_else(|e| panic!("signed {buf:02x?} must decode, got {e:?}"));
+            assert_eq!(decoded, neg_max, "signed {buf:02x?}");
+        }
+        assert_eq!(encode_to_vec(&neg_max).unwrap(), signed_canonical);
+    }
+
+    /// The decoder reads one group past the 64th bit, as `v0.5.0-rc.2` does:
+    /// an eleventh byte with no data bits is accepted, one with data bits is
+    /// overflow, and a twelfth byte is refused. The random-byte proptests
+    /// rarely reach a well-formed input this long, so these cases are fixed.
+    #[test]
+    fn test_varint64_accepts_only_an_empty_eleventh_byte() {
+        let mut eleven_zero = [0x80u8; MAX_VARINT_BYTES].to_vec();
+        eleven_zero.push(0x00);
+        let mut continued_max = [0xFFu8; MAX_VARINT_BYTES - 1].to_vec();
+        continued_max.extend([0x81, 0x00]); // bit 63, then an empty group
+        for (buf, value) in [
+            (&eleven_zero, UnsignedVarInt::ZERO),
+            (&continued_max, UnsignedVarInt::MAX),
+        ] {
+            let decoded = decode_buf_exact::<UnsignedVarInt>(buf)
+                .unwrap_or_else(|e| panic!("unsigned {buf:02x?} must decode, got {e:?}"));
+            assert_eq!(decoded, value, "unsigned {buf:02x?}");
+        }
+
+        let mut signed_continued_max = [0xFFu8; MAX_VARINT_BYTES - 1].to_vec();
+        signed_continued_max.extend([0x83, 0x00]); // bits 62 and 63, then an empty group
+        assert_eq!(
+            decode_buf_exact::<SignedVarInt>(&signed_continued_max).unwrap(),
+            SignedVarInt::negative(u64::MAX)
+        );
+        assert_eq!(
+            decode_buf_exact::<SignedVarInt>(&eleven_zero).unwrap(),
+            SignedVarInt::ZERO
+        );
+
+        let mut eleven_data = [0x80u8; MAX_VARINT_BYTES].to_vec();
+        eleven_data.push(0x01);
+        let mut twelve = [0x80u8; MAX_VARINT_BYTES + 1].to_vec();
+        twelve.push(0x00);
         for (buf, reason) in [
-            (&max_alias[..], "varint64 overflow"),
-            (&two_pow_64[..], "varint64 overflow"),
-            (&eleven[..], "varint64 too many bytes"),
+            (&eleven_data, "varint64 overflow"),
+            (&twelve, "varint64 too many bytes"),
         ] {
             let res = decode_buf_exact::<UnsignedVarInt>(buf);
             assert!(
                 matches!(res, Err(CodecError::MalformedField(r)) if r == reason),
                 "unsigned {buf:02x?} must be rejected with {reason:?}, got {res:?}"
             );
+            let res = decode_buf_exact::<SignedVarInt>(buf);
+            assert!(
+                matches!(res, Err(CodecError::MalformedField(r)) if r == reason),
+                "signed {buf:02x?} must be rejected with {reason:?}, got {res:?}"
+            );
         }
-        let max: UnsignedVarInt = decode_buf_exact(&max_canonical).unwrap();
-        assert_eq!(max, UnsignedVarInt::MAX);
-        assert_eq!(encode_to_vec(&max).unwrap(), max_canonical);
-
-        // Signed: six bits in the first byte, so the tenth group holds two.
-        let mut signed_alias = nine_ff.to_vec();
-        signed_alias.push(0x07); // -u64::MAX with junk above bit 63
-        let mut signed_canonical = nine_ff.to_vec();
-        signed_canonical.push(0x03);
-        let res = decode_buf_exact::<SignedVarInt>(&signed_alias);
-        assert!(
-            matches!(res, Err(CodecError::MalformedField("varint64 overflow"))),
-            "signed {signed_alias:02x?} must be rejected, got {res:?}"
-        );
-        let neg_max: SignedVarInt = decode_buf_exact(&signed_canonical).unwrap();
-        assert_eq!(neg_max, SignedVarInt::negative(u64::MAX));
-        assert_eq!(encode_to_vec(&neg_max).unwrap(), signed_canonical);
-    }
-
-    /// The tenth byte holds the bits a u64 has left (one unsigned, two
-    /// signed), so a continuation bit on it announces an eleventh group that
-    /// no value needs. The random-byte proptests rarely reach a well-formed
-    /// ten-byte input, so this case is fixed.
-    #[test]
-    fn test_varint64_rejects_a_continued_tenth_byte() {
-        let mut unsigned = [0xFFu8; MAX_VARINT_BYTES - 1].to_vec();
-        unsigned.push(0x81); // bit 63 set, continuation set
-        let res = decode_buf_exact::<UnsignedVarInt>(&unsigned);
-        assert!(
-            matches!(
-                res,
-                Err(CodecError::MalformedField("varint64 too many bytes"))
-            ),
-            "unsigned {unsigned:02x?} must be rejected, got {res:?}"
-        );
-
-        let mut signed = [0xFFu8; MAX_VARINT_BYTES - 1].to_vec();
-        signed.push(0x83); // bits 62 and 63 set, continuation set
-        let res = decode_buf_exact::<SignedVarInt>(&signed);
-        assert!(
-            matches!(
-                res,
-                Err(CodecError::MalformedField("varint64 too many bytes"))
-            ),
-            "signed {signed:02x?} must be rejected, got {res:?}"
-        );
     }
 
     /// `i64::MIN` is the one i64 whose magnitude, 2^63, needs the tenth byte,
@@ -485,24 +497,28 @@ mod tests {
     }
 
     proptest! {
-        /// Any byte string that decodes re-encodes to exactly itself: the
-        /// property the fix exists for, over arbitrary inputs up to one byte
-        /// past the longest valid encoding.
+        /// Any byte string that decodes re-encodes, in no more bytes, to a
+        /// spelling of the same value. Whether the input was that spelling is
+        /// for the V3 payload check, which compares the bytes.
         #[test]
-        fn proptest_unsigned_varint_accepted_input_is_canonical(
-            buf in prop::collection::vec(any::<u8>(), 1..=MAX_VARINT_BYTES + 1)
+        fn proptest_unsigned_varint_accepted_input_reencodes_to_the_same_value(
+            buf in prop::collection::vec(any::<u8>(), 1..=MAX_VARINT_BYTES + 2)
         ) {
             if let Ok(v) = decode_buf_exact::<UnsignedVarInt>(&buf) {
-                prop_assert_eq!(encode_to_vec(&v).unwrap(), buf);
+                let reencoded = encode_to_vec(&v).unwrap();
+                prop_assert!(reencoded.len() <= buf.len());
+                prop_assert_eq!(decode_buf_exact::<UnsignedVarInt>(&reencoded).unwrap(), v);
             }
         }
 
         #[test]
-        fn proptest_signed_varint_accepted_input_is_canonical(
-            buf in prop::collection::vec(any::<u8>(), 1..=MAX_VARINT_BYTES + 1)
+        fn proptest_signed_varint_accepted_input_reencodes_to_the_same_value(
+            buf in prop::collection::vec(any::<u8>(), 1..=MAX_VARINT_BYTES + 2)
         ) {
             if let Ok(v) = decode_buf_exact::<SignedVarInt>(&buf) {
-                prop_assert_eq!(encode_to_vec(&v).unwrap(), buf);
+                let reencoded = encode_to_vec(&v).unwrap();
+                prop_assert!(reencoded.len() <= buf.len());
+                prop_assert_eq!(decode_buf_exact::<SignedVarInt>(&reencoded).unwrap(), v);
             }
         }
     }

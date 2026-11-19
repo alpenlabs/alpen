@@ -14,6 +14,7 @@ use strata_ol_params::{BridgeParams, OLRuntimeParams};
 
 use crate::errors::ExecResult;
 use crate::output::{ExecOutputBuffer, OutputCtx};
+use crate::rules::RuleAmendments;
 
 /// Simple information about a single block.
 ///
@@ -206,14 +207,19 @@ impl EpochInitialContext {
 }
 
 /// Basic execution context which can be used for tracking outputs.
+///
+/// It also carries the [`RuleAmendments`] the work runs under, so the phases
+/// that execute transactions read them where a rule is amended.
 #[derive(Debug)]
 pub struct BasicExecContext<'b> {
     block_info: BlockInfo,
     output_buffer: &'b ExecOutputBuffer,
     runtime_params: &'b OLRuntimeParams,
+    amendments: RuleAmendments,
 }
 
 impl<'b> BasicExecContext<'b> {
+    /// Creates a context that runs the rules without amendments.
     pub fn new(
         block_info: BlockInfo,
         output_buffer: &'b ExecOutputBuffer,
@@ -223,7 +229,24 @@ impl<'b> BasicExecContext<'b> {
             block_info,
             output_buffer,
             runtime_params,
+            amendments: RuleAmendments::NONE,
         }
+    }
+
+    /// Returns a context for the same block and output buffer that runs the
+    /// rules with `amendments`.
+    pub fn with_amendments(&self, amendments: RuleAmendments) -> Self {
+        Self {
+            block_info: self.block_info,
+            output_buffer: self.output_buffer,
+            runtime_params: self.runtime_params,
+            amendments,
+        }
+    }
+
+    /// Returns the amendments the work runs under.
+    pub fn amendments(&self) -> RuleAmendments {
+        self.amendments
     }
 
     fn block_info(&self) -> &BlockInfo {
@@ -273,6 +296,12 @@ impl<'b> TxExecContext<'b> {
 
     pub fn basic_context(&self) -> &'b BasicExecContext<'b> {
         self.basic_context
+    }
+
+    /// Returns the header of the block's parent, or `None` for the genesis
+    /// block.
+    pub fn parent_header(&self) -> Option<&'b OLBlockHeaderV1> {
+        self.parent_header
     }
 
     /// Makes a block context from this exec context.

@@ -474,7 +474,7 @@ fn exact_epoch_terminal_selects_v1_even_when_newer_local_state_stages_unknown_sp
     fixture
         .storage
         .ol_state()
-        .put_toplevel_ol_state_blocking(ahead, create_test_container_with_staged(3))
+        .put_toplevel_ol_state_blocking(ahead, create_test_container_with_staged(4))
         .unwrap();
     assert_eq!(
         checkpoint_task_spec(&fixture.storage, fixture.task).unwrap(),

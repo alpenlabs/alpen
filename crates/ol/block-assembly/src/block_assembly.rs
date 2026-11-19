@@ -704,8 +704,8 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
 /// Processes transactions with per-tx staging, filtering out failed ones.
 ///
 /// A transaction whose writes the epoch's DA cannot encode fails like one the
-/// STF rejects. V1 accepts a message payload above the DA bound, which V2
-/// rejects, and no spec checks the epoch's inbox buffer, but a block that
+/// STF rejects. V1 and V2 accept a message payload above the DA bound, which
+/// V3 rejects, and no spec checks the epoch's inbox buffer, but a block that
 /// included such a transaction would leave an epoch no checkpoint can cover.
 ///
 /// Consumes `accumulated_da` and returns it with the updated accumulator.
@@ -2572,20 +2572,20 @@ mod tests {
 
     /// A terminal block that processes a checkpoint predicate enactment ends
     /// its spec. After the V1 enactment, assembly builds the next epoch under
-    /// V2, which takes over the V1 state. The terminal block that processes
-    /// the V2 enactment is the last block this binary builds: the next epoch
-    /// runs V2's successor, which it does not implement. Assembly stops before
-    /// any state transition. The stop comes from stored chain data, so a
-    /// context built anew over the same storage, as after a restart, stops
-    /// too.
+    /// V2, which takes over the V1 state, and after the V2 enactment under V3,
+    /// which takes over the V2 state. The terminal block that processes the V3
+    /// enactment is the last block this binary builds: the next epoch runs
+    /// V3's successor, which it does not implement. Assembly stops before any
+    /// state transition. The stop comes from stored chain data, so a context
+    /// built anew over the same storage, as after a restart, stops too.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_assembly_seals_at_predicate_boundaries_and_stops_after_v2() {
+    async fn test_assembly_seals_at_predicate_boundaries_and_stops_after_v3() {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
-            .with_l1_manifest_height_range(1..=3)
+            .with_l1_manifest_height_range(1..=4)
             .build_fixture()
             .await;
-        for height in [2, 3] {
+        for height in [2, 3, 4] {
             let boundary = create_l1_manifest_with_logs(height, vec![checkpoint_enactment_log()]);
             fixture
                 .storage()
@@ -2614,6 +2614,18 @@ mod tests {
             output.post_state.spec_versions(),
             OLSpecVersions::uniform(OLSpecId::V2)
         );
+        env.persist(&output).await;
+
+        let output = env
+            .construct_empty_block()
+            .await
+            .expect("the epoch after the V2 enactment runs V3");
+        check_block_asm_manifests(&output.template, &[4]);
+        check_terminal_header(&output.template);
+        assert_eq!(
+            output.post_state.spec_versions(),
+            OLSpecVersions::uniform(OLSpecId::V3)
+        );
         let terminal = env.persist(&output).await;
 
         let restarted = TestEnv::from_fixture(fixture, terminal);
@@ -2621,10 +2633,10 @@ mod tests {
             let Err(BlockAssemblyError::UpgradeRequired(upgrade)) =
                 env.construct_empty_block().await
             else {
-                panic!("no block may follow the V2 enactment");
+                panic!("no block may follow the V3 enactment");
             };
-            assert_eq!(upgrade.prev_spec(), OLSpecId::V2);
-            assert_eq!(upgrade.enactment_l1_height(), 3);
+            assert_eq!(upgrade.prev_spec(), OLSpecId::V3);
+            assert_eq!(upgrade.enactment_l1_height(), 4);
         }
     }
 
@@ -3973,11 +3985,11 @@ mod tests {
 
     /// Tests that a GAM whose payload exceeds the DA bound is reported invalid
     /// under every spec, while a GAM at the bound is included and the epoch's
-    /// DA still encodes. V1 executes the oversized GAM, so assembly rolls it
-    /// back on the DA error; V2 rejects it in the STF.
+    /// DA still encodes. V1 and V2 execute the oversized GAM, so assembly rolls
+    /// it back on the DA error; V3 rejects it in the STF.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_message_payload_over_da_bound_is_invalid() {
-        for spec in [OLSpecId::V1, OLSpecId::V2] {
+        for spec in [OLSpecId::V1, OLSpecId::V2, OLSpecId::V3] {
             let account_id = test_account_id(10);
             let env = build_process_tx_env(account_id).await;
 

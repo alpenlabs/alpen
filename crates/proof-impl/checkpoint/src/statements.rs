@@ -149,6 +149,11 @@ pub fn process_ol_stf_core(
     // This argument depends on the ASM v0.4.0-rc.6 predicate handover, which MN0 must get
     // through STR-4489 before the OlStfVk transaction. Keep the V0 -> V1 exception and
     // V1's staged-spec selection unchanged.
+    //
+    // TODO(STR-4828): a V2 terminal state stages V2, including the one that processed the
+    // enactment ending V2, so the V3 program must run the first V3 epoch from such a state, as
+    // the V2 program runs the first V2 epoch from a V1 state, and the argument above must cover
+    // that case too.
     let epoch_spec = if state.cur_spec() == OLSpecId::V0 {
         OLSpecId::V0.successor().expect("V0 has a successor spec")
     } else {
