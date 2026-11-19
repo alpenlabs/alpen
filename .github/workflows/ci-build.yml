@@ -104,10 +104,28 @@ jobs:
     needs: [check-new-commits]
     if: always() && (needs.check-new-commits.result == 'skipped' || needs.check-new-commits.outputs.should_run == 'true')
     runs-on: ubuntu-latest
-    permissions: {}
+    permissions:
+      contents: read
     outputs:
+      short_tag: ${{ steps.resolve.outputs.short_tag }}
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Resolve actual commit SHA
+        id: resolve
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          SHORT_TAG="${COMMIT_SHA:0:7}"
+          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"
+
       - name: Set build matrix
         id: set-matrix
         env:
@@ -177,33 +195,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
-    outputs:
-      short_tag: ${{ steps.resolve.outputs.short_tag }}
-      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+    concurrency:
+      group: ci-image-${{ matrix.program }}-${{ needs.prepare.outputs.short_tag }}
+      queue: max
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-          persist-credentials: false
-
-      - name: Resolve actual commit SHA
-        id: resolve
-        run: |
-          COMMIT_SHA=$(git rev-parse HEAD)
-          SHORT_TAG="${COMMIT_SHA:0:7}"
-          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"
-
-      - name: Free up disk space
-        uses: $/.github/actions/cleanup
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        with:
-          cache-binary: false
-
       # Authenticate to the shared ECR account
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -214,6 +209,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        if: matrix.private
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
         with:
@@ -230,46 +226,89 @@ jobs:
           aws ecr-public get-login-password --region us-east-1 \
             | docker login --username AWS --password-stdin public.ecr.aws
 
-      # --- Build and push via Buildx ------------------------------------------
-      - name: Build and push Docker image
+      - name: Check for published images
+        id: images
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
-          # Public ECR gallery base (fixed alias). External testnet operators
-          # pull node images from here without AWS credentials (STR-3894).
-          PUBLIC_ECR_BASE: public.ecr.aws/alpenlabs
-          PROGRAM: ${{ matrix.program }}
-          # Public gallery repo for this program, from the prepare-job map.
-          # Empty for private-only programs.
-          PUBLIC_REPO: ${{ matrix.public_repo }}
-          # Whether to push the private ECR image. false for public-only
-          # programs (strata-checkpoint-sync -> public ECR only; STR-3962).
-          # Defaults to true via the prepare job's matrix.
+          PRIVATE_REPO: ${{ steps.login-ecr.outputs.registry }}/${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}/${{ matrix.program }}
           PUSH_PRIVATE: ${{ matrix.private }}
-          SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
-          COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
+          PUBLIC_REPO: ${{ matrix.public_repo }}
+          SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+          COMMIT_SHA: ${{ needs.prepare.outputs.commit_sha }}
         run: |
-          DOCKERFILE_PATH="docker/${PROGRAM}/Dockerfile"
-          ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${PROGRAM}"
-          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}"
-
-          # Push the private image unless this program is public-only
-          # (PUSH_PRIVATE=false, e.g. strata-checkpoint-sync -> public ECR is the
-          # sole canonical registry; STR-3962). Additionally push a public mirror
-          # when the program maps to a public gallery repo (see the prepare job's
-          # PROGRAM_CONFIG). The public repo name matches the deployments/IAM
-          # naming (strata-checkpoint-sync).
-          TAGS=()
-          if [ "$PUSH_PRIVATE" != "false" ]; then
-            TAGS+=( -t "${FULL_IMAGE}" )
+          images=()
+          if [[ "$PUSH_PRIVATE" == true ]]; then
+            images+=("$PRIVATE_REPO:$SHORT_TAG")
           fi
-          if [ -n "$PUBLIC_REPO" ]; then
-            TAGS+=( -t "${PUBLIC_ECR_BASE}/${PUBLIC_REPO}:${SHORT_TAG}" )
+          if [[ -n "$PUBLIC_REPO" ]]; then
+            images+=("public.ecr.aws/alpenlabs/$PUBLIC_REPO:$SHORT_TAG")
           fi
-          if [ "${#TAGS[@]}" -eq 0 ]; then
-            echo "::error::No push target for ${PROGRAM}: private disabled and no public_repo set" >&2
+          if (( ${#images[@]} == 0 )); then
+            echo "::error::No image registry configured"
             exit 1
           fi
+
+          source_image=
+          missing=()
+          for image in "${images[@]}"; do
+            if metadata=$(skopeo inspect --no-tags "docker://$image" 2>"$RUNNER_TEMP/inspect.err"); then
+              revision=$(jq -r '.Labels["org.opencontainers.image.revision"]' <<< "$metadata")
+              if [[ "$revision" != "$COMMIT_SHA" ]]; then
+                echo "::error::$image belongs to revision $revision, expected $COMMIT_SHA"
+                exit 1
+              fi
+              digest=$(jq -er '.Digest' <<< "$metadata")
+              if [[ -n "$source_image" && "${source_image##*@}" != "$digest" ]]; then
+                echo "::error::Conflicting published digests for $image and $source_image"
+                exit 1
+              fi
+              source_image="docker://${image%:*}@$digest"
+              echo "Found $image ($digest)"
+            elif grep -qi 'manifest unknown' "$RUNNER_TEMP/inspect.err"; then
+              missing+=("$image")
+            else
+              cat "$RUNNER_TEMP/inspect.err" >&2
+              exit 1
+            fi
+          done
+
+          if [[ -z "$source_image" ]]; then
+            echo "build_tags=${images[*]}" >> "$GITHUB_OUTPUT"
+          else
+            for image in "${missing[@]}"; do
+              skopeo copy --all --preserve-digests "$source_image" "docker://$image"
+            done
+          fi
+
+      - name: Checkout repository
+        if: steps.images.outputs.build_tags != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          persist-credentials: false
+
+      - name: Free up disk space
+        if: steps.images.outputs.build_tags != ''
+        uses: $/.github/actions/cleanup
+
+      - name: Set up Docker Buildx
+        if: steps.images.outputs.build_tags != ''
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          cache-binary: false
+
+      - name: Build and push Docker image
+        if: steps.images.outputs.build_tags != ''
+        env:
+          IMAGES: ${{ steps.images.outputs.build_tags }}
+          COMMIT_SHA: ${{ needs.prepare.outputs.commit_sha }}
+          PROGRAM: ${{ matrix.program }}
+        run: |
+          DOCKERFILE_PATH="docker/${PROGRAM}/Dockerfile"
+          read -ra images <<< "$IMAGES"
+          TAGS=()
+          for image in "${images[@]}"; do
+            TAGS+=(-t "$image")
+          done
 
           # Bake prover features into the strata image. Other programs build
           # with default features. Relies on docker/strata/Dockerfile accepting
@@ -290,22 +329,22 @@ jobs:
             "${TAGS[@]}" \
             -f "${DOCKERFILE_PATH}" .
 
-          echo "Successfully pushed ${PROGRAM}:${SHORT_TAG} -> ${TAGS[*]}"
+          echo "Successfully pushed ${IMAGES}"
 
   # ---------------------------------------------------------------------------
   # Summary
   # ---------------------------------------------------------------------------
   summary:
     name: Build Summary
-    needs: [build-and-push]
+    needs: [prepare, build-and-push]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
     steps:
       - name: Report results
         env:
-          SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
-          COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
+          SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+          COMMIT_SHA: ${{ needs.prepare.outputs.commit_sha }}
           BUILD_RESULT: ${{ needs.build-and-push.result }}
         run: |
           {
