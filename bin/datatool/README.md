@@ -42,7 +42,7 @@ strata-datatool \
 strata-datatool gen-ol-params \
     --l1-anchor-file l1-anchor.json \
     --genesis-accounts genesis-accounts.json \
-    --bridge-denomination-sats 200000000 \
+    --bridge-denomination "2 BTC" \
     --max-withdrawal-descriptor-len 81 \
     -o ol-params.json
 
@@ -137,7 +137,7 @@ as the ASM and OL params so they cannot drift apart:
 
 Deposits are locked at the ASM bridge denomination while withdrawals are
 validated by the OL STF against the OL bridge denomination, so the two are one
-network value: `--deposit-sats` defaults to the `--ol-params` denomination and
+network value: `--deposit-amount` defaults to the `--ol-params` denomination and
 `gen-asm-params` rejects a value that differs from it. Withdrawals are batched
 in multiples of that denomination, capped at `max_withdrawal_amount_sats` when
 the OL params set a cap. For uncapped networks, the generated snippet omits

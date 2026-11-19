@@ -11,6 +11,7 @@ arbitrary = { workspace = true, optional = true }
 serde.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
+strata-btc-types.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

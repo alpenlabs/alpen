@@ -5,6 +5,7 @@ use std::{
 
 use async_trait::async_trait;
 use strata_acct_types::{append_l1_block_rec_to_mmr, L1BlockRecord, Mmr64};
+use strata_btc_types::BitcoinAmount;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{DbError, DbResult, MmrId, RawMmrId};
 use strata_identifiers::{Epoch, Hash, OLBlockCommitment, L1_HEIGHT_MMR_PREFILL_LEAF};
@@ -253,9 +254,12 @@ fn make_l1_block_record(seed: u8) -> L1BlockRecord {
 }
 
 fn make_target_state_with_l1_records(records: &[L1BlockRecord]) -> OLStateV1 {
-    let bridge_params =
-        BridgeParams::new_with_descriptor_limit(100_000_000, Some(1_000_000_000), 81)
-            .expect("valid bridge params");
+    let bridge_params = BridgeParams::new_with_descriptor_limit(
+        BitcoinAmount::try_from(100_000_000).unwrap(),
+        Some(BitcoinAmount::try_from(1_000_000_000).unwrap()),
+        81,
+    )
+    .expect("valid bridge params");
     let params = OLParams::builder(OLRuntimeParams::new(bridge_params))
         .genesis_l1_block(make_l1_block_commitment(0, 0))
         .build();

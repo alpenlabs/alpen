@@ -25,7 +25,7 @@ use strata_primitives::bitcoin_bosd::{Descriptor, DescriptorType};
 
 use crate::{
     args::{CmdContext, SubcAsmParams},
-    util::{parse_abbr_amt, read_predicate_key, PredicateFileLabel},
+    util::{read_predicate_key, PredicateFileLabel},
 };
 
 /// The default assignment duration in blocks.
@@ -151,8 +151,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     };
 
     // Build bridge config.
-    let deposit_sats =
-        resolve_deposit_sats(cmd.deposit_sats.as_deref(), ol_params.bridge_params())?;
+    let deposit_amount = resolve_deposit_amount(cmd.deposit_amount, ol_params.bridge_params())?;
 
     let safe_harbour_address =
         resolve_safe_harbour_address(&cmd.safe_harbour_address, anchor.network)?;
@@ -160,8 +159,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let bridge = BridgeInitConfig {
         operators,
-        denomination: BitcoinAmount::try_from(deposit_sats)
-            .expect("amount must not exceed the Bitcoin money supply"),
+        denomination: deposit_amount,
         assignment_duration: cmd
             .assignment_duration
             .unwrap_or(DEFAULT_ASSIGNMENT_DURATION),
@@ -251,26 +249,21 @@ fn resolve_write_target(path: &Path) -> PathBuf {
 /// The ASM locks deposits at its own denomination while the OL STF validates
 /// withdrawals against `bridge_params.denomination`, so the two must agree or
 /// funds deposited on L1 cannot be withdrawn. The OL value is the source of
-/// truth; `--deposit-sats` may only restate it.
-fn resolve_deposit_sats(
-    deposit_sats: Option<&str>,
+/// truth; `--deposit-amount` may only restate it.
+fn resolve_deposit_amount(
+    deposit_amount: Option<BitcoinAmount>,
     ol_bridge_params: &BridgeParams,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<BitcoinAmount> {
     let ol_denomination = ol_bridge_params.denomination();
-
-    let Some(deposit_sats) = deposit_sats else {
-        return Ok(ol_denomination);
-    };
-
-    let deposit_sats = parse_abbr_amt(deposit_sats)?;
+    let deposit_amount = deposit_amount.unwrap_or(ol_denomination);
     anyhow::ensure!(
-        deposit_sats == ol_denomination,
-        "--deposit-sats ({deposit_sats}) must equal the OL params bridge denomination \
+        deposit_amount == ol_denomination,
+        "--deposit-amount ({deposit_amount}) must equal the OL params bridge denomination \
          ({ol_denomination}); the ASM deposit denomination and the OL withdrawal denomination are \
          the same network value"
     );
 
-    Ok(deposit_sats)
+    Ok(deposit_amount)
 }
 
 /// Header prepended to the emitted alpen-cli network profile.
@@ -349,9 +342,11 @@ fn build_cli_network_profile(
         network: asm_params.genesis.anchor.network,
         magic_bytes: asm_params.genesis.magic,
         bridge_pubkey: derive_bridge_pubkey(&bridge.operators)?,
-        bridge_denomination_sats: ol_bridge_params.denomination(),
+        bridge_denomination_sats: ol_bridge_params.denomination().to_sat(),
         recovery_delay: bridge.recovery_delay,
-        max_withdrawal_amount_sats: ol_bridge_params.max_withdrawal_amount(),
+        max_withdrawal_amount_sats: ol_bridge_params
+            .max_withdrawal_amount()
+            .map(|amount| amount.to_sat()),
         max_withdrawal_descriptor_len: ol_bridge_params.max_withdrawal_descriptor_len(),
     })
 }
@@ -519,34 +514,38 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn deposit_sats_defaults_to_the_ol_denomination() {
-        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(50_000_000, None, 81)
-            .expect("valid bridge params");
-
-        let deposit_sats =
-            resolve_deposit_sats(None, &ol_bridge_params).expect("default should resolve");
-
-        assert_eq!(deposit_sats, 50_000_000);
+    fn bridge_params_with_denomination(sats: u64) -> BridgeParams {
+        BridgeParams::new_with_descriptor_limit(BitcoinAmount::try_from(sats).unwrap(), None, 81)
+            .expect("valid bridge params")
     }
 
     #[test]
-    fn deposit_sats_may_restate_the_ol_denomination() {
-        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(100_000_000, None, 81)
-            .expect("valid bridge params");
+    fn deposit_amount_defaults_to_the_ol_denomination() {
+        let ol_bridge_params = bridge_params_with_denomination(50_000_000);
 
-        let deposit_sats =
-            resolve_deposit_sats(Some("100M"), &ol_bridge_params).expect("matching value is fine");
+        let deposit_amount =
+            resolve_deposit_amount(None, &ol_bridge_params).expect("default should resolve");
 
-        assert_eq!(deposit_sats, 100_000_000);
+        assert_eq!(deposit_amount, ol_bridge_params.denomination());
     }
 
     #[test]
-    fn deposit_sats_rejects_denomination_mismatch() {
-        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(100_000_000, None, 81)
-            .expect("valid bridge params");
+    fn deposit_amount_may_restate_the_ol_denomination() {
+        let ol_bridge_params = bridge_params_with_denomination(100_000_000);
+        let restated = BitcoinAmount::try_from(100_000_000).unwrap();
 
-        let err = resolve_deposit_sats(Some("200M"), &ol_bridge_params).unwrap_err();
+        let deposit_amount = resolve_deposit_amount(Some(restated), &ol_bridge_params)
+            .expect("matching value is fine");
+
+        assert_eq!(deposit_amount, restated);
+    }
+
+    #[test]
+    fn deposit_amount_rejects_denomination_mismatch() {
+        let ol_bridge_params = bridge_params_with_denomination(100_000_000);
+        let other = BitcoinAmount::try_from(200_000_000).unwrap();
+
+        let err = resolve_deposit_amount(Some(other), &ol_bridge_params).unwrap_err();
 
         assert!(err.to_string().contains("must equal the OL params bridge"));
     }
