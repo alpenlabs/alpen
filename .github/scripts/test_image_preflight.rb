@@ -26,15 +26,18 @@ class ImagePreflightTest < Minitest::Test
       commit = 'private/prefix/strata:aaaaaaa'
       mirror = 'public.ecr.aws/alpenlabs/strata:aaaaaaa'
       digest = 'sha256:' + '1' * 64
+      version = 'v1.0.0-rc.1'
+      aliases = [commit, mirror].map { |ref| ref.sub(':aaaaaaa', ":#{version}-aaaaaaa") }
       [[{}, 'true', []], [{commit => digest}, 'false', [mirror]],
        [{commit => digest, mirror => digest}, 'false', []],
-       [{commit => digest, mirror => 'sha256:other'}, nil, []]].each do |registry, build, copies|
+       [{commit => digest, mirror => 'sha256:other'}, nil, []],
+       [{commit => digest, mirror => digest}, 'false', aliases, version]].each do |registry, build, copies, release|
         output = File.join(dir, 'outputs')
         copied = File.join(dir, 'copied')
         [output, copied].each { |path| File.write(path, '') }
         env = {'PATH' => "#{dir}:#{ENV.fetch('PATH')}", 'RUNNER_TEMP' => dir, 'GITHUB_OUTPUT' => output,
                'PRIVATE_REPO' => 'private/prefix/strata',
-               'SHORT_TAG' => 'aaaaaaa', 'COMMIT_SHA' => 'full',
+               'SHORT_TAG' => 'aaaaaaa', 'RELEASE_TAG' => release.to_s, 'COMMIT_SHA' => 'full',
                'PUBLIC_REPO' => 'strata', 'PUSH_PRIVATE' => 'true',
                'REGISTRY' => JSON.generate(registry.transform_keys { |key| "docker://#{key}" })}
         log, status = Open3.capture2e(env, 'bash', '-eo', 'pipefail', '-c', script)
