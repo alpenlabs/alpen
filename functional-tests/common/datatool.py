@@ -165,7 +165,7 @@ def generate_ol_params(
         "gen-ol-params",
         "--genesis-accounts",
         str(genesis_accounts_path),
-        "--bridge-denomination-sats",
+        "--bridge-denomination",
         str(bridge_params.denomination),
         "--max-withdrawal-descriptor-len",
         str(bridge_params.max_withdrawal_descriptor_len),
@@ -175,7 +175,7 @@ def generate_ol_params(
         str(params_path),
     ]
     if bridge_params.max_withdrawal_amount is not None:
-        args.extend(["--max-withdrawal-amount-sats", str(bridge_params.max_withdrawal_amount)])
+        args.extend(["--max-withdrawal-amount", str(bridge_params.max_withdrawal_amount)])
 
     run_datatool(args, bconfig)
     return params_path

@@ -6,7 +6,8 @@ use std::{
     str::FromStr,
 };
 
-use bitcoin::{bip32::Xpriv, Network};
+use bitcoin::{bip32::Xpriv, Amount, Network};
+use strata_btc_types::BitcoinAmount;
 use strata_predicate::PredicateKey;
 
 /// Bitcoin network environment variable.
@@ -64,39 +65,16 @@ pub(crate) fn resolve_network(arg: Option<Network>) -> anyhow::Result<Network> {
     Ok(DEFAULT_NETWORK)
 }
 
-/// Parses an abbreviated amount string.
+/// Parses an amount given on the command line.
 ///
-/// User may or may not use suffixes to denote the amount.
-///
-/// # Possible suffixes (case sensitive)
-///
-/// - `K` for thousand.
-/// - `M` for million.
-/// - `G` for billion.
-/// - `T` for trillion.
-pub(crate) fn parse_abbr_amt(s: &str) -> anyhow::Result<u64> {
-    // Thousand.
-    if let Some(v) = s.strip_suffix("K") {
-        return Ok(v.parse::<u64>()? * 1000);
-    }
-
-    // Million.
-    if let Some(v) = s.strip_suffix("M") {
-        return Ok(v.parse::<u64>()? * 1_000_000);
-    }
-
-    // Billion.
-    if let Some(v) = s.strip_suffix("G") {
-        return Ok(v.parse::<u64>()? * 1_000_000_000);
-    }
-
-    // Trillion, probably not necessary.
-    if let Some(v) = s.strip_suffix("T") {
-        return Ok(v.parse::<u64>()? * 1_000_000_000_000);
-    }
-
-    // Simple value.
-    Ok(s.parse::<u64>()?)
+/// Accepts what [`BitcoinAmount`] accepts in a params file: a sat count such as `200000000`, or
+/// a denominated amount such as `"2 BTC"`.
+pub(crate) fn parse_amount(s: &str) -> Result<BitcoinAmount, String> {
+    let amount = match s.parse::<u64>() {
+        Ok(sats) => Amount::from_sat(sats),
+        Err(_) => Amount::from_str(s).map_err(|e| e.to_string())?,
+    };
+    BitcoinAmount::try_from(amount.to_sat()).map_err(|e| e.to_string())
 }
 
 /// Reads a serialized [`PredicateKey`] from a metadata file.
@@ -161,7 +139,7 @@ mod tests {
 
     use strata_predicate::{PredicateKey, PredicateTypeId};
 
-    use super::{read_predicate_key, PredicateFileLabel};
+    use super::{parse_amount, read_predicate_key, PredicateFileLabel};
 
     #[test]
     fn reads_predicate_key_from_metadata_file() {
@@ -206,5 +184,20 @@ mod tests {
 
         assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
         assert_eq!(predicate.condition(), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn parse_amount_accepts_sat_count_and_denominated_amount() {
+        assert_eq!(parse_amount("200000000").unwrap().to_sat(), 200_000_000);
+        assert_eq!(parse_amount("2 BTC").unwrap().to_sat(), 200_000_000);
+        assert_eq!(parse_amount("1500 sat").unwrap().to_sat(), 1_500);
+    }
+
+    #[test]
+    fn parse_amount_rejects_malformed_and_oversized_amounts() {
+        assert!(parse_amount("2 coins").is_err());
+        assert!(parse_amount("100M").is_err());
+        assert!(parse_amount("2100000000000001").is_err());
+        assert!(parse_amount("21000001 BTC").is_err());
     }
 }
