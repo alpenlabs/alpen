@@ -109,6 +109,7 @@ jobs:
     outputs:
       short_tag: ${{ steps.resolve.outputs.short_tag }}
       commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout repository
@@ -119,11 +120,19 @@ jobs:
 
       - name: Resolve actual commit SHA
         id: resolve
+        env:
+          BUILD_REF: ${{ inputs.ref || github.ref }}
         run: |
           COMMIT_SHA=$(git rev-parse HEAD)
           SHORT_TAG="${COMMIT_SHA:0:7}"
           echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
           echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+          # Tag pushes already check out the event SHA. Manual backfills can also select a tag.
+          tag=${BUILD_REF#refs/tags/}
+          if [[ "$tag" == v* ]] && { [[ "$BUILD_REF" == refs/tags/* ]] || git tag --points-at HEAD | grep -Fxq -- "$tag"; }; then
+            [[ "$tag" =~ ^v[A-Za-z0-9_.-]{1,119}$ ]] || { echo "::error::Invalid image tag $tag"; exit 1; }
+            echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
           echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"
 
       - name: Set build matrix
@@ -189,6 +198,8 @@ jobs:
     if: ${{ !cancelled() && needs.prepare.result == 'success' }}
     runs-on: ubuntu-latest
     environment: prod
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
     permissions:
       contents: read
       id-token: write
@@ -245,6 +256,12 @@ jobs:
           if (( ${#images[@]} == 0 )); then
             echo "::error::No image registry configured"
             exit 1
+          fi
+
+          if [[ -n "$RELEASE_TAG" ]]; then
+            for image in "${images[@]}"; do
+              images+=("${image%:*}:$RELEASE_TAG-$SHORT_TAG")
+            done
           fi
 
           source_image=
@@ -314,6 +331,9 @@ jobs:
           # with default features. Relies on docker/strata/Dockerfile accepting
           # the CARGO_FEATURES build arg (#1663).
           BUILD_ARGS=()
+          if [[ -n "$RELEASE_TAG" ]]; then
+            BUILD_ARGS+=( --label "org.opencontainers.image.version=$RELEASE_TAG" )
+          fi
           if [ "$PROGRAM" = "strata" ]; then
             BUILD_ARGS+=( --build-arg "CARGO_FEATURES=sp1,prover" )
           fi
