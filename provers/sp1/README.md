@@ -120,3 +120,31 @@ no publish for this bundle is running, have an operator remove the incomplete pr
 publish job failed, use **Re-run failed jobs** to retry with the same workflow artifacts;
 if preflight failed, rerun it after cleanup. Existing objects prevent retries from succeeding
 until the incomplete prefix is removed.
+
+### GitHub Release assets
+
+Pushing a version tag (including a release candidate) runs **Release SP1 checkpoint
+assets**. It builds the tagged checkpoint guest against
+[`release-params/checkpoint-runtime-params.json`](release-params/checkpoint-runtime-params.json)
+using the locked SP1 Docker build. This profile has a 2 BTC denomination, no
+withdrawal cap, and an 81-byte withdrawal descriptor limit. Review this file before
+tagging a release if the network runtime parameters change.
+
+Download the exact build inputs and outputs from the tag's GitHub Release:
+
+```sh
+gh release download "$tag" -R alpenlabs/alpen -p 'guest-checkpoint.*' \
+  -p checkpoint-runtime-params.json -p proving-manifest.json
+jq -r '.sha256 | to_entries[] | "\(.value)  \(.key)"' proving-manifest.json | sha256sum -c -
+```
+
+The assets include the ELF, VK hash, predicate, builder manifest, and the exact
+parameter file read by the builder. `proving-manifest.json` records their checksums,
+the tag, full source commit, and SP1 version. The release body contains no proof metadata.
+
+The workflow verifies and reuses completed bundles for the same commit and params.
+It uploads missing files to a draft, then publishes the release. Keep GitHub release
+immutability enabled. To retry, re-run the workflow on the same tag. A conflicting
+asset stops publication. Inspect the draft and verify the file’s origin before
+removing it. Published immutable releases cannot be backfilled.
+The existing S3 publisher has a separate manual trigger.

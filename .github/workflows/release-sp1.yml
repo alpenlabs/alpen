@@ -1,0 +1,95 @@
+name: Release SP1 checkpoint assets
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: # Select the release tag to retry.
+  pull_request:
+    paths:
+      - .github/workflows/release-sp1.yml
+      - .github/scripts/release_sp1.py
+      - provers/sp1/release-params/**
+
+permissions: {}
+concurrency:
+  group: release-sp1-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'pull_request' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && !github.event.deleted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0 # Also find releases from other tags of this commit.
+          persist-credentials: false
+
+      - name: Resolve guest build versions
+        id: versions
+        env:
+          SOURCE_DIR: .
+        run: python3 .github/scripts/sp1_artifact_publish.py resolve-build
+
+      - name: Look for a matching release bundle
+        id: reuse
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release_sp1.py reuse
+
+      - name: Free up disk space
+        if: steps.reuse.outputs.found != 'true'
+        uses: $/.github/actions/cleanup # zizmor: ignore[unpinned-uses]
+
+      - name: Install protoc
+        if: steps.reuse.outputs.found != 'true'
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Build checkpoint guest and derive its verifying key
+        if: steps.reuse.outputs.found != 'true'
+        env:
+          BUILD_ELF: "1"
+          BUILD_VKEY: "1"
+          CHECKPOINT_RUNTIME_PARAMS_PATH: ${{ github.workspace }}/provers/sp1/release-params/checkpoint-runtime-params.json
+        run: cargo build --locked --release -p strata-sp1-guest-builder --features docker-build
+
+      - name: Stage release assets
+        env:
+          REUSED: ${{ steps.reuse.outputs.found }}
+          SP1_VERSION: ${{ steps.versions.outputs.sp1_version }}
+        run: python3 .github/scripts/release_sp1.py stage
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: sp1-release-assets
+          path: release-assets/
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sp1-release-assets
+          path: release-assets/
+
+      - name: Publish verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release_sp1.py publish
