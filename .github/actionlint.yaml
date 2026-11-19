@@ -9,3 +9,7 @@ paths:
     ignore:
       - 'specifying action "\$/\.github/actions/.+" in invalid format because ref is missing'
       - 'reusable workflow call "\$/\.github/workflows/.+" at "uses" is not following the format'
+  .github/workflows/ci-build.yml:
+    ignore:
+      # GitHub supports queue: max; actionlint 1.7.12 predates it.
+      - 'unexpected key "queue" for "concurrency" section'
