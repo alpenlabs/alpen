@@ -256,7 +256,7 @@ fn resolve_deposit_sats(
     deposit_sats: Option<&str>,
     ol_bridge_params: &BridgeParams,
 ) -> anyhow::Result<u64> {
-    let ol_denomination = ol_bridge_params.denomination();
+    let ol_denomination = ol_bridge_params.denomination().to_sat();
 
     let Some(deposit_sats) = deposit_sats else {
         return Ok(ol_denomination);
@@ -349,9 +349,11 @@ fn build_cli_network_profile(
         network: asm_params.genesis.anchor.network,
         magic_bytes: asm_params.genesis.magic,
         bridge_pubkey: derive_bridge_pubkey(&bridge.operators)?,
-        bridge_denomination_sats: ol_bridge_params.denomination(),
+        bridge_denomination_sats: ol_bridge_params.denomination().to_sat(),
         recovery_delay: bridge.recovery_delay,
-        max_withdrawal_amount_sats: ol_bridge_params.max_withdrawal_amount(),
+        max_withdrawal_amount_sats: ol_bridge_params
+            .max_withdrawal_amount()
+            .map(|amount| amount.to_sat()),
         max_withdrawal_descriptor_len: ol_bridge_params.max_withdrawal_descriptor_len(),
     })
 }
@@ -521,8 +523,12 @@ mod tests {
 
     #[test]
     fn deposit_sats_defaults_to_the_ol_denomination() {
-        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(50_000_000, None, 81)
-            .expect("valid bridge params");
+        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(
+            BitcoinAmount::try_from(50_000_000).unwrap(),
+            None,
+            81,
+        )
+        .expect("valid bridge params");
 
         let deposit_sats =
             resolve_deposit_sats(None, &ol_bridge_params).expect("default should resolve");
@@ -532,8 +538,12 @@ mod tests {
 
     #[test]
     fn deposit_sats_may_restate_the_ol_denomination() {
-        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(100_000_000, None, 81)
-            .expect("valid bridge params");
+        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(
+            BitcoinAmount::try_from(100_000_000).unwrap(),
+            None,
+            81,
+        )
+        .expect("valid bridge params");
 
         let deposit_sats =
             resolve_deposit_sats(Some("100M"), &ol_bridge_params).expect("matching value is fine");
@@ -543,8 +553,12 @@ mod tests {
 
     #[test]
     fn deposit_sats_rejects_denomination_mismatch() {
-        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(100_000_000, None, 81)
-            .expect("valid bridge params");
+        let ol_bridge_params = BridgeParams::new_with_descriptor_limit(
+            BitcoinAmount::try_from(100_000_000).unwrap(),
+            None,
+            81,
+        )
+        .expect("valid bridge params");
 
         let err = resolve_deposit_sats(Some("200M"), &ol_bridge_params).unwrap_err();
 

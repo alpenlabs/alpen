@@ -2,7 +2,8 @@
 
 use std::{collections::BTreeMap, fs, path::Path};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
+use strata_btc_types::BitcoinAmount;
 use strata_identifiers::AccountId;
 use strata_ol_params::{BridgeParams, GenesisSnarkAccountData, OLParams, OLRuntimeParams};
 
@@ -27,8 +28,12 @@ use crate::{
 pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     let anchor = retrieve_l1_anchor(cmd.l1_anchor_file.as_deref(), cmd.genesis_l1_height, ctx)?;
     let bridge_params = BridgeParams::new_with_descriptor_limit(
-        cmd.bridge_denomination_sats,
-        cmd.max_withdrawal_amount_sats,
+        BitcoinAmount::try_from(cmd.bridge_denomination_sats)
+            .context("invalid bridge denomination")?,
+        cmd.max_withdrawal_amount_sats
+            .map(BitcoinAmount::try_from)
+            .transpose()
+            .context("invalid max withdrawal amount")?,
         cmd.max_withdrawal_descriptor_len,
     )?;
     let accounts = if let Some(path) = cmd.genesis_accounts.as_deref() {

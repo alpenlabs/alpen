@@ -4428,7 +4428,7 @@ async fn submit_transaction_preserves_log_budget_error_data() {
     let message = OutputMessage::new(
         BRIDGE_GATEWAY_ACCT_ID,
         MsgPayload::from_bytes(
-            BitcoinAmount::try_from(BridgeParams::default().denomination()).unwrap(),
+            BridgeParams::default().denomination(),
             make_withdrawal_payload(make_op_return_bosd_descriptor(0x42)),
         )
         .unwrap(),
