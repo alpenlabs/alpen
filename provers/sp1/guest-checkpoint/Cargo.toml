@@ -6,11 +6,11 @@ version = "0.6.0"
 [workspace]
 
 [dependencies]
-ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.18.1" }
+ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.19.0" }
 strata-ol-params = { path = "../../../crates/ol/params" }
 strata-ol-state-types = { path = "../../../crates/ol/state-types" }
 strata-proofimpl-checkpoint = { path = "../../../crates/proof-impl/checkpoint" }
-zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.5.0", features = [
+zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.6.0", features = [
   "zkvm-verify",
 ] }
 
