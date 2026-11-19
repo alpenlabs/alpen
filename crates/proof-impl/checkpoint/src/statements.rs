@@ -90,10 +90,12 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnvSerde, spec: OLSpecId, runtime_params: 
 /// 5. Constructs and returns a [`CheckpointClaim`]
 ///
 /// The initial state is the previous epoch's terminal state. V1 proving uses
-/// its staged spec, except that a V0 state starts the first V1 epoch. V2
-/// proving also accepts a V1 state with `cur = staged = V1`: V1 never stages
-/// its successor, so the first V2 epoch takes over that state in its first
-/// block. Subsequent V2 epochs start from V2 states.
+/// its staged spec, except that a V0 state starts the first V1 epoch. Proving
+/// a later spec also accepts a state with `cur = staged` at the spec before
+/// it: no rule set stages its successor, so the first epoch of a spec takes
+/// over that state in its first block. V2 proving accepts a V1 state this
+/// way and V3 proving a V2 state. Subsequent epochs start from states of the
+/// spec itself.
 ///
 /// The ASM's active checkpoint predicate and verified tip bind each program
 /// to the ranges it may extend; the start state alone does not authorize a
@@ -130,8 +132,9 @@ pub fn process_ol_stf_core(
     );
 
     // Accepting a predecessor state is sound only together with ASM range verification:
-    // V1 accepts a V0 state, and V2 accepts a state with cur = staged = V1 because V1
-    // never stages its successor. Neither exception independently authorizes an upgrade.
+    // V1 accepts a V0 state, and each later spec accepts a state with cur = staged at the
+    // spec before it, because no rule set stages its successor. V2 accepts a V1 state this
+    // way and V3 a V2 state. No exception independently authorizes an upgrade.
     // - The parent root authenticates the start state above, and the ASM binds the claim's range
     //   start to its verified tip. A proof can only extend the already accepted chain.
     // - The ASM verifies each claim under its active checkpoint predicate, so a successor program's
@@ -141,27 +144,28 @@ pub fn process_ol_stf_core(
     //   new key only when its verified tip reaches the boundary. Thus the new program cannot extend
     //   an earlier predecessor tip under the new key.
     // - The terminal-parent assertion below requires an epoch boundary. V1 epoch-initial processing
-    //   wraps V0 as V1; V2's take_over_state records V2 on a V1 state and rejects a V1 start within
-    //   an epoch. DA replay applies the same version changes.
+    //   wraps V0 as V1; the take_over_state of each later spec records the spec on a state of the
+    //   spec before it and rejects such a start within an epoch. DA replay applies the same version
+    //   changes.
     // - The first accepted successor range therefore advances the verified tip to a state
     //   committing the successor version. Later accepted ranges cannot reuse a predecessor start
     //   state, even though the program itself accepts any compatible terminal one.
+    // - A state takes this exception only for the one spec that follows it, so a program cannot
+    //   skip a spec: the V3 program refuses a V1 state as the V2 program refuses a V0 one.
     // This argument depends on the ASM v0.4.0-rc.6 predicate handover, which MN0 must get
     // through STR-4489 before the OlStfVk transaction. Keep the V0 -> V1 exception and
     // V1's staged-spec selection unchanged.
-    //
-    // TODO(STR-4828): a V2 terminal state stages V2, including the one that processed the
-    // enactment ending V2, so the V3 program must run the first V3 epoch from such a state, as
-    // the V2 program runs the first V2 epoch from a V1 state, and the argument above must cover
-    // that case too.
     let epoch_spec = if state.cur_spec() == OLSpecId::V0 {
         OLSpecId::V0.successor().expect("V0 has a successor spec")
     } else {
         let staged_spec = state.root().staged_spec().unwrap_or_else(|err| {
             panic!("initial state stages a spec this program does not prove: {err}")
         });
-        if spec == OLSpecId::V2 && state.cur_spec() == OLSpecId::V1 && staged_spec == OLSpecId::V1 {
-            OLSpecId::V2
+        // A V0 state took the branch above, so this leaves V1's selection as it is: only a
+        // state of V1 or later, staging itself, runs its successor.
+        let stages_itself = state.cur_spec() == staged_spec;
+        if stages_itself && staged_spec.successor() == Some(spec) {
+            spec
         } else {
             staged_spec
         }

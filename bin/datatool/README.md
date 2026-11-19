@@ -84,8 +84,8 @@ release start at `1` (V1), which is what `gen-ol-params` writes. A nested file
 that an earlier build of this release wrote without the field describes a V1
 network: add `"spec": 1` under `genesis` or regenerate it. `2` (V2) and `3` (V3)
 also parse and start a network under that spec. The current checkpoint guest
-proves V2; V1 epochs continue to use the published `v0.4.0-rc.1` bundle, and no
-checkpoint program proves V3 epochs yet.
+proves V3; V1 epochs continue to use the published `v0.4.0-rc.1` bundle and V2
+epochs the one published from `v0.5.0-rc.2`.
 
 The flat layout 0.3.0 wrote, with `header`, `accounts`, `last_l1_block` and
 `bridge_params` at the top level, no longer parses. Networks launched on 0.3.0

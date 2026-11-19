@@ -1,13 +1,11 @@
 # SP1 guest builder
 
-Compiles the V2 SP1 checkpoint guest and exports its artifacts to `generated/`.
-The guest fixes `PROVED_SPEC = OLSpecId::V2`; the builder records the same spec in its manifest.
-V1 epochs continue to use the V1 bundle published from `v0.4.0-rc.1`. Never rebuild or republish
-V1 from this source tree.
+Compiles the V3 SP1 checkpoint guest and exports its artifacts to `generated/`.
+The guest fixes `PROVED_SPEC = OLSpecId::V3`; the builder records the same spec in its manifest.
 
-The V2 rules are frozen at `v0.5.0-rc.2`, and deployed networks prove V2 epochs with the bundle
-published from that tag. A guest built from this tree has another verifying key, so use it for
-tests and never publish it as a network's V2 bundle. See
+V1 and V2 are frozen. V1 epochs use the bundle published from `v0.4.0-rc.1` and V2 epochs the
+bundle published from `v0.5.0-rc.2`. Never rebuild or republish either from this source tree.
+Publishing a V3 bundle freezes V3 the same way, so publish it from a release tag. See
 [Frozen rules and V3](../../docs/ol-specs.md#frozen-rules-and-v3).
 
 Each guest lives in its own `guest-*` directory with its own Cargo workspace, so it can pin the
@@ -88,8 +86,9 @@ dispatch and reusable workflow calls. Run the workflow from `main` and set `ref`
 tag, or branch to build (default: `main`). Publishing scripts and local actions stay on the
 workflow's `main` commit; the guest builds in a separate checkout of `ref`, using its Rust
 toolchain and locked SP1 build and runner versions. The selected ref must support the builder
-and artifact bundle described above. For a spec whose rules are frozen, set `ref` to the tag
-they are frozen at, which is `v0.5.0-rc.2` for V2, and not to `main`.
+and artifact bundle described above. The bundle records the spec of the guest at `ref`, so a
+`ref` of `v0.5.0-rc.2` builds V2 and one from this tree builds V3. Publish a spec only from
+the tag its rules are frozen at, and not from `main`.
 
 Supply a raw HTTPS download URL for either params format described above. GitHub `/blob/`
 URLs serve HTML and are rejected. The workflow downloads and JSON-validates the file in

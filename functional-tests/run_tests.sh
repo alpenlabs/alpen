@@ -10,8 +10,9 @@ export RUST_LOG="debug,sled=warn,hyper=warn,h2=warn,soketto=warn,jsonrpsee-serve
 # match. Keep the captured logs plain.
 export NO_COLOR=1
 
-# Native is the ordinary functional-test backend. SP1 runs this upgrade test
-# against the prover network, with the frozen V1 bundle and a freshly built V2.
+# Native is the ordinary functional-test backend. SP1 runs the upgrade tests
+# against the prover network, with the frozen V1 and V2 bundles and a freshly
+# built V3.
 OL_PROVER_BACKEND="${OL_PROVER_BACKEND:-native}"
 case "$OL_PROVER_BACKEND" in
   native) ;;
@@ -57,12 +58,13 @@ build() {
     cargo build "${args[@]}" --bin strata --bin strata-signer --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
 }
 
-# Builds V2 with the same runtime parameters that are embedded in frozen V1.
+# Builds the checkout's guest, which proves V3, with the same runtime
+# parameters that are embedded in frozen V2 (and V1, whose file is identical).
 # The build script derives the predicate and artifact manifest from that ELF.
 build_sp1_guest() {
     [ "$OL_PROVER_BACKEND" = sp1 ] || return 0
     BUILD_VKEY=1 SP1_SKIP_PROGRAM_BUILD=false \
-      CHECKPOINT_RUNTIME_PARAMS_PATH="$PWD/testdata/sp1/v1/checkpoint-runtime-params.json" \
+      CHECKPOINT_RUNTIME_PARAMS_PATH="$PWD/testdata/sp1/v2/checkpoint-runtime-params.json" \
       cargo build --locked --release -p strata-sp1-guest-builder
 }
 

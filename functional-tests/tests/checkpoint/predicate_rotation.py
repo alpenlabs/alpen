@@ -1,9 +1,11 @@
-"""STR-4088: a fresh V1 network rotates to V2 on every test run.
+"""STR-4088: a fresh network rotates its checkpoint predicate to the next spec.
 
-Distinct native signing keys exercise per-epoch prover selection in normal CI.
-Set OL_PROVER_BACKEND=sp1 via run_tests.sh to exercise real ZK proving.
-The V2 program verifies every block of the first V2 epoch from its V1 start
-state, so accepting its checkpoint also checks the switch at the first block.
+Each test module starts a network at one spec and rotates it to the next, for
+example V1 to V2. Distinct native signing keys exercise per-epoch prover
+selection in normal CI. Set OL_PROVER_BACKEND=sp1 via run_tests.sh to exercise
+real ZK proving. The new spec's program verifies every block of its first epoch
+from the old spec's start state, so accepting its checkpoint also checks the
+switch at the first block.
 
 Non-sequencer nodes currently use L1 checkpoint sync. A live follower and an
 empty follower started after the upgrade independently reconstruct the chain;
@@ -18,7 +20,7 @@ from pathlib import Path
 import flexitest
 
 from common.base_test import StrataNodeTest
-from common.checkpoint_prover import checkpoint_rotation_programs
+from common.checkpoint_prover import CheckpointRotationPrograms, checkpoint_rotation_programs
 from common.checkpoint_sync import check_summaries_equivalent, check_top_level_state_equivalent
 from common.config import ServiceType
 from common.config.constants import ALPEN_ACCOUNT_ID
@@ -30,7 +32,6 @@ from tests.checkpoint.helpers import mine_until_finalized_epoch, tx_block_height
 from tests.dbtool.helpers import run_dbtool_json
 
 logger = logging.getLogger(__name__)
-PROGRAMS = checkpoint_rotation_programs()
 POST_ADMIN_UPDATE_L1_BLOCKS = 5
 PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
 
@@ -38,8 +39,9 @@ PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
 ENACTMENT_TIMEOUT_SECONDS = 180
 
 # The boundary epoch seals when the OL processes the enactment's manifest,
-# without waiting for the slot cadence. SP1 mode uses longer proof waits.
-EPOCH_SEAL_TIMEOUT_SECONDS = 120 * PROGRAMS.proof_wait_scale
+# without waiting for the slot cadence. SP1 mode scales this by its longer
+# proof waits.
+EPOCH_SEAL_TIMEOUT_SECONDS = 120
 
 # Block assembly reads ASM manifests at this depth. The manifest at B becomes
 # eligible when L1 reaches B + depth - 1. Pin the setting because this test
@@ -49,11 +51,13 @@ L1_REORG_SAFE_DEPTH = 6
 # The admin update enacts at its reveal block height plus this depth.
 ADMIN_CONFIRMATION_DEPTH = 24
 
-# Budget for in-flight V1 and two V2 checkpoints to finalize once L1 moves on.
-FINALIZATION_TIMEOUT_SECONDS = 240 * PROGRAMS.proof_wait_scale
+# Budget for in-flight old-spec and two new-spec checkpoints to finalize once
+# L1 moves on. SP1 mode scales this by its longer proof waits.
+FINALIZATION_TIMEOUT_SECONDS = 240
 
-# A V2 block can be built without further L1 progress after the boundary epoch.
-V2_BLOCK_TIMEOUT_SECONDS = 60
+# A new-spec block can be built without further L1 progress after the boundary
+# epoch.
+NEW_SPEC_BLOCK_TIMEOUT_SECONDS = 60
 PACE_L1_BLOCKS_PER_STEP = 1
 
 # Keep the OL in step with L1 so it seals promptly when the manifest is eligible.
@@ -65,27 +69,36 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 BOUNDARY_FIELD_RE = re.compile(r"\bboundary=(\d+)")
 
 
-@flexitest.register
-class TestCheckpointPredicateRotation(StrataNodeTest):
-    """Checks old-key catch-up, V2 finalization, restart, and cold L1 replay."""
+class CheckpointPredicateRotation(StrataNodeTest):
+    """Checks old-key catch-up, new-spec finalization, restart, and cold L1 replay.
 
-    def __init__(self, ctx: flexitest.InitContext):
+    Each test module registers a subclass for one genesis spec. This class is
+    not registered, so the runner does not run it directly.
+    """
+
+    def __init__(self, ctx: flexitest.InitContext, genesis_spec: int):
+        self.programs: CheckpointRotationPrograms = checkpoint_rotation_programs(genesis_spec)
+        self.epoch_seal_timeout = EPOCH_SEAL_TIMEOUT_SECONDS * self.programs.proof_wait_scale
+        self.finalization_timeout = FINALIZATION_TIMEOUT_SECONDS * self.programs.proof_wait_scale
         ctx.set_env(
             CheckpointSyncEnv(
                 pre_generate_blocks=110,
                 seal_epoch_slots=8,
-                ol_block_time_ms=PROGRAMS.ol_block_time_ms,
+                ol_block_time_ms=self.programs.ol_block_time_ms,
                 fund_test_cli_wallet=True,
                 admin_confirmation_depth=ADMIN_CONFIRMATION_DEPTH,
                 l1_reorg_safe_depth=L1_REORG_SAFE_DEPTH,
                 provision_recovery_node=True,
-                bridge_params=PROGRAMS.bridge_params,
-                prover_config=PROGRAMS.config,
-                checkpoint_predicate_file=PROGRAMS.genesis_predicate_file,
+                bridge_params=self.programs.bridge_params,
+                genesis_spec=self.programs.genesis_spec,
+                prover_config=self.programs.config,
+                checkpoint_predicate_file=self.programs.genesis_predicate_file,
             )
         )
 
     def main(self, ctx):
+        programs = self.programs
+        old_spec, new_spec = programs.genesis_spec, programs.rotation_spec
         bitcoin = self.get_service(ServiceType.Bitcoin)
         strata = self.get_service(ServiceType.Strata)
         signer = self.get_service(ServiceType.StrataSigner)
@@ -94,21 +107,21 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         btc_rpc = bitcoin.create_rpc()
         rpc = strata.wait_for_rpc_ready(timeout=30)
         mine_addr = btc_rpc.proxy.getnewaddress()
-        genesis_predicate = PROGRAMS.genesis_predicate_file.read_text().strip()
-        assert genesis_predicate != PROGRAMS.rotation_predicate, "rotation must change the key"
-        assert rpc.strata_getSpecStatus()["cur_spec_version"] == 1
+        genesis_predicate = programs.genesis_predicate_file.read_text().strip()
+        assert genesis_predicate != programs.rotation_predicate, "rotation must change the key"
+        assert rpc.strata_getSpecStatus()["cur_spec_version"] == old_spec
 
         baseline = mine_until_finalized_epoch(
             bitcoin,
             strata,
             rpc,
             target_epoch=1,
-            timeout=FINALIZATION_TIMEOUT_SECONDS,
-            step=float(PROGRAMS.proof_wait_scale),
+            timeout=self.finalization_timeout,
+            step=float(programs.proof_wait_scale),
         )
         result = create_checkpoint_predicate_update(
             seq_no=1,
-            predicate=PROGRAMS.rotation_predicate,
+            predicate=programs.rotation_predicate,
             admin_xpriv=self._read_admin_xpriv(strata),
             btc_url=bitcoin.props["rpc_url"],
             btc_user=bitcoin.props["rpc_user"],
@@ -136,7 +149,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         assert in_flight_end is not None and in_flight_end < boundary
         assert self._checkpoint_status(in_flight) == "pending"
         self._pace_l1_to(strata, rpc, btc_rpc, mine_addr, boundary)
-        assert rpc.strata_getSpecStatus()["cur_spec_version"] == 1
+        assert rpc.strata_getSpecStatus()["cur_spec_version"] == old_spec
         self._assert_enactment_boundary(log_path, log_offset, boundary)
         self._pace_l1_to(
             strata,
@@ -145,11 +158,11 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             mine_addr,
             boundary + L1_REORG_SAFE_DEPTH - 1,
         )
-        last_v1_epoch, last_v1_terminal = self._wait_for_epoch_ending_at(
+        handover_epoch, handover_terminal = self._wait_for_epoch_ending_at(
             rpc, boundary, baseline["epoch"]
         )
-        assert in_flight_epoch < last_v1_epoch
-        assert self._checkpoint_status(rpc.strata_getCheckpointInfo(last_v1_epoch)) == "pending"
+        assert in_flight_epoch < handover_epoch
+        assert self._checkpoint_status(rpc.strata_getCheckpointInfo(handover_epoch)) == "pending"
         assert self._checkpoint_status(rpc.strata_getCheckpointInfo(in_flight_epoch)) == "pending"
 
         # Submission succeeds only after the boundary proof is stored. The RPC
@@ -157,11 +170,11 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         admin_rpc = strata.create_admin_rpc()
         wait_until_with_value(
             lambda: admin_rpc.strata_strataadmin_completeCheckpointSignature(
-                last_v1_epoch, "00" * 64
+                handover_epoch, "00" * 64
             ),
             lambda _: True,
             error_with="boundary checkpoint was not ready for submission",
-            timeout=FINALIZATION_TIMEOUT_SECONDS,
+            timeout=self.finalization_timeout,
         )
 
         # Kill with the boundary checkpoint proven but still awaiting L1
@@ -172,9 +185,9 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         strata.wait_for_down(timeout=30)
         strata.stop()
         # Dbtool requires the node to be stopped. Snapshot durable records after
-        # the crash, then compare them after recovery and further V2 progress.
-        checkpoint_before_restart = run_dbtool_json(strata, "get-checkpoint", str(last_v1_epoch))
-        proof_before_restart = run_dbtool_json(strata, "get-checkpoint-proof", str(last_v1_epoch))
+        # the crash, then compare them after recovery and further new-spec progress.
+        checkpoint_before_restart = run_dbtool_json(strata, "get-checkpoint", str(handover_epoch))
+        proof_before_restart = run_dbtool_json(strata, "get-checkpoint-proof", str(handover_epoch))
         completed_tasks = run_dbtool_json(
             strata, "get-prover-tasks-summary", "--status", "completed", "--limit", "100"
         )["entries"]
@@ -183,7 +196,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         assert completed_tasks, "expected completed checkpoint proof tasks before restart"
 
         strata.start()
-        rpc = strata.wait_for_rpc_ready(timeout=60 * PROGRAMS.proof_wait_scale)
+        rpc = strata.wait_for_rpc_ready(timeout=60 * programs.proof_wait_scale)
         # Record the recovered tip before signing resumes, so blocks built
         # before the crash cannot satisfy the progress check.
         restart_slot = strata.get_cur_block_height(rpc)
@@ -192,22 +205,25 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         recovered_epoch, recovered_terminal = self._wait_for_epoch_ending_at(
             rpc, boundary, baseline["epoch"]
         )
-        assert (recovered_epoch, recovered_terminal) == (last_v1_epoch, last_v1_terminal)
-        strata.wait_for_block_height(restart_slot + 1, rpc=rpc, timeout=V2_BLOCK_TIMEOUT_SECONDS)
-        self._wait_for_v2_tip(rpc, last_v1_epoch)
+        assert (recovered_epoch, recovered_terminal) == (handover_epoch, handover_terminal)
+        strata.wait_for_block_height(
+            restart_slot + 1, rpc=rpc, timeout=NEW_SPEC_BLOCK_TIMEOUT_SECONDS
+        )
+        self._wait_for_new_spec_tip(rpc, handover_epoch, new_spec)
 
-        # Both the first V2 epoch (V1 start state) and a later V2 epoch
-        # (V2 start state) must finalize. The ASM still needs the old key for
-        # every in-flight V1 checkpoint, including the epoch ending at B.
+        # Both the first new-spec epoch (old-spec start state) and a later
+        # new-spec epoch (new-spec start state) must finalize. The ASM still
+        # needs the old key for every in-flight old-spec checkpoint, including
+        # the epoch ending at B.
         mine_until_finalized_epoch(
             bitcoin,
             strata,
             rpc,
-            target_epoch=last_v1_epoch + 2,
-            timeout=FINALIZATION_TIMEOUT_SECONDS,
-            step=float(PROGRAMS.proof_wait_scale),
+            target_epoch=handover_epoch + 2,
+            timeout=self.finalization_timeout,
+            step=float(programs.proof_wait_scale),
         )
-        for epoch in (in_flight_epoch, last_v1_epoch, last_v1_epoch + 1, last_v1_epoch + 2):
+        for epoch in (in_flight_epoch, handover_epoch, handover_epoch + 1, handover_epoch + 2):
             info = rpc.strata_getCheckpointInfo(epoch)
             assert self._checkpoint_status(info) == "finalized", info
             assert info["confirmation_status"]["l1_reference"]["l1_block"]["height"] > boundary
@@ -222,12 +238,12 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             sequencer_status, node_status = wait_until_with_value(
                 lambda node=node: (strata.get_sync_status(rpc), node.get_sync_status()),
                 lambda statuses: statuses[0]["finalized"] == statuses[1]["finalized"],
-                error_with="checkpoint follower did not replay through the V2 upgrade",
-                timeout=FINALIZATION_TIMEOUT_SECONDS,
+                error_with=f"checkpoint follower did not replay through the V{new_spec} upgrade",
+                timeout=self.finalization_timeout,
             )
             check_top_level_state_equivalent(sequencer_status, node_status)
             spec_status = node_rpc.strata_getSpecStatus()
-            assert spec_status["cur_spec_version"] == 2, spec_status
+            assert spec_status["cur_spec_version"] == new_spec, spec_status
             assert spec_status["upgrade_required"] is None, spec_status
             target_epoch = int(sequencer_status["finalized"]["epoch"])
             for epoch in range(1, target_epoch + 1):
@@ -240,10 +256,15 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                     strata.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch, rpc=rpc),
                     node.get_account_epoch_summary(ALPEN_ACCOUNT_ID, epoch, rpc=node_rpc),
                 )
-        logger.info("V1 to V2 rotation replayed through epoch %s on both followers", target_epoch)
+        logger.info(
+            "V%s to V%s rotation replayed through epoch %s on both followers",
+            old_spec,
+            new_spec,
+            target_epoch,
+        )
 
         strata.stop()
-        checkpoint_after_restart = run_dbtool_json(strata, "get-checkpoint", str(last_v1_epoch))
+        checkpoint_after_restart = run_dbtool_json(strata, "get-checkpoint", str(handover_epoch))
         # Confirmation fields legitimately change when L1 accepts the checkpoint;
         # its epoch, terminal block, and payload must remain the same.
         for field in (
@@ -257,7 +278,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         ):
             assert checkpoint_after_restart[field] == checkpoint_before_restart[field], field
         assert (
-            run_dbtool_json(strata, "get-checkpoint-proof", str(last_v1_epoch))
+            run_dbtool_json(strata, "get-checkpoint-proof", str(handover_epoch))
             == proof_before_restart
         )
         for task in completed_tasks:
@@ -301,8 +322,8 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
 
         Returns that epoch and its terminal block ID. It is the first epoch
         from `from_epoch` on whose checkpoint coverage reaches the boundary.
-        The V2 epochs after it also end on the boundary while they process no
-        manifests, so the latest epoch that does is not necessarily it.
+        The new-spec epochs after it also end on the boundary while they
+        process no manifests, so the latest epoch that does is not necessarily it.
         """
 
         def first_epoch_reaching_boundary():
@@ -325,7 +346,7 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
                 f"OL sealed no epoch covering L1 up to the boundary {boundary} once the "
                 "boundary was buried"
             ),
-            timeout=EPOCH_SEAL_TIMEOUT_SECONDS,
+            timeout=self.epoch_seal_timeout,
             step=0.5,
         )
         coverage_end = self._coverage_end(info)
@@ -337,21 +358,21 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
         return epoch, info["l2_end"]["blkid"]
 
     @staticmethod
-    def _wait_for_v2_tip(strata_rpc, last_v1_epoch: int) -> None:
-        """Waits for the node to build past `last_v1_epoch` under V2.
+    def _wait_for_new_spec_tip(strata_rpc, handover_epoch: int, new_spec: int) -> None:
+        """Waits for the node to build past `handover_epoch` under `new_spec`.
 
-        That epoch processed the enactment, which ends V1, so the epoch after
-        it runs V2. This binary implements V2, so the node keeps building and
-        the spec status reports no upgrade.
+        That epoch processed the enactment, which ends the old spec, so the
+        epoch after it runs the new spec. This binary implements the new spec,
+        so the node keeps building and the spec status reports no upgrade.
         """
         status = wait_until_with_value(
             strata_rpc.strata_getSpecStatus,
-            lambda status: status["cur_spec_version"] == 2,
+            lambda status: status["cur_spec_version"] == new_spec,
             error_with=(
-                f"the node built no V2 block after epoch {last_v1_epoch}, which ends at the "
-                "enactment"
+                f"the node built no V{new_spec} block after epoch {handover_epoch}, which ends "
+                "at the enactment"
             ),
-            timeout=V2_BLOCK_TIMEOUT_SECONDS,
+            timeout=NEW_SPEC_BLOCK_TIMEOUT_SECONDS,
             step=0.5,
         )
         if status["upgrade_required"] is not None:
@@ -438,13 +459,12 @@ class TestCheckpointPredicateRotation(StrataNodeTest):
             poll_interval=0.5,
         )
 
-    @staticmethod
-    def _wait_for_checkpoint_info(strata_rpc, epoch: int) -> dict:
+    def _wait_for_checkpoint_info(self, strata_rpc, epoch: int) -> dict:
         return wait_until_with_value(
             lambda: strata_rpc.strata_getCheckpointInfo(epoch),
             lambda info: info is not None,
             error_with=f"checkpoint info for epoch {epoch} was not created",
-            timeout=EPOCH_SEAL_TIMEOUT_SECONDS,
+            timeout=self.epoch_seal_timeout,
             step=1.0,
         )
 

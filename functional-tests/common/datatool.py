@@ -1,3 +1,4 @@
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -157,8 +158,13 @@ def generate_ol_params(
     genesis_l1_height: int,
     bridge_params: BridgeParams,
     genesis_accounts_path: Path = GENESIS_ACCOUNTS_FIXTURE,
+    genesis_spec: int | None = None,
 ) -> Path:
-    """Generates OL params with the supplied bridge runtime parameters."""
+    """Generates OL params with the supplied bridge runtime parameters.
+
+    Datatool always starts the network at spec V1. A `genesis_spec` replaces
+    that value before anything derives the genesis block from the file.
+    """
     params_path = datadir / "ol-params.json"
 
     args = [
@@ -178,6 +184,10 @@ def generate_ol_params(
         args.extend(["--max-withdrawal-amount-sats", str(bridge_params.max_withdrawal_amount)])
 
     run_datatool(args, bconfig)
+    if genesis_spec is not None:
+        params = json.loads(params_path.read_text())
+        params["genesis"]["spec"] = genesis_spec
+        params_path.write_text(json.dumps(params, indent=2))
     return params_path
 
 

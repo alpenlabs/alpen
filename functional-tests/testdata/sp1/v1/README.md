@@ -1,9 +1,9 @@
 # Frozen V1 checkpoint program
 
-This bundle is the V1 checkpoint program deployed on staging-v2. The SP1
-upgrade test will start a fresh chain with this program, then rotate to V2
-built from the current checkout. Keeping the historical program fixed checks
-that new host code can still prove V1 epochs across the upgrade.
+This bundle is the V1 checkpoint program deployed on staging-v2. The SP1 V1 to
+V2 upgrade test starts a fresh chain with this program, then rotates to the
+[frozen V2 bundle](../v2/README.md). Keeping the historical program fixed
+checks that new host code can still prove V1 epochs across the upgrade.
 
 The ELF, predicate, and artifact manifest are copied unchanged from the
 published bundle. The runtime-parameter file is copied unchanged from the
@@ -32,13 +32,14 @@ program ID and predicate derived from the ELF when it loads the bundle.
 
 The program embeds a bridge denomination of `200000000` sats, no maximum
 withdrawal amount (`null`), and a maximum withdrawal descriptor length of
-`81`. The SP1 upgrade test and its V2 guest build must both use the adjacent
-`checkpoint-runtime-params.json`. These values differ from the native test
-defaults, so the SP1 path must select them explicitly.
+`81`. The SP1 upgrade tests and the current guest build must use the adjacent
+`checkpoint-runtime-params.json`, which is byte-identical to the frozen V2
+bundle's copy. These values differ from the native test defaults, so the SP1
+path must select them explicitly.
 
-Keep this V1 bundle fixed when rebuilding V2. Changing the parameters requires
-another matching historical V1 build and predicate; editing the manifest does
-not change the parameters embedded in the ELF.
+Keep this V1 bundle fixed when rebuilding the current guest. Changing the
+parameters requires another matching historical V1 build and predicate;
+editing the manifest does not change the parameters embedded in the ELF.
 
 ## Checksums and retrieval
 

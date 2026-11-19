@@ -148,13 +148,12 @@ impl LoadedCheckpointPredicates {
 ///
 /// Native programs use distinct test signing keys so verification detects stale-spec routing.
 /// Each entry binds its spec to the corresponding program closure and predicate.
-/// V1 and V2 each have a fixed-spec host. V3 has none yet, so the prover
-/// proves no V3 epoch; unknown specs never get a program.
+/// V1, V2, and V3 each have a fixed-spec host; unknown specs never get a program.
 #[cfg(feature = "native")]
 pub fn native_checkpoint_registry(
     runtime_params: OLRuntimeParams,
 ) -> CheckpointArtifactRegistry<NativeHost> {
-    let artifacts = [OLSpecId::V1, OLSpecId::V2].map(|spec| {
+    let artifacts = [OLSpecId::V1, OLSpecId::V2, OLSpecId::V3].map(|spec| {
         let host = CheckpointProgram::native_host(spec, runtime_params);
         let artifact = CheckpointArtifact::new(
             spec,
@@ -193,15 +192,30 @@ mod tests {
                     "../../../../functional-tests/fixtures/predicates/checkpoint-v2-bip340-schnorr-test.predicate"
                 ),
             ),
+            (
+                OLSpecId::V3,
+                include_str!(
+                    "../../../../functional-tests/fixtures/predicates/checkpoint-v3-bip340-schnorr-test.predicate"
+                ),
+            ),
         ];
         for (spec, fixture) in fixtures {
             let predicate = serde_json::from_value(serde_json::json!(fixture.trim())).unwrap();
             assert_eq!(registry.get(spec).unwrap().predicate(), &predicate);
         }
-        assert_ne!(
-            registry.get(OLSpecId::V1).unwrap().predicate(),
-            registry.get(OLSpecId::V2).unwrap().predicate(),
-        );
+        // A proof routed to another spec's host must fail verification, so no two specs share
+        // a predicate.
+        for (spec, other) in [
+            (OLSpecId::V1, OLSpecId::V2),
+            (OLSpecId::V1, OLSpecId::V3),
+            (OLSpecId::V2, OLSpecId::V3),
+        ] {
+            assert_ne!(
+                registry.get(spec).unwrap().predicate(),
+                registry.get(other).unwrap().predicate(),
+                "{spec:?} and {other:?}"
+            );
+        }
     }
 
     #[test]
@@ -209,16 +223,15 @@ mod tests {
         let registry = native_checkpoint_registry(OLRuntimeParams::test_default());
         assert_eq!(registry.get(OLSpecId::V1).unwrap().spec(), OLSpecId::V1);
         assert_eq!(registry.get(OLSpecId::V2).unwrap().spec(), OLSpecId::V2);
+        assert_eq!(registry.get(OLSpecId::V3).unwrap().spec(), OLSpecId::V3);
         assert!(registry.get(OLSpecId::V0).is_none());
         assert_eq!(registry.to_predicates().predicate(OLSpecId::V0), None);
-        assert!(registry.get(OLSpecId::V3).is_none());
-        assert_eq!(registry.to_predicates().predicate(OLSpecId::V3), None);
         assert_eq!(
             registry
                 .into_proving_hosts()
                 .map(|(spec, _)| spec)
                 .collect::<Vec<_>>(),
-            vec![OLSpecId::V1, OLSpecId::V2]
+            vec![OLSpecId::V1, OLSpecId::V2, OLSpecId::V3]
         );
     }
 
