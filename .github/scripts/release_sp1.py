@@ -36,24 +36,31 @@ def release(tag: str) -> dict | None:
     return json.loads(result.stdout)
 
 
-def checksums() -> dict[str, str]:
+def checksums(params: bytes | None = None) -> dict[str, str]:
     for name in FILES:
         require_file(ASSETS / name)
-    if (ASSETS / PARAMS.name).read_bytes() != PARAMS.read_bytes():
+    if params is None:
+        params = PARAMS.read_bytes()
+    if (ASSETS / PARAMS.name).read_bytes() != params:
         raise SystemExit("release params differ from the tagged build input")
     return {name: sha256_hex(ASSETS / name) for name in FILES}
 
 
-def verify(tag: str, commit: str) -> None:
+def verify(tag: str, commit: str, *, params: bytes | None = None) -> None:
     manifest = json.loads((ASSETS / MANIFEST).read_bytes())
     if (manifest["release_tag"], manifest["commit"], manifest["sha256"]) != (
         tag,
         commit,
-        checksums(),
+        checksums(params),
     ):
         raise SystemExit(
             f"release bundle for {tag} has conflicting provenance or checksums"
         )
+
+
+def download(tag: str) -> None:
+    args = [arg for name in (*FILES, MANIFEST) for arg in ("--pattern", name)]
+    gh("release", "download", tag, "--dir", str(ASSETS), *args)
 
 
 def reuse(tag: str, commit: str) -> None:
@@ -71,8 +78,7 @@ def reuse(tag: str, commit: str) -> None:
                     f"{tag} is already published with an incomplete proving bundle"
                 )
             continue
-        args = [arg for name in (*FILES, MANIFEST) for arg in ("--pattern", name)]
-        gh("release", "download", candidate, "--dir", str(ASSETS), *args)
+        download(candidate)
         verify(candidate, commit)
         print(f"Reusing verified checkpoint assets from {candidate}")
         set_outputs(found="true")

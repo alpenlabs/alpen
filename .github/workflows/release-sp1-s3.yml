@@ -1,0 +1,45 @@
+name: Copy SP1 release assets to S3
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published immutable release tag to mirror.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  mirror:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: sp1-artifacts
+    permissions:
+      contents: read
+      attestations: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download and verify immutable GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release_sp1_s3.py fetch
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::496607027995:role/github-actions-alpen-sp1-s3
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Mirror release assets
+        env:
+          S3_BUCKET: alpen-mosaic-artifacts
+          S3_PREFIX: elfs/alpen
+        run: python3 .github/scripts/release_sp1_s3.py upload

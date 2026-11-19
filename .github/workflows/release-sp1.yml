@@ -93,3 +93,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/release_sp1.py publish
+
+  dispatch-s3:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the protected S3 upload on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-sp1-s3.yml -R "$GITHUB_REPOSITORY" --ref main -f tag="$GITHUB_REF_NAME"

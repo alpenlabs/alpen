@@ -147,4 +147,16 @@ It uploads missing files to a draft, then publishes the release. Keep GitHub rel
 immutability enabled. To retry, re-run the workflow on the same tag. A conflicting
 asset stops publication. Inspect the draft and verify the file’s origin before
 removing it. Published immutable releases cannot be backfilled.
-The existing S3 publisher has a separate manual trigger.
+After publication the tag workflow dispatches **Copy SP1 release assets to S3** on
+`main`. The job uses the existing `sp1-artifacts` environment approval and OIDC role.
+It downloads the published assets, verifies each against GitHub’s immutable release
+attestation, and compares the params bytes with the file at the released commit.
+
+Find the files under `s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>/`.
+The exact release-specific manifest is at `releases/<tag>/proving-manifest.json`
+inside that bundle. Tags with the same commit and params share the guest files.
+The uploader compares existing objects byte-for-byte, fills missing files, and
+writes the canonical `manifest.json` last. Conflicting data fails the upload.
+To retry or backfill, run **Copy SP1 release assets to S3** from `main` with the tag.
+This retry needs only the published release. The existing manual build-and-publish
+workflow remains available for custom runtime parameters.

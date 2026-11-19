@@ -1,10 +1,13 @@
 import hashlib
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import release_sp1 as sp1
+import release_sp1_s3 as mirror
 
 
 class ReleaseAssetsTest(unittest.TestCase):
@@ -86,3 +89,91 @@ class ReleaseAssetsTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "differs"):
                 sp1.publish("v1", self.sha)
             self.assertEqual(gh.call_count, 2)
+
+
+class ReleaseMirrorTest(unittest.TestCase):
+    def test_fetch_uses_attestations_and_the_released_commit_params(self):
+        info = {"isDraft": False, "isImmutable": True}
+        with (
+            patch.object(mirror, "release", return_value=info),
+            patch.object(mirror, "gh", return_value="abc\n") as gh,
+            patch.object(mirror, "download") as download,
+            patch.object(
+                subprocess, "check_output", return_value=b"tagged params"
+            ) as get,
+            patch.object(mirror, "verify") as verify,
+        ):
+            mirror.fetch("v1")
+            download.assert_called_once_with("v1")
+            for name in (*sp1.FILES, sp1.MANIFEST):
+                gh.assert_any_call(
+                    "release", "verify-asset", "v1", str(sp1.ASSETS / name)
+                )
+            self.assertTrue(get.call_args.args[0][-1].endswith("?ref=abc"))
+            verify.assert_called_once_with("v1", "abc", params=b"tagged params")
+            info["isImmutable"] = False
+            with self.assertRaisesRegex(SystemExit, "immutable"):
+                mirror.fetch("v1")
+            download.assert_called_once()
+
+    def test_upload_resume_alias_and_conflict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            assets = Path(directory)
+            files = {name: name.encode() for name in sp1.FILES}
+            for name, data in files.items():
+                (assets / name).write_bytes(data)
+            digests = {
+                name: hashlib.sha256(data).hexdigest() for name, data in files.items()
+            }
+            manifest = {
+                "release_tag": "v1",
+                "commit": "a" * 40,
+                "sp1_version": "v6",
+                "sha256": digests,
+            }
+
+            def stage(tag):
+                manifest["release_tag"] = tag
+                (assets / sp1.MANIFEST).write_text(json.dumps(manifest))
+
+            prefix = f"elfs/alpen/aaaaaaaa-{digests[sp1.PARAMS.name][:8]}/"
+            first = prefix + sp1.FILES[0]
+            stored = {first: files[sp1.FILES[0]]}  # Resume an interrupted copy.
+
+            def put(path, bucket, key):
+                self.assertNotIn(key, stored)
+                stored[key] = path.read_bytes()
+
+            def list_objects(*args):
+                return json.dumps({"Contents": [{"Key": key} for key in stored]})
+
+            def read(args):
+                return stored[args[3].removeprefix("s3://bucket/")]
+
+            with (
+                patch.object(mirror, "ASSETS", assets),
+                patch.dict(sp1.os.environ, S3_BUCKET="bucket", S3_PREFIX="elfs/alpen"),
+                patch.object(mirror, "aws_output", side_effect=list_objects),
+                patch.object(mirror, "s3_put", side_effect=put) as writes,
+                patch.object(subprocess, "check_output", side_effect=read),
+            ):
+                stage("v1")
+                mirror.upload("v1")
+                self.assertEqual(list(stored)[-1], prefix + "manifest.json")
+                for name, data in files.items():
+                    self.assertEqual(stored[prefix + name], data)
+                writes.reset_mock()
+                mirror.upload("v1")
+                writes.assert_not_called()
+                stage("v2")
+                mirror.upload("v2")
+                self.assertEqual(writes.call_count, 1)
+                self.assertEqual(
+                    stored[prefix + "releases/v2/" + sp1.MANIFEST],
+                    (assets / sp1.MANIFEST).read_bytes(),
+                )
+                stored[first] = b"conflict"
+                writes.reset_mock()
+                with self.assertRaisesRegex(SystemExit, "conflicting S3 object"):
+                    mirror.upload("v2")
+                writes.assert_not_called()
