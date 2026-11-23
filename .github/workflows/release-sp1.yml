@@ -5,9 +5,12 @@ on:
     tags: ["v*"]
   workflow_dispatch: # Select the release tag to retry.
   pull_request:
+    branches: [main]
     paths:
+      - .github/actions/cleanup/**
       - .github/workflows/release-sp1.yml
       - .github/scripts/release_sp1.py
+      - .github/scripts/sp1_artifact_publish.py
       - provers/sp1/release-params/**
 
 permissions: {}
