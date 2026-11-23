@@ -129,7 +129,7 @@ def upload(tag: str) -> None:
 
     if marker not in existing:
         canonical = {
-            "schema": 1,
+            "schema": 2,
             "version": version,
             "alpen": {"ref": tag, "sha": sha},
             "sp1_version": manifest["sp1_version"],

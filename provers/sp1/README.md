@@ -159,6 +159,11 @@ It downloads the published assets, verifies each against GitHub’s immutable re
 attestation, and compares the params bytes with the file at the released commit.
 
 Find the files under `s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>/`.
+The first publisher determines the format of the bundle's `manifest.json`.
+The manual workflow writes schema 1 with `env`, `run_id`, and the source
+`checkpoint_runtime_params.url`. The release mirror writes schema 2 with
+`checkpoint_runtime_params.file` relative to the bundle. Both formats record
+`checkpoint_runtime_params.sha256`.
 The exact release-specific manifest is at `releases/<tag>/proving-manifest.json`
 inside that bundle. Tags with the same commit and params share the guest files.
 To find a bundle using the Docker image tag, read

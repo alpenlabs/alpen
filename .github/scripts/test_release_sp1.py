@@ -212,6 +212,11 @@ class ReleaseMirrorTest(unittest.TestCase):
                 mirror.upload("v1")
                 alias = "elfs/alpen/v1-aaaaaaa/release-reference.json"
                 self.assertEqual(list(stored)[-2:], [prefix + "manifest.json", alias])
+                canonical = json.loads(stored[prefix + "manifest.json"])
+                self.assertEqual(canonical["schema"], 2)
+                params = canonical["checkpoint_runtime_params"]
+                self.assertEqual(stored[prefix + params["file"]], files[sp1.PARAMS.name])
+                self.assertEqual(params["sha256"], digests[sp1.PARAMS.name])
                 reference = json.loads(stored[alias])
                 self.assertEqual(reference["bundle"], f"s3://bucket/{prefix}")
                 target = reference["manifest"].removeprefix("s3://bucket/")
