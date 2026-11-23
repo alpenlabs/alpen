@@ -100,6 +100,7 @@ jobs:
     if: github.ref_type == 'tag'
     needs: attest
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -121,6 +122,7 @@ jobs:
   dispatch-s3:
     needs: publish
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       actions: write
     steps:
