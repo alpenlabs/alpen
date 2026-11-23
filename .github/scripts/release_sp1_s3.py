@@ -108,8 +108,8 @@ def upload(tag: str) -> None:
     release_key = f"{prefix}releases/{tag}/{MANIFEST}"
     objects[release_key] = ASSETS / MANIFEST
 
-    alias_key = f"{root}/{tag}-{sha[:7]}/manifest.json"
     alias = ASSETS / "release-reference.json"
+    alias_key = f"{root}/{tag}-{sha[:7]}/{alias.name}"
     reference = {
         "bundle": f"s3://{bucket}/{prefix}",
         "manifest": f"s3://{bucket}/{release_key}",

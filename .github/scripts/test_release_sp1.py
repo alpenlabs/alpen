@@ -210,7 +210,7 @@ class ReleaseMirrorTest(unittest.TestCase):
             ):
                 stage("v1")
                 mirror.upload("v1")
-                alias = "elfs/alpen/v1-aaaaaaa/manifest.json"
+                alias = "elfs/alpen/v1-aaaaaaa/release-reference.json"
                 self.assertEqual(list(stored)[-2:], [prefix + "manifest.json", alias])
                 reference = json.loads(stored[alias])
                 self.assertEqual(reference["bundle"], f"s3://bucket/{prefix}")
@@ -226,7 +226,7 @@ class ReleaseMirrorTest(unittest.TestCase):
                 stage("v2")
                 mirror.upload("v2")
                 self.assertEqual(writes.call_count, 2)
-                second_alias = "elfs/alpen/v2-aaaaaaa/manifest.json"
+                second_alias = "elfs/alpen/v2-aaaaaaa/release-reference.json"
                 self.assertEqual(
                     json.loads(stored[second_alias])["bundle"], reference["bundle"]
                 )

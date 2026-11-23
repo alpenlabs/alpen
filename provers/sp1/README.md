@@ -162,7 +162,7 @@ Find the files under `s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>
 The exact release-specific manifest is at `releases/<tag>/proving-manifest.json`
 inside that bundle. Tags with the same commit and params share the guest files.
 To find a bundle using the Docker image tag, read
-`s3://alpen-mosaic-artifacts/elfs/alpen/<release>-<commit7>/manifest.json`.
+`s3://alpen-mosaic-artifacts/elfs/alpen/<release>-<commit7>/release-reference.json`.
 Its `bundle` field gives the canonical S3 prefix. The `manifest` and `sha256` fields identify the exact release
 manifest and its checksum. CI writes this reference after the bundle is complete.
 Identical retries reuse the reference. A conflicting reference fails the upload.
