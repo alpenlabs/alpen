@@ -58,6 +58,23 @@ def verify(tag: str, commit: str, *, params: bytes | None = None) -> None:
         )
 
 
+def verify_provenance(tag: str, commit: str) -> None:
+    repo = os.environ["GITHUB_REPOSITORY"]
+    gh(
+        "attestation",
+        "verify",
+        str(ASSETS / MANIFEST),
+        "--repo",
+        repo,
+        "--signer-workflow",
+        f"{repo}/.github/workflows/release-sp1.yml",
+        "--source-digest",
+        commit,
+        "--source-ref",
+        f"refs/tags/{tag}",
+    )
+
+
 def download(tag: str) -> None:
     args = [arg for name in (*FILES, MANIFEST) for arg in ("--pattern", name)]
     gh("release", "download", tag, "--dir", str(ASSETS), *args)
@@ -69,7 +86,7 @@ def reuse(tag: str, commit: str) -> None:
     )
     for candidate in dict.fromkeys([tag, *tags.splitlines()]):
         info = release(candidate)
-        if info is None or (candidate != tag and not info["isImmutable"]):
+        if info is None or info["isDraft"] or not info["isImmutable"]:
             continue
         names = {asset["name"] for asset in info["assets"]}
         if not names.issuperset((*FILES, MANIFEST)):
@@ -78,8 +95,25 @@ def reuse(tag: str, commit: str) -> None:
                     f"{tag} is already published with an incomplete proving bundle"
                 )
             continue
-        download(candidate)
-        verify(candidate, commit)
+        try:
+            download(candidate)
+            verify_provenance(candidate, commit)
+            verify(candidate, commit)
+        except (
+            subprocess.CalledProcessError,
+            ValueError,
+            KeyError,
+            TypeError,
+            SystemExit,
+        ) as err:
+            if candidate == tag:
+                raise
+            print(
+                f"Skipping unverified bundle from {candidate}: {err}", file=sys.stderr
+            )
+            if ASSETS.exists():
+                shutil.rmtree(ASSETS)
+            continue
         print(f"Reusing verified checkpoint assets from {candidate}")
         set_outputs(found="true")
         return

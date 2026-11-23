@@ -142,7 +142,10 @@ The assets include the ELF, VK hash, predicate, builder manifest, and the exact
 parameter file read by the builder. `proving-manifest.json` records their checksums,
 the tag, full source commit, and SP1 version. The release body contains no proof metadata.
 
-The workflow verifies and reuses completed bundles for the same commit and params.
+The release workflow signs the proving manifest with GitHub build provenance.
+Before reusing an immutable bundle or copying it to S3, CI verifies its signing
+workflow, tag, and source commit, then checks the asset digests against the manifest.
+Draft releases always go through the normal build or verified reuse path.
 It uploads missing files to a draft, then publishes the release. Keep GitHub release
 immutability enabled. To retry, re-run the workflow on the same tag. A conflicting
 asset stops publication. Inspect the draft and verify the file’s origin before

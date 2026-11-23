@@ -25,7 +25,14 @@ class ReleaseAssetsTest(unittest.TestCase):
         self.enterContext(
             patch.multiple(sp1, PARAMS=self.params, ASSETS=self.output, GENERATED=root)
         )
-        self.enterContext(patch.dict(sp1.os.environ, REUSED="", SP1_VERSION="v6.10.0"))
+        self.enterContext(
+            patch.dict(
+                sp1.os.environ,
+                REUSED="",
+                SP1_VERSION="v6.10.0",
+                GITHUB_REPOSITORY="alpenlabs/alpen",
+            )
+        )
         sp1.stage("v1", self.sha)
 
     def test_reuses_verified_bundle_for_another_tag(self):
@@ -41,7 +48,19 @@ class ReleaseAssetsTest(unittest.TestCase):
             patch.object(sp1, "set_outputs") as outputs,
         ):
             sp1.reuse("v2", self.sha)
-            download.assert_called_once()
+            download.assert_any_call(
+                "attestation",
+                "verify",
+                str(self.output / sp1.MANIFEST),
+                "--repo",
+                "alpenlabs/alpen",
+                "--signer-workflow",
+                "alpenlabs/alpen/.github/workflows/release-sp1.yml",
+                "--source-digest",
+                self.sha,
+                "--source-ref",
+                "refs/tags/v1",
+            )
             outputs.assert_called_once_with(found="true")
         with patch.dict(sp1.os.environ, REUSED="true"):
             sp1.stage("v2", self.sha)
@@ -49,6 +68,29 @@ class ReleaseAssetsTest(unittest.TestCase):
         (self.output / "guest-checkpoint.elf").write_bytes(b"corrupted")
         with self.assertRaisesRegex(SystemExit, "checksums"):
             sp1.verify("v2", self.sha)
+
+    def test_unattested_release_cannot_supply_build_outputs(self):
+        source = {
+            "assets": [{"name": p.name} for p in self.output.iterdir()],
+            "isImmutable": True,
+            "isDraft": False,
+        }
+        with (
+            patch.object(sp1.subprocess, "check_output", return_value="v1"),
+            patch.object(sp1, "release", side_effect=[source, None, source]),
+            patch.object(sp1, "download"),
+            patch.object(
+                sp1,
+                "verify_provenance",
+                side_effect=subprocess.CalledProcessError(1, "verify"),
+            ),
+            patch.object(sp1, "set_outputs") as outputs,
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                sp1.reuse("v1", self.sha)
+            sp1.reuse("v2", self.sha)
+            outputs.assert_not_called()
+            self.assertFalse(self.output.exists())
 
     def test_rejects_changed_runtime_params_before_publication(self):
         self.params.write_bytes(self.params.read_bytes() + b"\n")
@@ -101,10 +143,12 @@ class ReleaseMirrorTest(unittest.TestCase):
             patch.object(
                 subprocess, "check_output", return_value=b"tagged params"
             ) as get,
+            patch.object(mirror, "verify_provenance") as provenance,
             patch.object(mirror, "verify") as verify,
         ):
             mirror.fetch("v1")
             download.assert_called_once_with("v1")
+            provenance.assert_called_once_with("v1", "abc")
             for name in (*sp1.FILES, sp1.MANIFEST):
                 gh.assert_any_call(
                     "release", "verify-asset", "v1", str(sp1.ASSETS / name)

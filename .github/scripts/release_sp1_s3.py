@@ -17,6 +17,7 @@ from release_sp1 import (
     gh,
     release,
     verify,
+    verify_provenance,
 )
 from sp1_artifact_publish import (
     GUESTS,
@@ -39,6 +40,7 @@ def fetch(tag: str) -> None:
         "api", f"repos/{{owner}}/{{repo}}/commits/{ref}", "--jq", ".sha"
     ).strip()
     download(tag)
+    verify_provenance(tag, commit)
     for name in (*FILES, MANIFEST):
         gh("release", "verify-asset", tag, str(ASSETS / name))
     # This workflow runs on main, whose params may have changed since the tag.
