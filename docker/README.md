@@ -10,6 +10,13 @@ just docker-seq-up
 just docker-seq-down
 ```
 
+## Published image tags
+
+CI tags images with the first seven characters of the commit. Release builds also
+publish `<release>-<commit7>` at the same digest, for example
+`public.ecr.aws/alpenlabs/strata:v0.6.0-81ea40e`. To backfill a release tag,
+run **CI — Build and Push Images** from `main` with `ref=refs/tags/<release>`.
+
 ## Architecture
 
 The primary local stack is split into two compose files:
