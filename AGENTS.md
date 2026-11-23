@@ -39,7 +39,7 @@ cd functional-tests && ./run_tests.sh -g <group>   # one functional test group
 
 `just lint` needs `taplo`, `codespell`, `shellcheck` and `uv`. Builds with `--all-features`,
 which `just lint-check-ws` and CI use, need `protoc` for the SP1 crates. Functional tests need
-`bitcoind` and `uv`; CI uses Bitcoin Core 30.2. `nix develop` provides all of these; see
+`bitcoind` and `uv`; CI uses Bitcoin Core 32.1. `nix develop` provides all of these; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 The functional test runner builds `strata`, `strata-signer`, `strata-datatool`,
