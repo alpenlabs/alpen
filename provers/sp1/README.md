@@ -123,8 +123,9 @@ until the incomplete prefix is removed.
 
 ### GitHub Release assets
 
-Pushing a version tag (including a release candidate) runs **Release SP1 checkpoint
-assets**. It builds the tagged checkpoint guest against
+Push the version tag (including release candidates) and let **Release SP1 checkpoint
+assets** publish the GitHub Release. If you prepare release notes in GitHub, choose
+**Save draft** and leave publication to CI. The workflow builds the tagged guest against
 [`release-params/checkpoint-runtime-params.json`](release-params/checkpoint-runtime-params.json)
 using the locked SP1 Docker build. This profile has a 2 BTC denomination, no
 withdrawal cap, and an 81-byte withdrawal descriptor limit. Review this file before
@@ -145,11 +146,13 @@ the tag, full source commit, and SP1 version. The release body contains no proof
 The release workflow signs the proving manifest with GitHub build provenance.
 Before reusing an immutable bundle or copying it to S3, CI verifies its signing
 workflow, tag, and source commit, then checks the asset digests against the manifest.
-Draft releases always go through the normal build or verified reuse path.
-It uploads missing files to a draft, then publishes the release. Keep GitHub release
-immutability enabled. To retry, re-run the workflow on the same tag. A conflicting
+CI uploads missing files to the draft and publishes after it verifies the complete
+bundle. Keep release immutability enabled. If an upload fails while the release is
+still a draft, rerun the workflow on the same tag. A conflicting
 asset stops publication. Inspect the draft and verify the file’s origin before
-removing it. Published immutable releases cannot be backfilled.
+removing it. If someone already published an immutable release with missing assets, push
+a new version tag and let CI publish it.
+
 After publication the tag workflow dispatches **Copy SP1 release assets to S3** on
 `main`. The job uses the existing `sp1-artifacts` environment approval and OIDC role.
 It downloads the published assets, verifies each against GitHub’s immutable release
@@ -159,11 +162,10 @@ Find the files under `s3://alpen-mosaic-artifacts/elfs/alpen/<commit8>-<params8>
 The exact release-specific manifest is at `releases/<tag>/proving-manifest.json`
 inside that bundle. Tags with the same commit and params share the guest files.
 To find a bundle using the Docker image tag, read
-`s3://alpen-mosaic-artifacts/elfs/alpen/<release>-<commit7>/manifest.json`
-(for example, `v0.6.0-81ea40e/manifest.json`). Its `bundle` field gives the
-canonical S3 prefix. The `manifest` and `sha256` fields identify the exact release
+`s3://alpen-mosaic-artifacts/elfs/alpen/<release>-<commit7>/manifest.json`.
+Its `bundle` field gives the canonical S3 prefix. The `manifest` and `sha256` fields identify the exact release
 manifest and its checksum. CI writes this reference after the bundle is complete.
 Identical retries reuse the reference. A conflicting reference fails the upload.
-To retry or backfill, run **Copy SP1 release assets to S3** from `main` with the tag.
-This retry needs only the published release. The existing manual build-and-publish
-workflow remains available for custom runtime parameters.
+To retry an S3 copy, run **Copy SP1 release assets to S3** from `main` with a tag
+whose immutable GitHub Release already contains the complete, attested bundle.
+The manual build-and-publish workflow remains available for custom runtime parameters.

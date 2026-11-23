@@ -16,6 +16,7 @@ ASSETS = Path("release-assets")
 MANIFEST = "proving-manifest.json"
 GUEST_FILES = tuple(name for name in ARTIFACT_FILES if name != "manifest.json")
 FILES = (*GUEST_FILES, PARAMS.name)
+RELEASE_RECOVERY = "Push a new version tag and let CI publish the release."
 
 
 def gh(*args: str) -> str:
@@ -90,9 +91,9 @@ def reuse(tag: str, commit: str) -> None:
             continue
         names = {asset["name"] for asset in info["assets"]}
         if not names.issuperset((*FILES, MANIFEST)):
-            if candidate == tag and not info["isDraft"]:
+            if candidate == tag:
                 raise SystemExit(
-                    f"{tag} is already published with an incomplete proving bundle"
+                    f"Immutable release {tag} has an incomplete proving bundle. {RELEASE_RECOVERY}"
                 )
             continue
         try:
@@ -174,7 +175,9 @@ def publish(tag: str, commit: str) -> None:
     missing = missing_assets(info)
     if not info["isDraft"]:
         if missing:
-            raise SystemExit(f"published release {tag} is missing assets: {missing}")
+            raise SystemExit(
+                f"Published release {tag} is missing assets: {missing}. {RELEASE_RECOVERY}"
+            )
         return
     if missing:
         gh("release", "upload", tag, *missing)
