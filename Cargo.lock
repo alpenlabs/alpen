@@ -17004,16 +17004,20 @@ dependencies = [
  "anyhow",
  "argh",
  "hex",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",
  "sled",
+ "ssz",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-chain-types",
+ "strata-ol-rpc-types",
  "strata-ol-state-types",
  "tempfile",
+ "typed-sled",
 ]
 
 [[package]]

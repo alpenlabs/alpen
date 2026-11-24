@@ -1,16 +1,18 @@
 //! Exercise the verifier CLI against records persisted with the release's codecs.
 
 use std::{
-    fs::OpenOptions,
+    fs::{self, OpenOptions},
     path::Path,
     process::{Command, Output},
 };
 
 use anyhow as _;
 use argh as _;
+use rusqlite::{Connection, OpenFlags};
 use serde as _;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use ssz::Decode;
 use strata_db_store_sled::{SLED_NAME, SledDbConfig, open_sled_backend};
 use strata_db_types::{
     backend::DatabaseBackend, ol_block::OLBlockDatabase, ol_state::OLStateDatabase,
@@ -21,8 +23,12 @@ use strata_ol_chain_types::{
     SauTxLedgerRefs, SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData,
     SignedOLBlockHeader, TransactionPayload, TxProofs,
 };
+use strata_ol_rpc_types::{
+    RpcAccountChangeType, RpcBlockAccountChanges, RpcBlockEntry, RpcBlockHeaderEntry, RpcOLTxDetail,
+};
 use strata_ol_state_types::{OLAccountState, OLAccountTypeState, WriteBatch};
 use tempfile::{TempDir, tempdir};
+use typed_sled as _;
 
 fn block(slot: Slot, parent: OLBlockId, txs: Vec<OLTransaction>, terminal: bool) -> OLBlock {
     let body = OLBlockBody::new_common(OLTxSegment::new(txs).unwrap());
@@ -38,7 +44,12 @@ fn block(slot: Slot, parent: OLBlockId, txs: Vec<OLTransaction>, terminal: bool)
         Buf32::zero(),
         Buf32::zero(),
     );
-    OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+    let signature = if slot == 0 {
+        Buf64::zero()
+    } else {
+        Buf64::from([0xa5; 64])
+    };
+    OLBlock::new(SignedOLBlockHeader::new(header, signature), body)
 }
 
 struct Fixture {
@@ -122,6 +133,15 @@ impl Fixture {
         run(self.dir.path(), self.genesis, self.terminal, 2, 1)
     }
 
+    fn export(&self, out: &Path) -> Output {
+        command(self.dir.path(), self.genesis, self.terminal, 2, 1)
+            .arg("--archive-dir")
+            .arg(out)
+            .args(["--source-snapshot", "local-fixture"])
+            .output()
+            .unwrap()
+    }
+
     fn raw_db(&self) -> sled::Db {
         wait_for_sled_close(self.dir.path());
         sled::open(self.dir.path().join("sled").join(SLED_NAME)).unwrap()
@@ -143,22 +163,31 @@ fn wait_for_sled_close(datadir: &Path) {
 }
 
 fn run(path: &Path, genesis: OLBlockId, terminal: OLBlockId, slot: Slot, epoch: u32) -> Output {
-    wait_for_sled_close(path);
-    Command::new(env!("CARGO_BIN_EXE_strata-v0-history-verifier"))
-        .arg("--datadir")
-        .arg(path)
-        .args([
-            "--genesis-id",
-            &hex::encode(genesis.as_ref()),
-            "--terminal-id",
-            &hex::encode(terminal.as_ref()),
-            "--terminal-slot",
-            &slot.to_string(),
-            "--terminal-epoch",
-            &epoch.to_string(),
-        ])
+    command(path, genesis, terminal, slot, epoch)
         .output()
         .unwrap()
+}
+
+fn command(
+    path: &Path,
+    genesis: OLBlockId,
+    terminal: OLBlockId,
+    slot: Slot,
+    epoch: u32,
+) -> Command {
+    wait_for_sled_close(path);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_strata-v0-history-verifier"));
+    cmd.arg("--datadir").arg(path).args([
+        "--genesis-id",
+        &hex::encode(genesis.as_ref()),
+        "--terminal-id",
+        &hex::encode(terminal.as_ref()),
+        "--terminal-slot",
+        &slot.to_string(),
+        "--terminal-epoch",
+        &epoch.to_string(),
+    ]);
+    cmd
 }
 
 fn assert_failure(output: Output, slot: Slot, id: OLBlockId, check: &str) {
@@ -320,4 +349,147 @@ fn mistyped_datadir_does_not_create_a_database() {
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("missing sled data file"));
     assert!(!path.exists());
+}
+
+#[test]
+fn exported_archive_serves_the_five_explorer_projections() {
+    let f = Fixture::new();
+    let parent = tempdir().unwrap();
+    let archive = parent.path().join("archive");
+    let output = f.export(&archive);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(archive.join("manifest.json")).unwrap()).unwrap();
+    let db_path = archive.join("history.sqlite3");
+    assert_eq!(manifest["format_version"], 1);
+    assert_eq!(manifest["source_snapshot"], "local-fixture");
+    assert_eq!(
+        manifest["decoder_revision"],
+        "048c5bf88bd02e19d60d508e0f9f3e1b13a24510"
+    );
+    assert_eq!(manifest["first_slot"], 0);
+    assert_eq!(manifest["terminal_slot"], 2);
+    assert_eq!(manifest["terminal_epoch"], 1);
+    assert_eq!(manifest["genesis_id"], hex::encode(f.genesis.as_ref()));
+    assert_eq!(manifest["terminal_id"], hex::encode(f.terminal.as_ref()));
+    assert_eq!(manifest["counts"]["blocks"], 3);
+    assert_eq!(manifest["counts"]["write_batches"], 2);
+    assert_eq!(
+        manifest["database_sha256"],
+        hex::encode(Sha256::digest(fs::read(&db_path).unwrap()))
+    );
+
+    let db = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let original = f.raw_db();
+    let source = original.open_tree("OLBlockSchema").unwrap();
+    let mut query = db
+        .prepare(
+            "SELECT slot, epoch, block_id, raw_block, header, transactions, account_changes
+        FROM blocks WHERE slot BETWEEN ?1 AND ?2 ORDER BY slot",
+        )
+        .unwrap();
+    let mut rows = query.query([0, 2]).unwrap();
+    for (slot, expected_id) in [f.genesis, f.middle, f.terminal].into_iter().enumerate() {
+        let row = rows.next().unwrap().unwrap();
+        let source_bytes = source.get(expected_id.as_ref()).unwrap().unwrap();
+        let block = OLBlock::from_ssz_bytes(&source_bytes).unwrap();
+        let raw_entry = RpcBlockEntry::from(&block);
+        assert_eq!(row.get::<_, u64>(0).unwrap(), raw_entry.slot());
+        assert_eq!(row.get::<_, u32>(1).unwrap(), raw_entry.epoch());
+        assert_eq!(row.get::<_, Vec<u8>>(2).unwrap(), expected_id.as_ref());
+        let raw: Vec<u8> = row.get(3).unwrap();
+        assert_eq!(raw, source_bytes.as_ref());
+        assert_eq!(&raw, &raw_entry.raw_block().0);
+        let by_id: Vec<u8> = db
+            .query_row(
+                "SELECT raw_block FROM blocks WHERE block_id = ?1",
+                [expected_id.as_ref().as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(by_id, raw);
+
+        let header: Value = serde_json::from_str(&row.get::<_, String>(4).unwrap()).unwrap();
+        assert_eq!(
+            header,
+            serde_json::to_value(RpcBlockHeaderEntry::from(&block)).unwrap()
+        );
+        let transactions: Value = serde_json::from_str(&row.get::<_, String>(5).unwrap()).unwrap();
+        let expected: Vec<_> = block
+            .body()
+            .tx_segment()
+            .unwrap()
+            .txs()
+            .iter()
+            .map(RpcOLTxDetail::from)
+            .collect();
+        assert_eq!(transactions, serde_json::to_value(expected).unwrap());
+
+        let account_json: Option<String> = row.get(6).unwrap();
+        if slot == 0 {
+            assert_eq!(account_json, None);
+            continue;
+        }
+        let accounts: RpcBlockAccountChanges =
+            serde_json::from_str(&account_json.unwrap()).unwrap();
+        assert_eq!(accounts.slot(), slot as u64);
+        assert_eq!(accounts.blkid(), expected_id);
+        if slot == 1 {
+            let [created, updated] = accounts.changes() else {
+                panic!("expected both fixture accounts")
+            };
+            assert_eq!(created.id().0, [1; 32]);
+            assert_eq!(created.change_type(), RpcAccountChangeType::Created);
+            assert_eq!(created.state().balance_sats(), 10);
+            assert_eq!(created.state().serial(), 42);
+            assert_eq!(updated.id().0, [2; 32]);
+            assert_eq!(updated.change_type(), RpcAccountChangeType::Updated);
+            assert_eq!(updated.state().balance_sats(), 20);
+            assert_eq!(updated.state().serial(), 7);
+        } else {
+            assert!(accounts.changes().is_empty());
+        }
+    }
+    assert!(rows.next().unwrap().is_none());
+}
+
+#[test]
+fn failed_export_leaves_no_archive_and_retry_preserves_published_output() {
+    let f = Fixture::new();
+    let parent = tempdir().unwrap();
+    let archive = parent.path().join("history");
+    wait_for_sled_close(f.dir.path());
+    let db = open_sled_backend(f.dir.path(), SLED_NAME, SledDbConfig::test()).unwrap();
+    let commitment = OLBlockCommitment::new(1, f.middle);
+    let batch = db
+        .ol_state_db()
+        .get_ol_write_batch(commitment)
+        .unwrap()
+        .unwrap();
+    db.ol_state_db().del_ol_write_batch(commitment).unwrap();
+    drop(db);
+    assert_failure(f.export(&archive), 1, f.middle, "missing write batch");
+    assert_eq!(fs::read_dir(parent.path()).unwrap().count(), 0);
+
+    wait_for_sled_close(f.dir.path());
+    let db = open_sled_backend(f.dir.path(), SLED_NAME, SledDbConfig::test()).unwrap();
+    db.ol_state_db()
+        .put_ol_write_batch(commitment, batch)
+        .unwrap();
+    drop(db);
+    let output = f.export(&archive);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest = fs::read(archive.join("manifest.json")).unwrap();
+    let again = f.export(&archive);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("destination already exists"));
+    assert_eq!(fs::read(archive.join("manifest.json")).unwrap(), manifest);
 }
