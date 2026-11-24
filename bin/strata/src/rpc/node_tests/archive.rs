@@ -1,0 +1,213 @@
+//! The three-slot fixture is the output of the v0.3.5 exporter's offline test chain.
+//! Slot 1 has a snark update, a message, a created account and an updated account.
+use std::{fs, path::Path};
+
+use rusqlite::Connection;
+use sha2::{Digest, Sha256};
+use strata_ol_rpc_history::HistoryArchive;
+use tempfile::tempdir;
+
+use super::*;
+
+const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/v0-history");
+
+fn fixture_anchors() -> (OLBlockId, EpochCommitment) {
+    let genesis = serde_json::from_value(json!(
+        "7ff1c08429688b0ff921eafb75898c10ba8ade25ffd5317cb3ba0c3a414a7cd1"
+    ))
+    .unwrap();
+    let last = serde_json::from_value(json!(
+        "080b6a9d69059feb4e6aa132ed168719c166046c67424a60aa647c993fbbcf1b"
+    ))
+    .unwrap();
+    (genesis, EpochCommitment::new(1, 2, last))
+}
+
+fn fixture_archive() -> HistoryArchive {
+    let (genesis, base) = fixture_anchors();
+    HistoryArchive::open(Path::new(FIXTURE), genesis, base).unwrap()
+}
+
+#[tokio::test]
+async fn explorer_reads_cross_the_linked_v0_v1_boundary() {
+    let archive = fixture_archive();
+    let base = archive.terminal();
+    let first = make_block(3, 2, *base.last_blkid());
+    let second = make_block(4, 2, first.header().compute_blkid());
+    let provider = MockProvider::new()
+        .with_history_base(base)
+        .with_block_and_state(&first, genesis_ol_state())
+        .with_block_and_state(&second, genesis_ol_state())
+        .with_write_batch(
+            first.header().compute_block_commitment(),
+            WriteBatch::default(),
+        );
+    let rpc = make_rpc(provider).with_history_archive(Some(archive));
+    let headers = rpc.get_headers_in_range(0, 4).await.unwrap();
+    let blocks = rpc.get_raw_blocks_range(0, 4).await.unwrap();
+    assert_eq!(headers.len(), 5);
+    assert_eq!(blocks.len(), 5);
+    for (slot, (header, block)) in headers.iter().zip(&blocks).enumerate() {
+        assert_eq!((header.slot(), block.slot()), (slot as u64, slot as u64));
+        assert_eq!(
+            (header.epoch(), header.blkid()),
+            (block.epoch(), block.blkid())
+        );
+        if slot > 0 {
+            assert_eq!(header.parent_blkid(), headers[slot - 1].blkid());
+        }
+        assert_eq!(
+            rpc.get_raw_block_by_id(header.blkid()).await.unwrap().0,
+            block.raw_block().0
+        );
+    }
+    assert_eq!(headers[2].blkid(), *base.last_blkid());
+    assert_eq!(blocks[3].raw_block().0, first.as_ssz_bytes());
+    assert_eq!(
+        format!("{:x}", Sha256::digest(&blocks[1].raw_block().0)),
+        "5eb2d973c0049872bb8eef56536a31ad68d7eab0bd9ac1eeea8ff30835ec28da"
+    );
+    let txs = json!(rpc.get_block_transactions(1).await.unwrap());
+    assert_eq!(txs.as_array().unwrap().len(), 2);
+    assert_eq!(
+        txs[0]["txid"],
+        "38f11b0f43ae6683699ce00bea40b94a4cd9ea2a6c0088ef170a98724eb4c6cd"
+    );
+    assert_eq!(
+        txs[1]["txid"],
+        "2678efaa72b33d62d61a45b933d297ca4b69cbc39b67ccefa3764eb50ae5aa2c"
+    );
+    assert!(txs[0].get("new_predicate").is_none());
+    let changes = json!(rpc.get_block_account_changes(1).await.unwrap());
+    assert_eq!(changes["changes"][0]["change_type"], "created");
+    assert_eq!(changes["changes"][0]["state"]["balance_sats"], 10);
+    assert_eq!(changes["changes"][1]["change_type"], "updated");
+    assert_eq!(changes["changes"][1]["state"]["balance_sats"], 20);
+    assert!(rpc.get_block_transactions(0).await.unwrap().is_empty());
+    let err = rpc.get_block_account_changes(0).await.unwrap_err();
+    assert_eq!(
+        (err.code(), err.message()),
+        (
+            INVALID_PARAMS_CODE,
+            "No OL write batch found for block 0@7ff1c0..4a7cd1"
+        )
+    );
+    for slot in [2, 3] {
+        assert!(
+            rpc.get_block_account_changes(slot)
+                .await
+                .unwrap()
+                .changes()
+                .is_empty()
+        );
+        assert!(rpc.get_block_transactions(slot).await.unwrap().is_empty());
+    }
+    assert_eq!(
+        rpc.get_raw_block_by_id(null_blkid())
+            .await
+            .unwrap_err()
+            .code(),
+        INVALID_PARAMS_CODE
+    );
+    assert_eq!(
+        rpc.get_headers_in_range(0, u64::MAX)
+            .await
+            .unwrap_err()
+            .code(),
+        INVALID_PARAMS_CODE
+    );
+    assert_eq!(
+        rpc.get_raw_blocks_range(0, u64::MAX)
+            .await
+            .unwrap_err()
+            .code(),
+        INVALID_PARAMS_CODE
+    );
+}
+
+#[tokio::test]
+async fn mixed_ranges_reject_a_live_fork_at_cutover() {
+    let archive = fixture_archive();
+    let first = make_block(3, 2, null_blkid());
+    let rpc = make_rpc(
+        MockProvider::new()
+            .with_history_base(archive.terminal())
+            .with_block_and_state(&first, genesis_ol_state()),
+    )
+    .with_history_archive(Some(archive));
+    for error in [
+        rpc.get_headers_in_range(2, 3).await.unwrap_err(),
+        rpc.get_raw_blocks_range(2, 3).await.unwrap_err(),
+    ] {
+        assert_eq!(error.code(), INTERNAL_ERROR_CODE);
+        assert_eq!(
+            error.message(),
+            "first live block does not descend from the archived terminal"
+        );
+    }
+}
+
+#[test]
+fn archive_rejects_wrong_anchors_checksum_and_missing_write_batch() {
+    let (genesis, base) = fixture_anchors();
+    let path = Path::new(FIXTURE);
+    assert!(HistoryArchive::open(path, null_blkid(), base).is_err());
+    for wrong in [
+        EpochCommitment::new(0, 2, *base.last_blkid()),
+        EpochCommitment::new(1, 1, *base.last_blkid()),
+        EpochCommitment::new(1, 2, null_blkid()),
+    ] {
+        assert!(HistoryArchive::open(path, genesis, wrong).is_err());
+    }
+    let dir = tempdir().unwrap();
+    let manifest = dir.path().join("manifest.json");
+    let database = dir.path().join("history.sqlite3");
+    fs::copy(path.join("manifest.json"), &manifest).unwrap();
+    fs::copy(path.join("history.sqlite3"), &database).unwrap();
+    Connection::open(&database).unwrap().execute_batch("PRAGMA ignore_check_constraints=ON; UPDATE blocks SET account_changes=NULL WHERE slot=1").unwrap();
+    assert!(
+        HistoryArchive::open(dir.path(), genesis, base)
+            .unwrap_err()
+            .to_string()
+            .contains("SHA-256 mismatch")
+    );
+    let mut data: Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+    data["database_sha256"] = json!(format!(
+        "{:x}",
+        Sha256::digest(fs::read(&database).unwrap())
+    ));
+    fs::write(manifest, serde_json::to_vec(&data).unwrap()).unwrap();
+    assert!(
+        HistoryArchive::open(dir.path(), genesis, base)
+            .unwrap_err()
+            .to_string()
+            .contains("write-batch coverage mismatch")
+    );
+}
+
+#[tokio::test]
+async fn explorer_status_checkpoint_and_manifest_stay_on_the_live_provider() {
+    fn provider() -> MockProvider {
+        spec_status_provider(OLSpecId::V1, Some(make_empty_manifest(1, 0)), true).0
+    }
+    let live = make_rpc(provider());
+    let enabled = make_rpc(provider()).with_history_archive(Some(fixture_archive()));
+    assert_eq!(
+        json!(enabled.chain_status().await.unwrap()),
+        json!(live.chain_status().await.unwrap())
+    );
+    assert_eq!(
+        json!(enabled.get_checkpoint_info(42).await.unwrap()),
+        json!(live.get_checkpoint_info(42).await.unwrap())
+    );
+    let manifest = live.get_asm_manifest_commitment(1).await.unwrap().unwrap();
+    assert_eq!(
+        enabled
+            .get_asm_manifest_commitment(1)
+            .await
+            .unwrap()
+            .unwrap()
+            .0,
+        manifest.0
+    );
+}

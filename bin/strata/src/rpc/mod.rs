@@ -11,7 +11,7 @@ mod provider;
 
 use std::{env, sync::Arc};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use node::*;
 use provider::NodeRpcProvider;
@@ -34,6 +34,7 @@ use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
+use strata_ol_rpc_history::HistoryArchive;
 use strata_rpc_tracing::{HttpServerTraceContextLayer, rpc_trace_context_server_middleware};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -63,6 +64,7 @@ struct RpcDeps {
     submit_rpc_bearer_token: Option<SecretString>,
     genesis_l1_block: L1BlockCommitment,
     max_headers_range: usize,
+    history_archive: Option<HistoryArchive>,
     node_role: NodeRole,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
@@ -173,7 +175,31 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         )
     });
 
+    let history_archive = if let Some(path) = &runctx.config().client.v0_history_archive {
+        ensure!(
+            runctx.node_role().serves_fullnode_rpc(),
+            "V0 history requires the full-node RPC methods"
+        );
+        let genesis = runctx
+            .asm_params()
+            .genesis
+            .checkpoint_config()
+            .context("missing ASM checkpoint genesis parameters")?
+            .genesis_ol_blkid;
+        let terminal = runctx
+            .storage()
+            .ol_block()
+            .get_history_base_blocking()?
+            .context("V0 history requires a promoted node with a history base")?;
+        Some(
+            HistoryArchive::open(path, genesis, terminal)
+                .with_context(|| format!("opening V0 history archive at {}", path.display()))?,
+        )
+    } else {
+        None
+    };
     let deps = RpcDeps {
+        history_archive,
         rpc_host: runctx.config().client.rpc_host.clone(),
         rpc_port: runctx.config().client.rpc_port,
         admin_rpc_host: runctx.config().client.admin_rpc_host.clone(),
@@ -286,7 +312,8 @@ fn register_fullnode_rpc(
         deps.max_headers_range,
         ol_block_data_access(deps.node_role),
         ol_local_state_coverage(deps.node_role),
-    );
+    )
+    .with_history_archive(deps.history_archive.clone());
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)

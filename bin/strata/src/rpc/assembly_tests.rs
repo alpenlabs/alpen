@@ -185,6 +185,7 @@ impl RpcFixture {
             submit_rpc_bearer_token: None,
             genesis_l1_block: self.genesis_l1,
             max_headers_range: 100,
+            history_archive: None,
             node_role,
             storage: self.storage.clone(),
             status_channel: self.status_channel.clone(),

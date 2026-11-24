@@ -15,6 +15,16 @@ pub struct RpcBlockEntry {
 }
 
 impl RpcBlockEntry {
+    /// Wraps original block bytes with their slot, epoch and block ID.
+    pub fn new(slot: Slot, epoch: Epoch, blkid: OLBlockId, raw_block: HexBytes) -> Self {
+        Self {
+            slot,
+            epoch,
+            blkid,
+            raw_block,
+        }
+    }
+
     pub fn slot(&self) -> u64 {
         self.slot
     }

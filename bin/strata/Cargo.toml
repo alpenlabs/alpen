@@ -76,6 +76,7 @@ strata-ol-log-budget.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-params.workspace = true
 strata-ol-rpc-api.workspace = true
+strata-ol-rpc-history.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
 strata-ol-spec-selection.workspace = true
@@ -115,6 +116,9 @@ zkaleido = { workspace = true, optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
+tempfile.workspace = true
+rusqlite.workspace = true
+sha2.workspace = true
 strata-ol-sequencer = { workspace = true, features = ["test-utils"] }
 strata-db-tests.workspace = true
 strata-ol-block-ancestry-provider = { workspace = true, features = [

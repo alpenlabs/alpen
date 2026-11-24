@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "source_snapshot": "local-fixture",
+  "decoder_revision": "048c5bf88bd02e19d60d508e0f9f3e1b13a24510",
+  "first_slot": 0,
+  "genesis_id": "7ff1c08429688b0ff921eafb75898c10ba8ade25ffd5317cb3ba0c3a414a7cd1",
+  "terminal_slot": 2,
+  "terminal_epoch": 1,
+  "terminal_id": "080b6a9d69059feb4e6aa132ed168719c166046c67424a60aa647c993fbbcf1b",
+  "counts": {
+    "blocks": 3,
+    "write_batches": 2,
+    "transactions": 2,
+    "created_accounts": 1,
+    "updated_accounts": 1
+  },
+  "database": "history.sqlite3",
+  "database_sha256": "5ce2b757ae36159e3f9151fad06e99734426a226b77cfad64129c96d3fd3ef69"
+}

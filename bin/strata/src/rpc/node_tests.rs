@@ -5371,3 +5371,5 @@ async fn get_block_account_changes_errors_when_write_batch_is_missing() {
         .expect_err("missing write batch should error");
     assert_eq!(err.code(), INVALID_PARAMS_CODE);
 }
+
+mod archive;
