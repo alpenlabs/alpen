@@ -16998,6 +16998,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-v0-history-verifier"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argh",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sled",
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ol-chain-types",
+ "strata-ol-state-types",
+ "tempfile",
+]
+
+[[package]]
 name = "strata-zkvm-hosts"
 version = "0.3.0-alpha.1"
 dependencies = [
