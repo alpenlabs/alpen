@@ -9,139 +9,46 @@ use std::{
 };
 
 use anyhow as _;
-use argh as _;
+use clap as _;
 use serde as _;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2 as _;
 use ssz as _;
 use strata_codec::encode_to_vec;
 use strata_db_store_sled::{SLED_NAME, SledDbConfig, open_sled_backend};
 use strata_db_types::{
     backend::DatabaseBackend, ol_block::OLBlockDatabase, ol_state::OLStateDatabase,
 };
-use strata_identifiers::{
-    AccountId, Buf32, Buf64, EpochCommitment, OLBlockCommitment, OLBlockId, Slot,
-};
+use strata_identifiers::{AccountId, EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
 use strata_ol_chain_types::{
-    BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTransaction, OLTransactionData, OLTxSegment,
-    SauTxLedgerRefs, SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData,
-    SignedOLBlockHeader, TransactionPayload, TxProofs,
+    OLBlock, OLBlockBody, OLTransaction, OLTransactionData, OLTxSegment, TxProofs,
 };
 use strata_ol_rpc_types::{
     RpcBlockAccountChanges, RpcBlockEntry, RpcBlockHeaderEntry, RpcOLTxDetail,
 };
-use strata_ol_state_types::{OLAccountState, OLAccountTypeState, WriteBatch};
-use tempfile::{TempDir, tempdir};
-
-fn block(slot: Slot, parent: OLBlockId, txs: Vec<OLTransaction>, terminal: bool) -> OLBlock {
-    let body = OLBlockBody::new_common(OLTxSegment::new(txs).unwrap());
-    let mut flags = BlockFlags::zero();
-    flags.set_is_terminal(terminal);
-    let header = OLBlockHeader::new(
-        slot,
-        flags,
-        slot,
-        u32::from(slot > 0),
-        parent,
-        body.compute_hash_commitment(),
-        Buf32::zero(),
-        Buf32::zero(),
-    );
-    let signature = if slot == 0 {
-        Buf64::zero()
-    } else {
-        Buf64::from([0xa5; 64])
-    };
-    OLBlock::new(SignedOLBlockHeader::new(header, signature), body)
-}
-
-struct Fixture {
-    dir: TempDir,
-    genesis: OLBlockId,
-    middle: OLBlockId,
-    terminal: OLBlockId,
-    txids_digest: String,
-}
+use strata_ol_state_types::WriteBatch;
+use strata_predicate as _;
+use tempfile::tempdir;
+#[path = "support/fixture.rs"]
+mod fixture;
+use fixture::{Fixture, block};
 
 impl Fixture {
-    fn new() -> Self {
-        let dir = tempdir().unwrap();
-        let db = open_sled_backend(dir.path(), SLED_NAME, SledDbConfig::test()).unwrap();
-        let target = AccountId::new([1; 32]);
-        let update = SauTxOperationData::new(
-            SauTxUpdateData::new(1, SauTxProofState::new(0, Buf32::zero()), vec![7]),
-            vec![],
-            SauTxLedgerRefs::new_empty(),
-        );
-        let txs = vec![
-            OLTransaction::new(
-                OLTransactionData::new(
-                    TransactionPayload::SnarkAccountUpdate(SauTxPayload::new(target, update)),
-                    Default::default(),
-                ),
-                TxProofs::new_empty(),
-            ),
-            OLTransaction::new(
-                OLTransactionData::from_gam_bytes(target, vec![4]).unwrap(),
-                TxProofs::new_empty(),
-            ),
-        ];
-        let mut digest = Sha256::new();
-        for tx in &txs {
-            digest.update(tx.compute_txid().as_ref());
-        }
-        let genesis = block(0, OLBlockId::null(), vec![], true);
-        let genesis_id = genesis.header().compute_blkid();
-        let middle = block(1, genesis_id, txs, false);
-        let middle_id = middle.header().compute_blkid();
-        let sibling = block(1, genesis_id, vec![], false);
-        let terminal = block(2, middle_id, vec![], true);
-        let terminal_id = terminal.header().compute_blkid();
-
-        let mut batch = WriteBatch::default();
-        let serial = 42u32.into();
-        let state =
-            OLAccountState::new(serial, 10u64.try_into().unwrap(), OLAccountTypeState::Empty);
-        batch.ledger_mut().create_account_raw(target, state, serial);
-        let updated = OLAccountState::new(
-            7u32.into(),
-            20u64.try_into().unwrap(),
-            OLAccountTypeState::Empty,
-        );
-        batch
-            .ledger_mut()
-            .update_account(AccountId::new([2; 32]), updated);
-        for (block, batch) in [
-            (&middle, batch),
-            (&sibling, WriteBatch::default()),
-            (&terminal, WriteBatch::default()),
-        ] {
-            db.ol_state_db()
-                .put_ol_write_batch(block.header().compute_block_commitment(), batch)
-                .unwrap();
-        }
-        for block in [genesis, sibling, middle, terminal] {
-            db.ol_block_db().put_block_data(block).unwrap();
-        }
-        Self {
-            dir,
-            genesis: genesis_id,
-            middle: middle_id,
-            terminal: terminal_id,
-            txids_digest: hex::encode(digest.finalize()),
-        }
-    }
-
     fn run(&self) -> Output {
         run(self.dir.path(), self.genesis, self.terminal, 2, 1)
     }
 
     fn import(&self, out: &Path) -> Output {
         wait_for_sled_close(out);
-        command(self.dir.path(), self.genesis, self.terminal, 2, 1)
+        command("import", self.dir.path(), self.genesis, self.terminal, 2, 1)
             .arg("--target-datadir")
             .arg(out)
-            .args(["--source-snapshot", "local-fixture"])
+            .args([
+                "--source-snapshot",
+                "local-fixture",
+                "--importer-revision",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            ])
             .output()
             .unwrap()
     }
@@ -169,12 +76,13 @@ fn wait_for_sled_close(datadir: &Path) {
 }
 
 fn run(path: &Path, genesis: OLBlockId, terminal: OLBlockId, slot: Slot, epoch: u32) -> Output {
-    command(path, genesis, terminal, slot, epoch)
+    command("verify", path, genesis, terminal, slot, epoch)
         .output()
         .unwrap()
 }
 
 fn command(
+    mode: &str,
     path: &Path,
     genesis: OLBlockId,
     terminal: OLBlockId,
@@ -182,8 +90,8 @@ fn command(
     epoch: u32,
 ) -> Command {
     wait_for_sled_close(path);
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_strata-v0-history-verifier"));
-    cmd.arg("--datadir").arg(path).args([
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_strata-v0-history-importer"));
+    cmd.arg(mode).arg("--datadir").arg(path).args([
         "--genesis-id",
         &hex::encode(genesis.as_ref()),
         "--terminal-id",
@@ -416,9 +324,20 @@ fn interrupted_import_can_retry_and_publish_only_verified_history() {
         .unwrap()
         .unwrap();
     let record: Value = serde_json::from_slice(&complete).unwrap();
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["complete"], record);
+    assert_eq!(
+        record["importer_revision"],
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert!(record["imported_at_unix_seconds"].as_u64().is_some());
+    assert_eq!(
+        record["codec_revision"],
+        "048c5bf88bd02e19d60d508e0f9f3e1b13a24510"
+    );
     assert_eq!(
         record["content_sha256"],
-        "7e503c87ea4fd0078d14a4823015cdd29d9d51c96ea3507ce18951e1090b6856"
+        "6eec1ab2b5a10c69fc508b644890b2fc19e40e4358a78c4ae12cd6efb86b07c4"
     );
     assert_eq!(
         (&record["blocks"], &record["write_batches"]),

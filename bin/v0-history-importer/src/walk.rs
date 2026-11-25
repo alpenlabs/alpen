@@ -5,13 +5,13 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use ssz::Decode;
 use strata_codec::{decode_buf_exact, encode_to_vec};
-use strata_db_store_sled::SLED_NAME;
+use strata_db_store_sled::{SLED_NAME, ol::schemas::v0_history::CompleteRecord};
 use strata_identifiers::{Epoch, OLBlockCommitment, Slot};
 use strata_ol_chain_types::OLBlock;
 use strata_ol_rpc_types::{RpcAccountChangeType, RpcBlockAccountChanges, RpcOLTxDetail};
 use strata_ol_state_types::{OLAccountState, WriteBatch};
 
-use super::Args;
+use super::Source;
 
 #[derive(Serialize, Default)]
 pub(super) struct Counts {
@@ -34,6 +34,8 @@ pub(super) struct Report {
     elapsed_ms: u128,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) content_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) complete: Option<CompleteRecord>,
 }
 
 pub(super) struct VerifiedBlock<'a> {
@@ -44,14 +46,14 @@ pub(super) struct VerifiedBlock<'a> {
 }
 
 pub(super) fn walk(
-    args: &Args,
+    args: &Source,
     visit: impl FnMut(VerifiedBlock<'_>) -> Result<()>,
 ) -> Result<Report> {
     let db = open_source(args)?;
     walk_db(args, &db, visit)
 }
 
-pub(super) fn open_source(args: &Args) -> Result<sled::Db> {
+pub(super) fn open_source(args: &Source) -> Result<sled::Db> {
     let path = args.datadir.join("sled").join(SLED_NAME);
     let db_path = path.join("db");
     ensure!(
@@ -63,18 +65,18 @@ pub(super) fn open_source(args: &Args) -> Result<sled::Db> {
 }
 
 pub(super) fn walk_db(
-    args: &Args,
+    args: &Source,
     db: &sled::Db,
     mut visit: impl FnMut(VerifiedBlock<'_>) -> Result<()>,
 ) -> Result<Report> {
     let started = Instant::now();
     let blocks = db.open_tree("OLBlockSchema")?;
     let batches = db.open_tree("OLWriteBatchSchema")?;
-    let mut id = args.terminal_id;
+    let mut id = args.terminal.terminal_id;
     let mut counts = Counts::default();
     let mut txids = Sha256::new();
 
-    for slot in (0..=args.terminal_slot).rev() {
+    for slot in (0..=args.terminal.terminal_slot).rev() {
         let at = || format!("slot {slot} block {}", hex::encode(id.as_ref()));
         let raw = blocks
             .get(id.as_ref())
@@ -99,13 +101,13 @@ pub(super) fn walk_db(
             "{}: body root mismatch",
             at()
         );
-        if slot == args.terminal_slot {
+        if slot == args.terminal.terminal_slot {
             ensure!(header.is_terminal(), "{}: terminal flag absent", at());
             ensure!(
-                header.epoch() == args.terminal_epoch,
+                header.epoch() == args.terminal.terminal_epoch,
                 "{}: expected epoch {}, found {}",
                 at(),
-                args.terminal_epoch,
+                args.terminal.terminal_epoch,
                 header.epoch()
             );
         }
@@ -164,12 +166,13 @@ pub(super) fn walk_db(
     }
     Ok(Report {
         genesis_id: hex::encode(args.genesis_id.as_ref()),
-        terminal_id: hex::encode(args.terminal_id.as_ref()),
-        terminal_slot: args.terminal_slot,
-        terminal_epoch: args.terminal_epoch,
+        terminal_id: hex::encode(args.terminal.terminal_id.as_ref()),
+        terminal_slot: args.terminal.terminal_slot,
+        terminal_epoch: args.terminal.terminal_epoch,
         counts,
         txids_sha256_tip_to_genesis: hex::encode(txids.finalize()),
         content_sha256: None,
+        complete: None,
         elapsed_ms: started.elapsed().as_millis(),
     })
 }

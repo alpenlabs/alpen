@@ -6,15 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sled::IVec;
 use strata_identifiers::{Epoch, OLBlockId, Slot};
-use typed_sled::{CodecError, CodecResult, ValueCodec};
-
-use crate::{define_table_without_codec, impl_codec_key_codec};
-
 /// Supported on-disk format.
 pub const FORMAT_VERSION: u32 = 1;
-type MarkerKey = [u8; 8];
 /// ASCII key of the single completion record.
 pub const COMPLETE_KEY: [u8; 8] = *b"complete";
 
@@ -23,7 +17,13 @@ pub const COMPLETE_KEY: [u8; 8] = *b"complete";
 pub struct CompleteRecord {
     pub format_version: u32,
     pub source: String,
-    pub decoder_revision: String,
+    #[serde(alias = "decoder_revision")]
+    pub codec_revision: String,
+    /// Older format-1 records predate importer provenance.
+    #[serde(default)]
+    pub importer_revision: Option<String>,
+    #[serde(default)]
+    pub imported_at_unix_seconds: Option<u64>,
     pub genesis_id: OLBlockId,
     pub terminal_slot: Slot,
     pub terminal_epoch: Epoch,
@@ -33,79 +33,32 @@ pub struct CompleteRecord {
     pub content_sha256: String,
 }
 
-// Values from the old release are stored verbatim. Their SSZ or JSON decoder belongs to
-// the consumer, so the storage codec adds no framing to the bytes.
-macro_rules! data_tree {
-    ($(#[$doc:meta])+ $name:ident, $key:ty, $constant:ident) => {
-        define_table_without_codec!($(#[$doc])+ ($name) $key => IVec);
-        impl ValueCodec<$name> for IVec {
-            type Decoded = Self;
-            fn encode_value(&self) -> CodecResult<Vec<u8>> { Ok(self.to_vec()) }
-            fn decode_value(value: IVec) -> CodecResult<Self> { Ok(value) }
-        }
-        $(#[$doc])+
-        pub const $constant: &str = $name::tree_name();
-    };
+/// Eight-byte big-endian slot to unsigned V0 header SSZ.
+pub const HEADERS: &str = "V0OLHeaderBySlot";
+/// Block ID to original signed V0 block SSZ.
+pub const BLOCKS: &str = "V0OLBlockById";
+/// Block ID to the original V0 write batch.
+pub const BATCHES: &str = "V0OLWriteBatchById";
+/// Block ID to the ordered V0 RPC transaction array.
+pub const TXS: &str = "V0OLTransactionsById";
+/// Block ID to the V0 RPC account changes.
+pub const CHANGES: &str = "V0OLAccountChangesById";
+/// Completion metadata, published last and unpublished first.
+pub const META: &str = "V0OLArchiveMeta";
+
+/// Encodes a header index key in sled iteration order.
+pub fn header_key(slot: Slot) -> [u8; 8] {
+    slot.to_be_bytes()
 }
 
-data_tree!(
-    /// Eight-byte big-endian slot to unsigned V0 header SSZ.
-    V0OLHeaderBySlot,
-    Slot,
-    HEADERS
-);
-data_tree!(
-    /// Raw 32-byte block ID to original signed V0 block SSZ.
-    V0OLBlockById,
-    OLBlockId,
-    BLOCKS
-);
-data_tree!(
-    /// Raw block ID to the original V0 write batch.
-    V0OLWriteBatchById,
-    OLBlockId,
-    BATCHES
-);
-data_tree!(
-    /// Raw block ID to the ordered array of V0 RPC transactions in UTF-8 JSON.
-    V0OLTransactionsById,
-    OLBlockId,
-    TXS
-);
-data_tree!(
-    /// Raw block ID to the V0 RPC account changes in UTF-8 JSON.
-    V0OLAccountChangesById,
-    OLBlockId,
-    CHANGES
-);
-impl_codec_key_codec!(V0OLBlockById, OLBlockId);
-impl_codec_key_codec!(V0OLWriteBatchById, OLBlockId);
-impl_codec_key_codec!(V0OLTransactionsById, OLBlockId);
-impl_codec_key_codec!(V0OLAccountChangesById, OLBlockId);
-
-define_table_without_codec!(
-    /// Completion record keyed by the literal eight bytes of `complete`.
-    (V0OLArchiveMeta) MarkerKey => CompleteRecord
-);
-impl_codec_key_codec!(V0OLArchiveMeta, MarkerKey);
-impl ValueCodec<V0OLArchiveMeta> for CompleteRecord {
-    type Decoded = Self;
-    fn encode_value(&self) -> CodecResult<Vec<u8>> {
-        serde_json::to_vec(self).map_err(|source| CodecError::SerializationFailed {
-            schema: META,
-            source: source.into(),
-        })
-    }
-    fn decode_value(value: IVec) -> CodecResult<Self> {
-        serde_json::from_slice(&value).map_err(|source| CodecError::DeserializationFailed {
-            schema: META,
-            source: source.into(),
-        })
+/// Returns the expected row count, excluding genesis for write batches and changes.
+pub fn expected_rows(tree: &str, terminal_slot: Slot, blocks: u64) -> u64 {
+    if matches!(tree, BATCHES | CHANGES) {
+        terminal_slot
+    } else {
+        blocks
     }
 }
-
-/// Metadata tree containing the completion record.
-pub const META: &str = V0OLArchiveMeta::tree_name();
 /// Canonical tree order for the archive digest.
 pub const DATA: [&str; 5] = [HEADERS, BLOCKS, BATCHES, TXS, CHANGES];
 
@@ -135,26 +88,12 @@ pub fn digest(db: &sled::Db) -> sled::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::Buf32;
-    use typed_sled::KeyCodec;
-
     use super::*;
 
     #[test]
     fn keys_match_the_cross_release_wire_format() {
-        let slot = 258;
-        assert_eq!(
-            <Slot as KeyCodec<V0OLHeaderBySlot>>::encode_key(&slot).unwrap(),
-            [0, 0, 0, 0, 0, 0, 1, 2]
-        );
-        let id = OLBlockId::from(Buf32::from([0xa5; 32]));
-        assert_eq!(
-            <OLBlockId as KeyCodec<V0OLBlockById>>::encode_key(&id).unwrap(),
-            [0xa5; 32]
-        );
-        assert_eq!(
-            <MarkerKey as KeyCodec<V0OLArchiveMeta>>::encode_key(&COMPLETE_KEY).unwrap(),
-            b"complete"
-        );
+        assert_eq!(header_key(258), [0, 0, 0, 0, 0, 0, 1, 2]);
+        assert_eq!(&COMPLETE_KEY, b"complete");
+        assert_eq!(DATA.map(|name| expected_rows(name, 2, 3)), [3, 3, 2, 3, 2]);
     }
 }

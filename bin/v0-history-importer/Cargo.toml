@@ -1,5 +1,5 @@
 [package]
-name = "strata-v0-history-verifier"
+name = "strata-v0-history-importer"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -9,7 +9,12 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
-argh.workspace = true
+clap = { workspace = true, features = [
+  "std",
+  "help",
+  "usage",
+  "error-context",
+] }
 hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -24,5 +29,6 @@ strata-ol-rpc-types.workspace = true
 strata-ol-state-types.workspace = true
 
 [dev-dependencies]
+strata-predicate.workspace = true
 strata-db-types.workspace = true
 tempfile.workspace = true
