@@ -15574,6 +15574,9 @@ dependencies = [
  "ciborium",
  "proptest",
  "rkyv",
+ "serde",
+ "serde_json",
+ "sha2",
  "sled",
  "ssz",
  "ssz_derive",
@@ -17004,12 +17007,12 @@ dependencies = [
  "anyhow",
  "argh",
  "hex",
- "rusqlite",
  "serde",
  "serde_json",
  "sha2",
  "sled",
  "ssz",
+ "strata-codec",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
@@ -17017,7 +17020,6 @@ dependencies = [
  "strata-ol-rpc-types",
  "strata-ol-state-types",
  "tempfile",
- "typed-sled",
 ]
 
 [[package]]

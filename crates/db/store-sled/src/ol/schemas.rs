@@ -1,3 +1,5 @@
+pub mod v0_history;
+
 use borsh::{BorshDeserialize, to_vec};
 use sled::IVec;
 use ssz::{Decode, Encode};

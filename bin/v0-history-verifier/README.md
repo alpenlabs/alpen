@@ -1,28 +1,31 @@
-# V0 history exporter
+# V0 history importer
 
-Run this tool from the `v0.3.5` checkout on a disposable, offline copy of a node datadir. Sled needs exclusive writable access for locking and recovery. Pass the independently recorded genesis ID and promotion terminal for that network.
+Run this tool from the importer branch based on `v0.3.5` on a disposable, offline copy of a node datadir. Sled needs exclusive writable access for locking and recovery. Pass the independently recorded genesis ID and promotion terminal for that network.
 
 ```sh
 cargo run --locked -p strata-v0-history-verifier -- \
   --datadir "$copy" --genesis-id "$genesis_id" \
   --terminal-slot "$slot" --terminal-epoch "$epoch" --terminal-id "$terminal_id" \
-  --source-snapshot "$snapshot_id" --archive-dir "$archive"
+  --source-snapshot "$snapshot_id" --target-datadir "$promoted_copy"
 ```
 
-Omit both `--source-snapshot` and `--archive-dir` for verification alone. For an export, the destination must be new and its parent directory must exist. Both modes walk the terminal's parent chain through genesis and validate every block and batch. The exporter publishes the directory after the complete walk and SQLite commit succeed.
+Omit both `--source-snapshot` and `--target-datadir` to verify the source alone. For an import, stop the target node and pass its existing, promoted datadir. Its stored history base must match the supplied terminal slot, epoch and block ID.
+
+The importer walks the parent chain from the terminal to genesis, flushes the destination, then walks the locked source again and compares every stored value. It checks row counts, computes the archive checksum, and writes and flushes `V0OLArchiveMeta[complete]` last. A rerun with the same inputs can finish an interrupted import. A completed import is protected against replacement.
 
 ## Archive format 1
 
-`manifest.json` records the source snapshot supplied by the operator, the V0 decoder revision, genesis and terminal IDs, the inclusive slot range, observed counts and the SHA-256 of the complete `history.sqlite3` file. Before serving the archive, the consumer must check the format version, checksum and expected network endpoints.
+The current node owns the [sled schema and completion record](https://github.com/alpenlabs/alpen/blob/e33db2c6376b208b2d745e546c524bb75ba5329f/crates/db/store-sled/src/ol/schemas/v0_history.rs). This release branch includes the same file under `crates/db/store-sled/src/ol/schemas/v0_history.rs` so the offline binary can build against the V0 codecs.
 
-Open SQLite read-only. The `blocks` table contains one row per verified slot, keyed by integer `slot` and uniquely indexed by the 32-byte binary `block_id`. For both ranges use inclusive bounds and `ORDER BY slot`. The archive holds the following data for the RPC layer.
+| Tree | Key | Value |
+| --- | --- | --- |
+| `V0OLHeaderBySlot` | Eight-byte big-endian slot | Unsigned header SSZ |
+| `V0OLBlockById` | Original 32-byte block ID | Original signed V0 block bytes |
+| `V0OLWriteBatchById` | Block ID | Original V0 write batch bytes |
+| `V0OLTransactionsById` | Block ID | V0 RPC transaction array as UTF-8 JSON, in body order |
+| `V0OLAccountChangesById` | Block ID | V0 RPC account changes as UTF-8 JSON |
+| `V0OLArchiveMeta` | ASCII `complete` | JSON with format version, source, decoder revision, genesis and terminal, counts, and content SHA-256 |
 
-| Explorer RPC | Stored data |
-| --- | --- |
-| `strata_getHeadersInRange` | `header` contains V0 `RpcBlockHeaderEntry` JSON, including the parent ID and all header roots. |
-| `strata_getRawBlocksRange` | `slot`, `epoch`, `block_id` and `raw_block` supply each range entry. The blob contains the original signed SSZ bytes from sled. |
-| `strata_getRawBlockById` | Look up the same `raw_block` by binary `block_id`. Encode it as RPC hex at the wire boundary. |
-| `strata_getBlockTransactions` | `transactions` contains the JSON array of V0 `RpcOLTxDetail` values in body order, including the V0 transaction IDs. |
-| `strata_getBlockAccountChanges` | `account_changes` contains V0 `RpcBlockAccountChanges` JSON with each changed account's post-state. A present batch can yield an empty `changes` list. |
+Genesis has a block, header and transaction row. Batch and account-change rows start at slot 1, including blocks with empty batches. The five explorer RPCs use these trees for historical headers, raw blocks by range and ID, transactions, and account changes.
 
-At slot 0, SQL `NULL` in `account_changes` represents the absent genesis write batch. The RPC reader must preserve the V0 error code `-32602` and message `No OL write batch found for block {block_commitment}` for that slot. Every later slot requires a batch at its exact block commitment.
+The checksum covers the five data trees in table order. Hash the domain string `strata/v0-sled-archive/1`, then each tree name, its eight-byte big-endian row count, and each key and value in sled key order. Prefix every string, key and value with its eight-byte big-endian byte length.

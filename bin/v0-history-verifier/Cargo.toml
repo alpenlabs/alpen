@@ -11,19 +11,18 @@ workspace = true
 anyhow.workspace = true
 argh.workspace = true
 hex.workspace = true
-rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sled.workspace = true
 ssz.workspace = true
+strata-codec.workspace = true
 strata-db-store-sled.workspace = true
-strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-rpc-types.workspace = true
-tempfile.workspace = true
-typed-sled.workspace = true
+strata-ol-state-types.workspace = true
 
 [dev-dependencies]
-strata-ol-state-types.workspace = true
+strata-db-types.workspace = true
+tempfile.workspace = true

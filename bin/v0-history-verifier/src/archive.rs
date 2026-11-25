@@ -1,132 +1,121 @@
-//! Publishes a complete, indexed V0 archive after the verified walk succeeds.
+//! Imports only canonical V0 history into an offline, promoted node.
 
-use std::{
-    fs::{self, File},
-    io,
-    path::Path,
-};
+use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use rusqlite::{Connection, params};
-use serde::Serialize;
-use sha2::{Digest, Sha256};
-use strata_db_store_sled::SLED_NAME;
-use strata_identifiers::{Epoch, Slot};
-use strata_ol_rpc_types::RpcBlockHeaderEntry;
+use ssz::Encode;
+use strata_codec::decode_buf_exact;
+use strata_db_store_sled::{
+    SLED_NAME,
+    ol::schemas::v0_history::{
+        BATCHES, BLOCKS, CHANGES, COMPLETE_KEY, CompleteRecord, DATA, FORMAT_VERSION, HEADERS,
+        META, TXS, digest,
+    },
+};
+use strata_identifiers::EpochCommitment;
 
 use crate::{
     Args,
-    walk::{self, Counts, Report},
+    walk::{self, Report, VerifiedBlock},
 };
 
-const DATABASE: &str = "history.sqlite3";
-const DECODER_REVISION: &str = "048c5bf88bd02e19d60d508e0f9f3e1b13a24510";
-
-#[derive(Serialize)]
-struct Manifest<'a> {
-    format_version: u32,
-    source_snapshot: &'a str,
-    decoder_revision: &'static str,
-    first_slot: Slot,
-    genesis_id: String,
-    terminal_slot: Slot,
-    terminal_epoch: Epoch,
-    terminal_id: String,
-    counts: &'a Counts,
-    database: &'static str,
-    database_sha256: String,
+fn rows(
+    block: VerifiedBlock<'_>,
+    mut row: impl FnMut(&str, &[u8], &[u8]) -> Result<()>,
+) -> Result<()> {
+    let header = block.block.header();
+    let id = header.compute_blkid();
+    let key = id.as_ref();
+    row(
+        HEADERS,
+        &header.slot().to_be_bytes(),
+        &header.as_ssz_bytes(),
+    )?;
+    row(BLOCKS, key, block.raw)?;
+    row(TXS, key, &serde_json::to_vec(&block.transactions)?)?;
+    if let Some((batch, changes)) = block.batch {
+        row(BATCHES, key, batch)?;
+        row(CHANGES, key, &serde_json::to_vec(&changes)?)?;
+    }
+    Ok(())
 }
 
-pub(super) fn export(args: &Args, destination: &Path, source: &str) -> Result<Report> {
+pub(super) fn import(args: &Args, target: &Path, source: &str) -> Result<Report> {
+    let path = target.join("sled").join(SLED_NAME);
+    ensure!(path.join("db").is_file(), "missing target sled database");
     ensure!(
-        !destination.try_exists()?,
-        "archive destination already exists: {}",
-        destination.display()
+        path.canonicalize()? != args.datadir.join("sled").join(SLED_NAME).canonicalize()?,
+        "source and target must be different databases"
     );
-    let parent = destination
-        .parent()
-        .context("missing archive parent directory")?;
-    let parent = if parent.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        parent
-    };
-    let source_db = args.datadir.join("sled").join(SLED_NAME).canonicalize()?;
+    let input = walk::open_source(args)?;
+    let db = sled::open(path).context("opening offline target database")?;
+    let base_tree = "OLHistoryBaseSchema";
     ensure!(
-        !parent.canonicalize()?.starts_with(source_db),
-        "archive destination is inside the source database"
+        db.tree_names()
+            .iter()
+            .any(|n| n.as_ref() == base_tree.as_bytes()),
+        "target has no history base"
     );
-    let temp = tempfile::Builder::new()
-        .prefix(".v0-export-")
-        .tempdir_in(parent)?;
-    let path = temp.path().join(DATABASE);
-    let report = write_database(args, &path)?;
-    let mut database = File::open(&path)?;
-    database.sync_all()?;
-    let mut hash = Sha256::new();
-    io::copy(&mut database, &mut hash)?;
-    let manifest = Manifest {
-        format_version: 1,
-        source_snapshot: source,
-        decoder_revision: DECODER_REVISION,
-        first_slot: 0,
-        genesis_id: hex::encode(args.genesis_id.as_ref()),
+    let bytes = db
+        .open_tree(base_tree)?
+        .get([0])?
+        .context("target has no history base")?;
+    let base: EpochCommitment = decode_buf_exact(&bytes)?;
+    ensure!(
+        base == EpochCommitment::new(args.terminal_epoch, args.terminal_slot, args.terminal_id),
+        "target history base differs from the requested terminal"
+    );
+    let meta = db.open_tree(META)?;
+    ensure!(
+        !meta.contains_key(COMPLETE_KEY)?,
+        "target already contains a completed import"
+    );
+    for name in DATA {
+        db.open_tree(name)?;
+    }
+    let mut report = walk::walk_db(args, &input, |block| {
+        rows(block, |name, key, value| {
+            db.open_tree(name)?.insert(key, value)?;
+            Ok(())
+        })
+    })?;
+    db.flush()?;
+    // Verify every persisted value against a second walk while retaining the source lock.
+    walk::walk_db(args, &input, |block| {
+        rows(block, |name, key, value| {
+            ensure!(
+                db.open_tree(name)?.get(key)?.as_deref() == Some(value),
+                "readback mismatch in {name}"
+            );
+            Ok(())
+        })
+    })?;
+    for name in DATA {
+        let count = if [BATCHES, CHANGES].contains(&name) {
+            report.counts.write_batches
+        } else {
+            report.counts.blocks
+        };
+        ensure!(
+            db.open_tree(name)?.len() as u64 == count,
+            "unexpected row count in {name}"
+        );
+    }
+    let checksum = digest(&db)?;
+    let record = CompleteRecord {
+        format_version: FORMAT_VERSION,
+        source: source.to_owned(),
+        decoder_revision: "048c5bf88bd02e19d60d508e0f9f3e1b13a24510".to_owned(),
+        genesis_id: args.genesis_id,
+        terminal_id: args.terminal_id,
         terminal_slot: args.terminal_slot,
         terminal_epoch: args.terminal_epoch,
-        terminal_id: hex::encode(args.terminal_id.as_ref()),
-        counts: &report.counts,
-        database: DATABASE,
-        database_sha256: hex::encode(hash.finalize()),
+        blocks: report.counts.blocks,
+        write_batches: report.counts.write_batches,
+        content_sha256: checksum,
     };
-    let file = File::create(temp.path().join("manifest.json"))?;
-    serde_json::to_writer_pretty(&file, &manifest)?;
-    file.sync_all()?;
-    File::open(temp.path())?.sync_all()?;
-    // A completed destination is nonempty, so a racing publisher cannot replace it.
-    fs::rename(temp.path(), destination).context("publishing verified archive")?;
-    let _ = temp.keep();
-    File::open(parent)?.sync_all()?;
-    Ok(report)
-}
-
-fn write_database(args: &Args, path: &Path) -> Result<Report> {
-    let mut db = Connection::open(path)?;
-    let tx = db.transaction()?;
-    tx.execute_batch(
-        "CREATE TABLE blocks (
-        slot INTEGER PRIMARY KEY CHECK (slot >= 0),
-        block_id BLOB NOT NULL UNIQUE CHECK (length(block_id) = 32),
-        epoch INTEGER NOT NULL,
-        raw_block BLOB NOT NULL,
-        header TEXT NOT NULL,
-        transactions TEXT NOT NULL,
-        account_changes TEXT,
-        CHECK ((slot = 0) = (account_changes IS NULL))
-    )",
-    )?;
-    let mut insert = tx.prepare(
-        "INSERT INTO blocks
-        (slot, block_id, epoch, raw_block, header, transactions, account_changes)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-    )?;
-    let report = walk::walk(args, |row| {
-        let header = RpcBlockHeaderEntry::from(row.block);
-        insert.execute(params![
-            header.slot(),
-            header.blkid().as_ref().as_slice(),
-            header.epoch(),
-            row.raw,
-            serde_json::to_string(&header)?,
-            serde_json::to_string(&row.transactions)?,
-            row.account_changes
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?
-        ])?;
-        Ok(())
-    })?;
-    drop(insert);
-    tx.commit()?;
-    db.close().map_err(|(_, error)| error)?;
+    meta.insert(COMPLETE_KEY, serde_json::to_vec(&record)?)?;
+    db.flush()?;
+    report.content_sha256 = Some(record.content_sha256);
     Ok(report)
 }

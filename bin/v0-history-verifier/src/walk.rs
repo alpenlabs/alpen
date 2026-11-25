@@ -1,22 +1,22 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use ssz::Decode;
-use strata_db_store_sled::{SLED_NAME, SledDbConfig, ol_state::db::OLStateDBSled};
-use strata_db_types::{DbError, ol_state::OLStateDatabase};
+use strata_codec::{decode_buf_exact, encode_to_vec};
+use strata_db_store_sled::SLED_NAME;
 use strata_identifiers::{Epoch, OLBlockCommitment, Slot};
 use strata_ol_chain_types::OLBlock;
 use strata_ol_rpc_types::{RpcAccountChangeType, RpcBlockAccountChanges, RpcOLTxDetail};
-use typed_sled::SledDb;
+use strata_ol_state_types::{OLAccountState, WriteBatch};
 
 use super::Args;
 
 #[derive(Serialize, Default)]
 pub(super) struct Counts {
-    blocks: u64,
-    write_batches: u64,
+    pub(super) blocks: u64,
+    pub(super) write_batches: u64,
     transactions: u64,
     created_accounts: u64,
     updated_accounts: u64,
@@ -32,35 +32,44 @@ pub(super) struct Report {
     /// SHA-256 over concatenated V0 transaction IDs, newest block first, in body order.
     txids_sha256_tip_to_genesis: String,
     elapsed_ms: u128,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) content_sha256: Option<String>,
 }
 
 pub(super) struct VerifiedBlock<'a> {
+    pub batch: Option<(&'a [u8], RpcBlockAccountChanges)>,
     pub block: &'a OLBlock,
     pub raw: &'a [u8],
     pub transactions: Vec<RpcOLTxDetail>,
-    pub account_changes: Option<RpcBlockAccountChanges>,
 }
 
 pub(super) fn walk(
     args: &Args,
-    mut visit: impl FnMut(VerifiedBlock<'_>) -> Result<()>,
+    visit: impl FnMut(VerifiedBlock<'_>) -> Result<()>,
 ) -> Result<Report> {
-    let started = Instant::now();
-    let db_path = args.datadir.join("sled").join(SLED_NAME).join("db");
+    let db = open_source(args)?;
+    walk_db(args, &db, visit)
+}
+
+pub(super) fn open_source(args: &Args) -> Result<sled::Db> {
+    let path = args.datadir.join("sled").join(SLED_NAME);
+    let db_path = path.join("db");
     ensure!(
         db_path.is_file(),
         "missing sled data file {}",
         db_path.display()
     );
-    // The typed block getter decodes SSZ and discards the source buffer. Keep that
-    // buffer for raw range and by-ID responses, including the original signature.
-    let db = sled::open(args.datadir.join("sled").join(SLED_NAME))
-        .context("opening V0 sled database")?;
+    sled::open(path).context("opening V0 sled database")
+}
+
+pub(super) fn walk_db(
+    args: &Args,
+    db: &sled::Db,
+    mut visit: impl FnMut(VerifiedBlock<'_>) -> Result<()>,
+) -> Result<Report> {
+    let started = Instant::now();
     let blocks = db.open_tree("OLBlockSchema")?;
-    let states = OLStateDBSled::new(
-        Arc::new(SledDb::new(db).map_err(DbError::from)?),
-        SledDbConfig::production(),
-    )?;
+    let batches = db.open_tree("OLWriteBatchSchema")?;
     let mut id = args.terminal_id;
     let mut counts = Counts::default();
     let mut txids = Sha256::new();
@@ -114,20 +123,26 @@ pub(super) fn walk(
         counts.blocks += 1;
 
         let commitment = OLBlockCommitment::new(slot, id);
-        let batch = states
-            .get_ol_write_batch(commitment)
-            .with_context(|| format!("{}: reading V0 write batch", at()))?;
-        let account_changes = if slot == 0 {
+        let raw_batch = batches.get(encode_to_vec(&commitment)?)?;
+        let batch = if slot == 0 {
             ensure!(
                 id == args.genesis_id,
                 "{}: expected genesis {}",
                 at(),
                 hex::encode(args.genesis_id.as_ref())
             );
-            ensure!(batch.is_none(), "{}: unexpected genesis write batch", at());
+            ensure!(
+                raw_batch.is_none(),
+                "{}: unexpected genesis write batch",
+                at()
+            );
             None
         } else {
-            let batch = batch.with_context(|| format!("{}: missing write batch", at()))?;
+            let bytes = raw_batch
+                .as_deref()
+                .with_context(|| format!("{}: missing write batch", at()))?;
+            let batch: WriteBatch<OLAccountState> = decode_buf_exact(bytes)
+                .with_context(|| format!("{}: reading V0 write batch", at()))?;
             let changes = RpcBlockAccountChanges::from_write_batch(commitment, &batch);
             for change in changes.changes() {
                 match change.change_type() {
@@ -136,13 +151,13 @@ pub(super) fn walk(
                 }
             }
             counts.write_batches += 1;
-            Some(changes)
+            Some((bytes, changes))
         };
         visit(VerifiedBlock {
             block: &block,
             raw: &raw,
+            batch,
             transactions,
-            account_changes,
         })
         .with_context(|| format!("{}: processing verified block", at()))?;
         id = *header.parent_blkid();
@@ -154,6 +169,7 @@ pub(super) fn walk(
         terminal_epoch: args.terminal_epoch,
         counts,
         txids_sha256_tip_to_genesis: hex::encode(txids.finalize()),
+        content_sha256: None,
         elapsed_ms: started.elapsed().as_millis(),
     })
 }
