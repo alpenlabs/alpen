@@ -1,29 +1,18 @@
 //! Read-only explorer access to the V0 trees written by the offline v0.3.5 importer.
-mod layout;
 
 use anyhow::{Context, Result, anyhow, ensure};
-use layout::*;
-use serde::Deserialize;
 use ssz::Decode;
-use strata_identifiers::{Epoch, EpochCommitment, OLBlockId, Slot};
+use strata_db_store_sled::ol::schemas::v0_history::{
+    BATCHES, BLOCKS, CHANGES, COMPLETE_KEY, CompleteRecord, DATA, FORMAT_VERSION, HEADERS, META,
+    TXS, digest,
+};
+use strata_identifiers::{EpochCommitment, OLBlockId, Slot};
 use strata_ol_chain_types_v1::OLBlockHeaderV1;
 use strata_ol_rpc_types::{
     RpcBlockAccountChanges, RpcBlockEntry, RpcBlockHeaderEntry, RpcOLTxDetail,
 };
 use strata_primitives::HexBytes;
 use tokio::task;
-
-#[derive(Deserialize)]
-struct Manifest {
-    format_version: u32,
-    genesis_id: OLBlockId,
-    terminal_slot: Slot,
-    terminal_epoch: Epoch,
-    terminal_id: OLBlockId,
-    blocks: u64,
-    write_batches: u64,
-    content_sha256: String,
-}
 
 /// The verified, immutable V0 prefix of the promoted node.
 #[derive(Debug, Clone)]
@@ -47,13 +36,13 @@ impl HistoryArchive {
         if !present(META) {
             return Ok(None);
         }
-        let Some(record) = db.open_tree(META)?.get(b"complete")? else {
+        let Some(record) = db.open_tree(META)?.get(COMPLETE_KEY)? else {
             return Ok(None);
         };
-        let manifest: Manifest =
+        let manifest: CompleteRecord =
             serde_json::from_slice(&record).context("reading V0 archive completion record")?;
         ensure!(
-            manifest.format_version == 1,
+            manifest.format_version == FORMAT_VERSION,
             "unsupported V0 archive format"
         );
         let (genesis, terminal) = anchors()?;
