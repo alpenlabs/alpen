@@ -339,7 +339,8 @@ pub struct RpcSauTxSummary {
     seq_no: u64,
     new_next_msg_idx: u64,
     inner_state_root: HexBytes32,
-    /// New update predicate key declared by this update, if it rotates the key.
+    /// V0 transactions in the sled `v0_history` schema omit this field (outer `None`).
+    /// V1 always supplies it, with null for no rotation or the new key for a rotation.
     #[cfg_attr(feature = "jsonschema", schemars(with = "Option<String>"))]
     #[serde(
         default,

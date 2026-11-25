@@ -745,7 +745,7 @@ fn make_sync_status(
     )
 }
 
-pub(super) fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlockV1 {
+fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlockV1 {
     make_block_with_terminal_flag(slot, epoch, parent, false)
 }
 

@@ -20,7 +20,7 @@ use strata_predicate::PredicateTypeId;
 use strata_service::ServiceMonitor;
 
 use crate::{
-    context::ensure_genesis,
+    context::{InitializedNode, ensure_genesis},
     css, fcm,
     helpers::build_btcio_params,
     run_context::{RunContext, ServiceHandles},
@@ -282,8 +282,12 @@ pub(crate) type OptionalProofNotify = Option<Arc<strata_ol_checkpoint::ProofNoti
 /// caller passes it to `start_prover_service` so that the proof storer can
 /// wake the checkpoint worker immediately after storing a proof.
 pub(crate) fn start_strata_services(
-    nodectx: NodeContext,
+    initialized: InitializedNode,
 ) -> Result<(RunContext, OptionalProofNotify)> {
+    let InitializedNode {
+        node: nodectx,
+        history,
+    } = initialized;
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
 
@@ -398,7 +402,7 @@ pub(crate) fn start_strata_services(
         sequencer_services::attach_service_handles(service_handles_builder, sequencer_handles)
             .build();
 
-    let runctx = RunContext::from_node_ctx(nodectx, service_handles);
+    let runctx = RunContext::from_node_ctx(nodectx, service_handles, history);
 
     #[cfg(feature = "prover")]
     return Ok((runctx, proof_notify));

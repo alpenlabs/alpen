@@ -156,10 +156,7 @@ fn rpc_permissive_cors_enabled() -> Result<bool> {
 }
 
 /// Starts the RPC server.
-pub(crate) fn start_rpc(
-    runctx: &RunContext,
-    history_archive: Option<HistoryArchive>,
-) -> Result<()> {
+pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
     #[cfg(feature = "sequencer")]
     let seq_deps = runctx.sequencer_handles().map(|handles| {
@@ -180,7 +177,7 @@ pub(crate) fn start_rpc(
     });
 
     let deps = RpcDeps {
-        history_archive,
+        history_archive: runctx.history_archive.clone(),
         rpc_host: runctx.config().client.rpc_host.clone(),
         rpc_port: runctx.config().client.rpc_port,
         admin_rpc_host: runctx.config().client.admin_rpc_host.clone(),

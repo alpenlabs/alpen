@@ -84,15 +84,15 @@ fn main() -> Result<()> {
     }
 
     // Validate params, configs and create node context.
-    let (nodectx, archive) = init_node_context(&args, config.clone(), rt.handle().clone())
+    let nodectx = init_node_context(&args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     if args.bootstrap_from_checkpoint {
-        promote_from_checkpoint(&nodectx)?;
+        promote_from_checkpoint(&nodectx.node)?;
     }
 
     // Check for db consistency, external rpc clients reachable, etc.
-    run_startup_checks(&nodectx)?;
+    run_startup_checks(&nodectx.node)?;
 
     // Start services, and do genesis if necessary.
     let (runctx, proof_notify) = start_strata_services(nodectx)?;
@@ -110,7 +110,7 @@ fn main() -> Result<()> {
     let _ = proof_notify;
 
     // Start RPC only after the configured prover's artifacts pass startup checks.
-    start_rpc(&runctx, archive)?;
+    start_rpc(&runctx)?;
 
     // Start block producer if running as sequencer.
     #[cfg(feature = "sequencer")]

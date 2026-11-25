@@ -182,7 +182,28 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     fn archive_at(&self, slot: u64) -> Option<&HistoryArchive> {
         self.history_archive
             .as_ref()
-            .filter(|a| slot <= a.terminal().last_slot())
+            .filter(|a| slot <= a.last_slot())
+    }
+
+    async fn joined_range<T>(
+        &self,
+        start: u64,
+        end: u64,
+        archived: impl AsyncFn(&HistoryArchive, u64, u64) -> anyhow::Result<Vec<T>>,
+    ) -> RpcResult<Vec<T>>
+    where
+        T: for<'a> From<&'a OLBlockV1>,
+    {
+        let archive = self.archive_at(start);
+        let live = self.live_range(start, end, archive).await?;
+        let Some(archive) = archive else {
+            return Ok(live);
+        };
+        let mut prefix = archived(archive, start, end.min(archive.last_slot()))
+            .await
+            .map_err(db_error)?;
+        prefix.extend(live);
+        Ok(prefix)
     }
 
     /// Walks the live suffix from its canonical end. A mixed range can only be joined
@@ -197,8 +218,8 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         T: for<'a> From<&'a OLBlockV1>,
     {
         let live_start = match archive {
-            Some(a) if end <= a.terminal().last_slot() => return Ok(Vec::new()),
-            Some(a) => a.terminal().last_slot() + 1,
+            Some(a) if end <= a.last_slot() => return Ok(Vec::new()),
+            Some(a) => a.last_slot() + 1,
             None => start,
         };
         let Some(mut current_id) = self.get_canonical_block_at_height(end).await? else {
@@ -1416,28 +1437,19 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         if start_height > end_height || end_height - start_height >= MAX_RAW_BLOCKS_RANGE as u64 {
             return Err(invalid_params_error("Invalid block range"));
         }
-        let archive = self.archive_at(start_height);
-        let live = self
-            .live_range::<RpcBlockEntry>(start_height, end_height, archive)
-            .await?;
-        let Some(archive) = archive else {
-            return Ok(live);
-        };
-        let mut entries = archive
-            .blocks(start_height, end_height.min(archive.terminal().last_slot()))
+        self.joined_range(start_height, end_height, HistoryArchive::blocks)
             .await
-            .map_err(db_error)?;
-        entries.extend(live);
-        Ok(entries)
     }
 
     async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes> {
-        // The archive owns the original signed bytes for its canonical IDs, including
-        // genesis on nodes that also retain a locally reconstructed genesis block.
         if let Some(archive) = &self.history_archive
-            && let Some(bytes) = archive.raw_block(block_id).await.map_err(db_error)?
+            && block_id == archive.genesis()
         {
-            return Ok(bytes);
+            return archive
+                .raw_block(block_id)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| internal_error("missing archived genesis"));
         }
 
         if let Some(block) = self
@@ -1447,6 +1459,12 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .map_err(db_error)?
         {
             return Ok(HexBytes(block.as_ssz_bytes()));
+        }
+
+        if let Some(archive) = &self.history_archive
+            && let Some(bytes) = archive.raw_block(block_id).await.map_err(db_error)?
+        {
+            return Ok(bytes);
         }
 
         if let Some(history_base) = self
@@ -1474,22 +1492,11 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         if start_height > end_height || end_height - start_height >= self.max_headers_range as u64 {
             return Err(invalid_params_error("Invalid block range"));
         }
-        let archive = self.archive_at(start_height);
-        if archive.is_none() {
+        if self.archive_at(start_height).is_none() {
             self.ensure_history_available_at_slot(start_height).await?;
         }
-        let live = self
-            .live_range::<RpcBlockHeaderEntry>(start_height, end_height, archive)
-            .await?;
-        let Some(archive) = archive else {
-            return Ok(live);
-        };
-        let mut entries = archive
-            .headers(start_height, end_height.min(archive.terminal().last_slot()))
+        self.joined_range(start_height, end_height, HistoryArchive::headers)
             .await
-            .map_err(db_error)?;
-        entries.extend(live);
-        Ok(entries)
     }
 
     async fn get_block_by_slot(&self, slot: u64) -> RpcResult<Option<RpcOLBlockDetail>> {

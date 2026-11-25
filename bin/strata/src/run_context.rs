@@ -22,6 +22,8 @@ use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use strata_tasks::{TaskExecutor, TaskManager};
 
+use crate::rpc::history::HistoryArchive;
+
 /// Runtime node role derived from the composed service set.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum NodeRole {
@@ -41,6 +43,14 @@ pub(crate) enum NodeRole {
 }
 
 impl NodeRole {
+    pub(crate) fn from_config(config: &Config) -> Self {
+        if config.client.is_sequencer {
+            Self::Sequencer
+        } else {
+            Self::CheckpointSync
+        }
+    }
+
     /// Returns true when the node can serve OL full-node RPC methods.
     pub(crate) fn serves_fullnode_rpc(self) -> bool {
         matches!(self, Self::FullNode | Self::Sequencer)
@@ -56,17 +66,23 @@ impl NodeRole {
 pub(crate) struct RunContext {
     pub task_manager: TaskManager,
     common: CommonContext,
+    pub(crate) history_archive: Option<HistoryArchive>,
     service_handles: ServiceHandles,
 }
 
 impl RunContext {
     /// Creates a new [`RunContext`] instance from a [`NodeContext`] and [`ServiceHandles`].
-    pub(crate) fn from_node_ctx(ctx: NodeContext, service_handles: ServiceHandles) -> Self {
+    pub(crate) fn from_node_ctx(
+        ctx: NodeContext,
+        service_handles: ServiceHandles,
+        history_archive: Option<HistoryArchive>,
+    ) -> Self {
         let (task_manager, common) = ctx.into_parts();
         Self {
             task_manager,
             common,
             service_handles,
+            history_archive,
         }
     }
 
@@ -77,11 +93,7 @@ impl RunContext {
 
     /// Returns the runtime node role.
     pub(crate) fn node_role(&self) -> NodeRole {
-        if self.config().client.is_sequencer {
-            NodeRole::Sequencer
-        } else {
-            NodeRole::CheckpointSync
-        }
+        NodeRole::from_config(self.config())
     }
 
     pub(crate) fn asm_params(&self) -> &Arc<AsmParams> {

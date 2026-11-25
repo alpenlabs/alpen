@@ -29,6 +29,7 @@ use tracing::{info, warn};
 
 use crate::{
     args::*, config::*, errors::*, genesis::init_ol_genesis, init_db, rpc::history::HistoryArchive,
+    run_context::NodeRole,
 };
 
 /// Load config early for logging initialization
@@ -48,12 +49,17 @@ fn init_storage(
     Ok((storage, raw))
 }
 
-/// Initialize runtime, database, bitcoin client, status channel etc.
+/// Node services and the optional RPC archive verified before they start.
+pub(crate) struct InitializedNode {
+    pub(crate) node: NodeContext,
+    pub(crate) history: Option<HistoryArchive>,
+}
+
 pub(crate) fn init_node_context(
     args: &Args,
     config: Config,
     handle: Handle,
-) -> Result<(NodeContext, Option<HistoryArchive>), InitError> {
+) -> Result<InitializedNode, InitError> {
     // Load the network genesis parameters before opening node resources.
     let asm_params_path = args
         .asm_params
@@ -77,19 +83,23 @@ pub(crate) fn init_node_context(
 
     // Init storage
     let (storage, raw) = init_storage(&config, handle.clone())?;
-    let archive = HistoryArchive::discover(&raw, || {
-        let genesis = asm_params
-            .genesis
-            .checkpoint_config()
-            .context("missing checkpoint genesis")?
-            .genesis_ol_blkid;
-        let terminal = storage
-            .ol_block()
-            .get_history_base_blocking()?
-            .context("archived history requires a promoted database")?;
-        Ok((genesis, terminal))
-    })
-    .map_err(|e| InitError::StorageCreation(format!("{e:#}")))?;
+    let history = if NodeRole::from_config(&config).serves_fullnode_rpc() {
+        HistoryArchive::discover(&raw, || {
+            let genesis = asm_params
+                .genesis
+                .checkpoint_config()
+                .context("missing checkpoint genesis")?
+                .genesis_ol_blkid;
+            let terminal = storage
+                .ol_block()
+                .get_history_base_blocking()?
+                .context("archived history requires a promoted database")?;
+            Ok((genesis, terminal))
+        })
+        .map_err(InitError::HistoryArchive)?
+    } else {
+        None
+    };
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
@@ -109,7 +119,10 @@ pub(crate) fn init_node_context(
         status_channel,
     );
 
-    Ok((nodectx, archive))
+    Ok(InitializedNode {
+        node: nodectx,
+        history,
+    })
 }
 
 // Config loading and validation

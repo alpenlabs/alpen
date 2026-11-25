@@ -39,6 +39,7 @@ sp1 = [
 ]
 
 [dependencies]
+sha2.workspace = true
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-checkpoint-types = { workspace = true, optional = true }
@@ -116,7 +117,6 @@ zkaleido = { workspace = true, optional = true }
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
-sha2.workspace = true
 hex.workspace = true
 strata-ol-sequencer = { workspace = true, features = ["test-utils"] }
 strata-db-tests.workspace = true

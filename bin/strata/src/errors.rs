@@ -47,6 +47,11 @@ pub(crate) enum InitError {
     #[error("failed to create node storage: {0}")]
     StorageCreation(String),
 
+    #[error(
+        "V0 archive verification failed: {0:#}. Stop the node and run strata-v0-history-importer remove against this datadir with its promotion terminal"
+    )]
+    HistoryArchive(#[source] anyhow::Error),
+
     #[error("missing OL tip header for {0}")]
     MissingOLTipHeader(OLBlockCommitment),
 

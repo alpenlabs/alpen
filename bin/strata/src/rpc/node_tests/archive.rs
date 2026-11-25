@@ -1,6 +1,9 @@
 //! The three-slot fixture is the output of the v0.3.5 importer's offline test chain.
 //! Slot 1 has a snark update, a message, a created account and an updated account.
 use sha2::{Digest, Sha256};
+use strata_db_store_sled::ol::schemas::v0_history::{
+    BLOCKS, CHANGES, COMPLETE_KEY, META, TXS, digest,
+};
 
 use super::*;
 use crate::rpc::history::HistoryArchive;
@@ -92,6 +95,10 @@ async fn explorer_reads_cross_the_linked_v0_v1_boundary() {
     assert_eq!(changes["changes"][0]["state"]["balance_sats"], 10);
     assert_eq!(changes["changes"][1]["change_type"], "updated");
     assert_eq!(changes["changes"][1]["state"]["balance_sats"], 20);
+    assert_eq!(
+        changes["changes"][1]["state"]["update_vk"],
+        json!("AlwaysAccept")
+    );
     assert!(rpc.get_block_transactions(0).await.unwrap().is_empty());
     let err = rpc.get_block_account_changes(0).await.unwrap_err();
     assert_eq!(
@@ -164,13 +171,7 @@ fn archive_rehashes_each_header_even_with_a_matching_checksum() {
     let mut bytes = headers.get(key).unwrap().unwrap().to_vec();
     bytes[0] ^= 1; // Alter slot one's timestamp while preserving its slot.
     headers.insert(key, bytes).unwrap();
-    let meta = db.open_tree("V0OLArchiveMeta").unwrap();
-    let mut record: Value =
-        serde_json::from_slice(&meta.get(b"complete").unwrap().unwrap()).unwrap();
-    record["content_sha256"] =
-        json!("4772b17b80483f9936d222a858e69aca139d7a28fe154ad287e6ce2484025b11");
-    meta.insert(b"complete", serde_json::to_vec(&record).unwrap())
-        .unwrap();
+    update_digest(&db);
     let error = HistoryArchive::discover(&db, || Ok(fixture_anchors())).unwrap_err();
     assert_eq!(error.to_string(), "V0 header hash mismatch at slot 1");
 }
@@ -247,4 +248,84 @@ async fn explorer_status_checkpoint_and_manifest_stay_on_the_live_provider() {
             .0,
         manifest.0
     );
+}
+
+fn update_digest(db: &sled::Db) {
+    let meta = db.open_tree(META).unwrap();
+    let mut record: Value =
+        serde_json::from_slice(&meta.get(COMPLETE_KEY).unwrap().unwrap()).unwrap();
+    record["content_sha256"] = json!(digest(db).unwrap());
+    meta.insert(COMPLETE_KEY, serde_json::to_vec(&record).unwrap())
+        .unwrap();
+}
+
+#[test]
+fn verified_digest_cannot_hide_invalid_served_rows() {
+    let (_, base) = fixture_anchors();
+    let id = base.last_blkid().as_ref();
+    let check = |name: &str, value: Vec<u8>, error: &str| {
+        let db = fixture_db();
+        db.open_tree(name).unwrap().insert(id, value).unwrap();
+        update_digest(&db);
+        let err = HistoryArchive::discover(&db, || Ok(fixture_anchors())).unwrap_err();
+        assert!(err.to_string().contains(error), "{err:#}");
+    };
+    let db = fixture_db();
+    let mut bytes = db
+        .open_tree(BLOCKS)
+        .unwrap()
+        .get(id)
+        .unwrap()
+        .unwrap()
+        .to_vec();
+    *bytes.last_mut().unwrap() ^= 1;
+    check(BLOCKS, bytes, "V0 body hash mismatch");
+    let genesis = fixture_anchors().0;
+    let other = db
+        .open_tree(BLOCKS)
+        .unwrap()
+        .get(genesis.as_ref())
+        .unwrap()
+        .unwrap();
+    check(BLOCKS, other.to_vec(), "signed block header differs");
+    check(TXS, b"{}".to_vec(), "invalid transactions");
+    check(CHANGES, b"[]".to_vec(), "invalid account changes");
+    let bytes = db.open_tree(CHANGES).unwrap().get(id).unwrap().unwrap();
+    let mut changes: Value = serde_json::from_slice(&bytes).unwrap();
+    changes["blkid"] = json!(genesis);
+    check(
+        CHANGES,
+        serde_json::to_vec(&changes).unwrap(),
+        "account changes reference a different block",
+    );
+}
+
+#[tokio::test]
+async fn archive_ranges_include_the_terminal_once_at_each_endpoint_and_limit() {
+    let archive = fixture_archive();
+    let base = archive.terminal();
+    let mut parent = *base.last_blkid();
+    let mut provider = MockProvider::new().with_history_base(base);
+    let state = genesis_ol_state();
+    for slot in 3..5000 {
+        let block = make_block(slot, 2, parent);
+        parent = block.header().compute_blkid();
+        provider = provider.with_block_and_state(&block, state.clone());
+    }
+    let rpc = make_rpc(provider).with_history_archive(Some(archive));
+    for (start, end) in [(0, 2), (2, 2), (3, 4), (0, 4999)] {
+        let expected: Vec<_> = (start..=end).collect();
+        let headers = rpc.get_headers_in_range(start, end).await.unwrap();
+        let blocks = rpc.get_raw_blocks_range(start, end).await.unwrap();
+        assert_eq!(
+            headers.iter().map(|row| row.slot()).collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            blocks.iter().map(|row| row.slot()).collect::<Vec<_>>(),
+            expected
+        );
+    }
+    assert!(rpc.get_headers_in_range(2, 5000).await.is_err());
+    assert!(rpc.get_raw_blocks_range(2, 5000).await.is_err());
 }
