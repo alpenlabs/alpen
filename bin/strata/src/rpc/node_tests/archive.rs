@@ -1,15 +1,22 @@
-//! The three-slot fixture is the output of the v0.3.5 exporter's offline test chain.
+//! The three-slot fixture is the output of the v0.3.5 importer's offline test chain.
 //! Slot 1 has a snark update, a message, a created account and an updated account.
-use std::{fs, path::Path};
-
-use rusqlite::Connection;
 use sha2::{Digest, Sha256};
-use strata_ol_rpc_history::HistoryArchive;
-use tempfile::tempdir;
 
 use super::*;
+use crate::rpc::history::HistoryArchive;
 
-const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/v0-history");
+fn fixture_db() -> sled::Db {
+    let db = sled::Config::new().temporary(true).open().unwrap();
+    let rows: Vec<(String, String, String)> =
+        serde_json::from_str(include_str!("../../../testdata/v0-history/rows.json")).unwrap();
+    for (tree, key, value) in rows {
+        db.open_tree(tree)
+            .unwrap()
+            .insert(hex::decode(key).unwrap(), hex::decode(value).unwrap())
+            .unwrap();
+    }
+    db
+}
 
 fn fixture_anchors() -> (OLBlockId, EpochCommitment) {
     let genesis = serde_json::from_value(json!(
@@ -25,7 +32,9 @@ fn fixture_anchors() -> (OLBlockId, EpochCommitment) {
 
 fn fixture_archive() -> HistoryArchive {
     let (genesis, base) = fixture_anchors();
-    HistoryArchive::open(Path::new(FIXTURE), genesis, base).unwrap()
+    HistoryArchive::discover(&fixture_db(), || Ok((genesis, base)))
+        .unwrap()
+        .unwrap()
 }
 
 #[tokio::test]
@@ -148,41 +157,69 @@ async fn mixed_ranges_reject_a_live_fork_at_cutover() {
 }
 
 #[test]
-fn archive_rejects_wrong_anchors_checksum_and_missing_write_batch() {
+fn archive_rehashes_each_header_even_with_a_matching_checksum() {
+    let db = fixture_db();
+    let headers = db.open_tree("V0OLHeaderBySlot").unwrap();
+    let key = 1u64.to_be_bytes();
+    let mut bytes = headers.get(key).unwrap().unwrap().to_vec();
+    bytes[0] ^= 1; // Alter slot one's timestamp while preserving its slot.
+    headers.insert(key, bytes).unwrap();
+    let meta = db.open_tree("V0OLArchiveMeta").unwrap();
+    let mut record: Value =
+        serde_json::from_slice(&meta.get(b"complete").unwrap().unwrap()).unwrap();
+    record["content_sha256"] =
+        json!("4772b17b80483f9936d222a858e69aca139d7a28fe154ad287e6ce2484025b11");
+    meta.insert(b"complete", serde_json::to_vec(&record).unwrap())
+        .unwrap();
+    let error = HistoryArchive::discover(&db, || Ok(fixture_anchors())).unwrap_err();
+    assert_eq!(error.to_string(), "V0 header hash mismatch at slot 1");
+}
+
+#[test]
+fn archive_requires_completion_intact_rows_and_matching_anchors() {
     let (genesis, base) = fixture_anchors();
-    let path = Path::new(FIXTURE);
-    assert!(HistoryArchive::open(path, null_blkid(), base).is_err());
-    for wrong in [
-        EpochCommitment::new(0, 2, *base.last_blkid()),
-        EpochCommitment::new(1, 1, *base.last_blkid()),
-        EpochCommitment::new(1, 2, null_blkid()),
+    let db = fixture_db();
+    for anchors in [
+        (null_blkid(), base),
+        (genesis, EpochCommitment::new(0, 2, *base.last_blkid())),
+        (genesis, EpochCommitment::new(1, 2, null_blkid())),
     ] {
-        assert!(HistoryArchive::open(path, genesis, wrong).is_err());
+        assert!(HistoryArchive::discover(&db, || Ok(anchors)).is_err());
     }
-    let dir = tempdir().unwrap();
-    let manifest = dir.path().join("manifest.json");
-    let database = dir.path().join("history.sqlite3");
-    fs::copy(path.join("manifest.json"), &manifest).unwrap();
-    fs::copy(path.join("history.sqlite3"), &database).unwrap();
-    Connection::open(&database).unwrap().execute_batch("PRAGMA ignore_check_constraints=ON; UPDATE blocks SET account_changes=NULL WHERE slot=1").unwrap();
+    let batches = db.open_tree("V0OLWriteBatchById").unwrap();
+    batches.remove(base.last_blkid().as_ref()).unwrap();
     assert!(
-        HistoryArchive::open(dir.path(), genesis, base)
+        HistoryArchive::discover(&db, || Ok((genesis, base)))
             .unwrap_err()
             .to_string()
-            .contains("SHA-256 mismatch")
+            .contains("wrong row count")
     );
-    let mut data: Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
-    data["database_sha256"] = json!(format!(
-        "{:x}",
-        Sha256::digest(fs::read(&database).unwrap())
-    ));
-    fs::write(manifest, serde_json::to_vec(&data).unwrap()).unwrap();
+    batches
+        .insert(base.last_blkid().as_ref(), b"corrupt")
+        .unwrap();
     assert!(
-        HistoryArchive::open(dir.path(), genesis, base)
+        HistoryArchive::discover(&db, || Ok((genesis, base)))
             .unwrap_err()
             .to_string()
-            .contains("write-batch coverage mismatch")
+            .contains("checksum mismatch")
     );
+    db.open_tree("V0OLArchiveMeta")
+        .unwrap()
+        .remove(b"complete")
+        .unwrap();
+    assert!(
+        HistoryArchive::discover(&db, || panic!("unexpected anchor lookup"))
+            .unwrap()
+            .is_none()
+    );
+    let empty = sled::Config::new().temporary(true).open().unwrap();
+    let names = empty.tree_names();
+    assert!(
+        HistoryArchive::discover(&empty, || panic!("unexpected anchor lookup"))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(empty.tree_names(), names);
 }
 
 #[tokio::test]

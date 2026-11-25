@@ -1,3 +1,5 @@
+mod archive_import;
+
 use std::{collections::BTreeMap, sync::Arc};
 
 use jsonrpc_core::{RpcResult, server::MethodsError};

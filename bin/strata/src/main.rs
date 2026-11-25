@@ -84,7 +84,7 @@ fn main() -> Result<()> {
     }
 
     // Validate params, configs and create node context.
-    let nodectx = init_node_context(&args, config.clone(), rt.handle().clone())
+    let (nodectx, archive) = init_node_context(&args, config.clone(), rt.handle().clone())
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     if args.bootstrap_from_checkpoint {
@@ -110,7 +110,7 @@ fn main() -> Result<()> {
     let _ = proof_notify;
 
     // Start RPC only after the configured prover's artifacts pass startup checks.
-    start_rpc(&runctx)?;
+    start_rpc(&runctx, archive)?;
 
     // Start block producer if running as sequencer.
     #[cfg(feature = "sequencer")]

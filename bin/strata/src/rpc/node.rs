@@ -17,7 +17,6 @@ use strata_identifiers::{
 };
 use strata_ol_chain_types_v1::OLBlockV1;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
-use strata_ol_rpc_history::HistoryArchive;
 use strata_ol_rpc_types::{
     OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
     RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
@@ -34,6 +33,7 @@ use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
 
+use super::history::HistoryArchive;
 use crate::rpc::errors::{
     block_ancestry_error_to_rpc, block_history_unavailable_error, canonical_chain_db_error_to_rpc,
     db_error, internal_error, invalid_params_error, mempool_error_to_rpc,

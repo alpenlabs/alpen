@@ -10,6 +10,14 @@ use crate::{SledBackend, SledDbConfig};
 
 // Opens sled database instance from datadir
 pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Result<Arc<SledDb>> {
+    Ok(open_sled_database_with_handle(datadir, dbname)?.0)
+}
+
+/// Opens the database once and shares its lock with readers of auxiliary trees.
+pub fn open_sled_database_with_handle(
+    datadir: &Path,
+    dbname: &'static str,
+) -> anyhow::Result<(Arc<SledDb>, sled::Db)> {
     let mut database_dir = datadir.to_path_buf();
     database_dir.push("sled");
     database_dir.push(dbname);
@@ -20,9 +28,9 @@ pub fn open_sled_database(datadir: &Path, dbname: &'static str) -> anyhow::Resul
 
     let sled_db = sled::open(&database_dir).context("opening sled database")?;
 
-    let db =
-        SledDb::new(sled_db).map_err(|e| anyhow::anyhow!("Failed to create sled db: {}", e))?;
-    Ok(Arc::new(db))
+    let db = SledDb::new(sled_db.clone())
+        .map_err(|e| anyhow::anyhow!("Failed to create sled db: {}", e))?;
+    Ok((Arc::new(db), sled_db))
 }
 
 pub fn init_core_dbs(sled_db: Arc<SledDb>, config: SledDbConfig) -> DbResult<Arc<SledBackend>> {

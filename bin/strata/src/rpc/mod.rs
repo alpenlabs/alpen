@@ -4,6 +4,7 @@
 mod assembly_tests;
 mod auth;
 pub(crate) mod errors;
+pub(crate) mod history;
 mod node;
 #[cfg(test)]
 mod node_tests;
@@ -11,7 +12,8 @@ mod provider;
 
 use std::{env, sync::Arc};
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Result, anyhow};
+use history::HistoryArchive;
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use node::*;
 use provider::NodeRpcProvider;
@@ -34,7 +36,6 @@ use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
-use strata_ol_rpc_history::HistoryArchive;
 use strata_rpc_tracing::{HttpServerTraceContextLayer, rpc_trace_context_server_middleware};
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -155,7 +156,10 @@ fn rpc_permissive_cors_enabled() -> Result<bool> {
 }
 
 /// Starts the RPC server.
-pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
+pub(crate) fn start_rpc(
+    runctx: &RunContext,
+    history_archive: Option<HistoryArchive>,
+) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
     #[cfg(feature = "sequencer")]
     let seq_deps = runctx.sequencer_handles().map(|handles| {
@@ -175,29 +179,6 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         )
     });
 
-    let history_archive = if let Some(path) = &runctx.config().client.v0_history_archive {
-        ensure!(
-            runctx.node_role().serves_fullnode_rpc(),
-            "V0 history requires the full-node RPC methods"
-        );
-        let genesis = runctx
-            .asm_params()
-            .genesis
-            .checkpoint_config()
-            .context("missing ASM checkpoint genesis parameters")?
-            .genesis_ol_blkid;
-        let terminal = runctx
-            .storage()
-            .ol_block()
-            .get_history_base_blocking()?
-            .context("V0 history requires a promoted node with a history base")?;
-        Some(
-            HistoryArchive::open(path, genesis, terminal)
-                .with_context(|| format!("opening V0 history archive at {}", path.display()))?,
-        )
-    } else {
-        None
-    };
     let deps = RpcDeps {
         history_archive,
         rpc_host: runctx.config().client.rpc_host.clone(),

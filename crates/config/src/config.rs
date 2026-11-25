@@ -129,9 +129,6 @@ pub struct ClientConfig {
     #[serde(default)]
     pub is_sequencer: bool,
 
-    /// Directory containing the optional format 1 V0 explorer archive.
-    pub v0_history_archive: Option<PathBuf>,
-
     /// Maximum number of headers returned in a single `getHeadersInRange` RPC query.
     #[serde(default = "default_max_headers_range")]
     pub max_headers_range: usize,
