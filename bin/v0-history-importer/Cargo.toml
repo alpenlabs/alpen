@@ -1,0 +1,34 @@
+[package]
+name = "strata-v0-history-importer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = [
+  "std",
+  "help",
+  "usage",
+  "error-context",
+] }
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sled.workspace = true
+ssz.workspace = true
+strata-codec.workspace = true
+strata-db-store-sled.workspace = true
+strata-identifiers.workspace = true
+strata-ol-chain-types.workspace = true
+strata-ol-rpc-types.workspace = true
+strata-ol-state-types.workspace = true
+
+[dev-dependencies]
+strata-predicate.workspace = true
+strata-db-types.workspace = true
+tempfile.workspace = true

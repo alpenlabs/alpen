@@ -1,6 +1,9 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{AccountId, OLBlockId};
+use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
+use strata_ol_state_types::{OLAccountState, WriteBatch};
 use strata_predicate::PredicateKey;
 use strata_primitives::HexBytes32;
 
@@ -75,6 +78,27 @@ impl RpcBlockAccountChanges {
             blkid,
             changes,
         }
+    }
+
+    /// Projects the ledger writes at a block commitment into the RPC's account-ID order.
+    pub fn from_write_batch(
+        commitment: OLBlockCommitment,
+        batch: &WriteBatch<OLAccountState>,
+    ) -> Self {
+        let ledger = batch.ledger();
+        let created: HashSet<_> = ledger.new_accounts().iter().copied().collect();
+        let changes = ledger
+            .iter_accounts()
+            .map(|(id, state)| {
+                let kind = if created.contains(id) {
+                    RpcAccountChangeType::Created
+                } else {
+                    RpcAccountChangeType::Updated
+                };
+                RpcAccountChange::new(*id, kind, RpcAccountState::from(state))
+            })
+            .collect();
+        Self::new(commitment.slot(), *commitment.blkid(), changes)
     }
 
     pub fn slot(&self) -> u64 {

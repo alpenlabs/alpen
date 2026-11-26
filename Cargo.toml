@@ -93,6 +93,7 @@ members = [
   "bin/datatool",
   "bin/alpen-cli",
   "bin/strata-dbtool",
+  "bin/v0-history-importer",
   "bin/alpen-client",
   "bin/strata",
   "bin/strata-signer",

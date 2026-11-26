@@ -15575,6 +15575,8 @@ dependencies = [
  "ciborium",
  "proptest",
  "rkyv",
+ "serde",
+ "sha2",
  "sled",
  "ssz",
  "ssz_derive",
@@ -16996,6 +16998,29 @@ dependencies = [
  "proptest",
  "ssz",
  "tree_hash 0.17.0",
+]
+
+[[package]]
+name = "strata-v0-history-importer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sled",
+ "ssz",
+ "strata-codec",
+ "strata-db-store-sled",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ol-chain-types",
+ "strata-ol-rpc-types",
+ "strata-ol-state-types",
+ "strata-predicate",
+ "tempfile",
 ]
 
 [[package]]

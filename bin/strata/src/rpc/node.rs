@@ -19,12 +19,11 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountChange, RpcAccountChangeType,
-    RpcAccountEpochSummary, RpcAccountState, RpcBlockAccountChanges, RpcBlockEntry,
-    RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
-    RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
-    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState,
-    RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
+    OLBlockTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
+    RpcBlockAccountChanges, RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus,
+    RpcCheckpointInfo, RpcCheckpointL1Ref, RpcIndexedEntry, RpcMessageEntry, RpcOLBlockDetail,
+    RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail,
+    RpcSnarkAccountState, RpcSnarkAcctUpdateManifest, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -1302,29 +1301,9 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
                     "No OL write batch found for block {block_commitment}"
                 ))
             })?;
-        let created_accounts: HashSet<AccountId> = write_batch
-            .ledger()
-            .new_accounts()
-            .iter()
-            .copied()
-            .collect();
-        let changes = write_batch
-            .ledger()
-            .iter_accounts()
-            .map(|(id, state)| {
-                let change_type = if created_accounts.contains(id) {
-                    RpcAccountChangeType::Created
-                } else {
-                    RpcAccountChangeType::Updated
-                };
-                RpcAccountChange::new(*id, change_type, RpcAccountState::from(state))
-            })
-            .collect();
-
-        Ok(RpcBlockAccountChanges::new(
-            slot,
-            block_commitment.blkid,
-            changes,
+        Ok(RpcBlockAccountChanges::from_write_batch(
+            block_commitment,
+            &write_batch,
         ))
     }
 }
