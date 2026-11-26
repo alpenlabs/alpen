@@ -48,3 +48,11 @@ bin/v0-history-importer/interop/run.sh "$reader_checkout" "$reader_commit"
 ```
 
 The default tests restore the logical contents of a reader-created promoted database (`testdata/promoted.json`, including empty trees and two canonical live successors). A subprocess exits during the write walk after a persisted block. The test checks the digest of every other tree, including names and empty trees, after the interruption, retry, removal and reimport. The interop script creates a disposable checkout of the specified reader commit. It uses the node’s promotion API, imports the generated chain with the CLI and compares all five registered RPCs with the v0.3.5 source. The script prints its local workspace path for inspection.
+
+To regenerate the reader’s checked-in archive rows, start from a clean importer commit and set `reader_checkout` to the reader checkout. The generator records the importer’s Git commit and the time it ran.
+
+```bash
+export STRATA_V0_FIXTURE_OUT="$(mktemp -d)/fixture"
+cargo test --locked -p strata-v0-history-importer --test offline write_reader_fixture -- --ignored --exact
+cp "$STRATA_V0_FIXTURE_OUT/rows.json" "$reader_checkout/bin/strata/testdata/v0-history/rows.json"
+```

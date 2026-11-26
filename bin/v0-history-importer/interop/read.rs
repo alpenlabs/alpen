@@ -42,7 +42,7 @@ fn explorer_reads_imported_database() {
     assert_eq!(base, expected);
     let mut deps = RpcFixture::new().make_deps(NodeRole::Sequencer);
     deps.storage = Arc::new(create_node_storage(backend, test_runtime_handle()).unwrap());
-    deps.history_archive = HistoryArchive::discover(&raw, || Ok((genesis, base))).unwrap();
+    deps.history_archive = HistoryArchive::discover(&raw, &path, || Ok((genesis, base))).unwrap();
     let rpc = build_public_rpc_module(&deps).unwrap();
     test_runtime_handle().block_on(async {
         let headers: Vec<Value> = rpc

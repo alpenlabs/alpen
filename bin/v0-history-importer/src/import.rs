@@ -136,8 +136,8 @@ fn import_into(
     let record = CompleteRecord {
         format_version: FORMAT_VERSION,
         source: source.to_owned(),
-        importer_revision: Some(revision.to_owned()),
-        imported_at_unix_seconds: Some(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs()),
+        importer_revision: revision.to_owned(),
+        imported_at_unix_seconds: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
         codec_revision: "048c5bf88bd02e19d60d508e0f9f3e1b13a24510".to_owned(),
         genesis_id: args.genesis_id,
         terminal_id: args.terminal.terminal_id,

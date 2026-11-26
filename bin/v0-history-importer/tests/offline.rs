@@ -33,12 +33,14 @@ use tempfile::tempdir;
 mod fixture;
 use fixture::{Fixture, block};
 
+const TEST_REVISION: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 impl Fixture {
     fn run(&self) -> Output {
         run(self.dir.path(), self.genesis, self.terminal, 2, 1)
     }
 
-    fn import(&self, out: &Path) -> Output {
+    fn import(&self, out: &Path, revision: &str) -> Output {
         wait_for_sled_close(out);
         command("import", self.dir.path(), self.genesis, self.terminal, 2, 1)
             .arg("--target-datadir")
@@ -47,7 +49,7 @@ impl Fixture {
                 "--source-snapshot",
                 "local-fixture",
                 "--importer-revision",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                revision,
             ])
             .output()
             .unwrap()
@@ -282,7 +284,7 @@ fn interrupted_import_can_retry_and_publish_only_verified_history() {
     let out = tempdir().unwrap();
     let path = out.path();
     drop(target(path, f.genesis));
-    let wrong = f.import(path);
+    let wrong = f.import(path, TEST_REVISION);
     assert!(String::from_utf8_lossy(&wrong.stderr).contains("target history base differs"));
     drop(target(path, f.terminal));
     let key = encode_to_vec(&OLBlockCommitment::new(1, f.middle)).unwrap();
@@ -293,7 +295,12 @@ fn interrupted_import_can_retry_and_publish_only_verified_history() {
         .remove(&key)
         .unwrap()
         .unwrap();
-    assert_failure(f.import(path), 1, f.middle, "missing write batch");
+    assert_failure(
+        f.import(path, TEST_REVISION),
+        1,
+        f.middle,
+        "missing write batch",
+    );
     let db = target(path, f.terminal);
     assert!(
         !db.open_tree("V0OLArchiveMeta")
@@ -308,13 +315,13 @@ fn interrupted_import_can_retry_and_publish_only_verified_history() {
         .unwrap()
         .insert(key, missing)
         .unwrap();
-    let output = f.import(path);
+    let output = f.import(path, TEST_REVISION);
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let again = f.import(path);
+    let again = f.import(path, TEST_REVISION);
     assert!(String::from_utf8_lossy(&again.stderr).contains("already contains a completed import"));
     let db = target(path, f.terminal);
     let complete = db
@@ -326,10 +333,7 @@ fn interrupted_import_can_retry_and_publish_only_verified_history() {
     let record: Value = serde_json::from_slice(&complete).unwrap();
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["complete"], record);
-    assert_eq!(
-        record["importer_revision"],
-        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    );
+    assert_eq!(record["importer_revision"], TEST_REVISION);
     assert!(record["imported_at_unix_seconds"].as_u64().is_some());
     assert_eq!(
         record["codec_revision"],
@@ -379,7 +383,13 @@ fn write_reader_fixture() {
     )
     .unwrap();
     drop(target(&path, f.terminal));
-    let output = f.import(&path);
+    let revision = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .unwrap();
+    assert!(revision.status.success());
+    let output = f.import(&path, str::from_utf8(&revision.stdout).unwrap().trim());
     assert!(
         output.status.success(),
         "{}",

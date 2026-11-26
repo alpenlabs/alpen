@@ -3,6 +3,7 @@
 //! promotion terminal. The batch and account-change trees omit genesis only.
 //! An importer flushes all five data trees and verifies them against the source before
 //! publishing [`CompleteRecord`] under [`COMPLETE_KEY`]. Readers ignore unpublished trees.
+//! Format 1 is frozen. Changes to these encodings require a new [`FORMAT_VERSION`].
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -17,13 +18,9 @@ pub const COMPLETE_KEY: [u8; 8] = *b"complete";
 pub struct CompleteRecord {
     pub format_version: u32,
     pub source: String,
-    #[serde(alias = "decoder_revision")]
     pub codec_revision: String,
-    /// Older format-1 records predate importer provenance.
-    #[serde(default)]
-    pub importer_revision: Option<String>,
-    #[serde(default)]
-    pub imported_at_unix_seconds: Option<u64>,
+    pub importer_revision: String,
+    pub imported_at_unix_seconds: u64,
     pub genesis_id: OLBlockId,
     pub terminal_slot: Slot,
     pub terminal_epoch: Epoch,
@@ -39,9 +36,9 @@ pub const HEADERS: &str = "V0OLHeaderBySlot";
 pub const BLOCKS: &str = "V0OLBlockById";
 /// Block ID to the original V0 write batch.
 pub const BATCHES: &str = "V0OLWriteBatchById";
-/// Block ID to the ordered V0 RPC transaction array.
+/// Block ID to the UTF-8 JSON array of `RpcOLTxDetail` values serialized by v0.3.5.
 pub const TXS: &str = "V0OLTransactionsById";
-/// Block ID to the V0 RPC account changes.
+/// Block ID to the UTF-8 JSON of `RpcBlockAccountChanges` serialized by v0.3.5.
 pub const CHANGES: &str = "V0OLAccountChangesById";
 /// Completion metadata, published last and unpublished first.
 pub const META: &str = "V0OLArchiveMeta";
