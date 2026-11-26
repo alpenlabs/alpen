@@ -84,7 +84,7 @@ pub(crate) fn init_node_context(
     // Init storage
     let (storage, raw) = init_storage(&config, handle.clone())?;
     let history = if NodeRole::from_config(&config).serves_fullnode_rpc() {
-        HistoryArchive::discover(&raw, || {
+        HistoryArchive::discover(&raw, &config.client.datadir, || {
             let genesis = asm_params
                 .genesis
                 .checkpoint_config()
@@ -95,8 +95,7 @@ pub(crate) fn init_node_context(
                 .get_history_base_blocking()?
                 .context("archived history requires a promoted database")?;
             Ok((genesis, terminal))
-        })
-        .map_err(InitError::HistoryArchive)?
+        })?
     } else {
         None
     };

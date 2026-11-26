@@ -4,6 +4,7 @@ use std::{io, path};
 
 use format_serde_error::SerdeError;
 use strata_db_types::DbError;
+use strata_identifiers::EpochCommitment;
 use strata_primitives::OLBlockCommitment;
 use thiserror::Error;
 use toml::de;
@@ -47,10 +48,24 @@ pub(crate) enum InitError {
     #[error("failed to create node storage: {0}")]
     StorageCreation(String),
 
+    #[error("could not verify V0 archive: {0:#}")]
+    HistoryArchiveRead(#[source] anyhow::Error),
+
     #[error(
-        "V0 archive verification failed: {0:#}. Stop the node and run strata-v0-history-importer remove against this datadir with its promotion terminal"
+        "V0 archive failed verification: {source:#}. With the node stopped, run: \
+         strata-v0-history-importer remove --target-datadir '{path}' \
+         --terminal-id {id:?} --terminal-slot {slot} --terminal-epoch {epoch}",
+        path = datadir.display().to_string().replace('\'', "'\\''"),
+        id = terminal.last_blkid(),
+        slot = terminal.last_slot(),
+        epoch = terminal.epoch()
     )]
-    HistoryArchive(#[source] anyhow::Error),
+    HistoryArchiveInvalid {
+        datadir: path::PathBuf,
+        terminal: EpochCommitment,
+        #[source]
+        source: anyhow::Error,
+    },
 
     #[error("missing OL tip header for {0}")]
     MissingOLTipHeader(OLBlockCommitment),

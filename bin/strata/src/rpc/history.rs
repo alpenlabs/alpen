@@ -1,8 +1,9 @@
 //! Read-only explorer access to the V0 trees written by the offline v0.3.5 importer.
 
-use std::time::Instant;
+use std::{path::Path, time::Instant};
 
 use anyhow::{Context, Result, anyhow, ensure};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use ssz::{Decode, DecodeError, SszDecoderBuilder};
 use strata_db_store_sled::ol::schemas::v0_history::{
@@ -16,7 +17,9 @@ use strata_ol_rpc_types::{
 };
 use strata_primitives::HexBytes;
 use tokio::task;
-use tracing::info;
+use tracing::{info, warn};
+
+use crate::errors::InitError;
 
 /// Only the signed-header layout is common to V0 and V1. Hash the original V0 body bytes.
 fn read_envelope(bytes: &[u8]) -> Result<(SignedOLBlockHeaderV1, [u8; 32]), DecodeError> {
@@ -45,26 +48,78 @@ impl HistoryArchive {
     /// Opens a completed import and verifies its contents against the node's own anchors.
     pub(crate) fn discover(
         db: &sled::Db,
+        datadir: &Path,
         anchors: impl FnOnce() -> Result<(OLBlockId, EpochCommitment)>,
-    ) -> Result<Option<Self>> {
+    ) -> Result<Option<Self>, InitError> {
         let start = Instant::now();
-        let names = db.tree_names();
-        let present = |name: &str| names.iter().any(|n| n.as_ref() == name.as_bytes());
-        if !present(META) {
-            return Ok(None);
-        }
-        let Some(record) = db.open_tree(META)?.get(COMPLETE_KEY)? else {
-            info!("V0 import has no completion record");
+        let Some(manifest) = Self::completion_record(db).map_err(InitError::HistoryArchiveRead)?
+        else {
             return Ok(None);
         };
-        let manifest: CompleteRecord =
-            serde_json::from_slice(&record).context("reading V0 archive completion record")?;
-        ensure!(
-            manifest.format_version == FORMAT_VERSION,
-            "unsupported V0 archive format: expected {FORMAT_VERSION}, found {}",
-            manifest.format_version
+        let (genesis, terminal) = anchors().map_err(InitError::HistoryArchiveRead)?;
+        let archive = Self::verify(db, &manifest, genesis, terminal).map_err(|source| {
+            // A failed sled read cannot establish that the imported rows are wrong.
+            if source.is::<sled::Error>() {
+                InitError::HistoryArchiveRead(source)
+            } else {
+                InitError::HistoryArchiveInvalid {
+                    datadir: datadir.to_owned(),
+                    terminal,
+                    source,
+                }
+            }
+        })?;
+        info!(
+            ?terminal,
+            blocks = manifest.blocks,
+            checksum = %manifest.content_sha256,
+            importer_revision = %manifest.importer_revision,
+            source = %manifest.source,
+            elapsed_ms = start.elapsed().as_millis(),
+            "verified V0 explorer archive"
         );
-        let (genesis, terminal) = anchors()?;
+        Ok(Some(archive))
+    }
+
+    fn completion_record(db: &sled::Db) -> Result<Option<CompleteRecord>> {
+        if !db
+            .tree_names()
+            .iter()
+            .any(|n| n.as_ref() == META.as_bytes())
+        {
+            return Ok(None);
+        }
+        let Some(bytes) = db
+            .open_tree(META)?
+            .get(COMPLETE_KEY)
+            .context("reading V0 archive metadata")?
+        else {
+            warn!(
+                "V0 history is unavailable after an interrupted import or removal. Retry the offline import with the same arguments or run strata-v0-history-importer remove"
+            );
+            return Ok(None);
+        };
+        let record: Value =
+            serde_json::from_slice(&bytes).context("reading V0 archive completion record")?;
+        // A newer format may have a different completion record.
+        let format_version = record["format_version"]
+            .as_u64()
+            .context("missing or invalid V0 archive format version")?;
+        ensure!(
+            format_version == u64::from(FORMAT_VERSION),
+            "unsupported V0 archive format: expected {FORMAT_VERSION}, found {format_version}"
+        );
+        let manifest =
+            serde_json::from_slice(&bytes).context("reading V0 archive completion record")?;
+        Ok(Some(manifest))
+    }
+
+    fn verify(
+        db: &sled::Db,
+        manifest: &CompleteRecord,
+        genesis: OLBlockId,
+        terminal: EpochCommitment,
+    ) -> Result<Self> {
         ensure!(
             manifest.genesis_id == genesis,
             "V0 archive genesis mismatch: expected {genesis:?}, found {:?}",
@@ -88,10 +143,17 @@ impl HistoryArchive {
             manifest.blocks,
             manifest.write_batches
         );
+        let names = db.tree_names();
         for name in DATA {
-            ensure!(present(name), "missing V0 archive tree {name}");
+            ensure!(
+                names.iter().any(|n| n.as_ref() == name.as_bytes()),
+                "missing V0 archive tree {name}"
+            );
             let expected = expected_rows(name, last, manifest.blocks);
-            let actual = db.open_tree(name)?.len() as u64;
+            let actual = db
+                .open_tree(name)?
+                .iter()
+                .try_fold(0u64, |n, row| row.map(|_| n + 1))?;
             ensure!(
                 actual == expected,
                 "wrong row count in {name}: expected {expected}, found {actual}"
@@ -167,8 +229,7 @@ impl HistoryArchive {
             }
             expected_id = *header.parent_blkid();
         }
-        info!(?terminal, blocks = manifest.blocks, checksum = %actual, elapsed_ms = start.elapsed().as_millis(), "verified V0 explorer archive");
-        Ok(Some(archive))
+        Ok(archive)
     }
 
     pub(super) fn genesis(&self) -> OLBlockId {

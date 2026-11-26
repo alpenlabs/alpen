@@ -1,12 +1,22 @@
 //! The three-slot fixture is the output of the v0.3.5 importer's offline test chain.
 //! Slot 1 has a snark update, a message, a created account and an updated account.
+use std::path::Path;
+
+use anyhow::{Result as AnyResult, anyhow};
 use sha2::{Digest, Sha256};
 use strata_db_store_sled::ol::schemas::v0_history::{
     BLOCKS, CHANGES, COMPLETE_KEY, META, TXS, digest,
 };
 
 use super::*;
-use crate::rpc::history::HistoryArchive;
+use crate::{errors::InitError, rpc::history::HistoryArchive};
+
+fn discover(
+    db: &sled::Db,
+    anchors: impl FnOnce() -> AnyResult<(OLBlockId, EpochCommitment)>,
+) -> Result<Option<HistoryArchive>, InitError> {
+    HistoryArchive::discover(db, Path::new("/fixture/node's data"), anchors)
+}
 
 fn fixture_db() -> sled::Db {
     let db = sled::Config::new().temporary(true).open().unwrap();
@@ -35,7 +45,7 @@ fn fixture_anchors() -> (OLBlockId, EpochCommitment) {
 
 fn fixture_archive() -> HistoryArchive {
     let (genesis, base) = fixture_anchors();
-    HistoryArchive::discover(&fixture_db(), || Ok((genesis, base)))
+    discover(&fixture_db(), || Ok((genesis, base)))
         .unwrap()
         .unwrap()
 }
@@ -172,8 +182,51 @@ fn archive_rehashes_each_header_even_with_a_matching_checksum() {
     bytes[0] ^= 1; // Alter slot one's timestamp while preserving its slot.
     headers.insert(key, bytes).unwrap();
     update_digest(&db);
-    let error = HistoryArchive::discover(&db, || Ok(fixture_anchors())).unwrap_err();
-    assert_eq!(error.to_string(), "V0 header hash mismatch at slot 1");
+    let error = discover(&db, || Ok(fixture_anchors())).unwrap_err();
+    assert!(matches!(error, InitError::HistoryArchiveInvalid { .. }));
+    let message = error.to_string();
+    assert!(message.contains("V0 header hash mismatch at slot 1"));
+    assert!(message.ends_with(
+        r"strata-v0-history-importer remove --target-datadir '/fixture/node'\''s data' --terminal-id 080b6a9d69059feb4e6aa132ed168719c166046c67424a60aa647c993fbbcf1b --terminal-slot 2 --terminal-epoch 1"
+    ));
+}
+
+#[test]
+fn unreadable_completion_record_or_anchors_do_not_recommend_removal() {
+    let db = fixture_db();
+    let meta = db.open_tree(META).unwrap();
+    let bytes = meta.get(COMPLETE_KEY).unwrap().unwrap();
+    let original: Value = serde_json::from_slice(&bytes).unwrap();
+    let check = |error: InitError, reason: &str| {
+        assert!(matches!(error, InitError::HistoryArchiveRead(_)));
+        assert!(error.to_string().contains(reason), "{error}");
+        assert!(!error.to_string().contains("importer remove"));
+    };
+    let error = discover(&db, || Err(anyhow!("missing checkpoint genesis"))).unwrap_err();
+    check(error, "missing checkpoint genesis");
+
+    let check_record = |bytes: &[u8], reason: &str| {
+        meta.insert(COMPLETE_KEY, bytes).unwrap();
+        let error = discover(&db, || panic!("unexpected anchor lookup")).unwrap_err();
+        check(error, reason);
+    };
+    check_record(b"{", "completion record");
+    for field in ["importer_revision", "imported_at_unix_seconds"] {
+        let mut record = original.clone();
+        record.as_object_mut().unwrap().remove(field).unwrap();
+        check_record(&serde_json::to_vec(&record).unwrap(), field);
+    }
+    check_record(
+        br#"{"format_version":999}"#,
+        "unsupported V0 archive format",
+    );
+    let mut legacy = original;
+    legacy["decoder_revision"] = legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("codec_revision")
+        .unwrap();
+    check_record(&serde_json::to_vec(&legacy).unwrap(), "codec_revision");
 }
 
 #[test]
@@ -185,12 +238,16 @@ fn archive_requires_completion_intact_rows_and_matching_anchors() {
         (genesis, EpochCommitment::new(0, 2, *base.last_blkid())),
         (genesis, EpochCommitment::new(1, 2, null_blkid())),
     ] {
-        assert!(HistoryArchive::discover(&db, || Ok(anchors)).is_err());
+        let error = discover(&db, || Ok(anchors)).unwrap_err();
+        let InitError::HistoryArchiveInvalid { terminal, .. } = error else {
+            panic!("expected a verification failure: {error}");
+        };
+        assert_eq!(terminal, anchors.1);
     }
     let batches = db.open_tree("V0OLWriteBatchById").unwrap();
     batches.remove(base.last_blkid().as_ref()).unwrap();
     assert!(
-        HistoryArchive::discover(&db, || Ok((genesis, base)))
+        discover(&db, || Ok((genesis, base)))
             .unwrap_err()
             .to_string()
             .contains("wrong row count")
@@ -199,7 +256,7 @@ fn archive_requires_completion_intact_rows_and_matching_anchors() {
         .insert(base.last_blkid().as_ref(), b"corrupt")
         .unwrap();
     assert!(
-        HistoryArchive::discover(&db, || Ok((genesis, base)))
+        discover(&db, || Ok((genesis, base)))
             .unwrap_err()
             .to_string()
             .contains("checksum mismatch")
@@ -209,14 +266,14 @@ fn archive_requires_completion_intact_rows_and_matching_anchors() {
         .remove(b"complete")
         .unwrap();
     assert!(
-        HistoryArchive::discover(&db, || panic!("unexpected anchor lookup"))
+        discover(&db, || panic!("unexpected anchor lookup"))
             .unwrap()
             .is_none()
     );
     let empty = sled::Config::new().temporary(true).open().unwrap();
     let names = empty.tree_names();
     assert!(
-        HistoryArchive::discover(&empty, || panic!("unexpected anchor lookup"))
+        discover(&empty, || panic!("unexpected anchor lookup"))
             .unwrap()
             .is_none()
     );
@@ -267,7 +324,7 @@ fn verified_digest_cannot_hide_invalid_served_rows() {
         let db = fixture_db();
         db.open_tree(name).unwrap().insert(id, value).unwrap();
         update_digest(&db);
-        let err = HistoryArchive::discover(&db, || Ok(fixture_anchors())).unwrap_err();
+        let err = discover(&db, || Ok(fixture_anchors())).unwrap_err();
         assert!(err.to_string().contains(error), "{err:#}");
     };
     let db = fixture_db();
