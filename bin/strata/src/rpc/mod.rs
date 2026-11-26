@@ -4,6 +4,7 @@
 mod assembly_tests;
 mod auth;
 pub(crate) mod errors;
+pub(crate) mod history;
 mod node;
 #[cfg(test)]
 mod node_tests;
@@ -12,6 +13,7 @@ mod provider;
 use std::{env, sync::Arc};
 
 use anyhow::{Result, anyhow};
+use history::HistoryArchive;
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use node::*;
 use provider::NodeRpcProvider;
@@ -63,6 +65,7 @@ struct RpcDeps {
     submit_rpc_bearer_token: Option<SecretString>,
     genesis_l1_block: L1BlockCommitment,
     max_headers_range: usize,
+    history_archive: Option<HistoryArchive>,
     node_role: NodeRole,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
@@ -174,6 +177,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     });
 
     let deps = RpcDeps {
+        history_archive: runctx.history_archive.clone(),
         rpc_host: runctx.config().client.rpc_host.clone(),
         rpc_port: runctx.config().client.rpc_port,
         admin_rpc_host: runctx.config().client.admin_rpc_host.clone(),
@@ -286,7 +290,8 @@ fn register_fullnode_rpc(
         deps.max_headers_range,
         ol_block_data_access(deps.node_role),
         ol_local_state_coverage(deps.node_role),
-    );
+    )
+    .with_history_archive(deps.history_archive.clone());
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)

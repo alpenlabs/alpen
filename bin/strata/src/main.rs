@@ -88,11 +88,11 @@ fn main() -> Result<()> {
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     if args.bootstrap_from_checkpoint {
-        promote_from_checkpoint(&nodectx)?;
+        promote_from_checkpoint(&nodectx.node)?;
     }
 
     // Check for db consistency, external rpc clients reachable, etc.
-    run_startup_checks(&nodectx)?;
+    run_startup_checks(&nodectx.node)?;
 
     // Start services, and do genesis if necessary.
     let (runctx, proof_notify) = start_strata_services(nodectx)?;

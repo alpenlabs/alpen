@@ -1,6 +1,6 @@
 //! RPC types for the Orchestration Layer.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use ssz::Decode;
 use strata_acct_types::{AccountId, SentMessage, SentTransfer, TxEffects};
 use strata_identifiers::OLTxId;
@@ -339,9 +339,23 @@ pub struct RpcSauTxSummary {
     seq_no: u64,
     new_next_msg_idx: u64,
     inner_state_root: HexBytes32,
-    /// New update predicate key declared by this update, if it rotates the key.
+    /// V0 transactions in the sled `v0_history` schema omit this field (outer `None`).
+    /// V1 always supplies it, with null for no rotation or the new key for a rotation.
     #[cfg_attr(feature = "jsonschema", schemars(with = "Option<String>"))]
-    new_predicate: Option<PredicateKey>,
+    #[serde(
+        default,
+        deserialize_with = "present_predicate",
+        skip_serializing_if = "Option::is_none"
+    )]
+    new_predicate: Option<Option<PredicateKey>>,
+}
+
+// Format 1 archive projections predate this field. Preserve their absent field as well
+// as the explicit null returned for a live V1 update without a rotation.
+fn present_predicate<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<PredicateKey>>, D::Error> {
+    Option::deserialize(deserializer).map(Some)
 }
 
 impl RpcSauTxSummary {
@@ -358,7 +372,7 @@ impl RpcSauTxSummary {
     }
 
     pub fn new_predicate(&self) -> Option<&PredicateKey> {
-        self.new_predicate.as_ref()
+        self.new_predicate.as_ref()?.as_ref()
     }
 }
 
@@ -370,7 +384,7 @@ impl From<&SauTxPayloadV1> for RpcSauTxSummary {
             seq_no: update.seq_no(),
             new_next_msg_idx: proof_state.new_next_msg_idx(),
             inner_state_root: HexBytes32::from(proof_state.inner_state_root().0),
-            new_predicate: update.new_predicate().cloned(),
+            new_predicate: Some(update.new_predicate().cloned()),
         }
     }
 }
@@ -442,6 +456,7 @@ impl TryFrom<RpcOLTransaction> for OLTransactionV1 {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
     use ssz::Encode;
     use strata_predicate::PredicateTypeId;
     use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs};
@@ -483,6 +498,10 @@ mod tests {
     fn test_sau_conversion_without_new_predicate() {
         let tx = convert(make_rpc_sau_update(UpdateOutputs::new_empty()));
         assert_eq!(tx_new_predicate(&tx), None);
+        let wire = serde_json::to_value(RpcOLTxDetail::from(&tx)).unwrap();
+        assert_eq!(wire.get("new_predicate"), Some(&Value::Null));
+        let decoded: RpcOLTxDetail = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
     }
 
     #[test]

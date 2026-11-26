@@ -57,7 +57,7 @@ use strata_db_types::prover_task::ProverTaskDatabase;
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
 
-pub use crate::init::{init_core_dbs, open_sled_database};
+pub use crate::init::{init_core_dbs, open_sled_database, open_sled_database_with_handle};
 pub use crate::prover::ProofDBSled;
 
 pub const SLED_NAME: &str = "strata-client";

@@ -33,6 +33,7 @@ use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
 
+use super::history::HistoryArchive;
 use crate::rpc::errors::{
     block_ancestry_error_to_rpc, block_history_unavailable_error, canonical_chain_db_error_to_rpc,
     db_error, internal_error, invalid_params_error, mempool_error_to_rpc,
@@ -82,6 +83,7 @@ struct ChainBlock {
 /// OL RPC server implementation, generic over a provider.
 pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     provider: P,
+    history_archive: Option<HistoryArchive>,
     /// L1 block OL genesis anchors to, where the genesis epoch's L1 range
     /// starts.
     genesis_l1_block: L1BlockCommitment,
@@ -164,11 +166,88 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     ) -> Self {
         Self {
             provider,
+            history_archive: None,
             genesis_l1_block,
             max_headers_range,
             block_data_access,
             local_state_coverage,
         }
+    }
+
+    pub(super) fn with_history_archive(mut self, archive: Option<HistoryArchive>) -> Self {
+        self.history_archive = archive;
+        self
+    }
+
+    fn archive_at(&self, slot: u64) -> Option<&HistoryArchive> {
+        self.history_archive
+            .as_ref()
+            .filter(|a| slot <= a.last_slot())
+    }
+
+    async fn joined_range<T>(
+        &self,
+        start: u64,
+        end: u64,
+        archived: impl AsyncFn(&HistoryArchive, u64, u64) -> anyhow::Result<Vec<T>>,
+    ) -> RpcResult<Vec<T>>
+    where
+        T: for<'a> From<&'a OLBlockV1>,
+    {
+        let archive = self.archive_at(start);
+        let live = self.live_range(start, end, archive).await?;
+        let Some(archive) = archive else {
+            return Ok(live);
+        };
+        let mut prefix = archived(archive, start, end.min(archive.last_slot()))
+            .await
+            .map_err(db_error)?;
+        prefix.extend(live);
+        Ok(prefix)
+    }
+
+    /// Walks the live suffix from its canonical end. A mixed range can only be joined
+    /// if the parent reached by this walk is the exact archived terminal.
+    async fn live_range<T>(
+        &self,
+        start: u64,
+        end: u64,
+        archive: Option<&HistoryArchive>,
+    ) -> RpcResult<Vec<T>>
+    where
+        T: for<'a> From<&'a OLBlockV1>,
+    {
+        let live_start = match archive {
+            Some(a) if end <= a.last_slot() => return Ok(Vec::new()),
+            Some(a) => a.last_slot() + 1,
+            None => start,
+        };
+        let Some(mut current_id) = self.get_canonical_block_at_height(end).await? else {
+            self.ensure_history_available_at_slot(end).await?;
+            return Err(not_found_error(format!("No blocks found at slot {end}")));
+        };
+        let mut entries = Vec::new();
+        for slot in (live_start..=end).rev() {
+            let block = self
+                .get_block_at(OLBlockCommitment::new(slot, current_id))
+                .await?;
+            if block.header().slot() != slot {
+                return Err(internal_error(format!(
+                    "canonical block has unexpected slot at {slot}"
+                )));
+            }
+            current_id = *block.header().parent_blkid();
+            entries.push(T::from(&block));
+        }
+        if let Some(a) = archive
+            && current_id != *a.terminal().last_blkid()
+        {
+            return Err(internal_error(
+                "first live block does not descend from the archived terminal",
+            ));
+        }
+        entries.reverse();
+        Ok(entries)
     }
 
     /// Selects the spec of the epoch after `terminal`, an epoch's terminal
@@ -1355,41 +1434,24 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         start_height: u64,
         end_height: u64,
     ) -> RpcResult<Vec<RpcBlockEntry>> {
-        let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
-
-        if start_height > end_height || block_count > MAX_RAW_BLOCKS_RANGE {
+        if start_height > end_height || end_height - start_height >= MAX_RAW_BLOCKS_RANGE as u64 {
             return Err(invalid_params_error("Invalid block range"));
         }
-
-        let Some(last) = self
-            .get_canonical_block_commitment_at_height(end_height)
-            .await?
-        else {
-            self.ensure_history_available_at_slot(end_height).await?;
-            return Err(not_found_error(format!(
-                "No blocks found at slot {end_height}"
-            )));
-        };
-
-        let mut cur_blkid = *last.blkid();
-        let mut blocks = Vec::with_capacity(block_count);
-
-        // Fetch blocks in backward order to ensure a valid chain.
-        for slot in (start_height..=end_height).rev() {
-            let commitment = OLBlockCommitment::new(slot, cur_blkid);
-            let blk = self.get_block_at(commitment).await?;
-            cur_blkid = blk.header().parent_blkid;
-            blocks.push(blk);
-        }
-        // Reverse back to get chronological sequence.
-        blocks.reverse();
-
-        let entries: Vec<_> = blocks.iter().map(Into::into).collect();
-
-        Ok(entries)
+        self.joined_range(start_height, end_height, HistoryArchive::blocks)
+            .await
     }
 
     async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes> {
+        if let Some(archive) = &self.history_archive
+            && block_id == archive.genesis()
+        {
+            return archive
+                .raw_block(block_id)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| internal_error("missing archived genesis"));
+        }
+
         if let Some(block) = self
             .provider
             .get_block_data(block_id)
@@ -1397,6 +1459,12 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .map_err(db_error)?
         {
             return Ok(HexBytes(block.as_ssz_bytes()));
+        }
+
+        if let Some(archive) = &self.history_archive
+            && let Some(bytes) = archive.raw_block(block_id).await.map_err(db_error)?
+        {
+            return Ok(bytes);
         }
 
         if let Some(history_base) = self
@@ -1421,32 +1489,14 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         start_height: u64,
         end_height: u64,
     ) -> RpcResult<Vec<RpcBlockHeaderEntry>> {
-        let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
-
-        if start_height > end_height || block_count > self.max_headers_range {
+        if start_height > end_height || end_height - start_height >= self.max_headers_range as u64 {
             return Err(invalid_params_error("Invalid block range"));
         }
-
-        self.ensure_history_available_at_slot(start_height).await?;
-
-        let last_blkid = self
-            .get_canonical_block_at_height(end_height)
-            .await?
-            .ok_or(not_found_error(format!(
-                "No blocks found at slot {end_height}"
-            )))?;
-
-        let mut cur_blkid = last_blkid;
-        let mut entries = Vec::with_capacity(block_count);
-
-        for _ in (start_height..=end_height).rev() {
-            let blk = self.get_block(cur_blkid).await?;
-            cur_blkid = blk.header().parent_blkid;
-            entries.push(RpcBlockHeaderEntry::from(&blk));
+        if self.archive_at(start_height).is_none() {
+            self.ensure_history_available_at_slot(start_height).await?;
         }
-        entries.reverse();
-
-        Ok(entries)
+        self.joined_range(start_height, end_height, HistoryArchive::headers)
+            .await
     }
 
     async fn get_block_by_slot(&self, slot: u64) -> RpcResult<Option<RpcOLBlockDetail>> {
@@ -1514,6 +1564,9 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
     }
 
     async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>> {
+        if let Some(archive) = self.archive_at(slot) {
+            return archive.transactions(slot).await.map_err(db_error);
+        }
         let Some(commitment) = self.get_canonical_block_commitment_at_height(slot).await? else {
             self.ensure_history_available_at_slot(slot).await?;
             return Err(not_found_error(format!("No block found at slot {slot}")));
@@ -1528,6 +1581,15 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
     }
 
     async fn get_block_account_changes(&self, slot: u64) -> RpcResult<RpcBlockAccountChanges> {
+        if let Some(archive) = self.archive_at(slot) {
+            if slot == 0 {
+                let genesis = OLBlockCommitment::new(0, archive.genesis());
+                return Err(not_found_error(format!(
+                    "No OL write batch found for block {genesis}"
+                )));
+            }
+            return archive.account_changes(slot).await.map_err(db_error);
+        }
         let block_commitment = self
             .provider
             .get_canonical_block_at(slot)

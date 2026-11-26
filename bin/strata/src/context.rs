@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::Context;
 use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
@@ -26,28 +27,39 @@ use strata_storage::{NodeStorage, create_node_storage};
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
-use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
+use crate::{
+    args::*, config::*, errors::*, genesis::init_ol_genesis, init_db, rpc::history::HistoryArchive,
+    run_context::NodeRole,
+};
 
 /// Load config early for logging initialization
 pub(crate) fn load_config_early(args: &Args) -> Result<Config, InitError> {
     get_config(args.clone())
 }
 
-pub(crate) fn init_storage(config: &Config, handle: Handle) -> Result<Arc<NodeStorage>, InitError> {
-    let db = init_db::init_database(&config.client)
+fn init_storage(
+    config: &Config,
+    handle: Handle,
+) -> Result<(Arc<NodeStorage>, sled::Db), InitError> {
+    let (db, raw) = init_db::init_database(&config.client)
         .map_err(|e| InitError::StorageCreation(e.to_string()))?;
     let storage = Arc::new(
         create_node_storage(db, handle).map_err(|e| InitError::StorageCreation(e.to_string()))?,
     );
-    Ok(storage)
+    Ok((storage, raw))
 }
 
-/// Initialize runtime, database, bitcoin client, status channel etc.
+/// Node services and the optional RPC archive verified before they start.
+pub(crate) struct InitializedNode {
+    pub(crate) node: NodeContext,
+    pub(crate) history: Option<HistoryArchive>,
+}
+
 pub(crate) fn init_node_context(
     args: &Args,
     config: Config,
     handle: Handle,
-) -> Result<NodeContext, InitError> {
+) -> Result<InitializedNode, InitError> {
     // Load the network genesis parameters before opening node resources.
     let asm_params_path = args
         .asm_params
@@ -70,7 +82,23 @@ pub(crate) fn init_node_context(
     validate_shared_network_params(&asm_params, &ol_params)?;
 
     // Init storage
-    let storage = init_storage(&config, handle.clone())?;
+    let (storage, raw) = init_storage(&config, handle.clone())?;
+    let history = if NodeRole::from_config(&config).serves_fullnode_rpc() {
+        HistoryArchive::discover(&raw, &config.client.datadir, || {
+            let genesis = asm_params
+                .genesis
+                .checkpoint_config()
+                .context("missing checkpoint genesis")?
+                .genesis_ol_blkid;
+            let terminal = storage
+                .ol_block()
+                .get_history_base_blocking()?
+                .context("archived history requires a promoted database")?;
+            Ok((genesis, terminal))
+        })?
+    } else {
+        None
+    };
 
     // Init bitcoin client
     let bitcoin_client = create_bitcoin_rpc_client(&config.bitcoind)?;
@@ -90,7 +118,10 @@ pub(crate) fn init_node_context(
         status_channel,
     );
 
-    Ok(nodectx)
+    Ok(InitializedNode {
+        node: nodectx,
+        history,
+    })
 }
 
 // Config loading and validation

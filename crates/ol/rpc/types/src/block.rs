@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ssz::Encode;
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_chain_types_v1::{OLAsmManifestContainerV1, OLBlockV1};
+use strata_ol_chain_types_v1::{OLAsmManifestContainerV1, OLBlockHeaderV1, OLBlockV1};
 use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockId};
 
 /// Rpc version of OL block entry in a slot range.
@@ -15,6 +15,16 @@ pub struct RpcBlockEntry {
 }
 
 impl RpcBlockEntry {
+    /// Wraps original block bytes with their slot, epoch and block ID.
+    pub fn new(slot: Slot, epoch: Epoch, blkid: OLBlockId, raw_block: HexBytes) -> Self {
+        Self {
+            slot,
+            epoch,
+            blkid,
+            raw_block,
+        }
+    }
+
     pub fn slot(&self) -> u64 {
         self.slot
     }
@@ -98,7 +108,12 @@ impl RpcBlockHeaderEntry {
 
 impl From<&OLBlockV1> for RpcBlockHeaderEntry {
     fn from(block: &OLBlockV1) -> Self {
-        let header = block.header();
+        block.header().into()
+    }
+}
+
+impl From<&OLBlockHeaderV1> for RpcBlockHeaderEntry {
+    fn from(header: &OLBlockHeaderV1) -> Self {
         Self {
             slot: header.slot(),
             epoch: header.epoch(),
