@@ -1654,7 +1654,7 @@ mod tests {
 
     fn create_test_snark_tx_with_withdrawals(count: usize) -> OLTransactionV1 {
         let payload = MsgPayload::from_bytes(
-            BitcoinAmount::try_from(BridgeParams::default().denomination()).unwrap(),
+            BridgeParams::default().denomination(),
             make_withdrawal_payload(make_op_return_bosd_descriptor(0x42)),
         )
         .unwrap();

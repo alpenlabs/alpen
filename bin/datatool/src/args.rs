@@ -5,9 +5,10 @@ use std::{num::NonZero, path::PathBuf};
 use argh::FromArgs;
 use bitcoin::Network;
 use rand_core::OsRng;
+use strata_btc_types::BitcoinAmount;
 use strata_primitives::L1Height;
 
-use crate::util::resolve_network;
+use crate::util::{parse_amount, resolve_network};
 
 /// Args.
 #[derive(FromArgs)]
@@ -176,10 +177,11 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "deposit amount in sats; must equal the OL params bridge denomination \
-                       (defaults to it)"
+        from_str_fn(parse_amount),
+        description = "deposit amount as a sat count or a denominated amount like \"2 BTC\"; \
+                       must equal the OL params bridge denomination (defaults to it)"
     )]
-    pub(crate) deposit_sats: Option<String>,
+    pub(crate) deposit_amount: Option<BitcoinAmount>,
 
     #[argh(
         option,
@@ -268,14 +270,19 @@ pub(crate) struct SubcOlParams {
     )]
     pub(crate) genesis_accounts: Option<PathBuf>,
 
-    #[argh(option, description = "bridge denomination in satoshis")]
-    pub(crate) bridge_denomination_sats: u64,
+    #[argh(
+        option,
+        from_str_fn(parse_amount),
+        description = "bridge denomination as a sat count or a denominated amount like \"2 BTC\""
+    )]
+    pub(crate) bridge_denomination: BitcoinAmount,
 
     #[argh(
         option,
-        description = "maximum withdrawal amount in satoshis; omit to leave withdrawals uncapped"
+        from_str_fn(parse_amount),
+        description = "maximum withdrawal amount as a sat count or a denominated amount like \"10 BTC\"; omit to leave withdrawals uncapped"
     )]
-    pub(crate) max_withdrawal_amount_sats: Option<u64>,
+    pub(crate) max_withdrawal_amount: Option<BitcoinAmount>,
 
     #[argh(
         option,

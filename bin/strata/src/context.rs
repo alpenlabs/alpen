@@ -358,7 +358,7 @@ impl SharedNetworkParams {
         })?;
 
         Ok(Self {
-            bridge_denomination: runtime_params.bridge_params().denomination(),
+            bridge_denomination: runtime_params.bridge_params().denomination().to_sat(),
             genesis_l1_block: genesis_params.last_l1_block(),
             genesis_l1_height: genesis_params.last_l1_block().height(),
             genesis_ol_blkid: *genesis_artifacts.commitment.blkid(),

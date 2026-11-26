@@ -9122,6 +9122,7 @@ dependencies = [
  "serde_json",
  "ssz",
  "ssz_derive",
+ "strata-btc-types",
  "thiserror 2.0.20",
 ]
 

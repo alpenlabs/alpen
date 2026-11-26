@@ -25,7 +25,7 @@ fn create_test_snark_tx_with_withdrawals(count: usize, extra_len: usize) -> OLTr
     for _ in 0..count {
         builder = builder.with_output_message(
             BRIDGE_GATEWAY_ACCT_ID,
-            BridgeParams::default().denomination(),
+            BridgeParams::default().denomination().to_sat(),
             payload.clone(),
         );
     }
@@ -95,7 +95,7 @@ fn test_payload_budget_includes_update_log_and_extra_data() {
 fn test_log_measurement_matches_stf_with_mixed_messages() {
     let (mut fixture, account, builder) = fixture_and_builder();
     let params = BridgeParams::default();
-    let amount = params.denomination();
+    let amount = params.denomination().to_sat();
     let valid = make_withdrawal_payload(make_op_return_bosd_descriptor(0x42));
     let tx = builder
         .try_with_extra_data(vec![0x77; 200])

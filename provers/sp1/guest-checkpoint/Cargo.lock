@@ -2015,6 +2015,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
+ "strata-btc-types",
  "thiserror",
 ]
 

@@ -976,6 +976,7 @@ mod tests {
     use bitcoin::{BlockHash, Network, Work, hashes::Hash};
     use bitcoind_async_client::corepc_types::model::GetBlockchainInfo;
     use strata_acct_types::L1BlockRecord;
+    use strata_btc_types::BitcoinAmount;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{MmrId, ol_block::BlockStatus};
     use strata_identifiers::{Buf32, Hash as StrataHash, L1_HEIGHT_MMR_PREFILL_LEAF, L1BlockId};
@@ -1242,8 +1243,8 @@ mod tests {
             .expect("test: create node storage");
         let genesis_l1_block = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
         let bridge_params = strata_ol_params::BridgeParams::new_with_descriptor_limit(
-            100_000_000,
-            Some(1_000_000_000),
+            BitcoinAmount::try_from(100_000_000).unwrap(),
+            Some(BitcoinAmount::try_from(1_000_000_000).unwrap()),
             81,
         )
         .expect("valid bridge params");

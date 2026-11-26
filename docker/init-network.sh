@@ -224,8 +224,8 @@ GEOF
                 -g "${GENESIS_L1_HEIGHT}" \
                 --l1-anchor-file "${L1_ANCHOR}" \
                 --genesis-accounts "${GENESIS_ACCOUNTS}" \
-                --bridge-denomination-sats "${BRIDGE_DENOMINATION_SATS}" \
-                ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount-sats "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
+                --bridge-denomination "${BRIDGE_DENOMINATION_SATS}" \
+                ${MAX_WITHDRAWAL_AMOUNT_SATS:+--max-withdrawal-amount "$MAX_WITHDRAWAL_AMOUNT_SATS"} \
                 --max-withdrawal-descriptor-len "${MAX_WITHDRAWAL_DESCRIPTOR_LEN}"
             echo "generated ${OL_PARAMS}"
         else
